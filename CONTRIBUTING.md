@@ -23,7 +23,7 @@
 
 - **Go**：`1.26+`（CI 使用 `1.27.2`）
 - **Node.js & npm**：`Node 24+`（Linux CI 使用 `24.18.1`）
-- **Python 3**：`3.10+`（用于启动脚本与 OpenAPI 契约校验虚拟环境）
+- **Python 3**：`3.10+`（用于原生运行工具、启动器测试和 OpenAPI 契约校验；自托管 Compose 启动不依赖 Python）
 - **PostgreSQL**：`16+`（用于运行带真实数据库的集成与并发 race 测试）
 - **命令行工具**：`git`、`make`、`bash`、`rg`（ripgrep）、`fd`（Linux 上 `fd-find` 需提供 `fd` 命令入口），以及编译 `node-pty` 所需的 C++ 基础构建工具
 
@@ -101,8 +101,8 @@ make check COMPONENT=agent-engine
 # Web 前端类型检查、单元测试与构建检查
 (cd web && npm test && npm run build)
 
-# 启动器与 Docker 辅助脚本单元测试
-python3 -m unittest discover -s tools -p 'test_*.py' -v
+# 启动器与 Docker 安装引导黑盒测试
+python3 -m unittest discover -s tools -p test_local_launcher.py -v
 ```
 
 具体复杂度阈值、lint 规则与测试豁免原则见 [静态检查规范](docs/rules/static-checks.md)。

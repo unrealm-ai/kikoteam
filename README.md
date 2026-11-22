@@ -76,9 +76,9 @@
 在 **macOS** 或 **Linux** 上准备：
 
 - **Docker Engine + Docker Compose v2**（若尚未安装，`./start.sh` 会提供交互式官方源安装引导）
-- 本机 `18080` 端口可用
+- Git（通过下方命令克隆时需要），以及空闲的本机 `18080` 端口
 
-> 不需要在宿主机安装 Go、Node.js 或 PostgreSQL，所有服务均在容器内构建并运行；接入飞书、钉钉、企业微信均采用**主动长连接**，本地或内网部署**无需公网域名与入站端口**。
+> 不需要在宿主机安装 Python、Go、Node.js 或 PostgreSQL。办公渠道使用主动长连接，接入时无需开放入站端口；外部 Webhook 则需要调用方能访问的 Backend 地址。
 
 ### 2. 一键启动
 
@@ -88,13 +88,15 @@ cd kikoteam
 ./start.sh
 ```
 
-首次运行会自动初始化 `.env` 与 `.kiko-local/runtime.env`（生成随机数据库密码、32 字节认证密钥与内部服务 Token），启动 PostgreSQL、Event Hub（自动执行数据库迁移并同步内置模板目录）、Backend（含 Web 前端）与 Agent Engine。
+首次运行会自动初始化 `.env` 与 `.kiko-local/runtime.env`（生成随机数据库密码、认证密钥与内部服务 Token），启动 PostgreSQL、Backend（含 Web 前端）、Event Hub 与 Agent Engine。启动过程中自动完成迁移、同步内置目录并等待 Engine 注册。首次下载依赖和构建镜像可能需要数分钟。
 
 启动完成后，浏览器打开：
 
 ```text
 http://localhost:18080
 ```
+
+本地入口只监听回环地址；同一个 Docker 引擎默认只管理一套本地实例。已有实例应回到原目录启停，不要另克隆一份覆盖数据卷。
 
 ### 3. 三步跑通第一个任务
 

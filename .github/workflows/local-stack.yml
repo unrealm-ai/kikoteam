@@ -4,9 +4,12 @@ on:
 permissions:
   contents: read
 jobs:
-  local-stack:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+  launcher-contract:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
         with:
@@ -14,10 +17,20 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Initialization safety tests
+      - name: Portable launcher syntax and black-box safety tests
         run: |
-          python3 -m unittest discover -s tools -p test_local.py -v
-          python3 -m unittest discover -s tools -p test_docker_support.py -v
+          sh -n start.sh
+          sh -n tools/local-launcher.sh
+          sh -n tools/docker-support.sh
+          python3 -m unittest discover -s tools -p test_local_launcher.py -v
+  local-stack:
+    needs: launcher-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - name: Build and start complete implemented stack
         run: ./start.sh up
       - name: Verify page and real backend

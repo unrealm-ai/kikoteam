@@ -4,7 +4,7 @@
 
 ## 一键本地启动
 
-支持 macOS 和 Linux，依赖可运行的 Docker Engine + Compose v2（支持 `up --wait`）和 Python 3。macOS 可使用 Docker Desktop 或已配置好的兼容 Docker 环境；Linux 需要当前用户有 Docker daemon 访问权限。检测不到 Docker 时提供显式安装确认；不会静默安装或提权，也不修改用户组。源码和前端在容器内构建，不要求宿主安装 Go、Node 或 PostgreSQL。
+支持 macOS 和 Linux，依赖可运行的 Docker Engine + Compose v2（支持 `up --wait`）和系统自带的 `/bin/sh`。不需要宿主机 Python。macOS 可使用 Docker Desktop 或已配置好的兼容 Docker 环境；Linux 需要当前用户有 Docker daemon 访问权限。检测不到 Docker 时提供显式安装确认；不会静默安装或提权，也不修改用户组。源码和前端在容器内构建，不要求宿主安装 Go、Node 或 PostgreSQL。
 
 ```sh
 ./start.sh
@@ -17,7 +17,7 @@
 
 `./start.sh` 等同于 `./start.sh up`，使用当前本地源码构建并启动，不拉取 Git 更新。`./start.sh --update` 需要有上游分支的 Git 工作区，先快进拉取，再用更新后的启动器构建并启动。拉取失败时，启动器在构建和停止容器之前退出。原有 `./start.sh restart` 继续支持更新并重启，使用源码归档时则直接构建。
 
-首次启动可先用 `init` 单独初始化配置。启动器生成权限为 0600 的 `.env` 和 `.kiko-local/runtime.env`，分别保存数据库及平台密钥、Hub 与 Engine 两套内部 Token。升级旧本地实例时，独立生成缺少的运行时配置并沿用已有 `.env` 和平台密钥。
+首次启动可先用 `init` 单独初始化配置。旧版启动器首次通过 `restart` 或 `--update` 升级时，仍由旧版使用它原有的 Python 进入新版；升级后直接运行新版 `./start.sh` 不用 Python。启动器生成权限为 0600 的 `.env` 和 `.kiko-local/runtime.env`，分别保存数据库及平台密钥、Hub 与 Engine 两套内部 Token。升级旧本地实例时，独立生成缺少的运行时配置并沿用已有 `.env` 和平台密钥。
 
 应用镜像全部构建成功后才停止旧 Engine 和 Event Hub。Compose 先等 PG16 和 Backend 健康，再启动 Event Hub。Hub 当选后负责数据库迁移和渠道恢复。迁移就绪后同步内置员工模板，随后启动 Engine 并等待注册心跳确认。启动成功会显示本地访问地址和 Git 版本。Backend 提供 Web 静态文件，默认访问 `http://localhost:18080`。配置可用模型后可以运行对话与任务，绑定渠道机器人后可以通过对应渠道使用 AI 员工。Runner 在 Engine 容器内按任务启动。
 
@@ -31,6 +31,7 @@
 - 检测到已有卷/初始化标记但 `.env` 丢失时，停止并提示恢复，不能生成新密钥让旧加密凭据失效。已有卷无标记也拒绝自动接管。
 - 检测旧 `backend/.env`、`backend.local.json` 或已注入数据库/认证配置时，拒绝首次自动初始化。不会连接、迁移、覆盖用户原有 PG；现有部署继续按原方式运行。
 - 已有 `.env` 内容错误或端口占用时明确失败，不换库、不删卷、不自动换秘密。
+- 升级前等旧版正在运行的启停操作结束。新版对同一 checkout 的写入和启停加锁；如异常中断留下 `.kiko-local/start.lock.d`，确认启动器和它启动的命令均已退出后，再手动移除锁目录，不删除数据库卷、`.env` 或其他状态。
 
 ## 环境配置
 
@@ -87,10 +88,7 @@ database.url、auth.secret、mail.smtp.password 是引用对象，每个只选�
 
 ## 启动器验收
 
-`python3 -m unittest discover -s tools -p test_local.py -v` 验证首次生成、重复启动稳定密钥、已有数据保护、旧配置保护、权限、符号链接、非法配置及 Compose 命令参数。Python 实现不依赖 GNU sed、readlink -f、systemd 或 Homebrew，供 macOS/Linux 共用。
-
-`.github/workflows/local-stack.yml` 在 Linux 实际构建并启动 Compose，检查页面、真实接口和重复启动；测试不使用模拟模型。Python 测试/解析 YAML 不能替代实际 Docker 验收，未运行 Docker 时必须明确标注镜像构建、健康依赖和容器启动仍待验证。
-
+启动器行为、兼容约束和验证矩阵见[本地启动器 Spec](../../docs/spec/local-launcher.md)。运行 `python3 -m unittest discover -s tools -p test_local_launcher.py -v` 进行黑盒回归；Python 仅供测试驱动，启动进程的 PATH 不含 Python。Linux Compose 流程见 [Local Compose Stack](../../.github/workflows/local-stack.yml)。
 
 ## Docker 安装辅助与可见进度
 
@@ -103,7 +101,7 @@ database.url、auth.secret、mail.smtp.password 是引用对象，每个只选�
 
 官方参考（2026-11-16 核查）：[macOS](https://docs.docker.com/desktop/setup/install/mac-install/)、[Ubuntu](https://docs.docker.com/engine/install/ubuntu/)、[Debian](https://docs.docker.com/engine/install/debian/)、[Linux 权限](https://docs.docker.com/engine/install/linux-postinstall/)。
 
-安装辅助的测试使用命令替身，验证拒绝、非交互、平台选择、官方来源与不提权边界，不会真的安装系统软件。运行 `python3 -m unittest discover -s tools -p 'test_*local.py' -v` 和 `python3 -m unittest discover -s tools -p test_docker_support.py -v`。实际安装和镜像构建结果需要另外记录。
+安装辅助的测试使用命令替身，验证拒绝、非交互、平台选择、官方来源与不提权边界，不会真的安装系统软件。运行 `python3 -m unittest discover -s tools -p test_local_launcher.py -v`。实际安装和镜像构建结果需要另外记录。
 
 ### 2026-11-16 本地验收记录
 

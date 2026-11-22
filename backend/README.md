@@ -149,7 +149,7 @@ make build VERSION=<版本或提交>   # 生成 bin/backend，不启动服务
 
 ### 可扩展配置文件
 
-新部署统一使用仓库根目录 `.env.example` 与本地 `.env`，运行 `python3 tools/local.py up` 由 Compose 启动 PostgreSQL、Event Hub 和包含 Web 的 Backend。旧 JSON 配置仅保留过渡读取，不再提供第二份示例。配置、迁移保护和公开部署边界见[启动配置](docs/configuration.md)。
+新部署统一使用仓库根目录 `.env.example` 与本地 `.env`，运行 `./start.sh up` 由 Compose 启动 PostgreSQL、Event Hub 和包含 Web 的 Backend。旧 JSON 配置仅保留过渡读取，不再提供第二份示例。配置、迁移保护和公开部署边界见[启动配置](docs/configuration.md)。
 
 ### 功能迁移交付顺序
 

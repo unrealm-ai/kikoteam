@@ -1,0 +1,476 @@
+{
+  "permission": {
+    "parameters": [
+      {"name": "workspace_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
+      {"name": "agent_id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}}
+    ],
+    "get": {
+      "operationId": "getWecomContactPermission",
+      "security": [{"sessionCookie": []}],
+      "description": "Workspace owner/admin only; no query parameters. Reports only actual WeCom contact-search readiness. When enabled for the currently verified bot identity, checks the read-only official search with a fixed synthetic keyword; a valid empty result counts as available. No contacts, credentials or search results are returned or persisted, and no messages or WebSocket connections are initiated. Concurrent requests reuse a process-local result for the same binding revision (30 seconds, or 5 seconds when temporarily unavailable). A new credential generation or configuration revision is checked independently.",
+      "responses": {
+        "200": {
+          "description": "Observed contact-search outcome, not a general permission report. not_checked means disabled or awaiting identity confirmation. denied is an explicit provider permission rejection; authentication_failed, unsupported and unavailable are distinct.",
+          "content": {"application/json": {"schema": {
+            "type": "object", "additionalProperties": false,
+            "required": ["status", "binding_id", "connection_generation", "config_revision"],
+            "properties": {
+              "status": {"type": "string", "enum": ["not_checked", "available", "denied", "authentication_failed", "unsupported", "unavailable"]},
+              "binding_id": {"type": "string", "format": "uuid"},
+              "connection_generation": {"type": "integer", "minimum": 1},
+              "config_revision": {"type": "integer", "minimum": 1},
+              "checked_at": {"type": "string", "format": "date-time", "description": "Time the check completed, if attempted."}
+            }
+          }}}
+        },
+        "400": {"description": "Invalid resource identifier or unexpected query string"},
+        "401": {"description": "No valid browser session"},
+        "403": {"description": "Not an active workspace administrator"},
+        "404": {"description": "Binding or scoped resource not found"},
+        "409": {"description": "Binding or verification status changed during this check; re-read the binding"},
+        "429": {"description": "Process-local check capacity reached; wait and retry"},
+        "503": {"description": "Unable to read the current binding"}
+      }
+    }
+  },
+  "search": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "searchWecomContacts",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin only. Current enabled binding, identity epoch and verified credential generation required. No-store; codes never enter normal Inbox/Input. Administrator relay is attestation, not provider identity proof. Unknown/multiple codes are normal messages.",
+      "responses": {
+        "200": {
+          "description": "Current scoped keyword result, merging successful provider search with already verified local profiles; sorted and deduplicated by search_user_id, capped at 100 with limited=true on truncation. Provider errors are not masked by local matches.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items",
+                  "limited"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "search_user_id",
+                        "display_name",
+                        "department_paths",
+                        "verification_status"
+                      ],
+                      "properties": {
+                        "search_user_id": {
+                          "type": "string"
+                        },
+                        "display_name": {
+                          "type": "string"
+                        },
+                        "verification_status": {
+                          "type": "string"
+                        },
+                        "callback_user_id": {
+                          "type": "string"
+                        },
+                        "verification_id": {
+                          "type": "string"
+                        },
+                        "department_paths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "limited": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Not an active workspace administrator"
+        },
+        "409": {
+          "description": "Source changed, identity pending, candidate expired, or request conflict"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        },
+        "503": {
+          "description": "Provider unavailable; no mock fallback"
+        }
+      },
+      "parameters": [
+        {
+          "name": "q",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      ]
+    }
+  },
+  "verifications": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "startWecomContactVerification",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin only. Current enabled binding, identity epoch and verified credential generation required. No-store; codes never enter normal Inbox/Input. Administrator relay is attestation, not provider identity proof. Unknown/multiple codes are normal messages.",
+      "responses": {
+        "200": {
+          "description": "Current scoped keyword result, merging successful provider search with already verified local profiles; sorted and deduplicated by search_user_id, capped at 100 with limited=true on truncation. Provider errors are not masked by local matches.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "search_user_id",
+                  "status",
+                  "expires_at"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "search_user_id": {
+                    "type": "string"
+                  },
+                  "callback_user_id": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "verified",
+                      "cancelled",
+                      "expired",
+                      "conflict"
+                    ]
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Not an active workspace administrator"
+        },
+        "409": {
+          "description": "Source changed, identity pending, candidate expired, or request conflict"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        },
+        "503": {
+          "description": "Provider unavailable; no mock fallback"
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "search_user_id",
+                "request_id"
+              ],
+              "properties": {
+                "search_user_id": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "request_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "verification": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "verification_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "getWecomContactVerification",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin only. Current enabled binding, identity epoch and verified credential generation required. No-store; codes never enter normal Inbox/Input. Administrator relay is attestation, not provider identity proof. Unknown/multiple codes are normal messages.",
+      "responses": {
+        "200": {
+          "description": "Current scoped keyword result, merging successful provider search with already verified local profiles; sorted and deduplicated by search_user_id, capped at 100 with limited=true on truncation. Provider errors are not masked by local matches.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "search_user_id",
+                  "status",
+                  "expires_at"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "search_user_id": {
+                    "type": "string"
+                  },
+                  "callback_user_id": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "verified",
+                      "cancelled",
+                      "expired",
+                      "conflict"
+                    ]
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Not an active workspace administrator"
+        },
+        "409": {
+          "description": "Source changed, identity pending, candidate expired, or request conflict"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        },
+        "503": {
+          "description": "Provider unavailable; no mock fallback"
+        }
+      }
+    }
+  },
+  "cancel": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "verification_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "cancelWecomContactVerification",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin only. Current enabled binding, identity epoch and verified credential generation required. No-store; codes never enter normal Inbox/Input. Administrator relay is attestation, not provider identity proof. Unknown/multiple codes are normal messages.",
+      "responses": {
+        "200": {
+          "description": "Current scoped keyword result, merging successful provider search with already verified local profiles; sorted and deduplicated by search_user_id, capped at 100 with limited=true on truncation. Provider errors are not masked by local matches.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "search_user_id",
+                  "status",
+                  "expires_at"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "search_user_id": {
+                    "type": "string"
+                  },
+                  "callback_user_id": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "verified",
+                      "cancelled",
+                      "expired",
+                      "conflict"
+                    ]
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Not an active workspace administrator"
+        },
+        "409": {
+          "description": "Source changed, identity pending, candidate expired, or request conflict"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        },
+        "503": {
+          "description": "Provider unavailable; no mock fallback"
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        }
+      ]
+    }
+  }
+}

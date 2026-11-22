@@ -1,0 +1,197 @@
+collection:
+  get:
+    operationId: listOfficialPlugins
+    description: Authenticated catalog read. Platform administrators also see unlisted definitions.
+    security: [{sessionCookie: []}]
+    parameters:
+      - {name: q, in: query, schema: {type: string, maxLength: 200}}
+      - {name: page, in: query, schema: {type: integer, minimum: 1}}
+      - {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema: {$ref: './plugin-schemas.yaml#/PluginPage'}
+      default:
+        description: Invalid input, insufficient authorization, conflict or service unavailable.
+        content:
+          application/json:
+            schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}
+  post:
+    operationId: publishOfficialPlugin
+    description: Platform administrators publish a fixed version or change catalog state. Publishing requires management access to the source workspace.
+    security: [{sessionCookie: []}]
+    parameters:
+      - {name: X-CSRF-Protection, in: header, required: true, schema: {type: string, const: '1'}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: './resource-catalog-schemas.yaml#/Publish'}
+    responses:
+      '201':
+        description: Success
+        content:
+          application/json:
+            schema: {$ref: './plugin-schemas.yaml#/Plugin'}
+      default:
+        description: Invalid input, insufficient authorization, conflict or service unavailable.
+        content:
+          application/json:
+            schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}
+item:
+  get:
+    operationId: getOfficialPlugin
+    description: Authenticated catalog read. Platform administrators also see unlisted definitions.
+    security: [{sessionCookie: []}]
+    parameters:
+      - {name: plugin_id, in: path, required: true, schema: {type: string, format: uuid}}
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema: {$ref: './plugin-schemas.yaml#/Plugin'}
+      default:
+        description: Invalid input, insufficient authorization, conflict or service unavailable.
+        content:
+          application/json:
+            schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}
+  patch:
+    operationId: updateOfficialPlugin
+    description: Platform administrators publish a fixed version or change catalog state. Publishing requires management access to the source workspace.
+    security: [{sessionCookie: []}]
+    parameters:
+      - {name: X-CSRF-Protection, in: header, required: true, schema: {type: string, const: '1'}}
+      - {name: plugin_id, in: path, required: true, schema: {type: string, format: uuid}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: './resource-catalog-schemas.yaml#/State'}
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema: {$ref: './plugin-schemas.yaml#/Plugin'}
+      default:
+        description: Invalid input, insufficient authorization, conflict or service unavailable.
+        content:
+          application/json:
+            schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}
+versions:
+  get:
+    operationId: listOfficialPluginVersions
+    description: Authenticated catalog read. Platform administrators also see unlisted definitions.
+    security: [{sessionCookie: []}]
+    parameters:
+      - {name: plugin_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: page, in: query, schema: {type: integer, minimum: 1}}
+      - {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema: {$ref: './plugin-schemas.yaml#/PluginPage'}
+      default:
+        description: Invalid input, insufficient authorization, conflict or service unavailable.
+        content:
+          application/json:
+            schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}
+  post:
+    operationId: publishOfficialPluginVersion
+    description: Platform administrators publish a fixed version or change catalog state. Publishing requires management access to the source workspace.
+    security: [{sessionCookie: []}]
+    parameters:
+      - {name: X-CSRF-Protection, in: header, required: true, schema: {type: string, const: '1'}}
+      - {name: plugin_id, in: path, required: true, schema: {type: string, format: uuid}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: './resource-catalog-schemas.yaml#/Publish'}
+    responses:
+      '201':
+        description: Success
+        content:
+          application/json:
+            schema: {$ref: './plugin-schemas.yaml#/Plugin'}
+      default:
+        description: Invalid input, insufficient authorization, conflict or service unavailable.
+        content:
+          application/json:
+            schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}
+agents:
+  get:
+    operationId: listPluginAgents
+    description: Workspace administrators see references only in their workspace.
+    security: [{sessionCookie: []}]
+    parameters:
+      - {name: workspace_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: plugin_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: page, in: query, schema: {type: integer, minimum: 1}}
+      - {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema: {$ref: './resource-catalog-schemas.yaml#/Uses'}
+      default:
+        description: Invalid input, insufficient authorization, conflict or service unavailable.
+        content:
+          application/json:
+            schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}
+assign:
+  post:
+    operationId: assignPlugin
+    description: Workspace administrators assign a fixed version per employee package. Repetition preserves existing permissions.
+    security: [{sessionCookie: []}]
+    parameters:
+      - {name: X-CSRF-Protection, in: header, required: true, schema: {type: string, const: '1'}}
+      - {name: workspace_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: plugin_id, in: path, required: true, schema: {type: string, format: uuid}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: './resource-catalog-schemas.yaml#/Assignment'}
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema: {$ref: './resource-catalog-schemas.yaml#/Results'}
+      default:
+        description: Invalid input, insufficient authorization, conflict or service unavailable.
+        content:
+          application/json:
+            schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}
+copy:
+  post:
+    operationId: copyPlugin
+    description: Workspace administrators copy a fixed accessible definition. Credentials are excluded.
+    security: [{sessionCookie: []}]
+    parameters:
+      - {name: X-CSRF-Protection, in: header, required: true, schema: {type: string, const: '1'}}
+      - {name: workspace_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: plugin_id, in: path, required: true, schema: {type: string, format: uuid}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: './resource-catalog-schemas.yaml#/Copy'}
+    responses:
+      '201':
+        description: Success
+        content:
+          application/json:
+            schema: {$ref: './plugin-schemas.yaml#/Plugin'}
+      default:
+        description: Invalid input, insufficient authorization, conflict or service unavailable.
+        content:
+          application/json:
+            schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}

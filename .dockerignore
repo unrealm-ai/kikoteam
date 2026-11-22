@@ -1,0 +1,13 @@
+.git
+**/.env
+**/*.secret
+**/backend.local.json
+**/node_modules
+**/dist
+**/bin
+**/.venv
+**/*.log
+.tools
+.kiko-local
+**/.env.*
+!**/.env.example

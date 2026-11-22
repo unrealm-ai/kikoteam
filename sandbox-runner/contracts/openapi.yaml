@@ -1,0 +1,96 @@
+openapi: 3.1.0
+info:
+  title: Bare Sandbox Runner management
+  version: 1.0.0
+  description: Loopback only, separate random Engine management credential. Configuration is fetched from Backend with a scoped Runner token. No browser or MCP token is accepted. Requests are bounded; a timeout does not prove cleanup.
+security: [{managementBearer: []}]
+paths:
+  /sessions/{session_id}/prepare:
+    parameters: [{$ref: '#/components/parameters/session'}]
+    post:
+      operationId: prepareRunnerSession
+      description: Current task assignment and active parent required. Repeats reuse the same Session builtin process and Sandbox-lifetime token. No Input execution.
+      responses:
+        '200':
+          description: Sensitive endpoint for Engine configuration only.
+          content:
+            application/json:
+              schema: {type: object, required: [url, token], properties: {url: {type: string, format: uri}, token: {type: string}}}
+        default: {$ref: '#/components/responses/Failure'}
+  /sessions/{session_id}/execution-window:
+    parameters: [{$ref: '#/components/parameters/session'}]
+    post:
+      operationId: openRunnerExecutionWindow
+      description: Rechecks Backend ownership and lifecycle. Repeating identical current identity is safe; stale assignment or unresolved prior work is rejected. Fixed token never rotates per Turn.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [assignment_id, generation, harness_instance_id, turn_id]
+              properties:
+                assignment_id: {type: string, format: uuid}
+                generation: {type: string, pattern: '^[1-9][0-9]*$'}
+                harness_instance_id: {type: string, format: uuid}
+                turn_id: {type: string, format: uuid}
+      responses:
+        '200': {$ref: '#/components/responses/Activity'}
+        default: {$ref: '#/components/responses/Failure'}
+  /sessions/{session_id}/state:
+    parameters: [{$ref: '#/components/parameters/session'}]
+    get:
+      operationId: getRunnerSessionState
+      description: Complete builtin activity, not just the HTTP in-flight count. Before a Session has ever been prepared this Runner reports verified idle. Unexpected builtin exit is unresolved.
+      responses:
+        '200': {$ref: '#/components/responses/Activity'}
+        default: {$ref: '#/components/responses/Failure'}
+  /sessions/{session_id}/stop:
+    parameters: [{$ref: '#/components/parameters/session'}]
+    post:
+      operationId: stopRunnerSession
+      description: Close only this Session window and terminate its process groups. Repeats stop current work. Returns success only after verified active, unknown and pending writes are all zero. Other Sessions keep running.
+      responses:
+        '200': {$ref: '#/components/responses/Activity'}
+        default: {$ref: '#/components/responses/Failure'}
+  /sessions/{session_id}/release:
+    parameters: [{$ref: '#/components/parameters/session'}]
+    post:
+      operationId: releaseRunnerSession
+      description: Engine calls after closing this Session's Pi. Verify quiet, exit its builtin and release the binding; retain token, ledger and project. Repeats after confirmed release are safe. Does not exit the shared Runner. Never used for an ordinary stop while Pi is retained.
+      responses:
+        '200': {$ref: '#/components/responses/Activity'}
+        default: {$ref: '#/components/responses/Failure'}
+  /shutdown:
+    post:
+      operationId: shutdownRunner
+      description: Stop owned builtins and exit, retaining all project and ledger files. reclaim=true additionally requires fresh Backend reclaim authorization. Engine normal shutdown uses reclaim=false. Failed confirmation retains unknown state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [reclaim], properties: {reclaim: {type: boolean}}}
+      responses:
+        '200': {description: All owned processes verified stopped., content: {application/json: {schema: {type: object, required: [stopped], properties: {stopped: {const: true}}}}}}
+        default: {$ref: '#/components/responses/Failure'}
+components:
+  securitySchemes:
+    managementBearer: {type: http, scheme: bearer}
+  parameters:
+    session: {name: session_id, in: path, required: true, schema: {type: string, format: uuid}}
+  responses:
+    Activity:
+      description: Current verified ledger evidence.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [verified, active, unknown, pending_writes]
+            properties:
+              verified: {type: boolean}
+              active: {type: integer, minimum: 0}
+              unknown: {type: integer, minimum: 0}
+              pending_writes: {type: integer, minimum: 0}
+    Failure:
+      description: 401 missing or invalid management identity; 409 invalid identity, closed admission, stale ownership, unavailable dependency, or unresolved execution. No new execution may follow unresolved work.

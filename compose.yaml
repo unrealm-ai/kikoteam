@@ -1,0 +1,135 @@
+# Local-only stack. No public binding and no database port exposed.
+name: kikoteam-local
+x-catalog-storage: &catalog-storage
+  KIKO_STORAGE_LOCAL_ROOT: /var/lib/kiko
+  KIKO_STORAGE_S3_ENDPOINT: ${KIKO_STORAGE_S3_ENDPOINT:-}
+  KIKO_STORAGE_S3_BUCKET: ${KIKO_STORAGE_S3_BUCKET:-}
+  KIKO_STORAGE_S3_REGION: ${KIKO_STORAGE_S3_REGION:-}
+  KIKO_STORAGE_S3_PREFIX: ${KIKO_STORAGE_S3_PREFIX:-}
+  KIKO_STORAGE_S3_ACCESS_KEY_ID: ${KIKO_STORAGE_S3_ACCESS_KEY_ID:-}
+  KIKO_STORAGE_S3_SECRET_ACCESS_KEY: ${KIKO_STORAGE_S3_SECRET_ACCESS_KEY:-}
+  KIKO_STORAGE_S3_SESSION_TOKEN: ${KIKO_STORAGE_S3_SESSION_TOKEN:-}
+  KIKO_STORAGE_S3_FORCE_PATH_STYLE: ${KIKO_STORAGE_S3_FORCE_PATH_STYLE:-}
+x-storage-volumes: &local-data
+  - type: bind
+    source: ${KIKO_LOCAL_STORAGE_HOST_ROOT:?use start.sh}
+    target: /var/lib/kiko
+    bind:
+      create_host_path: false
+services:
+  postgres:
+    image: postgres:16.6
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  event-hub:
+    build:
+      context: .
+      dockerfile: deploy/local/event-hub.Dockerfile
+    environment:
+      EVENT_HUB_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      EVENT_HUB_HEALTH_ADDR: 0.0.0.0:8081
+      EVENT_HUB_BACKEND_URL: http://backend:8080
+      EVENT_HUB_CONTROL_ADDR: 0.0.0.0:8082
+      KIKO_HUB_TOKEN: ${KIKO_HUB_TOKEN:-}
+    depends_on:
+      # Channel recovery must read bindings from the running Backend.
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8081/readyz']
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    restart: unless-stopped
+    stop_grace_period: 25s
+  template-catalog:
+    profiles: [maintenance]
+    image: ${COMPOSE_PROJECT_NAME}-backend
+    command: [sync-catalog]
+    user: "${KIKO_LOCAL_UID:?use start.sh}:${KIKO_LOCAL_GID:?use start.sh}"
+    volumes: *local-data
+    environment:
+      <<: *catalog-storage
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      event-hub:
+        condition: service_healthy
+    restart: "no"
+  backend:
+    # Match the host asset directory owner; never chmod shared assets globally.
+    user: "${KIKO_LOCAL_UID:?use start.sh}:${KIKO_LOCAL_GID:?use start.sh}"
+    volumes: *local-data
+    image: ${COMPOSE_PROJECT_NAME}-backend
+    build:
+      context: .
+      dockerfile: deploy/local/backend.Dockerfile
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      KIKO_AUTH_SECRET: ${KIKO_AUTH_SECRET:?required}
+      KIKO_PUBLIC_ORIGIN: ${KIKO_PUBLIC_ORIGIN:?required}
+      KIKO_GITHUB_OAUTH_CLIENT_ID: ${KIKO_GITHUB_OAUTH_CLIENT_ID:-}
+      KIKO_GITHUB_OAUTH_CLIENT_SECRET: ${KIKO_GITHUB_OAUTH_CLIENT_SECRET:-}
+      KIKO_HTTP_ADDRESS: 0.0.0.0:8080
+      KIKO_WEB_DIR: /app/web
+      KIKO_MODEL_PROXY_ORIGIN: http://backend:8080
+      KIKO_HUB_TOKEN: ${KIKO_HUB_TOKEN:-}
+      KIKO_HUB_CONTROL_URL: http://event-hub:8082
+      KIKO_ENGINE_TOKEN: ${KIKO_ENGINE_TOKEN:-}
+      KIKO_MCP_PRIVATE_CIDRS: ${KIKO_MCP_PRIVATE_CIDRS:-}
+      <<: *catalog-storage
+      KIKO_REGISTRATION_VERIFICATION_REQUIRED: ${KIKO_REGISTRATION_VERIFICATION_REQUIRED:-false}
+      KIKO_MAIL_ENABLED: ${KIKO_MAIL_ENABLED:-false}
+      SMTP_ADDRESS: ${SMTP_ADDRESS:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_IMPLICIT_TLS: ${SMTP_IMPLICIT_TLS:-false}
+      KIKO_TRUSTED_PROXY_CIDRS: ${KIKO_TRUSTED_PROXY_CIDRS:-}
+    ports:
+      - '127.0.0.1:${KIKO_LOCAL_PORT:-18080}:8080'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8080/healthz']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  agent-engine:
+    build:
+      context: .
+      dockerfile: agent-engine/Dockerfile
+    user: "${KIKO_LOCAL_UID:?use start.sh}:${KIKO_LOCAL_GID:?use start.sh}"
+    init: true
+    volumes: *local-data
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      KIKO_BACKEND_URL: http://backend:8080
+      KIKO_ENGINE_TOKEN: ${KIKO_ENGINE_TOKEN:-}
+      KIKO_ENGINE_ADDRESS: 127.0.0.1:8083
+      KIKO_ENGINE_HOST_ID: ${COMPOSE_PROJECT_NAME}
+    depends_on:
+      event-hub:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8083/readyz').then(response => process.exit(response.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    stop_grace_period: 90s
+volumes:
+  postgres-data:
+    name: kikoteam-local-postgres-data

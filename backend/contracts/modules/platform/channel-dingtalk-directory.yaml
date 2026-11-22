@@ -1,0 +1,555 @@
+{
+  "schemas": {
+    "Status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "snapshot_version",
+        "complete",
+        "synced_at",
+        "expires_at",
+        "error_code",
+        "user_count",
+        "department_count"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "never",
+            "syncing",
+            "ready",
+            "failed",
+            "invalidated"
+          ]
+        },
+        "snapshot_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "synced_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "error_code": {
+          "type": "string"
+        },
+        "user_count": {
+          "type": "integer"
+        },
+        "department_count": {
+          "type": "integer"
+        }
+      }
+    },
+    "User": {
+      "type": "object",
+      "required": [
+        "id",
+        "display_name",
+        "status",
+        "department_ids",
+        "memberships_known"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "DingTalk userid (user_id), unchanged stable selection identity; never unionid."
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "inactive",
+            "unknown"
+          ]
+        },
+        "department_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "memberships_known": {
+          "type": "boolean"
+        },
+        "direct_manager_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Provider user ID; null with direct_manager_known=true means explicitly no manager."
+        },
+        "direct_manager_known": {
+          "type": "boolean",
+          "description": "False means the provider did not disclose this fact."
+        },
+        "aliases": {
+          "type": "array",
+          "description": "Descriptive aliases only; never selectable or usable as authorization IDs.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "namespace",
+              "application_id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "application_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "Department": {
+      "type": "object",
+      "required": [
+        "id",
+        "display_name",
+        "parent_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Canonical numeric DingTalk department ID."
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "parent_id": {
+          "type": "string",
+          "description": "Empty for root or undisclosed authorized root"
+        },
+        "leader_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "leaders_known": {
+          "type": "boolean",
+          "description": "True with an empty array explicitly means no leaders; false means unknown."
+        }
+      }
+    },
+    "Users": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor",
+        "snapshot_version"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/User"
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot_version": {
+          "type": "integer"
+        }
+      }
+    },
+    "Departments": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor",
+        "snapshot_version"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/Department"
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot_version": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  "status": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "getEmployeeDingTalkDirectoryStatus",
+      "description": "Returns the synchronization status of the local directory snapshot for this DingTalk application. The snapshot identifies users by userid and departments by the numeric DingTalk dept_id encoded as a decimal string.",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "parameters": [],
+      "responses": {
+        "200": {
+          "description": "Current snapshot and synchronization status",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Status"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid query"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Only workspace owner/admin may read or synchronize directory"
+        },
+        "404": {
+          "description": "Agent or channel missing"
+        },
+        "409": {
+          "description": "Source, selection, cursor or snapshot changed/unavailable"
+        },
+        "503": {
+          "description": "Directory storage unavailable"
+        }
+      }
+    }
+  },
+  "sync": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "requestEmployeeDingTalkDirectorySync",
+      "description": "Request a refresh of the enabled application's local directory snapshot. Synchronization uses the application's authorized directory scope and is independent of incoming message verification.",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        }
+      ],
+      "responses": {
+        "202": {
+          "description": "Refresh requested; not proof of completion. Poll GET directory status. Concurrent requests reuse active lease.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Status"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid query"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Only workspace owner/admin may read or synchronize directory"
+        },
+        "404": {
+          "description": "Agent or channel missing"
+        },
+        "409": {
+          "description": "Source, selection, cursor or snapshot changed/unavailable"
+        },
+        "503": {
+          "description": "Directory storage unavailable"
+        }
+      }
+    }
+  },
+  "users": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listEmployeeDingTalkDirectoryUsers",
+      "description": "Lists users from this application's DingTalk directory snapshot. Each user's id is the DingTalk userid. The department_ids values and the department_id filter use the DingTalk dept_id encoded as a decimal string.",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "parameters": [
+        {
+          "name": "q",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        {
+          "name": "snapshot_version",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "department_id",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Users from a complete current unexpired snapshot, stable version-bound pagination",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Users"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid query"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Only workspace owner/admin may read or synchronize directory"
+        },
+        "404": {
+          "description": "Agent or channel missing"
+        },
+        "409": {
+          "description": "Source, selection, cursor or snapshot changed/unavailable"
+        },
+        "503": {
+          "description": "Directory storage unavailable"
+        }
+      }
+    }
+  },
+  "departments": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listEmployeeDingTalkDirectoryDepartments",
+      "description": "Lists departments from this application's DingTalk directory snapshot. Each department's id is the DingTalk dept_id encoded as a decimal string. Use that id as the parent_id filter to list its children. The leader_ids values are DingTalk userid values.",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "parameters": [
+        {
+          "name": "q",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        {
+          "name": "snapshot_version",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        {
+          "name": "parent_id",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Root departments by default, child departments with parent_id, name search with q",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Departments"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid query"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Only workspace owner/admin may read or synchronize directory"
+        },
+        "404": {
+          "description": "Agent or channel missing"
+        },
+        "409": {
+          "description": "Source, selection, cursor or snapshot changed/unavailable"
+        },
+        "503": {
+          "description": "Directory storage unavailable"
+        }
+      }
+    }
+  }
+}

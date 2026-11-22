@@ -1,0 +1,101 @@
+get:
+  operationId: listModelProfiles
+  description: Active workspace members can read masked model metadata. Stable created_at
+    DESC/id DESC pagination.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: include_platform
+    in: query
+    description: Include selectable official models and return their safe metadata and prices. False retains the workspace management list.
+    schema: {type: boolean, default: false}
+  - name: page
+    in: query
+    schema:
+      type: integer
+      minimum: 1
+      maximum: 1000000
+      default: 1
+  - name: page_size
+    in: query
+    schema:
+      type: integer
+      minimum: 1
+      maximum: 100
+      default: 20
+  responses:
+    '200':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: ./model-schemas.yaml#/ModelPage
+    default:
+      description: 400 invalid request; 401 no session; 403 not active admin or CSRF;
+        404 missing resource; 409 stale configuration, failed/expired/mismatched receipt;
+        503 dependency unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+post:
+  operationId: createModelProfile
+  description: Owner/admin only. Requires a text-passed receipt from this actor/workspace
+    bound to every configuration field and effective credential; ten minute TTL. Atomic
+    consumption and creation. Retry identical receipt returns the existing profile,
+    never creates a duplicate.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema:
+      type: string
+      const: '1'
+  responses:
+    '201':
+      description: Success
+      headers: &id001
+        X-Request-ID:
+          schema:
+            type: string
+      content: &id002
+        application/json:
+          schema:
+            $ref: ./model-schemas.yaml#/ModelProfile
+    default:
+      description: 400 invalid request; 401 no session; 403 not active admin or CSRF;
+        404 missing resource; 409 stale configuration, failed/expired/mismatched receipt;
+        503 dependency unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+    '200':
+      description: Already saved with this receipt; returns current matching version,
+        no duplicate creation.
+      headers: *id001
+      content: *id002
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ./model-schemas.yaml#/ModelSaveRequest

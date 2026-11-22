@@ -1,0 +1,68 @@
+name: Backend
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16.6
+        env:
+          POSTGRES_USER: kiko_test
+          POSTGRES_PASSWORD: test-only-password
+          POSTGRES_DB: kiko_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U kiko_test -d kiko_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BACKEND_TEST_DATABASE_URL: postgres://kiko_test:test-only-password@localhost:5432/kiko_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.2'
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: |
+            agent-engine/package-lock.json
+            sandbox-runner/builtin-mcp/package-lock.json
+      - name: Install contract validator
+        run: python -m pip install -r event-hub/requirements-dev.txt
+      - name: Lint, contracts and PostgreSQL tests
+        run: make check COMPONENT=backend OPENAPI_VALIDATOR=openapi-spec-validator
+      - name: Build backend
+        run: make -C backend build VERSION="$GITHUB_SHA"
+      - name: Install upstream execution runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3 procps ripgrep fd-find
+          sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd
+          npm ci --no-audit --no-fund --prefix agent-engine
+          npm ci --no-audit --no-fund --prefix sandbox-runner/builtin-mcp
+          npm rebuild node-pty --prefix sandbox-runner/builtin-mcp
+          npm run build --prefix sandbox-runner/builtin-mcp
+          make -C sandbox-runner build
+      - name: Actual Engine and Pi conversation acceptance
+        env:
+          KIKO_RUNTIME_E2E: '1'
+        # This package runs multiple real Pi/Runner cases sequentially; the
+        # original 120s aggregate cut off later cases before their own bounds.
+        run: go test -race -count=1 -timeout 360s -run TestManagerRuntime -v ./internal/platform/repository
+        working-directory: backend

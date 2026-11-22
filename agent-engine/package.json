@@ -1,0 +1,8 @@
+{
+  "name": "agent-engine-runtime",
+  "private": true,
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "pptxgenjs": "4.0.1"
+  }
+}

@@ -1,0 +1,62 @@
+package pi
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+)
+
+type HumanToolsConfig struct {
+	WorkMCPURL     string `json:"work_mcp_url,omitempty"`
+	WorkMCPToken   string `json:"work_mcp_token,omitempty"`
+	WorkURL        string `json:"work_url,omitempty"`
+	WorkToken      string `json:"work_token,omitempty"`
+	WorkRole       string `json:"work_role,omitempty"`
+	URL            string `json:"url"`
+	Token          string `json:"token"`
+	Input          string `json:"input"`
+	Mode           string `json:"mode"`
+	RecipientsMCP  bool   `json:"recipients_mcp,omitempty"`
+	ReapprovalOnly bool   `json:"reapproval_only,omitempty"`
+}
+
+func (h HumanToolsConfig) validForPlan(enabled bool) bool {
+	if !enabled {
+		return h == (HumanToolsConfig{})
+	}
+	return h.ReapprovalOnly && h.Mode == "task" && h.URL != "" && h.Token != "" && h.Input != "" && !h.RecipientsMCP &&
+		h.WorkMCPURL == "" && h.WorkMCPToken == "" && h.WorkURL == "" && h.WorkToken == "" && h.WorkRole == ""
+}
+
+func (c Config) humanToolsPath() string {
+	return filepath.Join(c.Directory, "human-tools.json")
+}
+
+// Turn-bound credentials are excluded from the Pi configuration signature.
+// Publish them atomically so a reused process never sees a partial file.
+func (c Config) PrepareHumanTools() error {
+	if c.HumanToolsExtension == "" {
+		return nil
+	}
+	data, err := json.Marshal(c.HumanTools)
+	if err != nil {
+		return err
+	}
+	if err = os.MkdirAll(c.Directory, 0700); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(c.Directory, ".human-tools-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(file.Name()) }() //nolint:errcheck // Best-effort cleanup after write/rename.
+	_, err = file.Write(data)
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(file.Name(), c.humanToolsPath())
+}

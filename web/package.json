@@ -1,0 +1,34 @@
+{
+  "name": "@kikoteam/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "preview": "vite preview --host 127.0.0.1",
+    "test:ui": "node --test test/*.test.mjs",
+    "test": "npm run test:ui"
+  },
+  "dependencies": {
+    "markdown-it": "15.0.3",
+    "naive-ui": "2.45.3",
+    "vue": "3.5.44"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "14.2.0",
+    "@types/node": "26.6.6",
+    "@vitejs/plugin-vue": "6.0.10",
+    "@vue/compiler-sfc": "3.5.44",
+    "esbuild": "0.28.2",
+    "happy-dom": "20.8.4",
+    "typescript": "5.8.3",
+    "vite": "7.3.7",
+    "vue-tsc": "3.3.13"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

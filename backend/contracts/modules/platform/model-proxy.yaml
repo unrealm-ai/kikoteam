@@ -1,0 +1,331 @@
+models:
+  get:
+    operationId: listOfficialModels
+    description: Platform admin only. Returns connection metadata and a credential presence flag.
+    security: &session [{sessionCookie: []}]
+    parameters:
+      - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+      - {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+    responses:
+      '200':
+        description: Newest configurations first
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, total, page, page_size]
+              properties:
+                items: {type: array, items: {$ref: '#/schemas/Model'}}
+                total: {type: integer, minimum: 0}
+                page: {type: integer, minimum: 1}
+                page_size: {type: integer, minimum: 1}
+      default: &error
+        description: Invalid request, identity, authorization, conflict or unavailable dependency
+        content:
+          application/json:
+            schema: {$ref: ../../openapi.yaml#/components/schemas/Error}
+  post:
+    operationId: createOfficialModel
+    description: Platform admin only. Creating again can produce another model. Check the list after an unknown result.
+    security: *session
+    parameters: [&csrf {name: X-CSRF-Protection, in: header, required: true, schema: {type: string, const: '1'}}]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf: [{$ref: '#/schemas/ModelPatch'}, {required: [name, protocol, base_url, upstream_model_id, prices]}]
+    responses:
+      '201': &modelResponse
+        description: Saved model with no supplier credential
+        content:
+          application/json:
+            schema: {$ref: '#/schemas/Model'}
+      default: *error
+model:
+  parameters: [{name: model_id, in: path, required: true, schema: &uuid {type: string, format: uuid}}]
+  patch:
+    operationId: updateOfficialModel
+    description: Platform admin only. Stale versions return 409. Connection changes require a valid receipt before enabling.
+    security: *session
+    parameters: [*csrf]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf: [{$ref: '#/schemas/ModelPatch'}, {required: [version]}]
+    responses:
+      '200': *modelResponse
+      default: *error
+test:
+  post:
+    operationId: testOfficialModel
+    description: Platform admin only. Makes a bounded supplier request and issues a ten-minute receipt if streaming usage is available.
+    security: *session
+    parameters: [*csrf]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: '#/schemas/ModelPatch'}
+    responses:
+      '200':
+        description: Test outcome
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [connected, usage_available]
+              properties:
+                connected: {type: boolean}
+                usage_available: {type: boolean}
+                receipt: {type: string}
+                expires_at: {type: string, format: date-time}
+                http_status: {type: integer}
+      default: *error
+wallet:
+  parameters: [&account {name: account_id, in: path, required: true, schema: *uuid}]
+  get:
+    operationId: getCreditWallet
+    description: The account holder or a platform admin can view the current balance.
+    security: *session
+    responses:
+      '200':
+        description: Account balance in decimal credits
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id, balance]
+              properties:
+                account_id: *uuid
+                balance: &signed {type: string, pattern: '^-?[0-9]+\.[0-9]{6}$'}
+      default: *error
+ledger:
+  parameters: [*account]
+  get:
+    operationId: listCreditLedger
+    description: The account holder or platform admin can list posted transactions. Summary covers all matching records.
+    security: *session
+    parameters:
+      - &agent {name: agent_id, in: query, schema: *uuid}
+      - &modelFilter {name: model_id, in: query, schema: *uuid}
+      - &from {name: from, in: query, description: Inclusive beginning, schema: {type: string, format: date-time}}
+      - &to {name: to, in: query, description: Exclusive end, schema: {type: string, format: date-time}}
+      - {name: kind, in: query, schema: &kind {type: string, enum: [signup_bonus, admin_grant, model_charge]}}
+      - &cursor {name: cursor, in: query, schema: {type: string, maxLength: 512}}
+      - &limit {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+    responses:
+      '200':
+        description: Ledger in descending creation order
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, next_cursor, summary]
+              properties:
+                items: {type: array, items: {$ref: '#/schemas/Entry'}}
+                next_cursor: {type: string}
+                summary:
+                  type: object
+                  required: [spent, granted]
+                  properties:
+                    spent: *signed
+                    granted: *signed
+      default: *error
+grant:
+  parameters: [*account]
+  post:
+    operationId: grantAccountCredits
+    description: Platform admin only. Reusing a key with equivalent amount and reason returns the original entry. Changing the content returns 409.
+    security: *session
+    parameters:
+      - *csrf
+      - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [amount, reason]
+            properties:
+              amount: &amount {type: string, pattern: '^[0-9]+(\.[0-9]{1,6})?$'}
+              reason: &reason {type: string, minLength: 1, maxLength: 300}
+    responses:
+      '201': &entryResponse
+        description: Posted grant
+        content:
+          application/json:
+            schema: {$ref: '#/schemas/Entry'}
+      '200': *entryResponse
+      default: *error
+settings:
+  get:
+    operationId: getCreditSettings
+    description: Platform admin only.
+    security: *session
+    responses:
+      '200': &settingsResponse
+        description: Registration bonus and current version
+        content:
+          application/json:
+            schema: {$ref: '#/schemas/Settings'}
+      default: *error
+  patch:
+    operationId: updateCreditSettings
+    description: Platform admin only. Changes apply to new registrations. Stale versions return 409.
+    security: *session
+    parameters: [*csrf]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: '#/schemas/Settings'}
+    responses:
+      '200': *settingsResponse
+      default: *error
+usage:
+  get:
+    operationId: listOfficialModelUsage
+    description: Defaults to the current account. Platform admins may select another account or explicitly request all accounts.
+    security: *session
+    parameters:
+      - {name: account_id, in: query, schema: *uuid}
+      - {name: all, in: query, schema: {type: boolean, const: true}}
+      - *agent
+      - *modelFilter
+      - *from
+      - *to
+      - {name: status, in: query, schema: &usageStatus {type: string, enum: [running, usage_recorded, settled, pending_review, no_charge]}}
+      - *cursor
+      - *limit
+    responses:
+      '200':
+        description: Calls in descending start order
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, next_cursor]
+              properties:
+                items: {type: array, items: {$ref: '#/schemas/Usage'}}
+                next_cursor: {type: string}
+      default: *error
+resolve:
+  parameters: [{name: usage_id, in: path, required: true, schema: *uuid}]
+  post:
+    operationId: resolveOfficialModelUsage
+    description: Platform admin only. Resolves a pending call once. A processed record returns 409.
+    security: *session
+    parameters: [*csrf]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [action, reason]
+            properties:
+              action: {type: string, enum: [settle, no_charge]}
+              reason: *reason
+              usage: {$ref: '#/schemas/Tokens'}
+            if: {properties: {action: {const: settle}}}
+            then: {required: [usage]}
+            else: {not: {required: [usage]}}
+    responses:
+      '204': {description: Usage resolved}
+      default: *error
+schemas:
+  Price:
+    type: object
+    additionalProperties: false
+    required: [input, output]
+    properties:
+      input: *amount
+      output: *amount
+      cache_read: &cache {anyOf: [*amount, {type: 'null'}]}
+      cache_write: *cache
+  ModelPatch:
+    type: object
+    additionalProperties: false
+    properties:
+      id: *uuid
+      version: &version {type: integer, minimum: 1}
+      name: &modelName {type: string, minLength: 1, maxLength: 100}
+      protocol: &protocol {type: string, enum: [chat_completions, openai_responses, anthropic_messages]}
+      base_url: &url {type: string, format: uri}
+      upstream_model_id: &upstream {type: string, minLength: 1, maxLength: 255}
+      api_key: {type: string, writeOnly: true, maxLength: 4096}
+      prices: {$ref: '#/schemas/Price'}
+      enabled: &bool {type: boolean}
+      is_default: *bool
+      test_receipt: {type: string}
+  Model:
+    type: object
+    required: [id, version, name, protocol, base_url, upstream_model_id, prices, enabled, is_default, validated, has_key]
+    properties:
+      id: *uuid
+      version: *version
+      name: *modelName
+      protocol: *protocol
+      base_url: *url
+      upstream_model_id: *upstream
+      prices: {$ref: '#/schemas/Price'}
+      enabled: *bool
+      is_default: *bool
+      validated: *bool
+      has_key: *bool
+      tested_at: &optionalTime {type: [string, 'null'], format: date-time}
+  Settings:
+    type: object
+    additionalProperties: false
+    required: [signup_bonus, version]
+    properties:
+      signup_bonus: *amount
+      version: *version
+  Entry:
+    type: object
+    required: [id, kind, amount, balance_after, created_at]
+    properties:
+      id: *uuid
+      kind: *kind
+      amount: *signed
+      balance_after: *signed
+      created_at: {type: string, format: date-time}
+      reason: {type: [string, 'null']}
+      usage: {anyOf: [{$ref: '#/schemas/Usage'}, {type: 'null'}]}
+  Tokens:
+    type: object
+    additionalProperties: false
+    required: [input_tokens, output_tokens, cache_read_tokens, cache_write_tokens]
+    properties:
+      input_tokens: &token {type: integer, minimum: 0}
+      output_tokens: *token
+      cache_read_tokens: *token
+      cache_write_tokens: *token
+  Usage:
+    type: object
+    required: [id, account_id, agent_id, model_id, price_snapshot, status, started_at, charge]
+    properties:
+      id: *uuid
+      account_id: *uuid
+      agent_id: *uuid
+      agent_name: {type: string}
+      model_id: *uuid
+      price_snapshot: {type: object, additionalProperties: {type: string}}
+      status: *usageStatus
+      started_at: {type: string, format: date-time}
+      finished_at: *optionalTime
+      settled_at: *optionalTime
+      input_tokens: &optionalToken {type: [integer, 'null'], minimum: 0}
+      output_tokens: *optionalToken
+      cache_read_tokens: *optionalToken
+      cache_write_tokens: *optionalToken
+      upstream_request_id: {type: [string, 'null']}
+      error_code: {type: [string, 'null']}
+      resolution_reason: {type: [string, 'null']}
+      charge: {anyOf: [*signed, {type: 'null'}]}

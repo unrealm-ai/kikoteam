@@ -1,0 +1,77 @@
+{
+  "listed": true,
+  "rank": 55,
+  "content": {
+    "schema_version": 1,
+    "name": "行情简报员",
+    "category": "analytics",
+    "avatar": "cn-v2-01",
+    "audience": "市场研究、经营管理",
+    "deliverables": "带交易日期、时间和来源的指数与个股简报",
+    "parameters": [],
+    "instruction_template": "请自主委派后台核对行情，并将已验证结果交付原对话。只引用本次工具返回的数据。 优先使用已有附件、授权数据与默认口径。信息充分时直接完成，缺失字段标注未知。",
+    "model_requirements": "需要可用的对话与任务模型。",
+    "examples": [
+      {
+        "key": "try_stock",
+        "title": "A 股行情快查",
+        "text": "帮我核对最近一个交易日三大指数的点位、涨跌幅及行情时间，把简报发回这里。",
+        "output": "用实际行情整理最近交易日的指数和自选股简报。",
+        "package_keys": [
+          "core",
+          "stock"
+        ]
+      },
+      {
+        "key": "try_hithink",
+        "title": "同花顺 A 股行情",
+        "text": "用同花顺整理贵州茅台最近五个交易日的走势，标明行情日期。",
+        "output": "用实际行情整理最近交易日的指数和自选股简报。",
+        "package_keys": [
+          "core",
+          "hithink"
+        ]
+      }
+    ],
+    "resource_refs": [],
+    "role": "用实际行情整理最近交易日的指数和自选股简报。",
+    "packages": [
+      {
+        "package_key": "core",
+        "name": "基础交付",
+        "description": "用实际行情整理最近交易日的指数和自选股简报。",
+        "onboarding_requirement": "required",
+        "skills": [
+          {
+            "resource_key": "market_close"
+          }
+        ],
+        "plugins": []
+      },
+      {
+        "package_key": "stock",
+        "name": "A 股行情快查",
+        "description": "社区公开行情，提供三大指数和个股快照。免认证，附上游报价时间。",
+        "onboarding_requirement": "required",
+        "skills": [],
+        "plugins": [
+          {
+            "resource_key": "stock"
+          }
+        ]
+      },
+      {
+        "package_key": "hithink",
+        "name": "同花顺 A 股行情",
+        "description": "空间提供同花顺 API Key，查询 A 股现价、历史行情和财务指标。",
+        "onboarding_requirement": "deferred",
+        "skills": [],
+        "plugins": [
+          {
+            "resource_key": "hithink"
+          }
+        ]
+      }
+    ]
+  }
+}

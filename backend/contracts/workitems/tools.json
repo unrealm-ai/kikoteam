@@ -1,0 +1,26 @@
+{
+  "artifact_publish": {
+    "name": "artifact_publish",
+    "description": "将本任务项目内指定文件的当前版本发布为本轮产物，返回 artifact_id 与版本。需要交付文件时使用。",
+    "inputSchema": {"type":"object","additionalProperties":false,"required":["path"],"properties":{"path":{"type":"string","minLength":1,"maxLength":4096}}}
+  },
+  "work_item_list_handoff_employees": {
+    "name": "work_item_list_handoff_employees",
+    "description": "查询当前任务可交接的员工、职责和本次可用能力包摘要。先查询再选择接手员工。",
+    "inputSchema": {"type":"object","properties":{"q":{"type":"string","maxLength":100}},"additionalProperties":false}
+  },
+  "work_item_get_current": {
+    "name": "work_item_get_current",
+    "description": "读取当前任务获准的事项材料、目标和验收标准。处理任务返回本环节与版本，原发起任务验收时返回本次提交、证据和版本。",
+    "inputSchema": {"type":"object","properties":{},"additionalProperties":false}
+  },
+  "work_item_read_file": {
+    "name":"work_item_read_file","description":"读取当前环节已授权的固定版本文件。先从 work_item_get_current 的 files 选出 id。每次返回最多 48 KiB 的 base64 数据，继续读取使用 next_offset。UTF-8 内容还返回 text。",
+    "inputSchema":{"type":"object","properties":{"file_id":{"type":"string","format":"uuid"},"offset":{"type":"integer","minimum":0}},"required":["file_id"],"additionalProperties":false}
+  },
+  "work_item_accept": {
+    "name": "work_item_accept",
+    "description": "仅原发起任务在验收时使用。Manager 从当前执行定位本次提交。使用 work_item_get_current 返回的版本，核对成果后记录通过并向发起方给出最终结果。需要整改时调用 work_item_handoff。",
+    "inputSchema": {"type":"object","properties":{"expected_version":{"type":"string","pattern":"^[1-9][0-9]*$"},"completion_evidence":{"type":"string","minLength":1,"maxLength":4000}},"required":["expected_version","completion_evidence"],"additionalProperties":false}
+  }
+}

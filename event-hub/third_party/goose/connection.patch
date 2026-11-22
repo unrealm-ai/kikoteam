@@ -1,0 +1,140 @@
+--- a/provider.go
++++ b/provider.go
+@@ -28,6 +28,7 @@
+ 	mu sync.Mutex
+ 
+ 	db               *sql.DB
++	conn             *sql.Conn // Borrowed connection; ownership stays with the caller.
+ 	store            *controller.StoreController
+ 	versionTableOnce sync.Once
+ 
+@@ -59,6 +60,10 @@
+ 	if db == nil {
+ 		return nil, errors.New("db must not be nil")
+ 	}
++	return newConfiguredProvider(dialect, db, nil, fsys, opts...)
++}
++
++func newConfiguredProvider(dialect Dialect, db *sql.DB, conn *sql.Conn, fsys fs.FS, opts ...ProviderOption) (*Provider, error) {
+ 	if fsys == nil {
+ 		fsys = noopFS{}
+ 	}
+@@ -71,6 +76,12 @@
+ 		if err := opt.apply(&cfg); err != nil {
+ 			return nil, err
+ 		}
++	}
++	if conn != nil {
++		if cfg.lockEnabled || cfg.disableVersioning || cfg.isolateDDL || len(cfg.registered) != 0 {
++			return nil, errors.New("external connection requires versioned SQL migrations without lockers or isolated DDL")
++		}
++		cfg.disableGlobalRegistry = true
+ 	}
+ 	// Allow users to specify a custom store implementation, but only if they don't specify a
+ 	// dialect. If they specify a dialect, we'll use the default store implementation.
+@@ -102,7 +113,12 @@
+ 	if store.Tablename() == "" {
+ 		return nil, errors.New("invalid store implementation: table name must not be empty")
+ 	}
+-	return newProvider(db, store, fsys, cfg, registeredGoMigrations /* global */)
++	p, err := newProvider(db, store, fsys, cfg, registeredGoMigrations /* global */)
++	if err != nil {
++		return nil, err
++	}
++	p.conn = conn
++	return p, nil
+ }
+ 
+ func newProvider(
+@@ -206,11 +222,19 @@
+ 
+ // Ping attempts to ping the database to verify a connection is available.
+ func (p *Provider) Ping(ctx context.Context) error {
++	if p.conn != nil {
++		p.mu.Lock()
++		defer p.mu.Unlock()
++		return p.conn.PingContext(ctx)
++	}
+ 	return p.db.PingContext(ctx)
+ }
+ 
+ // Close closes the database connection initially supplied to the provider.
+ func (p *Provider) Close() error {
++	if p.conn != nil {
++		return nil // The caller owns the external session, including any advisory locks.
++	}
+ 	return p.db.Close()
+ }
+ 
+--- a/provider_run.go
++++ b/provider_run.go
+@@ -126,6 +126,9 @@
+ 
+ 	for _, m := range apply {
+ 		if err := p.prepareMigration(p.fsys, m, direction.ToBool()); err != nil {
++			if p.conn != nil {
++				return nil, &PreparationError{Version: m.Version, Err: err}
++			}
+ 			return nil, fmt.Errorf("failed to prepare migration %s: %w", m.ref(), err)
+ 		}
+ 	}
+@@ -276,6 +279,20 @@
+ 
+ func (p *Provider) initialize(ctx context.Context, useLocker bool) (*sql.Conn, func() error, error) {
+ 	p.mu.Lock()
++	if p.conn != nil {
++		cleanup := func() error { p.mu.Unlock(); return nil }
++		if err := ctx.Err(); err != nil {
++			p.mu.Unlock()
++			return nil, nil, err
++		}
++		// Do not cache a failed initialization through versionTableOnce. The caller
++		// may retry this provider after rolling back a failed transaction.
++		if err := p.tryEnsureVersionTable(ctx, p.conn); err != nil {
++			p.mu.Unlock()
++			return nil, nil, err
++		}
++		return p.conn, cleanup, nil
++	}
+ 	conn, err := p.db.Conn(ctx)
+ 	if err != nil {
+ 		p.mu.Unlock()
+--- /dev/null
++++ b/provider_conn.go
+@@ -0,0 +1,36 @@
++package goose
++
++import (
++	"database/sql"
++	"errors"
++	"fmt"
++	"io/fs"
++)
++
++// PreparationError identifies a borrowed SQL migration that failed parsing before
++// execution. It preserves the version without requiring callers to log raw SQL.
++type PreparationError struct {
++	Version int64
++	Err     error
++}
++
++func (e *PreparationError) Error() string {
++	return fmt.Sprintf("prepare migration %d: %v", e.Version, e.Err)
++}
++func (e *PreparationError) Unwrap() error { return e.Err }
++
++// NewProviderWithConn borrows an existing PostgreSQL session for SQL migrations.
++// Every database operation uses conn. Close and per-operation cleanup never close
++// it. The caller must serialize other uses of conn and provide exclusive migration
++// execution (for example, by holding a session advisory lock before constructing
++// this provider). Go migrations and additional migration lockers are disallowed.
++// Global Go migrations are ignored. Connection errors never trigger reconnection.
++func NewProviderWithConn(dialect Dialect, conn *sql.Conn, fsys fs.FS, opts ...ProviderOption) (*Provider, error) {
++	if conn == nil {
++		return nil, errors.New("conn must not be nil")
++	}
++	if dialect != DialectPostgres {
++		return nil, errors.New("external connection currently supports PostgreSQL only")
++	}
++	return newConfiguredProvider(dialect, nil, conn, fsys, opts...)
++}

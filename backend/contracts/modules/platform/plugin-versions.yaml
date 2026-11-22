@@ -1,0 +1,71 @@
+{
+  "get": {
+    "operationId": "listPluginVersions",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "plugin_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      {
+        "name": "page_size",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      }
+    ],
+    "responses": {
+      "default": {
+        "description": "400 invalid input; 401 browser session required; 403 authorization/CSRF; 404 absent; 409 stale version; 422 remote authentication failed; 502 MCP unavailable/protocol invalid; 503 database error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "200": {
+        "description": "Success",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "./plugin-schemas.yaml#/PluginPage"
+            }
+          }
+        }
+      }
+    }
+  }
+}

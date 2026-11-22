@@ -1,0 +1,50 @@
+name: Publish deployment pointer
+on:
+  workflow_run:
+    workflows: [Publish images]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: publish-deployment-pointer
+      cancel-in-progress: false
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Re-read the newest successful run inside the serialization boundary.
+      # A late old run or a manual retry must never move the pointer backwards.
+      - name: Publish the release number, revision and immutable image digests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/images.yml/runs?branch=main&event=push&status=success&per_page=100" | \
+            jq -er --arg repo "$GITHUB_REPOSITORY" '[.workflow_runs[] | select(.head_repository.full_name == $repo)] | max_by(.run_number) | [.run_number, .head_sha] | @tsv')
+          read -r number sha <<< "$run"
+          [[ "$number" =~ ^[1-9][0-9]*$ && "$sha" =~ ^[0-9a-f]{40}$ ]]
+          base="ghcr.io/${GITHUB_REPOSITORY,,}"
+          annotations=(--annotation "index:io.kikoteam.run=$number" --annotation "index:org.opencontainers.image.revision=$sha")
+          for app in backend event-hub agent-engine; do
+            docker buildx imagetools inspect --raw "$base/$app:${sha:0:7}" > "$RUNNER_TEMP/$app.json"
+            jq -e 'any(.manifests[]; .platform.os=="linux" and .platform.architecture=="amd64")' "$RUNNER_TEMP/$app.json" >/dev/null
+            digest="sha256:$(sha256sum "$RUNNER_TEMP/$app.json" | cut -d' ' -f1)"
+            annotations+=(--annotation "index:io.kikoteam.$app=$digest")
+            if [[ "$app" == backend ]]; then source="$base/backend@$digest"; fi
+          done
+          docker buildx imagetools create "${annotations[@]}" --tag "$base/backend:verified-deploy" "$source"
+          docker buildx imagetools inspect --raw "$base/backend:verified-deploy" | \
+            jq -e --arg run "$number" --arg sha "$sha" '.annotations["io.kikoteam.run"]==$run and .annotations["org.opencontainers.image.revision"]==$sha'

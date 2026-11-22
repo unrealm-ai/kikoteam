@@ -1,0 +1,75 @@
+name: Published image acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: '已发布镜像的完整提交 SHA（留空使用 latest）'
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16.6
+        env:
+          POSTGRES_PASSWORD: test-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve the published Engine image and its source revision
+        id: image
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          tag=latest
+          if [[ -n "$COMMIT_SHA" ]]; then
+            [[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected a full lowercase commit SHA'; exit 1; }
+            tag=${COMMIT_SHA:0:7}
+          fi
+          repository=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          image="ghcr.io/$repository/agent-engine:$tag"
+          docker pull --platform linux/amd64 "$image"
+          id=$(docker image inspect --format '{{.Id}}' "$image")
+          sha=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$id")
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ || ( -n "$COMMIT_SHA" && "$sha" != "$COMMIT_SHA" ) ]]; then
+            echo "Image $image has an unexpected source revision: $sha"
+            exit 1
+          fi
+          printf 'sha=%s\nid=%s\n' "$sha" "$id" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.image.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.2'
+          cache-dependency-path: backend/go.sum
+      - name: Verify single-host deployment admission against the image's schema
+        run: KIKO_TEST_POSTGRES_BIN="$(pg_config --bindir)" python3 deploy/auto/test_deploy.py -v
+      - name: Compile the deterministic runtime acceptance test
+        working-directory: backend
+        run: CGO_ENABLED=0 go test -c -o "$RUNNER_TEMP/runtime.test" ./internal/platform/repository
+      - name: Run a task with the packaged Engine, Pi, Runner and builtin MCP
+        env:
+          IMAGE_ID: ${{ steps.image.outputs.id }}
+        run: |
+          docker run --rm --network host \
+            -e BACKEND_TEST_DATABASE_URL='postgres://postgres:test-only-password@127.0.0.1:5432/postgres?sslmode=disable' \
+            -e KIKO_RUNTIME_E2E=1 -e KIKO_TEST_ENGINE_BINARY=/opt/kikoteam/agent-engine/bin/agent-engine \
+            -v "$RUNNER_TEMP/runtime.test:/runtime.test:ro" \
+            -v "$PWD/event-hub/database/postgres/migrations:/opt/kikoteam/event-hub/database/postgres/migrations:ro" \
+            -w /opt/kikoteam/backend/internal/platform/repository --entrypoint /runtime.test "$IMAGE_ID" \
+            -test.run '^TestManagerRuntime(Chat|HumanRequests)EndToEnd$' -test.v -test.timeout 4m

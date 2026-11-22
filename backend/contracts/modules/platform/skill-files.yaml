@@ -1,0 +1,70 @@
+{
+  "get": {
+    "operationId": "readSkillVersionFile",
+    "description": "Active workspace members read; owner/admin writes. Immutable Skill directory snapshots. Imports are actor-bound, expire after one hour, and are consumed idempotently by publish. GitHub imports resolve a commit and download once; no automatic refresh. Publish updates require the current resource version. ZIP max 20 MiB, expanded max 100 MiB, 1000 files; links/traversal/secrets rejected.",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "skill_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "skill_version_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "path",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Success",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "./skill-schemas.yaml#/SkillFileContent"
+            }
+          }
+        }
+      },
+      "default": {
+        "description": "400 invalid; 401 unauthenticated; 403 forbidden; 404 absent; 409 stale/expired; 413 body too large; 503 storage unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

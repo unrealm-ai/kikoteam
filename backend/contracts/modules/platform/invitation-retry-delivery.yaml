@@ -1,0 +1,41 @@
+post:
+  operationId: retryInvitationDelivery
+  summary: Retry delivery of an existing email invitation without creating a new token
+  description: Unknown delivery outcome requires acknowledge_possible_duplicate=true because the same email may be received twice. Sent, pending and sending are idempotent no-ops. Permission, expiry and revocation are rechecked. Link invitations have no email delivery.
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema: {type: string, format: uuid}
+  - name: invitation_id
+    in: path
+    required: true
+    schema: {type: string, format: uuid}
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema: {type: string, const: '1'}
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          additionalProperties: false
+          properties:
+            acknowledge_possible_duplicate:
+              type: boolean
+              default: false
+  responses:
+    '200':
+      description: Current invitation including delivery status; no original token is returned
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Invitation
+    default:
+      description: Structured error including 403 forbidden or email disabled, 409 uncertain outcome acknowledgement required, 410 expired/revoked, 429 rate limited
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error

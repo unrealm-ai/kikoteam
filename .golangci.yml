@@ -1,0 +1,46 @@
+version: "2"
+run:
+  relative-path-mode: cfg
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - errcheck
+    - errorlint
+    - contextcheck
+    - noctx
+    - bodyclose
+    - sqlclosecheck
+    - rowserrcheck
+    - gocyclo
+    - nolintlint
+  settings:
+    errcheck:
+      check-blank: true
+    gocyclo:
+      # Reports complexity > min-complexity: 35 is allowed, 36 is rejected.
+      min-complexity: 35
+    nolintlint:
+      require-specific: true
+      require-explanation: true
+      allow-unused: false
+  exclusions:
+    presets: []
+    rules:
+      - path: '(_test\.go$|^event-hub/internal/testpg/)'
+        # Fixtures own cancellation/process lifetimes; basic correctness remains enabled.
+        linters: [gocyclo, contextcheck, noctx]
+      - path: '(_test\.go$|^event-hub/internal/testpg/)'
+        linters: [errcheck]
+        # Best-effort teardown may intentionally close an already broken connection/process.
+        text: 'Error return value of .*\.(Close|Kill)` is not checked'
+        source: '_ = .*\.(Close|Kill)\('
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

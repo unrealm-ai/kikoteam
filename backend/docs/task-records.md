@@ -1,0 +1,45 @@
+# 任务记录与共用详情
+
+2026-11-17：主 chat 通过 task_delegation MCP 创建的 Task，就是任务记录页展示的业务对象。一 Task 对应唯一 task Session；输入、轮次、工具和回报保持现有身份。Web 通过用户 Cookie 读取 Manager；写操作复用 Session，不使用 Engine 委派凭据。
+
+## 读取接口
+
+机器契约见 [tasks.yaml](../contracts/modules/manager/tasks.yaml)，统一前缀 `/api/v1/workspaces/{workspace_id}`。
+
+| 接口 | 行为 |
+| --- | --- |
+| `GET /tasks` | 当前主体可见 Task 的摘要。标题包含匹配/完整任务 UUID 搜索，员工、Conversation、任务空间、关联事项、执行状态、最近 Turn 状态和生命周期筛选。 |
+| `GET /tasks/{task_id}` | 摘要、首条输入、最新轮次结果预览及操作提示。预览最多 1600 Unicode 字符，显式标记截断。 |
+| `GET /tasks/{task_id}/reports` | 已结束 Turn（只计起始输入）及无 Turn 的取消/拒绝输入的回报情况。 |
+
+可选参数 `work_item_id` 返回可见事项的根任务及交接任务，每项仍需有任务读取权限。摘要和详情提供最近关联且可见的 `work_item_id`。传入 `include_counts=true` 可取得各执行状态在全部页的数量，计数沿用其他筛选条件，便于切换执行状态。
+
+列表固定 Task `created_at DESC,id DESC`；回报固定来源 Input `seq DESC`。默认每页 20，上限 100。签名游标绑定用户、工作区、筛选及目标；未知/重复标量参数拒绝。授权在筛选和分页之前应用；Web 私聊只归原 owner，管理员也不扩权。详情/回报对不可见任务返回 404；回报目标信息另核验目标 Session 可见性。
+
+列表单次 SQL 联结现有 Task、Session、Conversation、员工与最近 Input/Turn，不逐行发送查询。执行状态通过现有 Session 扫描器映射，SQL 筛选遵守同一优先级。最新输入和最新轮次分别展示；新输入排队时不能用旧轮次结果代表新输入已处理。标题修订、输入准入和操作提示由同一 Session 事实取得，写入时重新校验。
+
+`pending`、`not_enabled`、`not_applicable` 是读取时推导的回报状态。持久回报仍只有 `admitted`、`suppressed`。受理仅证明目标 Input 已创建；目标输入状态、原生上下文证据和目标轮次状态分别返回，不推断独立回复或外部投递成功。 回报详情还按来源 Turn 返回同轮任务补充的输入序号和上下文回执，不重复正文。该信息即时读取，后续核对补到原生证据后可更新；不修改已写入主会话的原回报及其幂等身份。排队到后来轮次的输入、上下文历史和系统通知都不会算作本轮补充。旧版已经结束且 `report_enabled=false` 的输入显示未启用，不等待补偿。
+
+## 数据库与兼容
+
+迁移 16 只为 `manager_tasks(workspace_id,created_at,id)` 和 `(workspace_id,conversation_id,created_at,id)` 增加查询索引；现有表、状态写入者和去重规则保持原有归属。迁移由 Event Hub 执行，更新 PG 结构快照，无业务数据回填。既有任务立即可读；缺少来源的记录明确显示未指定。回退仅删除新增索引。
+
+结果、时长、后台活动、来源和回报从现有事实读取；不维护第二份任务状态、Run、进度百分比或推测性文件计数。产物发布/下载和人工审批仍需相应业务契约。
+
+## Web 与实时更新
+
+任务页和对话侧栏都调用 `TaskDetailPanel`，复用 `ManagerSessionPanel`、`SessionMarkdown`、`SessionToolCall`、`SessionTaskReport` 和公共状态函数。页面容器只控制布局和导航。卡片以受权 Session 解析 task_id；无需先在已加载任务列表中找到记录。从回报进入时绑定来源 Turn，历史和 SSE 的游标都绑定该 Turn；查看历史轮次时隐藏当前输入操作。新结果不强制切走用户选中的历史轮次。
+
+任务导航的详情提供执行过程、输入记录、主会话回报和关联事项时间线。任务记录与空间内任务详情支持引导或排队补充、停止和停稳后归档。详情的 `actions.supplement` 表示当前用户可否手动补充输入。事项管理的空间仅接受系统派发的输入，停止和归档分别按对应动作判断。对话侧栏还支持撤回未开始输入和修改标题。停止受理与实际收尾分别显示；一次 Turn 完成不表示整个业务 Task 完成。归档保留历史且关闭输入。
+
+列表在可见时每 5 秒刷新当前页，翻页保持边界；筛选变化重置游标。详情只为当前 task Session 保留一条 SSE，并补偿刷新任务/已加载输入、轮次和回报页。主 chat 另有自己的 SSE。关闭详情不停止任务；切工作区/任务关闭旧流、取消请求、忽略迟到数据；撤权后清除已加载详情。返回来源对话使用原 Conversation ID 读取，包含旧版通用 Conversation，不以员工的固定私聊替换原来源。
+
+任务导航共用 `TasksAndCollaborationView`，默认展示协作事项看板。事项卡片最多提供三个可见关联任务快捷入口，详情可翻页查看全部关联任务。任务记录、人工确认历史和任务空间分别按页读取。真实模式使用 Manager 读取接口；本地演示通过开发服务器把同一组读取请求映射到示例数据。
+
+## 验证入口
+
+- Backend `make check`：OpenAPI、lint、真实 PostgreSQL/race；新增 `TestTaskReadsPaginationPrivateOwnershipAndReports` 并在委派测试验证 MCP 与 Web 身份一致。
+- Event Hub `make check`、`make check-history BASE_REF=4adc33f`：迁移、旧数据升级、快照与不可变历史。
+- Web `npm test`、`npm run build`：任务列表/公共详情和对话回归；浏览器验收另外记录实际完成范围。
+
+本批已通过 Backend 完整 `make check`（真实 PG/race）、Event Hub 完整 `make check`、迁移历史检查及独立 `KIKO_RUNTIME_E2E=1` 的实际 Engine/Pi 端到端验收。Web 123 项测试通过，2 项既有 opt-in HTTP 集成测试默认跳过；类型检查和生产构建通过，仍有既有 bundle 大小与 vdirs 署名提示。任务的真实浏览器验证使用本机 Chrome 和真实 Backend，覆盖列表、双入口公共详情、输入记录、回报定位旧轮次、深链接刷新和 390px 手机布局，无页面脚本错误或任务接口失败。临时登录会话已删除，既有模型/会话/文件保留。人工工具写操作的浏览器流程由受控组件测试及实际 Engine/Pi/PG 验证补充，不声称完成所有第三方供应商/渠道的线上验收。

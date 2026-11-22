@@ -1,0 +1,151 @@
+openapi: 3.1.0
+info:
+  title: Builtin MCP private management
+  version: 0.1.0
+  description: HTTP over a launcher-owned Unix socket (0600); never exposed on the MCP listener.
+paths:
+  /state:
+    get:
+      operationId: getBuiltinState
+      responses:
+        '200':
+          description: Current complete activity evidence; verified=false never proves idle.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/State'
+        '503':
+          $ref: '#/components/responses/Failure'
+  /execution-window:
+    post:
+      operationId: setBuiltinWindow
+      requestBody:
+        $ref: '#/components/requestBodies/Window'
+      responses:
+        '200':
+          $ref: '#/components/responses/Applied'
+        '202':
+          $ref: '#/components/responses/Applied'
+        '400':
+          $ref: '#/components/responses/Failure'
+        '409':
+          $ref: '#/components/responses/Failure'
+        '413':
+          $ref: '#/components/responses/Failure'
+        '503':
+          $ref: '#/components/responses/Failure'
+  /stop:
+    post:
+      operationId: stopBuiltinProcessGroups
+      description: Apply a closed window, request group termination, then observe state until verified and quiescent. open must be false.
+      requestBody:
+        $ref: '#/components/requestBodies/Window'
+      responses:
+        '200':
+          $ref: '#/components/responses/Applied'
+        '202':
+          $ref: '#/components/responses/Applied'
+        '400':
+          $ref: '#/components/responses/Failure'
+        '409':
+          $ref: '#/components/responses/Failure'
+        '413':
+          $ref: '#/components/responses/Failure'
+        '503':
+          $ref: '#/components/responses/Failure'
+components:
+  requestBodies:
+    Window:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Window'
+  responses:
+    Applied:
+      description: Applied revision with current evidence; 202 means work or uncertainty remains.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/State'
+    Failure:
+      description: Invalid request, stale control revision, unresolved execution, or unavailable management state.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            additionalProperties: false
+            properties:
+              error:
+                type: string
+  schemas:
+    Counter:
+      type: integer
+      minimum: 0
+      maximum: 9007199254740991
+    Window:
+      type: object
+      required:
+        [
+          control_revision,
+          assignment_id,
+          generation,
+          harness_instance_id,
+          turn_id,
+          open,
+          access_token,
+        ]
+      additionalProperties: false
+      properties:
+        control_revision:
+          type: integer
+          minimum: 1
+          description: Revision 1 is initially closed; first update must use at least 2. Stale updates return 409.
+          maximum: 9007199254740991
+        assignment_id:
+          type: string
+          format: uuid
+        generation:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        harness_instance_id:
+          type: string
+          format: uuid
+        turn_id:
+          type: string
+          format: uuid
+        open:
+          type: boolean
+        access_token:
+          description: Fixed token for this Session binding throughout the Sandbox lifecycle. Subsequent windows reuse it; changing it is a conflict.
+          type: string
+          pattern: '^[A-Za-z0-9_-]{32,256}$'
+          writeOnly: true
+    State:
+      type: object
+      required:
+        [source, stop_gate, local_revision, revision, verified, active, unknown, pending_writes]
+      additionalProperties: false
+      properties:
+        source:
+          $ref: './json-schema/builtin/activity-result.json#/$defs/BuiltinActivitySource'
+        stop_gate:
+          oneOf:
+            - type: 'null'
+            - $ref: './json-schema/builtin/activity-result.json#/$defs/BuiltinActivityGate'
+        local_revision:
+          $ref: '#/components/schemas/Counter'
+        control_revision:
+          $ref: '#/components/schemas/Counter'
+        revision:
+          $ref: '#/components/schemas/Counter'
+        verified:
+          type: boolean
+        active:
+          $ref: '#/components/schemas/Counter'
+        unknown:
+          $ref: '#/components/schemas/Counter'
+        pending_writes:
+          $ref: '#/components/schemas/Counter'

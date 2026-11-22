@@ -1,0 +1,69 @@
+settings:
+  get:
+    operationId: getPlatformGitHubOAuthApp
+    summary: Read instance GitHub plugin OAuth app settings as a platform administrator
+    security:
+    - sessionCookie: []
+    responses:
+      '200':
+        $ref: '#/appResponse'
+      default:
+        $ref: '#/error'
+  patch:
+    operationId: updatePlatformGitHubOAuthApp
+    summary: Save instance GitHub plugin OAuth app settings as a platform administrator
+    description: Configures plugin authorization, not website login. A stored disabled setting overrides the environment.
+    security:
+    - sessionCookie: []
+    parameters:
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema: { type: string, const: '1' }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [expected_version, enabled]
+            properties:
+              expected_version: { type: integer, minimum: 0 }
+              enabled: { type: boolean }
+              client_id: { type: string }
+              client_secret:
+                type: string
+                writeOnly: true
+                minLength: 1
+                maxLength: 8192
+                description: Omit to retain the effective secret; use clear_client_secret to explicitly clear it.
+              clear_client_secret: { type: boolean }
+    responses:
+      '200':
+        $ref: '#/appResponse'
+      default:
+        $ref: '#/error'
+appResponse:
+  description: Effective GitHub plugin OAuth app settings; the Client Secret is not returned
+  content:
+    application/json:
+      schema:
+        type: object
+        additionalProperties: false
+        required: [provider, purpose, version, enabled, client_id, has_client_secret, source, redirect_uri]
+        properties:
+          provider: { type: string, const: github }
+          purpose: { type: string, const: plugin }
+          version: { type: integer, minimum: 0 }
+          enabled: { type: boolean }
+          client_id: { type: string }
+          has_client_secret: { type: boolean }
+          source: { type: string, enum: [unset, legacy_env, database] }
+          redirect_uri: { type: string }
+error:
+  description: Structured error
+  content:
+    application/json:
+      schema:
+        $ref: ../../openapi.yaml#/components/schemas/Error

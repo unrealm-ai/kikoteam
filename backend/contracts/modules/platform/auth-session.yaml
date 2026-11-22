@@ -1,0 +1,35 @@
+delete:
+  operationId: logout
+  summary: logout
+  description: Revokes the presented cookie session; repeated logout is safe and clears
+    the cookie.
+  security:
+  - sessionCookie: []
+  responses:
+    '204':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+          description: Request trace identifier
+        Set-Cookie:
+          schema:
+            type: string
+          description: HttpOnly SameSite=Strict kiko_session; Secure on HTTPS. Never
+            log.
+    default:
+      description: Structured error (400 invalid input, 401 no session, 403 forbidden/CSRF,
+        404 missing resource, 409 stale version/conflict, 410 invalid invite, 429
+        rate limit, 503 dependency unavailable).
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+  parameters:
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema:
+      type: string
+      const: '1'

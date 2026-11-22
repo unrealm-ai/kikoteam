@@ -1,0 +1,58 @@
+callback:
+  post:
+    operationId: reportTaskResult
+    description: Engine calls after committing the terminal task result. Repeat callbacks return the same report/input. No callback URL, outcome or caller-supplied result text is accepted. Cookies and Origin are rejected.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            oneOf:
+              - required: [turn_id]
+              - required: [input_id]
+            properties:
+              turn_id: {type: string, format: uuid}
+              input_id: {type: string, format: uuid, description: Only a terminal input that never started.}
+    responses:
+      '200':
+        description: Durable report; admitted means target input exists, not model consumption or user delivery.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [report_id, status, target_input_id, reason]
+              properties:
+                report_id: {type: string, format: uuid}
+                status: {enum: [admitted, suppressed]}
+                target_input_id: {type: [string, 'null'], format: uuid}
+                reason: {type: [string, 'null']}
+      default: {description: Invalid identity, unauthorized, result not ready, or temporary dependency failure. Retry preserves the result identity.}
+reconcile:
+  post:
+    operationId: reconcileTaskResults
+    security:
+      - hubBearer: []
+    description: Elected Hub fault compensation, normally every 30s. Reuses callback admission for results older than 10s. No persistent timer or scan worker in Backend. May commit part of a batch before returning an error; retry is safe.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [limit]
+            properties:
+              limit: {type: integer, minimum: 1, maximum: 100}
+    responses:
+      '200':
+        description: Batch processed; suppressed records also count.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [processed]
+              properties:
+                processed: {type: integer, minimum: 0}
+      default: {description: Authentication, validation or dependency failure.}

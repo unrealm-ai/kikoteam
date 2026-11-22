@@ -1,0 +1,605 @@
+{
+  "claim": {
+    "post": {
+      "operationId": "claimSharedGroupHistory",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "description": "Trusted transport only. Each page revalidates live runtime identity, frozen direct grant, current source and derived lineage. Server cursors and pending records never reach model requests. No automatic forwarding or media fetch. DingTalk history unsupported.",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {},
+              "required": []
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Authorized fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "lease_token": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "source": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "type": "string"
+                            },
+                            "provider": {
+                              "type": "string"
+                            },
+                            "workspace_id": {
+                              "type": "string"
+                            },
+                            "agent_id": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "binding_id": {
+                              "type": "string"
+                            },
+                            "tenant_id": {
+                              "type": "string"
+                            },
+                            "identity_namespace": {
+                              "type": "string"
+                            },
+                            "external_id": {
+                              "type": "string"
+                            },
+                            "identity_epoch": {
+                              "type": "integer"
+                            },
+                            "connection_generation": {
+                              "type": "integer"
+                            },
+                            "config_revision": {
+                              "type": "integer"
+                            },
+                            "group_epoch": {
+                              "type": "integer"
+                            },
+                            "agent_epoch": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "provider",
+                            "workspace_id",
+                            "agent_id",
+                            "external_id"
+                          ]
+                        },
+                        "start_ms": {
+                          "type": "integer"
+                        },
+                        "end_ms": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 50
+                        },
+                        "provider_cursor": {
+                          "type": "string"
+                        },
+                        "pending_items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "record_id": {
+                                "type": "string"
+                              },
+                              "provider_message_id": {
+                                "type": "string"
+                              },
+                              "sender_id": {
+                                "type": "string"
+                              },
+                              "sender_name": {
+                                "type": "string"
+                              },
+                              "sender_type": {
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "message_type": {
+                                "type": "string"
+                              },
+                              "created_at_ms": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "record_id",
+                              "sender_type",
+                              "created_at_ms",
+                              "text",
+                              "message_type"
+                            ]
+                          },
+                          "maxItems": 500
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "lease_token",
+                        "source",
+                        "start_ms",
+                        "end_ms",
+                        "limit",
+                        "provider_cursor"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid range or page"
+        },
+        "401": {
+          "description": "Invalid service identity"
+        },
+        "403": {
+          "description": "Revoked authority"
+        },
+        "404": {
+          "description": "Missing scope"
+        },
+        "409": {
+          "description": "Stale lease"
+        },
+        "413": {
+          "description": "Page budget exceeded"
+        },
+        "429": {
+          "description": "Read budget exhausted"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      }
+    }
+  },
+  "authorize": {
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "authorizeSharedGroupHistory",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "description": "Trusted transport only. Each page revalidates live runtime identity, frozen direct grant, current source and derived lineage. Server cursors and pending records never reach model requests. No automatic forwarding or media fetch. DingTalk history unsupported.",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "required": [
+                "lease_token"
+              ]
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Authorized fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "lease_token": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "source": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "type": "string"
+                      },
+                      "provider": {
+                        "type": "string"
+                      },
+                      "workspace_id": {
+                        "type": "string"
+                      },
+                      "agent_id": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "binding_id": {
+                        "type": "string"
+                      },
+                      "tenant_id": {
+                        "type": "string"
+                      },
+                      "identity_namespace": {
+                        "type": "string"
+                      },
+                      "external_id": {
+                        "type": "string"
+                      },
+                      "identity_epoch": {
+                        "type": "integer"
+                      },
+                      "connection_generation": {
+                        "type": "integer"
+                      },
+                      "config_revision": {
+                        "type": "integer"
+                      },
+                      "group_epoch": {
+                        "type": "integer"
+                      },
+                      "agent_epoch": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "provider",
+                      "workspace_id",
+                      "agent_id",
+                      "external_id"
+                    ]
+                  },
+                  "start_ms": {
+                    "type": "integer"
+                  },
+                  "end_ms": {
+                    "type": "integer"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50
+                  },
+                  "provider_cursor": {
+                    "type": "string"
+                  },
+                  "pending_items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "record_id": {
+                          "type": "string"
+                        },
+                        "provider_message_id": {
+                          "type": "string"
+                        },
+                        "sender_id": {
+                          "type": "string"
+                        },
+                        "sender_name": {
+                          "type": "string"
+                        },
+                        "sender_type": {
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "message_type": {
+                          "type": "string"
+                        },
+                        "created_at_ms": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "record_id",
+                        "sender_type",
+                        "created_at_ms",
+                        "text",
+                        "message_type"
+                      ]
+                    },
+                    "maxItems": 500
+                  }
+                },
+                "required": [
+                  "id",
+                  "lease_token",
+                  "source",
+                  "start_ms",
+                  "end_ms",
+                  "limit",
+                  "provider_cursor"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid range or page"
+        },
+        "401": {
+          "description": "Invalid service identity"
+        },
+        "403": {
+          "description": "Revoked authority"
+        },
+        "404": {
+          "description": "Missing scope"
+        },
+        "409": {
+          "description": "Stale lease"
+        },
+        "413": {
+          "description": "Page budget exceeded"
+        },
+        "429": {
+          "description": "Read budget exhausted"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      }
+    }
+  },
+  "complete": {
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "completeSharedGroupHistory",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "description": "Trusted transport only. Each page revalidates live runtime identity, frozen direct grant, current source and derived lineage. Server cursors and pending records never reach model requests. No automatic forwarding or media fetch. DingTalk history unsupported.",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "status": {
+                  "enum": [
+                    "completed",
+                    "failed"
+                  ]
+                },
+                "page": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "record_id": {
+                            "type": "string"
+                          },
+                          "provider_message_id": {
+                            "type": "string"
+                          },
+                          "sender_id": {
+                            "type": "string"
+                          },
+                          "sender_name": {
+                            "type": "string"
+                          },
+                          "sender_type": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "message_type": {
+                            "type": "string"
+                          },
+                          "created_at_ms": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "record_id",
+                          "sender_type",
+                          "created_at_ms",
+                          "text",
+                          "message_type"
+                        ]
+                      },
+                      "maxItems": 500
+                    },
+                    "pending_items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "record_id": {
+                            "type": "string"
+                          },
+                          "provider_message_id": {
+                            "type": "string"
+                          },
+                          "sender_id": {
+                            "type": "string"
+                          },
+                          "sender_name": {
+                            "type": "string"
+                          },
+                          "sender_type": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "message_type": {
+                            "type": "string"
+                          },
+                          "created_at_ms": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "record_id",
+                          "sender_type",
+                          "created_at_ms",
+                          "text",
+                          "message_type"
+                        ]
+                      },
+                      "maxItems": 500
+                    },
+                    "next_provider_cursor": {
+                      "type": "string"
+                    },
+                    "coverage": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "coverage"
+                  ]
+                }
+              },
+              "required": [
+                "lease_token",
+                "status",
+                "page"
+              ]
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Authorized fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "accepted": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "accepted"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid range or page"
+        },
+        "401": {
+          "description": "Invalid service identity"
+        },
+        "403": {
+          "description": "Revoked authority"
+        },
+        "404": {
+          "description": "Missing scope"
+        },
+        "409": {
+          "description": "Stale lease"
+        },
+        "413": {
+          "description": "Page budget exceeded"
+        },
+        "429": {
+          "description": "Read budget exhausted"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      }
+    }
+  }
+}

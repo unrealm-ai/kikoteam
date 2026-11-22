@@ -1,0 +1,279 @@
+{
+  "candidates": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listTriggerGroupCandidates",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin. Trusted current provider candidates, not guessed chat IDs. Signed cursor binds user/workspace/employee; expired or rotated identity evidence cannot resolve.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "provider": {
+                          "enum": [
+                            "web",
+                            "feishu",
+                            "dingtalk",
+                            "wecom"
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "next_cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    }
+  },
+  "resolve": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "resolveTriggerGroupCandidate",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Revalidate candidate and atomically resolve/create employee group Conversation and chat, without Inbox, model trigger or human impersonation. Target remains subject to save/send revalidation.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "conversation_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "conversation_id"
+                ]
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "./conversations.yaml#/parameters/csrf"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "provider": {
+                  "enum": [
+                    "web",
+                    "feishu",
+                    "dingtalk",
+                    "wecom"
+                  ]
+                },
+                "candidate_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "required": [
+                "provider",
+                "candidate_id"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "discover": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "discoverFeishuGroups",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Owner/admin. One official Feishu joined-chats page, current verified binding. Provider call then generation/revision/tenant fence before publishing opaque candidates. Empty next_cursor ends pagination; no partial publication on provider failure. Not a send or authorization grant.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "provider": {
+                          "enum": [
+                            "web",
+                            "feishu",
+                            "dingtalk",
+                            "wecom"
+                          ]
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "next_cursor": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "./conversations.yaml#/parameters/csrf"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cursor": {
+                  "type": "string",
+                  "maxLength": 2048
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

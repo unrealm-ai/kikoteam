@@ -1,0 +1,228 @@
+{
+  "get": {
+    "operationId": "getPluginAccount",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "plugin_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "plugin_version_id",
+        "in": "query",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Success",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "./plugin-schemas.yaml#/PluginAccount"
+            }
+          }
+        }
+      },
+      "default": {
+        "description": "400 invalid input; 401 browser session required; 403 authorization/CSRF; 404 absent; 409 stale version; 422 remote authentication failed; 502 MCP unavailable/protocol invalid; 503 database error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "description": "Owner/admin only; never returns credential. Tools are account-scoped, not public plugin metadata."
+  },
+  "put": {
+    "operationId": "putPluginAccount",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "plugin_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "X-CSRF-Protection",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "const": "1"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Success",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "./plugin-schemas.yaml#/PluginAccount"
+            }
+          }
+        }
+      },
+      "default": {
+        "description": "400 invalid input; 401 browser session required; 403 authorization/CSRF; 404 absent; 409 stale version; 422 remote authentication failed; 502 MCP unavailable/protocol invalid; 503 database error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "./plugin-schemas.yaml#/PluginAccountPut"
+          }
+        }
+      }
+    },
+    "description": "Owner/admin only. Performs real initialize and tools/list before saving encrypted employee account. version=0 creates; stale revisions conflict. Omitted secret reuses only same definition version. No tools/call. Changing the account affects all packages of this employee referencing this plugin; packages must revalidate their tool selection."
+  },
+  "delete": {
+    "operationId": "revokePluginAccount",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "plugin_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "X-CSRF-Protection",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "const": "1"
+        }
+      },
+      {
+        "name": "plugin_version_id",
+        "in": "query",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "responses": {
+      "204": {
+        "description": "Success"
+      },
+      "default": {
+        "description": "400 invalid input; 401 browser session required; 403 authorization/CSRF; 404 absent; 409 stale version; 422 remote authentication failed; 502 MCP unavailable/protocol invalid; 503 database error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "./plugin-schemas.yaml#/PluginAccountRevoke"
+          }
+        }
+      }
+    }
+  }
+}

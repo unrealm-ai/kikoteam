@@ -1,0 +1,682 @@
+{
+  "schemas": {
+    "SelectionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "provider",
+        "workspace_id",
+        "agent_id",
+        "external_id"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "user",
+            "department",
+            "group"
+          ]
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "web",
+            "feishu",
+            "dingtalk",
+            "wecom"
+          ]
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "binding_id": {
+          "type": "string"
+        },
+        "tenant_id": {
+          "type": "string"
+        },
+        "identity_namespace": {
+          "type": "string"
+        },
+        "external_id": {
+          "type": "string"
+        },
+        "identity_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "config_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "group_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "agent_epoch": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "Candidate": {
+      "type": "object",
+      "required": [
+        "ref",
+        "display_name",
+        "status",
+        "selectable"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/schemas/SelectionRef"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "selectable": {
+          "type": "boolean"
+        },
+        "disabled_reason": {
+          "type": "string"
+        },
+        "verification_status": {
+          "type": "string"
+        },
+        "search_user_id": {
+          "type": "string"
+        },
+        "parent_id": {
+          "type": "string"
+        },
+        "department_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verification_id": {
+          "type": "string",
+          "description": "Existing verification request ID for restoring pending verification via the authenticated verification endpoint. No verification code is returned in search results."
+        }
+      }
+    },
+    "Page": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor",
+        "snapshot_version",
+        "limited"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/Candidate"
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot_version": {
+          "type": "integer"
+        },
+        "limited": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "people": {
+    "get": {
+      "operationId": "searchPeopleSelectors",
+      "summary": "searchPeopleSelectors",
+      "description": "Cookie authentication; current workspace owner/admin and employee scope required. Selection is not authorization. Writes require same-origin and X-CSRF-Protection: 1. Sources and saved references are revalidated; no conversation creation or model execution.",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspace_id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "in": "path",
+          "name": "agent_id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "in": "query",
+          "name": "purpose",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "usage",
+              "capability",
+              "sharing",
+              "confirmation"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "web",
+              "feishu",
+              "dingtalk",
+              "wecom"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "q",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "parent_id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "department_id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        },
+        {
+          "in": "query",
+          "name": "snapshot_version",
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Selection result",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Page"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request or unsupported capability"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Configuration permission denied"
+        },
+        "404": {
+          "description": "Resource unavailable"
+        },
+        "409": {
+          "description": "Source changed or directory unavailable"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      }
+    }
+  },
+  "departments": {
+    "get": {
+      "operationId": "listDepartmentSelectors",
+      "summary": "listDepartmentSelectors",
+      "description": "Cookie authentication; current workspace owner/admin and employee scope required. Selection is not authorization. Writes require same-origin and X-CSRF-Protection: 1. Sources and saved references are revalidated; no conversation creation or model execution.",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspace_id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "in": "path",
+          "name": "agent_id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "in": "query",
+          "name": "purpose",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "usage",
+              "capability",
+              "sharing",
+              "confirmation"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "web",
+              "feishu",
+              "dingtalk",
+              "wecom"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "q",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "parent_id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "department_id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        },
+        {
+          "in": "query",
+          "name": "snapshot_version",
+          "schema": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Selection result",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Page"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request or unsupported capability"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Configuration permission denied"
+        },
+        "404": {
+          "description": "Resource unavailable"
+        },
+        "409": {
+          "description": "Source changed or directory unavailable"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      }
+    }
+  },
+  "sources": {
+    "get": {
+      "operationId": "listPeopleSelectorSources",
+      "summary": "listPeopleSelectorSources",
+      "description": "Cookie authentication; current workspace owner/admin and employee scope required. Selection is not authorization. Writes require same-origin and X-CSRF-Protection: 1. Sources and saved references are revalidated; no conversation creation or model execution.",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspace_id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "in": "path",
+          "name": "agent_id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "in": "query",
+          "name": "purpose",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "usage",
+              "capability",
+              "sharing",
+              "confirmation"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Selection result",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "provider",
+                        "available",
+                        "supports_search",
+                        "supports_browse",
+                        "supports_department_tree",
+                        "supports_pagination",
+                        "requires_identity_mapping"
+                      ],
+                      "properties": {
+                        "provider": {
+                          "type": "string"
+                        },
+                        "unavailable_reason": {
+                          "type": "string"
+                        },
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "supports_search": {
+                          "type": "boolean"
+                        },
+                        "supports_browse": {
+                          "type": "boolean"
+                        },
+                        "supports_department_tree": {
+                          "type": "boolean"
+                        },
+                        "supports_pagination": {
+                          "type": "boolean"
+                        },
+                        "requires_identity_mapping": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request or unsupported capability"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Configuration permission denied"
+        },
+        "404": {
+          "description": "Resource unavailable"
+        },
+        "409": {
+          "description": "Source changed or directory unavailable"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      }
+    }
+  },
+  "resolve": {
+    "post": {
+      "operationId": "resolvePeopleSelectors",
+      "summary": "resolvePeopleSelectors",
+      "description": "Cookie authentication; current workspace owner/admin and employee scope required. Selection is not authorization. Writes require same-origin and X-CSRF-Protection: 1. Sources and saved references are revalidated; no conversation creation or model execution.",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "workspace_id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "in": "path",
+          "name": "agent_id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Selection result",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Page"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request or unsupported capability"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "Configuration permission denied"
+        },
+        "404": {
+          "description": "Resource unavailable"
+        },
+        "409": {
+          "description": "Source changed or directory unavailable"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "purpose"
+              ],
+              "properties": {
+                "purpose": {
+                  "type": "string",
+                  "enum": [
+                    "usage",
+                    "capability",
+                    "sharing",
+                    "confirmation"
+                  ]
+                },
+                "refs": {
+                  "type": "array",
+                  "maxItems": 200,
+                  "items": {
+                    "$ref": "#/schemas/SelectionRef"
+                  }
+                },
+                "selectors": {
+                  "type": "array",
+                  "maxItems": 200,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "channel",
+                      "kind",
+                      "id"
+                    ],
+                    "properties": {
+                      "channel": {
+                        "type": "string",
+                        "enum": [
+                          "web",
+                          "feishu",
+                          "dingtalk",
+                          "wecom"
+                        ]
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "department"
+                        ]
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "binding_id": {
+                        "type": "string"
+                      },
+                      "identity_epoch": {
+                        "type": "integer"
+                      },
+                      "include_descendants": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              },
+              "oneOf": [
+                {
+                  "required": [
+                    "refs"
+                  ],
+                  "not": {
+                    "required": [
+                      "selectors"
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "selectors"
+                  ],
+                  "not": {
+                    "required": [
+                      "refs"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

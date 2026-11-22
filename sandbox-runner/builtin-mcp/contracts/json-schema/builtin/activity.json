@@ -1,0 +1,243 @@
+{
+  "method": "builtin/processes/activity",
+  "max_bytes": 8192,
+  "params": {
+    "type": "object",
+    "properties": {
+      "source": {
+        "$ref": "#/$defs/BuiltinActivitySource"
+      },
+      "stop_gate": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BuiltinActivityGate"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Current active Stop identity, or null after a proven release/no gate. Not a request to invent or clear a Go gate; Go has already persisted and fenced this state."
+      },
+      "local_revision": {
+        "$ref": "#/$defs/BuiltinActivityRevision",
+        "description": "Go executor state_revision, NOT activity_revision. Monotonic within this exact boot/source, including gate-only changes. TS rejects older revisions or a different gate at an equal revision. The first valid sync opens the initially closed tool boundary only if gate=null; active gate rejects new side effects while already admitted work drains. Pure synchronization does not increment the TS activity revision."
+      },
+      "_meta": {
+        "$ref": "#/$defs/BuiltinActivityMetadata"
+      }
+    },
+    "required": ["source", "stop_gate", "local_revision"],
+    "unevaluatedProperties": {
+      "not": {}
+    },
+    "description": "Parameters of the fixed private MCP JSON-RPC method builtin/processes/activity, never a tool or Harness method. Only the launch-owned stdio peer may invoke it. Serialized params <=8192 UTF-8 bytes, strict business fields; _meta is the standard MCP extension object. Before ready publication, Go synchronizes the actual source/gate directly through the initialized peer; no manager lock, SQLite transaction or execution fence spans the network wait. Missing management launch identity/method, source mismatch, protocol failure or peer loss is unknown, not idle.",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$defs": {
+      "BuiltinActivityGate": {
+        "type": "object",
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "revision": {
+            "$ref": "#/$defs/BuiltinActivityRevision"
+          }
+        },
+        "required": ["action_id", "revision"],
+        "unevaluatedProperties": {
+          "not": {}
+        }
+      },
+      "BuiltinActivityMetadata": {
+        "type": "object",
+        "properties": {},
+        "unevaluatedProperties": {}
+      },
+      "BuiltinActivityRevision": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "BuiltinActivitySource": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "session_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "environment_instance_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "executor_boot_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "connection_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "binding_id": {
+            "type": "string",
+            "const": "builtin"
+          },
+          "config_revision": {
+            "$ref": "#/$defs/BuiltinActivityRevision"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "session_id",
+          "environment_instance_id",
+          "executor_boot_id",
+          "connection_id",
+          "binding_id",
+          "config_revision"
+        ],
+        "unevaluatedProperties": {
+          "not": {}
+        }
+      }
+    }
+  },
+  "result": {
+    "type": "object",
+    "properties": {
+      "source": {
+        "$ref": "#/$defs/BuiltinActivitySource"
+      },
+      "stop_gate": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BuiltinActivityGate"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "local_revision": {
+        "$ref": "#/$defs/BuiltinActivityRevision"
+      },
+      "revision": {
+        "$ref": "#/$defs/BuiltinActivityCounter",
+        "description": "Persistent TS process activity revision. Every retention-relevant mutation advances it with its durable record; zero->busy->zero remains visible between samples. Ordinary reads, unchanged samples and gate synchronization do not advance it. A changed connection is a new source, never proof old groups are gone."
+      },
+      "verified": {
+        "type": "boolean"
+      },
+      "active": {
+        "$ref": "#/$defs/BuiltinActivityCounter",
+        "description": "Known active process groups, including admitted starts and termination in progress. Complete ledger, not a bounded bash_list page."
+      },
+      "unknown": {
+        "$ref": "#/$defs/BuiltinActivityCounter",
+        "description": "Process groups or accepted work whose survival/cleanup cannot be established, including sticky uncertainty after file-worker cancellation, loss or restart. Such a file call leaves pending_writes only when its uncertain tail is durably retained here; inspection failure cannot become an empty set."
+      },
+      "pending_writes": {
+        "$ref": "#/$defs/BuiltinActivityCounter",
+        "description": "Pending stdin writes, output drain, unconfirmed output/metadata persistence and all admitted file-worker calls (reads as well as writes) awaiting confirmed completion. A file call is counted here while in flight, then removed only on confirmed completion or durable transfer to unknown. Cancellation of the awaiting RPC does not imply the underlying write completed."
+      },
+      "_meta": {
+        "$ref": "#/$defs/BuiltinActivityMetadata"
+      }
+    },
+    "required": [
+      "source",
+      "stop_gate",
+      "local_revision",
+      "revision",
+      "verified",
+      "active",
+      "unknown",
+      "pending_writes"
+    ],
+    "unevaluatedProperties": {
+      "not": {}
+    },
+    "description": "Result of builtin/processes/activity, <=8192 UTF-8 bytes. Echo the exact source/gate/local_revision only after synchronizing the gate and checking all persisted and in-memory work. Counts describe distinct retention facts, not operation outcomes or an additive process total; a running group may also have pending output. verified=false never proves idle even if numeric counters are zero. No URLs, credentials, process command/output, PIDs, paths or arbitrary diagnostic messages. Go rechecks its own source, peer liveness, boot/state revision and gate after the call before publishing evidence. Busy/unknown does not prevent directory readiness if gate synchronization succeeded.",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$defs": {
+      "BuiltinActivityCounter": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "BuiltinActivityGate": {
+        "type": "object",
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "revision": {
+            "$ref": "#/$defs/BuiltinActivityRevision"
+          }
+        },
+        "required": ["action_id", "revision"],
+        "unevaluatedProperties": {
+          "not": {}
+        }
+      },
+      "BuiltinActivityMetadata": {
+        "type": "object",
+        "properties": {},
+        "unevaluatedProperties": {}
+      },
+      "BuiltinActivityRevision": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "BuiltinActivitySource": {
+        "type": "object",
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "session_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "environment_instance_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "executor_boot_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "connection_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "binding_id": {
+            "type": "string",
+            "const": "builtin"
+          },
+          "config_revision": {
+            "$ref": "#/$defs/BuiltinActivityRevision"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "session_id",
+          "environment_instance_id",
+          "executor_boot_id",
+          "connection_id",
+          "binding_id",
+          "config_revision"
+        ],
+        "unevaluatedProperties": {
+          "not": {}
+        }
+      }
+    }
+  }
+}

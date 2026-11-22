@@ -1,0 +1,215 @@
+collection:
+  parameters: &workspace
+    - $ref: './conversations.yaml#/parameters/workspace'
+  post:
+    operationId: createAgentSession
+    description: Within an active Conversation, create its unique chat or a new Task/task Session; alternatively use task_space_id + agent_id for a space task with mandatory first input. Owners are mutually exclusive; space creation requires creator permission and current employee grant/epoch. No implicit TaskSpace from Conversation. Optional first Input is atomic and requires Idempotency-Key. A replay returns 200, the same resource and Idempotency-Replayed=true. No input means no request deduplication. No runtime overrides.
+    parameters:
+      - $ref: './conversations.yaml#/parameters/csrf'
+      - {name: Idempotency-Key, in: header, schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,128}$'}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [mode]
+            oneOf:
+              - required: [conversation_id]
+                not: {anyOf: [{required: [task_space_id]}, {required: [agent_id]}]}
+              - required: [task_space_id, agent_id, input]
+                properties: {mode: {const: task}}
+                not: {required: [conversation_id]}
+            properties:
+              conversation_id: {type: string, format: uuid}
+              task_space_id: {type: string, format: uuid}
+              agent_id: {type: string, format: uuid}
+              mode: {enum: [chat, task]}
+              title: {type: [string, 'null'], minLength: 1, maxLength: 200}
+              input: {$ref: './session-schemas.yaml#/TextInput'}
+          example: {conversation_id: '11111111-1111-4111-8111-111111111111', mode: chat, input: {text: '你好'}}
+    responses:
+      '201': {$ref: '#/responses/Session'}
+      '200': {$ref: '#/responses/Session'}
+      default: {$ref: '#/responses/Error'}
+  get:
+    operationId: listSessions
+    parameters:
+      - {name: conversation_id, in: query, schema: {type: string, format: uuid}}
+      - {name: task_space_id, in: query, schema: {type: string, format: uuid}}
+      - {name: agent_id, in: query, schema: {type: string, format: uuid}}
+      - {name: mode, in: query, schema: {enum: [chat, task]}}
+      - {name: lifecycle, in: query, schema: {enum: [active, archived]}}
+      - $ref: '#/parameters/cursor'
+      - $ref: '#/parameters/limit'
+    responses:
+      '200': {description: Stable created_at DESC,id DESC page., content: {application/json: {schema: {$ref: './session-schemas.yaml#/SessionPage'}}}}
+      default: {$ref: '#/responses/Error'}
+item:
+  parameters: &session
+    - $ref: './conversations.yaml#/parameters/workspace'
+    - $ref: '#/parameters/session'
+  get:
+    operationId: getSession
+    responses:
+      '200': {$ref: '#/responses/Session'}
+      default: {$ref: '#/responses/Error'}
+  patch:
+    operationId: updateSession
+    description: Rename only; compare expected_revision, including no-op writes. Archived Sessions are immutable.
+    parameters:
+      - $ref: './conversations.yaml#/parameters/csrf'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [title, expected_revision]
+            properties:
+              title: {type: [string, 'null'], minLength: 1, maxLength: 200}
+              expected_revision: {type: string, pattern: '^[1-9][0-9]*$'}
+    responses:
+      '200': {$ref: '#/responses/Session'}
+      default: {$ref: '#/responses/Error'}
+inputs:
+  parameters: *session
+  post:
+    operationId: createSessionInput
+    description: Persist a queued Input. Same key/content replays the original current Input with 200; a different fingerprint conflicts. Execution happens asynchronously. Continued work uses a new key and Input.
+    parameters:
+      - $ref: './conversations.yaml#/parameters/csrf'
+      - {name: Idempotency-Key, in: header, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,128}$'}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: './session-schemas.yaml#/SubmitInput'}
+    responses:
+      '201': {$ref: '#/responses/Input'}
+      '200': {$ref: '#/responses/Input'}
+      default: {$ref: '#/responses/Error'}
+  get:
+    operationId: listSessionInputs
+    parameters:
+      - {name: status, in: query, schema: {enum: [queued, started, processed, canceled, rejected]}}
+      - $ref: '#/parameters/cursor'
+      - $ref: '#/parameters/limit'
+    responses:
+      '200': {description: Input seq ascending page., content: {application/json: {schema: {$ref: './session-schemas.yaml#/InputPage'}}}}
+      default: {$ref: '#/responses/Error'}
+input:
+  parameters: &input
+    - $ref: './conversations.yaml#/parameters/workspace'
+    - $ref: '#/parameters/session'
+    - {name: input_id, in: path, required: true, schema: {type: string, format: uuid}}
+  get:
+    operationId: getSessionInput
+    responses:
+      '200': {$ref: '#/responses/Input'}
+      default: {$ref: '#/responses/Error'}
+withdraw:
+  parameters: *input
+  post:
+    operationId: withdrawSessionInput
+    description: Only queued Input can be withdrawn. Already canceled returns its original cancellation; started/processed/rejected conflict. No key.
+    parameters:
+      - $ref: './conversations.yaml#/parameters/csrf'
+    requestBody: &emptyBody
+      required: true
+      content:
+        application/json:
+          schema: {$ref: './session-schemas.yaml#/Empty'}
+    responses:
+      '200': {$ref: '#/responses/Input'}
+      default: {$ref: '#/responses/Error'}
+turns:
+  parameters: *session
+  get:
+    operationId: listSessionTurns
+    parameters:
+      - {name: status, in: query, schema: {enum: [running, stopping, completed, failed, canceled, interrupted]}}
+      - $ref: '#/parameters/cursor'
+      - $ref: '#/parameters/limit'
+    responses:
+      '200': {description: Turn number ascending page., content: {application/json: {schema: {$ref: './session-schemas.yaml#/TurnPage'}}}}
+      default: {$ref: '#/responses/Error'}
+turn:
+  parameters:
+    - $ref: './conversations.yaml#/parameters/workspace'
+    - $ref: '#/parameters/session'
+    - {name: turn_id, in: path, required: true, schema: {type: string, format: uuid}}
+  get:
+    operationId: getSessionTurn
+    responses:
+      '200': {description: Actual execution facts; failed Turn still returns HTTP 200., content: {application/json: {schema: {$ref: './session-schemas.yaml#/Turn'}}}}
+      default: {$ref: '#/responses/Error'}
+events:
+  parameters: *session
+  get:
+    operationId: listSessionEvents
+    description: Reliable flat events with a fixed high-water per history traversal. Default forward reads oldest first and returns resume_cursor only at the end. backward reads newest pages first, returns items within each page in seq ascending order, next_cursor for older history and resume_cursor at the original high-water on every page; open SSE immediately from this cursor. Cursors bind direction and filters and cannot be interchanged.
+    parameters:
+      - $ref: '#/parameters/turn'
+      - $ref: '#/parameters/type'
+      - $ref: '#/parameters/cursor'
+      - {name: direction, in: query, schema: {type: string, enum: [forward, backward], default: forward}}
+      - $ref: '#/parameters/limit'
+    responses:
+      '200': {description: Reliable event history., content: {application/json: {schema: {$ref: './session-schemas.yaml#/EventPage'}}}}
+      default: {$ref: '#/responses/Error'}
+stream:
+  parameters: *session
+  get:
+    operationId: streamSessionEvents
+    description: Reliable events only in the first version; Last-Event-ID takes precedence over after. Neither means replay from the start. SSE id is a scope-bound signed cursor, event is the event type, data is the flat Event. Heartbeats have no id; disconnect does not cancel execution. Permissions are rechecked while streaming.
+    parameters:
+      - $ref: '#/parameters/turn'
+      - $ref: '#/parameters/type'
+      - {name: after, in: query, schema: {type: string}}
+      - {name: Last-Event-ID, in: header, schema: {type: string}}
+    responses:
+      '200': {description: SSE reliable events and 15-second heartbeat comments., content: {text/event-stream: {schema: {type: string}}}}
+      default: {$ref: '#/responses/Error'}
+stop:
+  parameters: *session
+  post:
+    operationId: stopSession
+    description: No key. Each call covers currently accepted work and owned background processes. Inputs accepted later wait for cleanup; another stop includes them. No independent control resource. No state change means no duplicate state event.
+    parameters:
+      - $ref: './conversations.yaml#/parameters/csrf'
+    requestBody: *emptyBody
+    responses:
+      '200': {$ref: '#/responses/Session'}
+      '202': {$ref: '#/responses/Session'}
+      default: {$ref: '#/responses/Error'}
+archive:
+  parameters: *session
+  post:
+    operationId: archiveSession
+    description: First archive requires no active turn, queued input, background work, pending stop or unknown local activity; otherwise 409 session_busy. Stop and wait before archiving. A remote_tool_outcome_unknown alone does not prevent archive; retain its evidence and cleanup restrictions.
+    parameters:
+      - $ref: './conversations.yaml#/parameters/csrf'
+    requestBody: *emptyBody
+    responses:
+      '200': {$ref: '#/responses/Session'}
+      '202': {$ref: '#/responses/Session'}
+      default: {$ref: '#/responses/Error'}
+parameters:
+  session: {name: session_id, in: path, required: true, schema: {type: string, format: uuid}}
+  cursor: {name: cursor, in: query, schema: {type: string}}
+  limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+  turn: {name: turn_id, in: query, schema: {type: string, format: uuid}}
+  type: {name: type, in: query, description: Comma-separated exact reliable event types., schema: {type: string}}
+responses:
+  Session:
+    description: Current Session resource. Acknowledgement does not mean execution has stopped.
+    content: {application/json: {schema: {$ref: './session-schemas.yaml#/Session'}}}
+  Input:
+    description: Current Input resource; queued is an accepted state, not execution success.
+    content: {application/json: {schema: {$ref: './session-schemas.yaml#/Input'}}}
+  Error:
+    description: 400 invalid_argument/invalid_cursor/idempotency_key_required; 401 unauthenticated; 403 permission_denied/csrf_rejected; 404 resource_not_found; 409 conversation_archived/session_archived/agent_disabled/chat_session_exists/idempotency_conflict/session_revision_conflict/input_not_queued; 422 configuration_unusable; 429 session_queue_full; 503 dependency_unavailable. Failed or interrupted execution is represented in a readable resource, not by failing its GET.
+    content: {application/json: {schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}}}

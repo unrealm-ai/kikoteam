@@ -1,0 +1,57 @@
+openapi: 3.1.0
+info:
+  title: KIKO 企业级AI员工云平台 · Model Proxy
+  version: "1.0"
+  description: Native provider protocols with an official model UUID and an employee credential. Request and response fields follow the selected upstream protocol.
+paths:
+  /model-proxy/v1/chat/completions:
+    post:
+      operationId: proxyChatCompletions
+      description: Chat Completions. For streaming the proxy requests upstream usage.
+      security: [{employeeBearer: []}]
+      requestBody: &request
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              additionalProperties: true
+              properties:
+                model: {type: string, format: uuid, description: Official model identifier}
+                stream: {type: boolean}
+      responses: &responses
+        '200':
+          description: Native JSON or server-sent events
+          headers:
+            X-Model-Call-ID:
+              schema: {type: string, format: uuid}
+          content:
+            application/json:
+              schema: {type: object}
+            text/event-stream:
+              schema: {type: string}
+        '401': {description: Invalid employee credential}
+        '402': {description: insufficient_credits}
+        '403': {description: Employee or payer access is unavailable}
+        '422': {description: Model is unavailable for the selected protocol}
+        default: {description: Invalid request or upstream failure}
+  /model-proxy/v1/responses:
+    post:
+      operationId: proxyResponses
+      security: [{employeeBearer: []}]
+      requestBody: *request
+      responses: *responses
+  /model-proxy/v1/messages:
+    post:
+      operationId: proxyAnthropicMessages
+      security: [{employeeAPIKey: []}]
+      parameters:
+        - {name: anthropic-version, in: header, schema: {type: string}}
+        - {name: anthropic-beta, in: header, schema: {type: string}}
+      requestBody: *request
+      responses: *responses
+components:
+  securitySchemes:
+    employeeBearer: {type: http, scheme: bearer}
+    employeeAPIKey: {type: apiKey, in: header, name: x-api-key}

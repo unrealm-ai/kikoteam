@@ -1,0 +1,366 @@
+{
+  "collection": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listGroupSelections",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Owner/admin only. Four provider adapters return employee member/discovered groups, not operator groups. Search by name or external ID literal substring. Stable provider/id cursor binds workspace, actor, employee, provider and q. No conversation/input creation. Feishu cached pages are not proof that all provider pages have been fetched; observed/recent coverage is partial. Current source validity is rechecked each request.",
+      "parameters": [
+        {
+          "name": "provider",
+          "in": "query",
+          "schema": {
+            "enum": [
+              "web",
+              "feishu",
+              "dingtalk",
+              "wecom"
+            ]
+          }
+        },
+        {
+          "name": "q",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Employee group metadata only; never grants message access or delivery permission.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Page"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "../manager/sessions.yaml#/responses/Error"
+        }
+      }
+    }
+  },
+  "resolve": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "resolveGroupSelections",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Read-only bulk validation of exact typed refs for current employee and binding generation. Does not create conversation/session/input, trigger model or send messages. Expired or changed ref returns 409. Business save/send must revalidate independently. Alternatively selectors accepts saved employee UsageSelector refs for metadata display: keeps unavailable entries with original source identity and external ID, never remaps by name; metadata association and employee config authorization are checked, no runtime resources are created. Empty selectors yields an empty page.",
+      "parameters": [
+        {
+          "$ref": "../manager/conversations.yaml#/parameters/csrf"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "items": {
+                    "$ref": "#/schemas/Ref"
+                  }
+                },
+                "selectors": {
+                  "type": "array",
+                  "maxItems": 200,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "kind",
+                      "channel",
+                      "id"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "const": "group"
+                      },
+                      "channel": {
+                        "enum": [
+                          "web",
+                          "feishu",
+                          "dingtalk",
+                          "wecom"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512
+                      },
+                      "binding_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "identity_epoch": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "include_descendants": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              },
+              "oneOf": [
+                {
+                  "required": [
+                    "refs"
+                  ],
+                  "not": {
+                    "required": [
+                      "selectors"
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "selectors"
+                  ],
+                  "not": {
+                    "required": [
+                      "refs"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Employee group metadata only; never grants message access or delivery permission.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Page"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "../manager/sessions.yaml#/responses/Error"
+        }
+      }
+    }
+  },
+  "schemas": {
+    "Ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "provider",
+        "workspace_id",
+        "agent_id",
+        "external_id",
+        "identity_namespace"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "group"
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "web",
+            "feishu",
+            "dingtalk",
+            "wecom"
+          ]
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "binding_id": {
+          "type": "string"
+        },
+        "tenant_id": {
+          "type": "string"
+        },
+        "external_id": {
+          "type": "string"
+        },
+        "identity_namespace": {
+          "type": "string"
+        },
+        "identity_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "config_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "group_epoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "agent_epoch": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "Group": {
+      "type": "object",
+      "required": [
+        "ref",
+        "provider",
+        "name",
+        "evidence",
+        "coverage",
+        "status",
+        "selectable"
+      ],
+      "properties": {
+        "ref": {
+          "$ref": "#/schemas/Ref"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "evidence": {
+          "enum": [
+            "member",
+            "observed",
+            "provider_verified",
+            "saved_reference"
+          ]
+        },
+        "coverage": {
+          "enum": [
+            "all_joined",
+            "observed_only",
+            "recent_window",
+            "unknown"
+          ]
+        },
+        "status": {
+          "enum": [
+            "available",
+            "unavailable"
+          ]
+        },
+        "selectable": {
+          "type": "boolean"
+        },
+        "disabled_reason": {
+          "type": "string"
+        }
+      }
+    },
+    "Page": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/schemas/Group"
+          }
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

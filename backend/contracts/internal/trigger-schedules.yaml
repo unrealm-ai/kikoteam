@@ -1,0 +1,156 @@
+{
+  "poll": {
+    "post": {
+      "operationId": "pollTriggerSchedules",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "description": "Trusted scheduler only. Database clock and binding version govern occurrence; no browser authority. Repeated or concurrent tick cannot duplicate accepted occurrence.",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "limit"
+              ],
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Scheduler fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "server_time",
+                  "items"
+                ],
+                "properties": {
+                  "server_time": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^[1-9][0-9]*$"
+                        },
+                        "next_due": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./openapi.yaml#/components/responses/Error"
+        }
+      }
+    }
+  },
+  "tick": {
+    "post": {
+      "operationId": "tickTriggerSchedule",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "description": "Trusted scheduler only. Database clock and binding version govern occurrence; no browser authority. Repeated or concurrent tick cannot duplicate accepted occurrence.",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "expected_due",
+                "recovery_started_at"
+              ],
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "expected_due": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "recovery_started_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Scheduler fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "receipt": {
+                    "$ref": "../modules/manager/triggers.yaml#/schemas/Receipt"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./openapi.yaml#/components/responses/Error"
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,327 @@
+{
+  "claim": {
+    "post": {
+      "operationId": "claimWecomGroupRefreshes",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "description": "Current employee binding only. Recent seven-day groups, not a full membership enumeration. No chat contents. Failed or incomplete pagination publishes no candidates. Internal jobs are leased and source-fenced.",
+      "responses": {
+        "200": {
+          "description": "Current refresh fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "lease_token": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "binding_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "connection_generation": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "config_revision": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "identity_epoch": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "external_tenant_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "lease_token",
+                        "binding_id",
+                        "connection_generation",
+                        "config_revision",
+                        "identity_epoch",
+                        "external_tenant_id"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid input"
+        },
+        "401": {
+          "description": "Invalid identity"
+        },
+        "403": {
+          "description": "Permission denied"
+        },
+        "404": {
+          "description": "Resource unavailable"
+        },
+        "409": {
+          "description": "Source or lease changed"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {},
+              "required": []
+            }
+          }
+        }
+      }
+    }
+  },
+  "authorize": {
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "authorizeWecomGroupRefresh",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "description": "Current employee binding only. Recent seven-day groups, not a full membership enumeration. No chat contents. Failed or incomplete pagination publishes no candidates. Internal jobs are leased and source-fenced.",
+      "responses": {
+        "200": {
+          "description": "Current refresh fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "lease_token": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "binding_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "connection_generation": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "config_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "identity_epoch": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "external_tenant_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "lease_token",
+                  "binding_id",
+                  "connection_generation",
+                  "config_revision",
+                  "identity_epoch",
+                  "external_tenant_id"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid input"
+        },
+        "401": {
+          "description": "Invalid identity"
+        },
+        "403": {
+          "description": "Permission denied"
+        },
+        "404": {
+          "description": "Resource unavailable"
+        },
+        "409": {
+          "description": "Source or lease changed"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "required": [
+                "lease_token"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "complete": {
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "completeWecomGroupRefresh",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "description": "Current employee binding only. Recent seven-day groups, not a full membership enumeration. No chat contents. Failed or incomplete pagination publishes no candidates. Internal jobs are leased and source-fenced.",
+      "responses": {
+        "200": {
+          "description": "Current refresh fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "accepted": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "accepted"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid input"
+        },
+        "401": {
+          "description": "Invalid identity"
+        },
+        "403": {
+          "description": "Permission denied"
+        },
+        "404": {
+          "description": "Resource unavailable"
+        },
+        "409": {
+          "description": "Source or lease changed"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "status": {
+                  "enum": [
+                    "completed",
+                    "failed"
+                  ]
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 10000,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "chat_id": {
+                        "type": "string"
+                      },
+                      "chat_name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "chat_id",
+                      "chat_name"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "lease_token",
+                "status",
+                "items"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

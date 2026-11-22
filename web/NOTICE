@@ -1,0 +1,22 @@
+KIKO (KikoTeam)
+Copyright (c) 2026 Unrealm AI (KikoTeam) and Contributors.
+https://github.com/unrealm-ai/kikoteam
+
+License and third-party material
+--------------------------------
+Project source is provided under the KIKO Open Source License (Apache License,
+Version 2.0 with Additional Conditions); see LICENSE.
+Existing copyright, license and attribution notices remain applicable.
+Third-party software and assets retain their respective licenses and notices.
+See THIRD_PARTY_NOTICES.md and the asset-specific notice files.
+
+Frontend builds include generated distribution licenses and notices in
+THIRD_PARTY_NOTICES.txt and third-party-licenses.json, with the unresolved
+vdirs attribution evidence identified in those notices.
+
+KIKO brand identifiers, logos, copyright notices, and license attributions
+displayed in the web interface are subject to the Additional Conditions in
+LICENSE and may not be removed or altered without prior written permission.
+
+Channel product names, logos and trademarks belong to their respective owners.
+Their inclusion identifies integrations and does not imply endorsement.

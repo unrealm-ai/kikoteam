@@ -1,0 +1,42 @@
+name: Agent Engine
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.2'
+          cache-dependency-path: agent-engine/go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: |
+            agent-engine/package-lock.json
+            sandbox-runner/builtin-mcp/package-lock.json
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3 procps ripgrep fd-find
+          sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd
+          npm ci --no-audit --no-fund --prefix agent-engine
+          npm ci --no-audit --no-fund --prefix sandbox-runner/builtin-mcp
+          npm rebuild node-pty --prefix sandbox-runner/builtin-mcp
+          npm run build --prefix sandbox-runner/builtin-mcp
+          python3 -m venv event-hub/.venv
+          event-hub/.venv/bin/pip install -r event-hub/requirements-dev.txt
+      - name: Check actual upstream processes and builtin HTTP tools
+        run: |
+          make -C agent-engine check
+          make -C sandbox-runner check build

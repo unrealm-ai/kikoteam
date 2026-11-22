@@ -1,0 +1,377 @@
+{
+  "claim": {
+    "post": {
+      "operationId": "humanNoticeClaim",
+      "description": "Lease settled pending human confirmation notices. Never creates an Inbox entry or replays uncertain sends.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "./channels.yaml#/schemas/Delivery"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "limit"
+              ],
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "authorize": {
+    "post": {
+      "operationId": "humanNoticeAuthorize",
+      "description": "Recheck current source request, private recipient, binding and lease. Authorize exactly one transport attempt.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./channels.yaml#/schemas/Delivery"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "complete": {
+    "post": {
+      "operationId": "humanNoticeComplete",
+      "description": "Record evidence for the same attempt. A Feishu DM requires provider message and chat IDs; DingTalk and WeCom never assign quote IDs.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed."
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token",
+                "status",
+                "target_digest"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "status": {
+                  "enum": [
+                    "sent",
+                    "accepted",
+                    "failed",
+                    "unknown"
+                  ]
+                },
+                "provider_message_id": {
+                  "type": "string"
+                },
+                "error_code": {
+                  "type": "string"
+                },
+                "provider_request_id": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "target_digest": {
+                  "type": "string",
+                  "pattern": "^[a-fA-F0-9]{64}$"
+                },
+                "query_token": {
+                  "type": "string"
+                },
+                "evidence_type": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "provider_session_id": {
+                  "type": "string"
+                },
+                "provider_created_at_ms": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$",
+                  "description": "Trusted Feishu response timestamp, never local send time."
+                },
+                "provider_chat_id": {
+                  "type": "string"
+                },
+                "provider_thread_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "queryClaim": {
+    "post": {
+      "operationId": "humanNoticeQueryClaim",
+      "description": "Lease read-only DingTalk status checks on previously accepted send attempts, without sending content.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "./channels.yaml#/schemas/Delivery"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "limit"
+              ],
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "dispatchCheck": {
+    "post": {
+      "operationId": "humanNoticeDispatchCheck",
+      "description": "Repeat authorization at the send boundary. Does not create a new attempt.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./channels.yaml#/schemas/Delivery"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  }
+}

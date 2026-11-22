@@ -1,0 +1,251 @@
+Configuration:
+  type: object
+  additionalProperties: false
+  required: [agent_version, model_profile_id, model_version, harness, skills, plugins]
+  properties:
+    agent_version: {type: string, pattern: '^[1-9][0-9]*$'}
+    model_profile_id: {type: string, anyOf: [{format: uuid}, {const: ""}]}
+    platform_model_id: {type: string, format: uuid}
+    model_version: {type: string, pattern: '^[1-9][0-9]*$'}
+    harness: {const: pi}
+    skills: {type: array, uniqueItems: true, items: {type: string, format: uuid}, description: Resource identities pinned by authorized packages at Session creation. Runtime still intersects current permission.}
+    plugins: {type: array, uniqueItems: true, items: {type: string, format: uuid}, description: Resource identities only; package scopes and account material are private.}
+RequiredActions:
+  type: array
+  items:
+    type: object
+    additionalProperties: false
+    required: [type, request_id, turn_id, title, message]
+    properties:
+      type: {enum: [confirmation, human_confirmation, work_item]}
+      request_id: {type: string, format: uuid}
+      turn_id: {type: string, format: uuid}
+      title: {type: string}
+      message: {type: string}
+      expires_at: {type: string, format: date-time}
+Execution:
+  type: object
+  additionalProperties: false
+  required: [required_actions, state, active_turn_id, queued_input_count, background_process_count, block_reason]
+  properties:
+    required_actions: {$ref: '#/RequiredActions'}
+    state: {enum: [blocked, stopping, running, queued, idle]}
+    active_turn_id: {type: [string, 'null'], format: uuid}
+    queued_input_count: {type: integer, minimum: 0}
+    background_process_count: {type: [integer, 'null'], minimum: 0}
+    block_reason: {type: [string, 'null']}
+Session:
+  type: object
+  additionalProperties: false
+  required: [id, workspace_id, agent_id, task_id, created_by, mode, title, lifecycle, revision, initial_input_id, configuration, execution, accepts_input, input_block_reason, created_at, archived_at]
+  oneOf:
+    - required: [conversation_id]
+      not: {required: [task_space_id]}
+    - required: [task_space_id]
+      not: {required: [conversation_id]}
+  properties:
+    input_revision: {type: string, pattern: '^(0|[1-9][0-9]*)$'}
+    planning_state: {type: string, enum: [planned, started, canceled], description: Task planning lifecycle; omitted for chat.}
+    planning_version: {type: string, pattern: '^[1-9][0-9]*$', description: CAS version for planned task commands.}
+    id: {type: string, format: uuid}
+    workspace_id: {type: string, format: uuid}
+    agent_id: {type: string, format: uuid}
+    conversation_id: {type: string, format: uuid}
+    task_space_id: {type: string, format: uuid}
+    task_id: {type: [string, 'null'], format: uuid}
+    created_by: {type: string, format: uuid}
+    mode: {enum: [chat, task]}
+    title: {type: [string, 'null']}
+    lifecycle: {enum: [active, archived]}
+    revision: {type: string, pattern: '^[1-9][0-9]*$'}
+    initial_input_id: {type: [string, 'null'], format: uuid}
+    configuration: {$ref: '#/Configuration'}
+    execution: {$ref: '#/Execution'}
+    accepts_input: {type: boolean}
+    input_block_reason: {type: [string, 'null']}
+    created_at: {type: string, format: date-time}
+    archived_at: {type: [string, 'null'], format: date-time}
+Input:
+  type: object
+  additionalProperties: false
+  required: [id, session_id, submitted_by, seq, text, status, turn_id, cancel_reason, rejection_reason, created_at, started_at, finished_at]
+  properties:
+    attachments: {$ref: '#/AttachmentList'}
+    receipt:
+      type: object
+      properties:
+        recorded: {type: boolean}
+        delivery: {enum: [pending, received, unknown, not_received, not_delivered]}
+        application: {enum: [unconfirmed]}
+        context_state: {type: [string, 'null']}
+        input_revision: {type: string}
+        duplicate: {type: boolean}
+    id: {type: string, format: uuid}
+    session_id: {type: string, format: uuid}
+    delivery_mode: {enum: [steer, queue], default: steer}
+    confirmation_request_id: {type: string, format: uuid}
+    confirmed: {type: boolean}
+    source_kind: {enum: [user, task_report, task_result, system, human_confirmation, work_item_assignment, work_item_amendment, work_item_result], description: Server-controlled provenance. task_result is a delivered group execution-result context record and is distinct from internal task_report.}
+    trigger_agent_loop: {type: boolean, default: true}
+    report_id: {type: [string, 'null'], format: uuid}
+    submitted_by: {type: string, format: uuid}
+    seq: {type: string, pattern: '^[1-9][0-9]*$'}
+    text: {type: string, maxLength: 65536}
+    status: {enum: [queued, started, processed, canceled, rejected]}
+    turn_id: {type: [string, 'null'], format: uuid}
+    cancel_reason: {type: [string, 'null']}
+    rejection_reason: {type: [string, 'null']}
+    created_at: {type: string, format: date-time}
+    started_at: {type: [string, 'null'], format: date-time}
+    finished_at: {type: [string, 'null'], format: date-time}
+Turn:
+  type: object
+  additionalProperties: false
+  required: [id, session_id, input_id, turn_no, status, result_summary, error, usage, has_unknown_tool_results, started_at, finished_at]
+  properties:
+    id: {type: string, format: uuid}
+    session_id: {type: string, format: uuid}
+    input_id: {type: string, format: uuid}
+    turn_no: {type: string, pattern: '^[1-9][0-9]*$'}
+    status: {enum: [running, stopping, completed, failed, canceled, interrupted]}
+    result_summary: {type: [string, 'null']}
+    error: {type: [object, 'null'], properties: {code: {type: string}, message: {type: string}}}
+    usage: {type: [object, 'null']}
+    has_unknown_tool_results: {type: boolean}
+    started_at: {type: string, format: date-time}
+    finished_at: {type: [string, 'null'], format: date-time}
+Event:
+  type: object
+  description: Flat reliable event; event-specific fields follow session-events.md. No data/payload wrapper. Only enabled types are emitted.
+  required: [type, schema_version, seq, session_id, input_id, turn_id, occurred_at]
+  properties:
+    type: {enum: [work_item.notice, user.message, input.updated, turn.updated, session.updated, session.requires_action, agent.message, agent.thinking, agent.tool_use, agent.tool_result, session.error]}
+    schema_version: {const: 1}
+    seq: {type: string, pattern: '^[1-9][0-9]*$'}
+    session_id: {type: string, format: uuid}
+    input_id: {type: [string, 'null'], format: uuid}
+    turn_id: {type: [string, 'null'], format: uuid}
+    occurred_at: {type: string, format: date-time}
+    content: {type: array, items: {type: object}}
+  additionalProperties: true
+  allOf:
+    - if: {properties: {type: {const: session.requires_action}}}
+      then:
+        required: [required_actions]
+        properties:
+          input_id: {type: 'null'}
+          turn_id: {type: 'null'}
+          required_actions: {$ref: '#/RequiredActions'}
+    - if: {properties: {type: {enum: [user.message, input.updated]}}}
+      then: {$ref: '#/InputEventFields'}
+    - if: {properties: {type: {enum: [agent.tool_use, agent.tool_result]}}}
+      then: {$ref: '#/ToolEventFields'}
+    - if: {properties: {type: {const: agent.tool_use}}}
+      then: {properties: {status: {enum: [pending, running]}}}
+    - if: {properties: {type: {const: agent.tool_result}}}
+      then: {properties: {status: {enum: [completed, failed, canceled, unknown]}}}
+InputEventFields:
+  type: object
+  required: [message_id, input_seq, submitted_by, content, status, cancel_reason, rejection, received_at, started_at, finished_at]
+  properties:
+    message_id: {type: string, format: uuid}
+    input_seq: {type: string, pattern: '^[1-9][0-9]*$'}
+    submitted_by: {type: string, format: uuid}
+    attachments: {$ref: '#/AttachmentList'}
+    content: {type: array, minItems: 1, items: {$ref: '#/TextBlock'}}
+    status: {enum: [queued, started, processed, canceled, rejected]}
+    cancel_reason: {type: [string, 'null']}
+    rejection: {$ref: '#/EventError'}
+    received_at: {type: string, format: date-time}
+    started_at: {type: [string, 'null'], format: date-time}
+    finished_at: {type: [string, 'null'], format: date-time}
+TextBlock:
+  type: object
+  required: [type, text]
+  additionalProperties: false
+  properties:
+    type: {const: text}
+    text: {type: string}
+EventError:
+  type: [object, 'null']
+  required: [code, message]
+  properties:
+    code: {type: string}
+    message: {type: string}
+ToolEventFields:
+  type: object
+  required: [tool_use_id, call_no, name, title, source, status, input, output, input_state, output_state, summary, error, started_at, finished_at]
+  properties:
+    tool_use_id: {type: string, format: uuid}
+    call_no: {type: string, pattern: '^[1-9][0-9]*$'}
+    name: {type: [string, 'null']}
+    title: {type: [string, 'null']}
+    source:
+      type: object
+      required: [kind, name]
+      additionalProperties: false
+      properties:
+        kind: {enum: [mcp, harness, unknown]}
+        name: {type: [string, 'null']}
+    status: {enum: [pending, running, completed, failed, canceled, unknown]}
+    input: {}
+    output: {}
+    input_state: {enum: [available, unavailable, redacted, too_large]}
+    output_state: {enum: [available, unavailable, redacted, too_large]}
+    summary: {type: [string, 'null']}
+    error: {$ref: '#/EventError'}
+    started_at: {type: [string, 'null'], format: date-time}
+    finished_at: {type: [string, 'null'], format: date-time}
+SubmitInput:
+  oneOf:
+    - {$ref: '#/TextInput'}
+    - type: object
+      additionalProperties: false
+      required: [confirmation]
+      properties:
+        confirmation:
+          type: object
+          additionalProperties: false
+          required: [request_id, confirmed]
+          properties:
+            request_id: {type: string, format: uuid}
+            confirmed: {type: boolean}
+AttachmentList:
+  type: array
+  items: {$ref: './files.yaml#/Attachment'}
+TextInput:
+  type: object
+  additionalProperties: false
+  anyOf:
+    - {required: [text], properties: {text: {type: string, minLength: 1}}}
+    - {required: [attachment_paths], properties: {attachment_paths: {type: array, minItems: 1}}}
+  properties:
+    attachment_paths: {type: array, maxItems: 32, uniqueItems: true, items: {type: string, minLength: 1, maxLength: 4096}}
+    delivery_mode: {type: string, enum: [steer, queue], default: steer}
+    text: {type: string, maxLength: 65536}
+Empty: {type: object, additionalProperties: false, maxProperties: 0}
+SessionPage:
+  type: object
+  required: [items, next_cursor]
+  properties:
+    items: {type: array, items: {$ref: '#/Session'}}
+    next_cursor: {type: [string, 'null']}
+InputPage:
+  type: object
+  required: [items, next_cursor]
+  properties:
+    items: {type: array, items: {$ref: '#/Input'}}
+    next_cursor: {type: [string, 'null']}
+TurnPage:
+  type: object
+  required: [items, next_cursor]
+  properties:
+    items: {type: array, items: {$ref: '#/Turn'}}
+    next_cursor: {type: [string, 'null']}
+EventPage:
+  type: object
+  required: [items, next_cursor, resume_cursor]
+  properties:
+    items: {type: array, items: {$ref: '#/Event'}}
+    next_cursor: {type: [string, 'null']}
+    resume_cursor: {type: [string, 'null'], description: Present after the last forward history page, or on every backward page; always anchors the original fixed high-water.}

@@ -1,0 +1,476 @@
+{
+  "collection": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listGroupSharingPolicies",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items",
+                  "total"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/Policy"
+                    }
+                  },
+                  "total": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "../manager/sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "name": "q",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        {
+          "name": "page",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000,
+            "default": 1
+          }
+        },
+        {
+          "name": "page_size",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      ],
+      "description": "Workspace owner/admin only; exact employee scope, literal name substring; stable ID ascending pagination. Groups are employee groups, not operator groups. Returns metadata, no read permission or forwarding."
+    },
+    "post": {
+      "operationId": "createGroupSharingPolicy",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "201": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Policy"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "../manager/sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "../manager/conversations.yaml#/parameters/csrf"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/schemas/Put"
+            }
+          }
+        }
+      },
+      "description": "Creates one named policy; no idempotency key, never automatically retry an uncertain create. Directed sources are groups, targets groups or verified real users; mutual uses at least two source groups and empty targets. No departments/self edges/duplicate identities. Typed references must be currently valid. Does not read history, create conversations or forward messages. Maximum 100 policies per employee."
+    }
+  },
+  "item": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "policy_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "getGroupSharingPolicy",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Policy"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "../manager/sessions.yaml#/responses/Error"
+        }
+      }
+    },
+    "put": {
+      "operationId": "replaceGroupSharingPolicy",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Policy"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "../manager/sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "../manager/conversations.yaml#/parameters/csrf"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/schemas/Put"
+            }
+          }
+        }
+      },
+      "description": "Full replacement with current version required. Version conflict is 409. Existing stale edges may remain for display/disable, but new edges and re-enabling validate current references. No transitive closure across policies."
+    },
+    "delete": {
+      "operationId": "deleteGroupSharingPolicy",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "204": {
+          "description": "Success"
+        },
+        "default": {
+          "$ref": "../manager/sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "../manager/conversations.yaml#/parameters/csrf"
+        },
+        {
+          "name": "version",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "description": "Delete current version atomically with edges; preserve configuration audit snapshot. Missing policy is 404, stale version 409."
+    }
+  },
+  "preview": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "previewGroupSharingPolicy",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "edges"
+                ],
+                "properties": {
+                  "edges": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/Edge"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "../manager/sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "../manager/conversations.yaml#/parameters/csrf"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/schemas/Put"
+            }
+          }
+        }
+      },
+      "description": "Owner/admin and current references required. Expands only this policy into explicit source-to-target directions, never follows another policy. Provider history capability does not prove current API read permission or execution availability. No message data read or state written."
+    }
+  },
+  "schemas": {
+    "Put": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "mode",
+        "enabled",
+        "sources",
+        "targets"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "mode": {
+          "enum": [
+            "directed",
+            "mutual"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sources": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "./people-selectors.yaml#/schemas/SelectionRef"
+          }
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "./people-selectors.yaml#/schemas/SelectionRef"
+          }
+        }
+      }
+    },
+    "Policy": {
+      "type": "object",
+      "required": [
+        "id",
+        "workspace_id",
+        "agent_id",
+        "name",
+        "mode",
+        "enabled",
+        "version",
+        "sources",
+        "targets",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "mode": {
+          "enum": [
+            "directed",
+            "mutual"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sources": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "./people-selectors.yaml#/schemas/SelectionRef"
+          }
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "./people-selectors.yaml#/schemas/SelectionRef"
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "agent_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Edge": {
+      "type": "object",
+      "required": [
+        "source",
+        "target",
+        "history_capability",
+        "history_permission_verified"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "./people-selectors.yaml#/schemas/SelectionRef"
+        },
+        "target": {
+          "$ref": "./people-selectors.yaml#/schemas/SelectionRef"
+        },
+        "history_capability": {
+          "enum": [
+            "local_history",
+            "provider_history",
+            "recent_window",
+            "unsupported"
+          ]
+        },
+        "history_permission_verified": {
+          "const": false
+        },
+        "unavailable_reason": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "get": {
+    "operationId": "listPlugins",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      {
+        "name": "page_size",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      {
+        "name": "q",
+        "in": "query",
+        "schema": {"type": "string", "maxLength": 200}
+      },
+      {
+        "name": "scope",
+        "in": "query",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "official",
+            "all"
+          ],
+          "default": "workspace"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Success",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "./plugin-schemas.yaml#/PluginPage"
+            }
+          }
+        }
+      },
+      "default": {
+        "description": "400 invalid input; 401 browser session required; 403 authorization/CSRF; 404 absent; 409 stale version; 422 remote authentication failed; 502 MCP unavailable/protocol invalid; 503 database error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "post": {
+    "operationId": "createPlugin",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "X-CSRF-Protection",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "const": "1"
+        }
+      }
+    ],
+    "responses": {
+      "201": {
+        "description": "Success",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "./plugin-schemas.yaml#/Plugin"
+            }
+          }
+        }
+      },
+      "default": {
+        "description": "400 invalid input; 401 browser session required; 403 authorization/CSRF; 404 absent; 409 stale version; 422 remote authentication failed; 502 MCP unavailable/protocol invalid; 503 database error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "./plugin-schemas.yaml#/PluginCreate"
+          }
+        }
+      }
+    }
+  }
+}

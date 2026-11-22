@@ -1,0 +1,146 @@
+{
+  "chat": [
+    {
+      "name": "list_pending_human_confirmations",
+      "description": "分页核对当前主私聊用户有权回答的确认单。当前页可能不包含全部待确认。可用 requestId 精确查询，referencedRequests 提供当前消息或可信上下文提及的可答确认单，独立于当前页。返回真实入站片段、可信引用及已送达的澄清焦点。根据当前回复判断归属，禁止按列表顺序猜。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "maxLength": 36,
+            "description": "可用确认单完整 ID 或 H- 短码精确查询。"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "从 1 开始，默认 1。"
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "每页条数，默认 20。"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "submit_human_confirmation",
+      "description": "按当前用户真实消息，为一张确认单提交结构化答复。先查询题目。用 current_message 表示本条已明确指向该题，clarification 表示接续唯一可信引用或实际送达的澄清，unclear 表示不明。题目不明直接询问；题目已知但缺信息、有条件、意思不明确时，提交 needs_more 和 clarificationText，并在最终回复中原样发出该追问。返回 explicit_decision_required 时，登记并发出是否批准的追问。revise 的 text 填入用户的修改意见。多个确认单分开提交，可用本条真实片段 ID。为每次提交指定 operationId；超时用原标识查回执，原样重试沿用原标识，变更内容用新标识。按实际回执告知用户结果。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "本条用户消息内每次提交的唯一标识，例如 submit-1。原样重试沿用同一标识。"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "maxLength": 19
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject",
+              "information",
+              "revise",
+              "needs_more"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "questionDigest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "association": {
+            "type": "string",
+            "enum": [
+              "current_message",
+              "clarification",
+              "unclear"
+            ]
+          },
+          "clarificationText": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "evidenceSegmentIds": {
+            "type": "array",
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "answers": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "questionId": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "questionId",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "request_id",
+          "operationId",
+          "version",
+          "decision",
+          "questionDigest",
+          "association",
+          "answers"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_human_confirmation_receipt",
+      "description": "提交超时或结果未知时，在当前用户消息内按原确认单和 operationId 核对回执。unknown 表示暂未查到，不能推定成功或失败。已记录或已排队不代表任务完成。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request_id": {"type": "string", "format": "uuid"},
+          "operationId": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"}
+        },
+        "required": ["request_id", "operationId"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "task": [
+    {
+      "name": "list_human_confirmation_scopes",
+      "description": "查看可用的确认职责范围。按问题语义匹配 items 的 questionScope，能够确定时使用对应 candidateId；没有匹配或人选不明确时使用 default_recipient 的 candidateId，默认范围无需匹配。没有默认人就报告阻塞。把选中的 candidateId 与 version 一同交给 ask_human。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  ]
+}

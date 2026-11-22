@@ -1,0 +1,138 @@
+{
+  "package": "@earendil-works/pi-coding-agent",
+  "version": "1.5.2",
+  "source": "https://github.com/earendil-works/pi/tree/v1.5.2/packages/coding-agent/src",
+  "adaptation": "Drop terminal renderers; use public extension types; NodeNext import suffixes. Tool execution and schemas retained. Remove terminal-only EditRenderState type; retain worker entry explicitly. Vendor uses upstream index-access checking; platform code retains stricter indexing checks.",
+  "files": [
+    {
+      "path": "utils/photon.ts",
+      "source_sha256": "806c3941b96e09705e26cd2d449ee8971b3498bbde495f7512b20906120d96a9",
+      "adapted": false
+    },
+    {
+      "path": "utils/exif-orientation.ts",
+      "source_sha256": "fbca93e04682d00139c319a0721417d47b505e0c6e5787f4d9d9dba164194ad0",
+      "adapted": true
+    },
+    {
+      "path": "utils/image-convert.ts",
+      "source_sha256": "5c61e36a267b9bbd5beeb2bb3f2a0938ed7a05f7333d4a17355ea807fc7bcd3b",
+      "adapted": true
+    },
+    {
+      "path": "utils/image-resize-core.ts",
+      "source_sha256": "324a1768fafbe20408e354e570c648eec58ee6e9f0892b53a3853f295e41a3b5",
+      "adapted": true
+    },
+    {
+      "path": "utils/image-resize.ts",
+      "source_sha256": "32d74ba920e02d4d31d8a3ff23b89aa0172571386c6831638f6a593f536ad6e2",
+      "adapted": true
+    },
+    {
+      "path": "utils/image-process.ts",
+      "source_sha256": "fffb65fba877607644f8028c0f24aa6e74228e15427e112ee367e7983f2a79e5",
+      "adapted": true
+    },
+    {
+      "path": "utils/mime.ts",
+      "source_sha256": "561d5511a976cdf4fc2d1b2ac773b21820bbad62e954e39c473f77c46a77f0af",
+      "adapted": false
+    },
+    {
+      "path": "utils/child-process.ts",
+      "source_sha256": "cd324f5b9a1abadd85ab5a331750d475c8bd51ec65cae091ad9b416245ec85d4",
+      "adapted": false
+    },
+    {
+      "path": "utils/paths.ts",
+      "source_sha256": "c8a2995b52a181e46cfae3b30f31448d201742d303249f34119ef2fd7a44e672",
+      "adapted": true
+    },
+    {
+      "path": "core/tools/path-utils.ts",
+      "source_sha256": "ab6f420d2388a41366113c17a25e356867820b87b02a169d044cfcf83e1997d3",
+      "adapted": true
+    },
+    {
+      "path": "core/tools/tool-definition-wrapper.ts",
+      "source_sha256": "dcc1e90f646f4feff9dea53b5b22fe05f898a379b5b494b23a338a74c5247519",
+      "adapted": true
+    },
+    {
+      "path": "core/tools/truncate.ts",
+      "source_sha256": "a373ab54eb718a97f5757fe27f4750502e78e216aced34f56d1291bda9c08488",
+      "adapted": false
+    },
+    {
+      "path": "core/tools/read.ts",
+      "source_sha256": "46b9312a3d69b3a82e716abe6211788dbd02f0dc55fb092a3c8390acde45fa5f",
+      "adapted": true
+    },
+    {
+      "path": "core/tools/file-mutation-queue.ts",
+      "source_sha256": "33cb06ac9bcdf32c8b84d9d12e33be44c503a7670f668e003a3262cd34294d11",
+      "adapted": false
+    },
+    {
+      "path": "core/tools/write.ts",
+      "source_sha256": "b93b6a83eaee6959ae713934bbcdba834a39b023694a3ca986c73b331f771a3d",
+      "adapted": true
+    },
+    {
+      "path": "utils/text.ts",
+      "source_sha256": "bb323f9607c499115b532021f4f0163c6df04d834aee9c32c3c77b273bd2d7c6",
+      "adapted": false
+    },
+    {
+      "path": "core/tools/edit-diff.ts",
+      "source_sha256": "0e12aa6ddbc5c18ae8d93499c695e812f76eac9b2d97cd9b91846d2a7837d6dc",
+      "adapted": true
+    },
+    {
+      "path": "core/tools/edit.ts",
+      "source_sha256": "8c40365f7c50b60ba27084f028ae7734b5ddba18a91b8aa29d939ed6d2aad7f2",
+      "adapted": true
+    },
+    {
+      "path": "config.ts",
+      "source_sha256": "b226dccdba72d5438ec6facadd4f3c5f3ff0d4fe66ee591078c486712dbe915a",
+      "adapted": true
+    },
+    {
+      "path": "utils/management-http.ts",
+      "source_sha256": "2195b345fdd5c607f87a55b93e7d00c6d70d7dcfe2989b08bbd9f39b529a756a",
+      "adapted": false
+    },
+    {
+      "path": "utils/pi-user-agent.ts",
+      "source_sha256": "2e7a31bc3d1c48bf91afa2e46ac1f09050487dfe465d10663ab559caff31d463",
+      "adapted": false
+    },
+    {
+      "path": "utils/tools-manager.ts",
+      "source_sha256": "d9f37a23a5af7ccfc2bb2ea172677e0c5fc8bbe5f265305eae75a5e775f3fa50",
+      "adapted": true
+    },
+    {
+      "path": "core/tools/grep.ts",
+      "source_sha256": "5664334cf2a5a370f97ef7be954f801065db279c99d183efa0a4929975ac6eed",
+      "adapted": true
+    },
+    {
+      "path": "core/tools/find.ts",
+      "source_sha256": "e24103c9f9c2397caf4aa1356b82c883683a9be710985784a1f1d8df812ed928",
+      "adapted": true
+    },
+    {
+      "path": "core/tools/ls.ts",
+      "source_sha256": "b8a7d1c020293a9087d43eb292052ecc4101c3be039ca1165063f8a03a763b34",
+      "adapted": true
+    },
+    {
+      "path": "utils/image-resize-worker.ts",
+      "source_sha256": "10c44a69b0150a088328a1a2a30332f993598d01eaa4c7e583185d3eab911da2",
+      "adapted": true
+    }
+  ]
+}

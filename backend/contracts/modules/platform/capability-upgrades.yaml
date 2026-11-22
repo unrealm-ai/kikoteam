@@ -1,0 +1,47 @@
+post:
+  operationId: upgradeEmployeeCapability
+  description: Upgrade all of this employee's bindings to the current catalog version in one transaction. Takes effect on the next execution turn.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema: &uuid {type: string, format: uuid}
+  - name: agent_id
+    in: path
+    required: true
+    schema: *uuid
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema: {type: string, const: '1'}
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          additionalProperties: false
+          required: [kind, resource_id, from_version_id, to_version_id]
+          properties:
+            kind: {type: string, enum: [skill, plugin]}
+            resource_id: *uuid
+            from_version_id: *uuid
+            to_version_id: *uuid
+  responses:
+    '200':
+      description: All bindings use the requested version.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [upgraded]
+            properties:
+              upgraded: {type: boolean}
+    default:
+      description: Invalid request, unauthorized manager, unavailable resource, stale version, or missing target account.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error

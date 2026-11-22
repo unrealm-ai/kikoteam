@@ -1,0 +1,1630 @@
+{
+  "schemas": {
+    "Inbound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "binding_id",
+        "connection_generation",
+        "config_revision",
+        "rules_version",
+        "provider_event_id",
+        "provider_message_id",
+        "external_tenant_id",
+        "external_chat_id",
+        "chat_type",
+        "sender_id",
+        "text",
+        "message_type"
+      ],
+      "properties": {
+        "binding_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rules_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "provider_event_id": {
+          "type": "string"
+        },
+        "provider_message_id": {
+          "type": "string"
+        },
+        "external_tenant_id": {
+          "type": "string"
+        },
+        "external_chat_id": {
+          "type": "string"
+        },
+        "sender_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "reply_message_id": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Parent message ID from the authenticated Feishu main DM callback, not derived from quoted text."
+        },
+        "quoted_text": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Optional WeCom quote text for display and model context. The adapter preserves the current message separately in text. Quote content supplies no identity, history anchor or verification eligibility."
+        },
+        "message_type": {
+          "type": "string",
+          "description": "Original provider message type. Text-bearing inputs include Feishu post, DingTalk richText and WeCom mixed."
+        },
+        "thread_id": {
+          "type": "string"
+        },
+        "chat_type": {
+          "enum": [
+            "direct",
+            "group"
+          ]
+        },
+        "created_at_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bot_mentioned": {
+          "type": "boolean"
+        },
+        "mentions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 1024
+              },
+              "id_type": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "tenant_key": {
+                "type": "string",
+                "maxLength": 256
+              }
+            }
+          },
+          "maxItems": 100
+        },
+        "sender_name": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "sender_id_type": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "sender_tenant": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "bot_id": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Required authenticated provider bot identity for DingTalk/WeCom; not configuration evidence."
+        },
+        "chat_name": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "provider_directed": {
+          "type": "boolean"
+        },
+        "control_eligible": {
+          "type": "boolean",
+          "description": "Trusted adapter attests a direct pure-text event, without quote/mixed attachment content."
+        },
+        "media": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "kind",
+              "locator"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "kind": {
+                "enum": [
+                  "image",
+                  "file"
+                ]
+              },
+              "locator": {
+                "type": "string",
+                "maxLength": 16384,
+                "description": "Opaque encrypted resource bound to binding generation, original message and ordinal."
+              }
+            }
+          }
+        }
+      }
+    },
+    "HistoryJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "lease_token": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "binding_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rules_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "trigger_created_at_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "chat_id": {
+          "type": "string"
+        },
+        "thread_id": {
+          "type": "string"
+        },
+        "trigger_message_id": {
+          "type": "string"
+        },
+        "external_tenant_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "strategy": {
+          "enum": [
+            "since_last_trigger",
+            "wecom_recent"
+          ]
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "previous_trigger_message_id": {
+          "type": "string"
+        },
+        "previous_trigger_created_at_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "trigger_text": {
+          "type": "string",
+          "description": "Expected body for Feishu notification readback or WeCom same-group full-text anchor matching."
+        },
+        "trigger_format": {
+          "enum": ["text", "markdown"],
+          "description": "Stored outbound format for Feishu notification readback. Older notification jobs default to text."
+        }
+      }
+    },
+    "HistorySnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "items"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "message_id",
+              "sender_id",
+              "text",
+              "created_at_ms"
+            ],
+            "properties": {
+              "message_id": {
+                "type": "string"
+              },
+              "sender_id": {
+                "type": "string"
+              },
+              "sender_type": {
+                "type": "string"
+              },
+              "message_type": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 32768
+              },
+              "created_at_ms": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "sender_name": {
+                "type": "string",
+                "maxLength": 1024
+              },
+              "sender_id_type": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "sender_tenant": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 1024
+                    },
+                    "id_type": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "tenant_key": {
+                      "type": "string",
+                      "maxLength": 256
+                    }
+                  }
+                },
+                "maxItems": 100
+              },
+              "record_key": {
+                "type": "string",
+                "description": "WeCom job-local evidence key only, never a provider message identity."
+              }
+            },
+            "description": "Feishu uses actual message_id. WeCom requires message_id empty, record_key scoped only to this job, sender_type unknown, empty sender_id_type and mentions; historical labels are never authorization identities."
+          }
+        },
+        "error_code": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "lease_token": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "binding_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "idempotency_key": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "connection_generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "chat_id": {
+          "type": "string"
+        },
+        "reply_to_message_id": {
+          "type": "string"
+        },
+        "thread_id": {
+          "type": "string",
+          "description": "Verified provider thread ID from the source inbox; empty for the main chat. Topic replies target reply_to_message_id inside this thread."
+        },
+        "text": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "text",
+            "markdown",
+            "image",
+            "file"
+          ],
+          "default": "text",
+          "description": "Immutable delivery content format. Missing means the existing provider text format."
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "feishu",
+            "dingtalk",
+            "wecom"
+          ]
+        },
+        "external_tenant_id": {
+          "type": "string"
+        },
+        "chat_type": {
+          "type": "string"
+        },
+        "recipient_id": {
+          "type": "string",
+          "description": "Direct-chat recipient; empty for groups."
+        },
+        "provider_request_id": {
+          "type": "string"
+        },
+        "target_digest": {
+          "type": "string"
+        },
+        "query_token": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "Artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "version",
+        "name",
+        "media_type",
+        "size_bytes"
+      ],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432
+        }
+      }
+    }
+  },
+  "inbox": {
+    "post": {
+      "operationId": "receiveChannelInbox",
+      "description": "Dedicated Hub credential only. SDK verified event identity, pinned tenant and structured bot mention. Accepted means durable ordinary Inbox or handled WeCom control event, never model acceptance. WeCom control content never enters Inbox or Input. Duplicate event/message IDs do not recreate Input or issue a new control reply. Disabled employee still enters Manager for fixed response.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "status"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Inbox ID for ordinary events; a transient receipt ID for handled control events."
+                  },
+                  "status": {
+                    "enum": [
+                      "accepted",
+                      "duplicate"
+                    ]
+                  },
+                  "control_reply": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "used",
+                      "expired",
+                      "revoked"
+                    ],
+                    "description": "Only a committed WeCom control event may request a fixed callback reply; absent for ordinary, suppressed, or duplicate events. This is not a remote delivery receipt."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/schemas/Inbound"
+            }
+          }
+        }
+      }
+    }
+  },
+  "deliveryClaim": {
+    "post": {
+      "operationId": "claimChannelDelivery",
+      "description": "Lease durable pending work. History is authorized before provider fetch; sending delivery lease expiry becomes unknown and is not blindly retried.",
+      "parameters": [
+        {
+          "name": "X-Kiko-Delivery-Markdown",
+          "in": "header",
+          "description": "Value 1 opts the Hub into leasing Markdown alongside text. Legacy Hubs lease text only.",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "1"
+            ]
+          }
+        },
+        {
+          "name": "X-Kiko-Delivery-Media",
+          "in": "header",
+          "description": "Opt in to native image and file deliveries.",
+          "schema": {
+            "enum": [
+              "1"
+            ]
+          }
+        }
+      ],
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/Delivery"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "limit"
+              ],
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "deliveryAuthorize": {
+    "post": {
+      "operationId": "authorizeChannelDelivery",
+      "description": "Recheck current binding generation and scope immediately before I/O; return immutable canonical target. History repeats this before each page. Browser identity is never a channel principal.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Delivery"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "historyClaim": {
+    "post": {
+      "operationId": "claimChannelHistory",
+      "description": "Lease durable pending work. History is authorized before provider fetch; sending delivery lease expiry becomes unknown and is not blindly retried.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/HistoryJob"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "limit"
+              ],
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "historyAuthorize": {
+    "post": {
+      "operationId": "authorizeChannelHistory",
+      "description": "Recheck current binding generation and scope immediately before I/O; return immutable canonical target. History repeats this before each page. Browser identity is never a channel principal.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/HistoryJob"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "deliveryComplete": {
+    "post": {
+      "operationId": "completeChannelDelivery",
+      "description": "Record same-attempt transport facts, including late proof after authorization revocation. A Feishu sent receipt requires the provider message ID. For topic replies the response chat and thread IDs must also match the original inbox target. Missing or mismatched destination evidence leaves the outcome unknown. WeCom requires a matched business ACK. DingTalk acceptance only permits bounded read-only status queries. Completion never authorizes another send.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed."
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token",
+                "status",
+                "target_digest"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "status": {
+                  "enum": [
+                    "sent",
+                    "accepted",
+                    "failed",
+                    "unknown"
+                  ]
+                },
+                "provider_message_id": {
+                  "type": "string"
+                },
+                "provider_chat_id": {
+                  "type": "string",
+                  "description": "Chat ID observed in the Feishu send response."
+                },
+                "provider_thread_id": {
+                  "type": "string",
+                  "description": "Thread ID observed in the Feishu send response."
+                },
+                "provider_created_at_ms": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$",
+                  "description": "Provider creation timestamp in milliseconds, when available for the confirmed destination."
+                },
+                "error_code": {
+                  "type": "string"
+                },
+                "provider_request_id": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "target_digest": {
+                  "type": "string",
+                  "pattern": "^[a-fA-F0-9]{64}$"
+                },
+                "query_token": {
+                  "type": "string"
+                },
+                "evidence_type": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "provider_session_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "historyComplete": {
+    "post": {
+      "operationId": "completeChannelHistory",
+      "description": "Freeze only provider messages strictly after the previous context-committed trigger and before the current trigger; exclude both anchors. First trigger uses recent history, maximum 100. Same source is serialized. Partial/unavailable degrades to current message only. Native context receipt advances the boundary, never queued/started/processed status alone. No continuous body window.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed."
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token",
+                "snapshot"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "snapshot": {
+                  "$ref": "#/schemas/HistorySnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "bindings": {
+    "get": {
+      "operationId": "channelBindingsSnapshot",
+      "description": "Consistent full snapshot with per-employee credentials, independent connection/rules/config versions and global snapshot revision. Dedicated Hub credential; never a browser route. Do not log secret bodies.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed."
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      }
+    }
+  },
+  "applied": {
+    "post": {
+      "operationId": "channelBindingApplied",
+      "description": "CAS applied generation/rules/config state, including independently verified bot/tenant pins; stale status cannot overwrite new configuration.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed."
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "connection_generation",
+                "rules_version",
+                "config_revision",
+                "status"
+              ],
+              "properties": {
+                "connection_generation": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "rules_version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "config_revision": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "status": {
+                  "type": "string"
+                },
+                "error_code": {
+                  "type": "string"
+                },
+                "observed_tenant_id": {
+                  "type": "string"
+                },
+                "observed_bot_open_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "deliveryQueryClaim": {
+    "post": {
+      "operationId": "claimChannelDeliveryQueries",
+      "description": "Lease read-only queries for original DingTalk request keys, at most five within five minutes, at 2/5/10/20/30-second intervals. Does not authorize sending; target_digest and original lease_token identify original attempt, query_token identifies reconciliation. Text is empty.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/Delivery"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "limit"
+              ],
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "mediaClaim": {
+    "post": {
+      "operationId": "claimInboundChannelMedia",
+      "description": "Claim an authorized provider resource for download and storage. Each lease consumes one of three attempts. An expired final lease is reconciled without re-downloading.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current authorized operation result.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "job"
+                ],
+                "properties": {
+                  "job": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "kind",
+                          "locator",
+                          "inbox_id",
+                          "ordinal",
+                          "lease_token",
+                          "binding_id",
+                          "connection_generation",
+                          "provider",
+                          "message_id"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "maxLength": 240
+                          },
+                          "kind": {
+                            "enum": [
+                              "image",
+                              "file"
+                            ]
+                          },
+                          "locator": {
+                            "type": "string",
+                            "maxLength": 16384,
+                            "description": "Opaque encrypted resource bound to binding generation, original message and ordinal."
+                          },
+                          "inbox_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "ordinal": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 31
+                          },
+                          "lease_token": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "binding_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "connection_generation": {
+                            "type": "integer"
+                          },
+                          "provider": {
+                            "enum": [
+                              "feishu",
+                              "dingtalk",
+                              "wecom"
+                            ]
+                          },
+                          "message_id": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      }
+    }
+  },
+  "mediaFinish": {
+    "put": {
+      "operationId": "finishInboundChannelMedia",
+      "description": "Publish verified bytes to the original conversation project under the current lease. The upload journal prevents duplicate publication for the same attachment.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current authorized operation result.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "accepted"
+                ],
+                "properties": {
+                  "accepted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/octet-stream": {
+            "schema": {
+              "type": "string",
+              "format": "binary"
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "ordinal",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 31
+        }
+      },
+      {
+        "name": "X-Kiko-Media-Lease",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "mediaFail": {
+    "post": {
+      "operationId": "failInboundChannelMedia",
+      "description": "Settle a download or storage failure under the same lease. An already published attachment is reconciled from its upload journal instead of being marked failed.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current authorized operation result.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "accepted"
+                ],
+                "properties": {
+                  "accepted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "ordinal",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 31
+        }
+      },
+      {
+        "name": "X-Kiko-Media-Lease",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "mediaContent": {
+    "post": {
+      "operationId": "readDeliveryArtifact",
+      "description": "Read the frozen version after current target and lease authorization.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current authorized operation result.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "artifact",
+                  "bytes"
+                ],
+                "properties": {
+                  "artifact": {
+                    "$ref": "#/schemas/Artifact"
+                  },
+                  "bytes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "contentEncoding": "base64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "mediaDispatch": {
+    "post": {
+      "operationId": "checkArtifactDispatch",
+      "description": "Recheck the original target immediately before sending.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current authorized operation result.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "artifact",
+                  "bytes"
+                ],
+                "properties": {
+                  "artifact": {
+                    "$ref": "#/schemas/Artifact"
+                  },
+                  "bytes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "contentEncoding": "base64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  }
+}

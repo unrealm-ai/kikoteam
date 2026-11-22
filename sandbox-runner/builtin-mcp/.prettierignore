@@ -1,0 +1,5 @@
+node_modules/
+dist/
+vendor/
+source-archive.json
+package-lock.json

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="280" height="280" viewBox="66 85 280 280"
+     fill="none" role="img" aria-labelledby="logo-title logo-desc">
+  <title id="logo-title">People Connection Logo</title>
+  <desc id="logo-desc">Two connected abstract people, with a mint green figure in front and a charcoal figure beside it.</desc>
+
+  <style>
+    @media (prefers-color-scheme: dark) {
+      #people-charcoal stop:first-child, #people-charcoal-head stop:first-child { stop-color: #F3F5F4; }
+      #people-charcoal stop:last-child, #people-charcoal-head stop:last-child { stop-color: #B9C4C0; }
+    }
+  </style>
+  <defs>
+    <linearGradient id="people-green-head" x1="118" y1="119" x2="194" y2="195" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3BD8A5"/>
+      <stop offset="1" stop-color="#25C795"/>
+    </linearGradient>
+
+    <linearGradient id="people-green-body" x1="88" y1="208" x2="255" y2="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#39D6A2"/>
+      <stop offset="0.56" stop-color="#2BCF99"/>
+      <stop offset="1" stop-color="#20BD89"/>
+    </linearGradient>
+
+    <linearGradient id="people-green-overlap" x1="190" y1="228" x2="252" y2="326" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#20B987"/>
+      <stop offset="0.58" stop-color="#159F73"/>
+      <stop offset="1" stop-color="#15966D"/>
+    </linearGradient>
+
+    <linearGradient id="people-charcoal" x1="229" y1="202" x2="322" y2="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#242827"/>
+      <stop offset="1" stop-color="#101312"/>
+    </linearGradient>
+
+    <linearGradient id="people-charcoal-head" x1="226" y1="125" x2="292" y2="194" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#252928"/>
+      <stop offset="1" stop-color="#111413"/>
+    </linearGradient>
+
+    <clipPath id="people-green-body-clip">
+      <path d="M77 275.5C77 235.8 103.1 208.6 136.4 204.5C164.8 201 189.1 212.3 212.7 229.1C244.2 251.5 261.8 287.2 263 329.3C246.7 319.2 227.6 313.1 208.2 313.1C188.9 313.1 173.3 320.7 157.1 326.3C145.4 330.3 132.8 330 117.1 330H101.8C87.9 330 77 319.2 77 305.2V275.5Z"/>
+    </clipPath>
+
+    <mask id="body-separation-mask" maskUnits="userSpaceOnUse" x="70" y="195" width="275" height="145">
+      <rect x="70" y="195" width="275" height="145" fill="#FFFFFF"/>
+      <path d="M216.2 220.1C246.1 244.7 263.4 282.5 265.1 329.2"
+            fill="none" stroke="#000000" stroke-width="4.2" stroke-linecap="round"/>
+    </mask>
+  </defs>
+
+  <!-- Heads -->
+  <circle cx="259.6" cy="160.2" r="37.8" fill="url(#people-charcoal-head)"/>
+  <circle cx="156.6" cy="157.1" r="38.2" fill="url(#people-green-head)"/>
+
+  <!-- Bodies: the mask keeps the divider transparent on every background -->
+  <g mask="url(#body-separation-mask)">
+    <path d="M219.2 219.2C237.2 208.2 254.4 203.8 273.4 204.6C309.3 206.1 334.7 235.3 334.7 274.7V305.1C334.7 319.1 324.1 329.5 310.2 329.5H267.1C266.1 288.2 251.1 251.8 219.2 219.2Z"
+          fill="url(#people-charcoal)"/>
+
+    <path d="M77 275.5C77 235.8 103.1 208.6 136.4 204.5C164.8 201 189.1 212.3 212.7 229.1C244.2 251.5 261.8 287.2 263 329.3C246.7 319.2 227.6 313.1 208.2 313.1C188.9 313.1 173.3 320.7 157.1 326.3C145.4 330.3 132.8 330 117.1 330H101.8C87.9 330 77 319.2 77 305.2V275.5Z"
+          fill="url(#people-green-body)"/>
+
+    <!-- Subtle emerald shading that gives the front figure depth -->
+    <g clip-path="url(#people-green-body-clip)">
+      <path d="M212.2 224.1C240.2 246.2 258.6 280.1 262.5 316.7L263 330C246.7 319.2 227.6 313.1 208.2 313.1C190.6 313.1 175.5 319.8 162.7 325.9C165.7 292.5 179.3 258.5 199.1 237.6C203.2 233.2 207.6 228.7 212.2 224.1Z"
+            fill="url(#people-green-overlap)" opacity="0.94"/>
+    </g>
+  </g>
+</svg>

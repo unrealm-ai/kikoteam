@@ -1,0 +1,1403 @@
+{
+  "collection": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listTriggers",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Current workspace owner/admin only.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/Trigger"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "operationId": "createTrigger",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin. Create at version 0 with the requested enabled state. A generated Webhook credential is committed with the trigger, including when explicitly disabled. GitLab signing mode requires disabled creation and a provider-issued token before activation. Up to 100 per employee. Do not replay an uncertain create.",
+      "responses": {
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        },
+        "201": {
+          "description": "Created trigger, including its first generated credential exactly once where applicable.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/CreatedTrigger"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "./conversations.yaml#/parameters/csrf"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/schemas/Write",
+              "not": { "required": ["signing_token"] }
+            }
+          }
+        }
+      }
+    }
+  },
+  "item": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "trigger_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "getTrigger",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Current workspace owner/admin only.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Trigger"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      }
+    },
+    "put": {
+      "operationId": "saveTrigger",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin. Full configuration replacement with current version, stale version 409. Kind and webhook adapter immutable. Enabled hook requires an active credential. Missing notification_targets clears targets; no arbitrary provider addresses. Schedule allowed_actions must equal its action; send_message requires nonempty targets.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Trigger"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "./conversations.yaml#/parameters/csrf"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/schemas/Write"
+            }
+          }
+        }
+      }
+    }
+  },
+  "credentials": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "trigger_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listTriggerCredentials",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Current workspace owner/admin only.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/Credential"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      }
+    },
+    "post": {
+      "operationId": "createTriggerCredential",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Generates a new credential; secret returned once, encrypted at rest. No automatic replay on unknown creation outcome.",
+      "responses": {
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        },
+        "201": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Credential"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "./conversations.yaml#/parameters/csrf"
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "signing_token": {
+                  "type": "string",
+                  "writeOnly": true,
+                  "description": "Import only for GitLab signing mode. Omit to generate credentials in other modes."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "credential": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "trigger_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "key_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "delete": {
+      "operationId": "revokeTriggerCredential",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Revoke specified key; subsequent signed ingress cannot use it. Never exposes stored secret.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "revoked": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "./conversations.yaml#/parameters/csrf"
+        }
+      ]
+    }
+  },
+  "events": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "trigger_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listTriggerEvents",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Current workspace owner/admin only.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/Event"
+                    }
+                  },
+                  "next_cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "./sessions.yaml#/parameters/cursor"
+        },
+        {
+          "$ref": "./sessions.yaml#/parameters/limit"
+        }
+      ]
+    }
+  },
+  "webhook": {
+    "parameters": [
+      {
+        "name": "trigger_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "receiveTriggerWebhook",
+      "security": [],
+      "description": "No Cookie/Origin identity. Requires HTTPS directly or https forwarded by a configured trusted proxy. Maximum raw body 256 KiB. Event deduplication is separate from business key; duplicate same body returns original receipt, changed body conflicts. HMAC SHA256 over v1\\nPOST\\n/api/triggers/webhook/{trigger_id}\\n{timestamp}\\n{sha256(raw-body)}. Timestamp is decimal Unix milliseconds within 5 minutes. Signature lowercase hex. Allowed actions and employee binding checked. Supplement/cancel only target this trigger’s own task. A validated callback consumes one credit in the durable per-workspace/trigger budget (120/minute, burst 20). Unauthenticated callbacks are not charged.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Receipt"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        },
+        "202": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Receipt"
+              }
+            }
+          }
+        },
+        "429": {
+          "description": "Authenticated Hook rate limited. No event/dedup slot or task was created. Retry the same event after waiting.",
+          "headers": {
+            "Retry-After": {
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "const": 1
+              }
+            }
+          },
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../openapi.yaml#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-Key-Id",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "X-Timestamp",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        {
+          "name": "X-Signature",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "version": {
+                  "const": 1
+                },
+                "eventId": {
+                  "type": "string",
+                  "maxLength": 160,
+                  "minLength": 1
+                },
+                "action": {
+                  "enum": [
+                    "create_task",
+                    "supplement_task",
+                    "cancel_task"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                },
+                "businessKey": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "taskId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "entityId": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "required": [
+                "version",
+                "eventId",
+                "action"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "github": {
+    "parameters": [
+      {
+        "name": "trigger_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "receiveTriggerGithub",
+      "security": [],
+      "description": "No Cookie/Origin identity. Requires HTTPS directly or https forwarded by a configured trusted proxy. Maximum raw body 256 KiB. Event deduplication is separate from business key; duplicate same body returns original receipt, changed body conflicts. X-Hub-Signature-256 is sha256=HMAC(raw-body). Only issues opened creates tasks; other valid issue actions return 204. Signed repository/optional installation must match configuration. Event key uses repository ID and issue ID, not unsigned delivery header. No GitHub comment/PR/push integration. A validated callback consumes one credit in the durable per-workspace/trigger budget (120/minute, burst 20). Unauthenticated callbacks are not charged.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Receipt"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        },
+        "202": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Receipt"
+              }
+            }
+          }
+        },
+        "204": {
+          "description": "Ignored supported non-opened GitHub issue action"
+        },
+        "429": {
+          "description": "Authenticated Hook rate limited. No event/dedup slot or task was created. Retry the same event after waiting.",
+          "headers": {
+            "Retry-After": {
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "const": 1
+              }
+            }
+          },
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../openapi.yaml#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-Hub-Signature-256",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^sha256=[a-f0-9]{64}$"
+          }
+        },
+        {
+          "name": "X-GitHub-Event",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "const": "issues"
+          }
+        },
+        {
+          "name": "X-GitHub-Delivery",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "description": "GitHub signed issue event body, validated against configured repository and optional installation."
+            }
+          }
+        }
+      }
+    }
+  },
+  "schemas": {
+    "Write": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "signing_token": {
+          "type": "string",
+          "writeOnly": true,
+          "description": "PUT only. Import a GitLab signing token and enable the trigger atomically with the specified version."
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "kind": {
+          "enum": [
+            "schedule",
+            "webhook"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "config": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "adapter": {
+                  "const": "generic"
+                }
+              },
+              "required": [
+                "adapter"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "adapter": {
+                  "const": "github_issue"
+                },
+                "repositoryId": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "installationId": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "adapter",
+                "repositoryId"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "create_task",
+                    "send_message"
+                  ],
+                  "default": "create_task"
+                },
+                "cron": {
+                  "type": "string",
+                  "description": "Five fields; current parser does not support L or #."
+                },
+                "timezone": {
+                  "type": "string",
+                  "default": "Asia/Shanghai"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "businessKey": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "mode": {
+                          "const": "empty"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "mode": {
+                          "const": "fixed"
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 200
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "value"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "mode": {
+                          "const": "period"
+                        },
+                        "period": {
+                          "enum": [
+                            "minute",
+                            "hour",
+                            "day",
+                            "week",
+                            "month",
+                            "year"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "period"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "cron",
+                "description"
+              ]
+            },
+            {
+              "$ref": "#/schemas/EventHookConfig"
+            }
+          ]
+        },
+        "allowed_actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "create_task",
+              "supplement_task",
+              "cancel_task",
+              "send_message"
+            ]
+          }
+        },
+        "notification_targets": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "conversation_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "conversation_id"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "enabled",
+        "config",
+        "allowed_actions"
+      ]
+    },
+    "Trigger": {
+      "$ref": "#/schemas/TriggerFields",
+      "unevaluatedProperties": false
+    },
+    "CreatedTrigger": {
+      "$ref": "#/schemas/TriggerFields",
+      "properties": {
+        "initial_credential": { "$ref": "#/schemas/Credential", "required": ["secret"] }
+      },
+      "unevaluatedProperties": false
+    },
+    "TriggerFields": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "kind": {
+          "enum": [
+            "schedule",
+            "webhook"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "config": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "adapter": {
+                  "const": "generic"
+                }
+              },
+              "required": [
+                "adapter"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "adapter": {
+                  "const": "github_issue"
+                },
+                "repositoryId": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "installationId": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "adapter",
+                "repositoryId"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "enum": [
+                    "create_task",
+                    "send_message"
+                  ],
+                  "default": "create_task"
+                },
+                "cron": {
+                  "type": "string",
+                  "description": "Five fields; current parser does not support L or #."
+                },
+                "timezone": {
+                  "type": "string",
+                  "default": "Asia/Shanghai"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "businessKey": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "mode": {
+                          "const": "empty"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "mode": {
+                          "const": "fixed"
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 200
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "value"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "mode": {
+                          "const": "period"
+                        },
+                        "period": {
+                          "enum": [
+                            "minute",
+                            "hour",
+                            "day",
+                            "week",
+                            "month",
+                            "year"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mode",
+                        "period"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "cron",
+                "description"
+              ]
+            },
+            {
+              "$ref": "#/schemas/EventHookConfig"
+            }
+          ]
+        },
+        "allowed_actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "create_task",
+              "supplement_task",
+              "cancel_task",
+              "send_message"
+            ]
+          }
+        },
+        "notification_targets": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "conversation_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "conversation_id"
+            ]
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "agent_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "created_by": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "next_due": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "endpoint": {
+          "type": "string",
+          "format": "uri"
+        },
+        "last_verified_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Credential": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "revoked"
+          ]
+        },
+        "secret": {
+          "type": "string",
+          "description": "Returned only once by credential creation; never GET."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "key_id",
+        "status",
+        "created_at"
+      ]
+    },
+    "Receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "session_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "task_space_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "input_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "duplicate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "event_id",
+        "status",
+        "duplicate"
+      ]
+    },
+    "Event": {
+      "type": "object",
+      "description": "Trigger acceptance and the execution status of its input or turn.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_id": {
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "create_task",
+            "supplement_task",
+            "cancel_task",
+            "send_message"
+          ]
+        },
+        "binding_version": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "event_name": {
+          "type": "string"
+        },
+        "execution_status": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "accepted",
+            "rejected"
+          ]
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "receipt": {
+          "oneOf": [
+            {
+              "$ref": "#/schemas/Receipt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "EventHookConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter",
+        "source",
+        "prompt"
+      ],
+      "properties": {
+        "adapter": {
+          "const": "event"
+        },
+        "source": {
+          "enum": [
+            "github",
+            "gitlab",
+            "gitlab_token",
+            "custom"
+          ]
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "repositoryId": {
+          "type": "integer",
+          "format": "int64",
+          "deprecated": true,
+          "description": "Accepted for compatibility with older event configurations and ignored."
+        }
+      }
+    }
+  },
+  "nativeEvent": {
+    "parameters": [
+      {
+        "name": "trigger_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "receiveNativeTriggerEvent",
+      "security": [
+        { "githubWebhookSignature": [] },
+        { "gitlabWebhookSignature": [] },
+        { "gitlabWebhookToken": [] },
+        { "customWebhookToken": [] }
+      ],
+      "description": "Receives the original POST body over HTTP or HTTPS, up to 256 KiB. No cookies, Origin or query. The hook's credentials authenticate each delivery. GitHub signs the original JSON or URL-encoded form. GitLab signing mode covers message ID, timestamp and body with a five-minute window. Legacy token mode is explicit. Custom sources use Bearer authentication and optional Idempotency-Key (absent means a new task each time). Each new business event creates a task with the saved prompt and event data, including any repository or project identity supplied by the sender. Same delivery and body replay the original receipt, conflicting body returns 409. Authenticated webhook rate budget applies.",
+      "responses": {
+        "200": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Receipt"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        },
+        "202": {
+          "description": "Current fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Receipt"
+              }
+            }
+          }
+        },
+        "204": {
+          "description": "Verified GitHub connection ping; no task"
+        },
+        "429": {
+          "description": "Authenticated Hook rate limited. No event/dedup slot or task was created. Retry the same event after waiting.",
+          "headers": {
+            "Retry-After": {
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "const": 1
+              }
+            }
+          },
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../openapi.yaml#/components/schemas/Error"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-Hub-Signature-256",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "GitHub raw-body signature"
+        },
+        {
+          "name": "X-GitHub-Event",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "GitHub event type"
+        },
+        {
+          "name": "X-GitHub-Delivery",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "GitHub delivery UUID"
+        },
+        {
+          "name": "webhook-id",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "GitLab signed message ID"
+        },
+        {
+          "name": "webhook-timestamp",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "GitLab signed UNIX seconds"
+        },
+        {
+          "name": "webhook-signature",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "GitLab v1 signature"
+        },
+        {
+          "name": "X-Gitlab-Token",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "GitLab legacy credential"
+        },
+        {
+          "name": "X-Gitlab-Event",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "GitLab event name"
+        },
+        {
+          "name": "Idempotency-Key",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Stable request ID for custom sources or legacy GitLab"
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "*/*": {
+            "schema": {
+              "description": "Unmodified business payload including UTF-8 text, multipart and binary."
+            }
+          }
+        }
+      }
+    }
+  }
+}

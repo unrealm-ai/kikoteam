@@ -1,0 +1,71 @@
+name: Event Hub
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: '迁移历史比对的完整提交 SHA（可选）'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: event-hub
+    services:
+      postgres:
+        image: postgres:16.16
+        env:
+          POSTGRES_PASSWORD: event-hub-ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      EVENT_HUB_TEST_DSN: postgres://postgres:event-hub-ci@127.0.0.1:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.2'
+          cache-dependency-path: event-hub/go.sum
+      - name: Install PostgreSQL 16 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16=16.16-1.pgdg24.04+1
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+      - name: Install contract validator
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt
+      - name: Check immutable migration history
+        env:
+          BASE_SHA: ${{ inputs.base_sha }}
+        run: |
+          if [[ -z "$BASE_SHA" ]]; then
+            BASE_SHA=$(git merge-base origin/main HEAD)
+            if [[ "$BASE_SHA" == "$GITHUB_SHA" ]]; then
+              BASE_SHA=$(git rev-parse HEAD^1)
+            fi
+          fi
+          [[ "$BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || { echo 'Expected a full baseline commit SHA'; exit 1; }
+          make check-history BASE_REF="$BASE_SHA"
+      - name: Static checks, real PG tests and schema replay
+        run: make check
+      - name: Build
+        run: make build VERSION="$GITHUB_SHA"

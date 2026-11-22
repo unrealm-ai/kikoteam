@@ -1,0 +1,520 @@
+{
+  "collection": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listWebGroups",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Active workspace member; only currently visible groups. Workspace admin has no membership bypass. Newest created_at first, then id. List rows omit roster details (empty arrays); GET detail for roster. Empty pages currently report total=0 rather than the full matching count.",
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items",
+                  "total"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/Group"
+                    }
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Login required"
+        },
+        "403": {
+          "description": "Not authorized or CSRF rejected"
+        },
+        "404": {
+          "description": "Group absent or not visible"
+        },
+        "409": {
+          "description": "Version, roster or owner-state conflict"
+        }
+      },
+      "parameters": [
+        {
+          "name": "page",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "maximum": 1000000
+          }
+        },
+        {
+          "name": "page_size",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        },
+        {
+          "name": "q",
+          "in": "query",
+          "description": "Case-insensitive title substring; UTF-8 byte length at most 200. Duplicate query parameters rejected.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "post": {
+      "operationId": "createWebGroup",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Any active workspace member may create. Creator is the sole owner. Version must be zero; status active. No Idempotency-Key deduplication: do not blindly retry an unknown result.",
+      "responses": {
+        "201": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Group"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Login required"
+        },
+        "403": {
+          "description": "Not authorized or CSRF rejected"
+        },
+        "404": {
+          "description": "Group absent or not visible"
+        },
+        "409": {
+          "description": "Version, roster or owner-state conflict"
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/schemas/Put"
+            }
+          }
+        }
+      }
+    }
+  },
+  "item": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "group_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "getWebGroup",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Current active workspace and group membership required; no workspace-admin bypass.",
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Group"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Login required"
+        },
+        "403": {
+          "description": "Not authorized or CSRF rejected"
+        },
+        "404": {
+          "description": "Group absent or not visible"
+        },
+        "409": {
+          "description": "Version, roster or owner-state conflict"
+        }
+      }
+    },
+    "put": {
+      "operationId": "replaceWebGroup",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Current group owner/admin only. Full replacement of roster, not a patch; exactly one owner must remain. Supply current version; stale version or archived group returns 409. Only owner may transfer ownership or archive. New members must be active workspace members; new employees must be available to actor under current unified usage. No automatic retry after conflict.",
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/Group"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Login required"
+        },
+        "403": {
+          "description": "Not authorized or CSRF rejected"
+        },
+        "404": {
+          "description": "Group absent or not visible"
+        },
+        "409": {
+          "description": "Version, roster or owner-state conflict"
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/schemas/Put"
+            }
+          }
+        }
+      }
+    }
+  },
+  "leave": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "group_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "leaveWebGroup",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Active workspace member leaving their own membership. Already-removed membership succeeds without incrementing again. Owner must transfer ownership first (409 otherwise). Exit revokes group reads and advances membership fencing; no archive/delete implied.",
+      "responses": {
+        "200": {
+          "description": "Success",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "left"
+                ],
+                "properties": {
+                  "left": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Login required"
+        },
+        "403": {
+          "description": "Not authorized or CSRF rejected"
+        },
+        "404": {
+          "description": "Group absent or not visible"
+        },
+        "409": {
+          "description": "Version, roster or owner-state conflict"
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        }
+      ]
+    }
+  },
+  "schemas": {
+    "Put": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "members",
+        "agents"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Creation uses 0; updates must supply current positive version."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "status": {
+          "enum": [
+            "active",
+            "archived"
+          ],
+          "default": "active"
+        },
+        "members": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "user_id",
+              "role"
+            ],
+            "properties": {
+              "user_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "role": {
+                "enum": [
+                  "owner",
+                  "admin",
+                  "member"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Display only; never an identity or authorization source."
+              }
+            }
+          }
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agent_id"
+            ],
+            "properties": {
+              "agent_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string",
+                "description": "Display only."
+              }
+            }
+          }
+        }
+      }
+    },
+    "Group": {
+      "type": "object",
+      "required": [
+        "id",
+        "workspace_id",
+        "title",
+        "status",
+        "version",
+        "created_at",
+        "members",
+        "agents"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "status": {
+          "enum": [
+            "active",
+            "archived"
+          ],
+          "default": "active"
+        },
+        "members": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "user_id",
+              "role"
+            ],
+            "properties": {
+              "user_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "role": {
+                "enum": [
+                  "owner",
+                  "admin",
+                  "member"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "Display only; never an identity or authorization source."
+              }
+            }
+          }
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agent_id"
+            ],
+            "properties": {
+              "agent_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string",
+                "description": "Display only."
+              }
+            }
+          }
+        },
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

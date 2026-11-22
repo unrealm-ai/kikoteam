@@ -1,0 +1,65 @@
+workspace: {name: workspace_id, in: path, required: true, schema: {type: string, format: uuid}}
+agent: {name: agent_id, in: path, required: true, schema: {type: string, format: uuid}}
+recoveryItem:
+  type: object
+  required: [id, version, provider, status, can_retry, can_reassign]
+  properties:
+    id: {type: string, format: uuid}
+    version: {$ref: ./human-requests.yaml#/version}
+    provider: {enum: [web, feishu, dingtalk, wecom]}
+    status: {type: string}
+    error_code: {type: string}
+    can_retry: {type: boolean}
+    can_reassign: {type: boolean}
+list:
+  parameters:
+    - {$ref: '#/workspace'}
+    - {$ref: '#/agent'}
+  get:
+    operationId: listHumanRecovery
+    description: Owner or admin. Lists pending work and delivery metadata only. Does not expose the question or answer.
+    responses:
+      '200':
+        description: Recovery status and currently eligible configured recipients
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, recipients]
+              properties:
+                items: {type: array, items: {$ref: '#/recoveryItem'}}
+                recipients: {type: array, items: {$ref: ./human-requests.yaml#/recipient}}
+      '401': {description: Authentication required}
+      '404': {description: Employee not visible to this administrator}
+recover:
+  parameters:
+    - {$ref: '#/workspace'}
+    - {$ref: '#/agent'}
+    - {name: request_id, in: path, required: true, schema: {type: string, format: uuid}}
+  post:
+    operationId: recoverHumanRequest
+    description: Owner or admin. Retries a proven unsent notice or reassigns the pending request. Records reason and actor and advances the request version. Does not approve the request.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [version, action, reason]
+            properties:
+              version: {$ref: ./human-requests.yaml#/version}
+              action: {enum: [retry, reassign]}
+              reason: {type: string, minLength: 1, maxLength: 1000}
+              recipient_id: {type: string, format: uuid, description: Required only when reassigning to a different configured recipient.}
+    responses:
+      '200':
+        description: Recovery recorded; delivery outcome remains separate
+        content:
+          application/json:
+            schema: {$ref: '#/recoveryItem'}
+      '400': {description: Invalid action or version}
+      '401': {description: Authentication required}
+      '403': {description: Recipient currently ineligible}
+      '404': {description: Request not visible to this administrator}
+      '409': {description: Stale version, existing participation, or delivery not proven undispatched}

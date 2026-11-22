@@ -1,0 +1,13 @@
+openapi: 3.1.0
+info:
+  title: Agent Engine process health
+  version: 1.0.0
+  description: First local implementation exposes process liveness only. Assignment/control is read from Backend and PostgreSQL; no external Agent execution entry is served here.
+security: []
+paths:
+  /healthz:
+    get:
+      operationId: getEngineHealth
+      description: Process is serving; does not assert Backend availability, registration or capacity.
+      responses:
+        '204': {description: Process alive.}

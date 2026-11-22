@@ -1,0 +1,1619 @@
+{
+  "tools": [
+    {
+      "name": "bash_list",
+      "description": "List this Session's managed processes and retained exit records. Results contain metadata only; use bash_poll to retrieve output.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "$ref": "#/$defs/Cursor"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          }
+        },
+        "examples": [
+          {
+            "limit": 50
+          }
+        ],
+        "description": "List this Session's managed processes and retained exit records. Results contain metadata only; use bash_poll to retrieve output.",
+        "additionalProperties": false,
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "Cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "outputSchema": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BashProcessPage"
+          },
+          {
+            "$ref": "#/$defs/ToolFailure"
+          }
+        ],
+        "examples": [
+          {
+            "error": {
+              "code": "process_not_found",
+              "message": "Process is unavailable"
+            }
+          },
+          {
+            "items": [],
+            "next_cursor": null,
+            "has_more": false
+          }
+        ],
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "BashProcessPage": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/ProcessSummary"
+                },
+                "maxItems": 200
+              },
+              "next_cursor": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Cursor"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "has_more": {
+                "type": "boolean"
+              }
+            },
+            "required": ["items", "next_cursor", "has_more"],
+            "additionalProperties": false
+          },
+          "Cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "ProcessID": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "ProcessState": {
+            "type": "string",
+            "enum": ["starting", "running", "terminating", "exited", "lost"]
+          },
+          "ProcessSummary": {
+            "type": "object",
+            "properties": {
+              "process_id": {
+                "$ref": "#/$defs/ProcessID"
+              },
+              "state": {
+                "$ref": "#/$defs/ProcessState"
+              },
+              "exit_code": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "termination_signal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TerminationSignal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deadline_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Null only when starting/lost and no confirmed spawn deadline is known."
+              },
+              "group_quiescent": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "started_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "exited_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cwd": {
+                "$ref": "#/$defs/WorkingDirectory"
+              },
+              "origin_turn_id": {
+                "$ref": "#/$defs/TurnID"
+              },
+              "stop_reason": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/StopReason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "process_id",
+              "state",
+              "exit_code",
+              "termination_signal",
+              "deadline_at",
+              "group_quiescent",
+              "created_at",
+              "started_at",
+              "exited_at",
+              "cwd",
+              "origin_turn_id",
+              "stop_reason"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "enum": ["running", "terminating", "exited"]
+                    }
+                  },
+                  "required": ["state"]
+                },
+                "then": {
+                  "properties": {
+                    "deadline_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          },
+          "StopReason": {
+            "type": "string",
+            "enum": ["user_requested", "deadline_reached", "session_closed"]
+          },
+          "TerminationSignal": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "ToolError": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "message"],
+            "additionalProperties": false
+          },
+          "ToolFailure": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/ToolError"
+              }
+            },
+            "required": ["error"],
+            "additionalProperties": false
+          },
+          "TurnID": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "WorkingDirectory": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^/[^\\u0000]*$",
+            "x-max-utf8-bytes": 4096
+          }
+        }
+      }
+    },
+    {
+      "name": "bash_poll",
+      "description": "Read a managed process's current state and cursor-based output. Canceling this observation does not terminate the process or extend its runtime deadline.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "process_id": {
+            "$ref": "#/$defs/ProcessID"
+          },
+          "cursor": {
+            "$ref": "#/$defs/Cursor"
+          },
+          "yield_time_ms": {
+            "$ref": "#/$defs/YieldTime",
+            "default": 5000
+          },
+          "max_output_bytes": {
+            "$ref": "#/$defs/OutputBudget",
+            "default": 16384
+          }
+        },
+        "required": ["process_id"],
+        "examples": [
+          {
+            "process_id": "proc-00000000000000000000000001",
+            "cursor": "opaque-position",
+            "yield_time_ms": 5000
+          }
+        ],
+        "description": "Read a managed process's current state and cursor-based output. Canceling this observation does not terminate the process or extend its runtime deadline.",
+        "additionalProperties": false,
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "Cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "OutputBudget": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65536
+          },
+          "ProcessID": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "YieldTime": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20000
+          }
+        }
+      },
+      "outputSchema": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ProcessOutput"
+          },
+          {
+            "$ref": "#/$defs/ProcessFailure"
+          },
+          {
+            "$ref": "#/$defs/ToolFailure"
+          }
+        ],
+        "examples": [
+          {
+            "error": {
+              "code": "process_not_found",
+              "message": "Process is unavailable"
+            }
+          },
+          {
+            "process_id": "proc-00000000000000000000000001",
+            "state": "running",
+            "exit_code": null,
+            "termination_signal": null,
+            "group_quiescent": false,
+            "deadline_at": "2026-10-28T00:10:00Z",
+            "chunks": [
+              {
+                "stream": "stdout",
+                "text": "ready\n"
+              }
+            ],
+            "next_cursor": "opaque-next",
+            "first_available_cursor": "opaque-first",
+            "has_more": false,
+            "output_complete": false,
+            "output_truncated": false
+          }
+        ],
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "Cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "OutputChunk": {
+            "type": "object",
+            "properties": {
+              "stream": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "stdout"
+                  },
+                  {
+                    "type": "string",
+                    "const": "stderr"
+                  },
+                  {
+                    "type": "string",
+                    "const": "pty"
+                  }
+                ]
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 65536,
+                "x-max-utf8-bytes": 65536
+              },
+              "encoding_replaced": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": ["stream", "text"],
+            "additionalProperties": false
+          },
+          "ProcessFailure": {
+            "type": "object",
+            "properties": {
+              "process_id": {
+                "$ref": "#/$defs/ProcessID"
+              },
+              "state": {
+                "$ref": "#/$defs/ProcessState"
+              },
+              "exit_code": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "termination_signal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TerminationSignal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deadline_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Null only when starting/lost and no confirmed spawn deadline is known."
+              },
+              "group_quiescent": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "$ref": "#/$defs/ToolError"
+              },
+              "first_available_cursor": {
+                "$ref": "#/$defs/Cursor"
+              }
+            },
+            "required": [
+              "process_id",
+              "state",
+              "exit_code",
+              "termination_signal",
+              "deadline_at",
+              "group_quiescent",
+              "error"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "enum": ["running", "terminating", "exited"]
+                    }
+                  },
+                  "required": ["state"]
+                },
+                "then": {
+                  "properties": {
+                    "deadline_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          },
+          "ProcessID": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "ProcessOutput": {
+            "type": "object",
+            "properties": {
+              "process_id": {
+                "$ref": "#/$defs/ProcessID"
+              },
+              "state": {
+                "$ref": "#/$defs/ProcessState"
+              },
+              "exit_code": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "termination_signal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TerminationSignal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deadline_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Null only when starting/lost and no confirmed spawn deadline is known."
+              },
+              "group_quiescent": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "chunks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/OutputChunk"
+                },
+                "maxItems": 65536,
+                "description": "Returned text is additionally bounded by this call's max_output_bytes in UTF-8; JSON framing is charged separately. The collection cap also bounds empty chunks."
+              },
+              "next_cursor": {
+                "$ref": "#/$defs/Cursor"
+              },
+              "first_available_cursor": {
+                "$ref": "#/$defs/Cursor"
+              },
+              "has_more": {
+                "type": "boolean"
+              },
+              "output_complete": {
+                "type": "boolean"
+              },
+              "output_truncated": {
+                "type": "boolean"
+              },
+              "error": {
+                "$ref": "#/$defs/ToolError",
+                "description": "May accompany a complete snapshot for a nonzero/signal exit; isError remains a standard MCP result flag."
+              }
+            },
+            "required": [
+              "process_id",
+              "state",
+              "exit_code",
+              "termination_signal",
+              "deadline_at",
+              "group_quiescent",
+              "chunks",
+              "next_cursor",
+              "first_available_cursor",
+              "has_more",
+              "output_complete",
+              "output_truncated"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "enum": ["running", "terminating", "exited"]
+                    }
+                  },
+                  "required": ["state"]
+                },
+                "then": {
+                  "properties": {
+                    "deadline_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          },
+          "ProcessState": {
+            "type": "string",
+            "enum": ["starting", "running", "terminating", "exited", "lost"]
+          },
+          "TerminationSignal": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "ToolError": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "message"],
+            "additionalProperties": false
+          },
+          "ToolFailure": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/ToolError"
+              }
+            },
+            "required": ["error"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "name": "bash_start",
+      "description": "Start a managed Bash process and return its handle, state and initial output after a bounded yield. A running process is not a command failure; use bash_poll for later output.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 65536,
+            "pattern": "^[^\\u0000]*[^\\u0000\\s][^\\u0000]*$",
+            "x-max-utf8-bytes": 65536
+          },
+          "cwd": {
+            "$ref": "#/$defs/WorkingDirectory",
+            "default": "/workspace"
+          },
+          "tty": {
+            "type": "boolean",
+            "default": false
+          },
+          "stdin_open": {
+            "type": "boolean",
+            "description": "Defaults to true with tty=true, otherwise false. Explicit false with tty=true is invalid."
+          },
+          "yield_time_ms": {
+            "$ref": "#/$defs/YieldTime",
+            "default": 5000
+          },
+          "max_output_bytes": {
+            "$ref": "#/$defs/OutputBudget",
+            "default": 16384
+          },
+          "max_runtime_ms": {
+            "$ref": "#/$defs/RuntimeBudget",
+            "default": 600000,
+            "description": "Also bounded by the trusted launch policy; poll/write do not extend it."
+          }
+        },
+        "required": ["command"],
+        "examples": [
+          {
+            "command": "cat",
+            "tty": true
+          },
+          {
+            "command": "printf ready",
+            "yield_time_ms": 5000
+          }
+        ],
+        "description": "Start a managed Bash process and return its handle, state and initial output after a bounded yield. A running process is not a command failure; use bash_poll for later output.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "tty": {
+                  "const": true
+                }
+              },
+              "required": ["tty"]
+            },
+            "then": {
+              "properties": {
+                "stdin_open": {
+                  "const": true,
+                  "default": true
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "stdin_open": {
+                  "default": false
+                }
+              }
+            }
+          }
+        ],
+        "additionalProperties": false,
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "OutputBudget": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65536
+          },
+          "RuntimeBudget": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 86400000
+          },
+          "WorkingDirectory": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^/[^\\u0000]*$",
+            "x-max-utf8-bytes": 4096
+          },
+          "YieldTime": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20000
+          }
+        }
+      },
+      "outputSchema": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ProcessOutput"
+          },
+          {
+            "$ref": "#/$defs/ProcessFailure"
+          },
+          {
+            "$ref": "#/$defs/ToolFailure"
+          }
+        ],
+        "examples": [
+          {
+            "error": {
+              "code": "spawn_failed",
+              "message": "Process could not be started"
+            }
+          },
+          {
+            "process_id": "proc-00000000000000000000000001",
+            "state": "running",
+            "exit_code": null,
+            "termination_signal": null,
+            "group_quiescent": false,
+            "deadline_at": "2026-10-28T00:10:00Z",
+            "chunks": [
+              {
+                "stream": "stdout",
+                "text": "ready\n"
+              }
+            ],
+            "next_cursor": "opaque-next",
+            "first_available_cursor": "opaque-first",
+            "has_more": false,
+            "output_complete": false,
+            "output_truncated": false
+          }
+        ],
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "Cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "OutputChunk": {
+            "type": "object",
+            "properties": {
+              "stream": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "stdout"
+                  },
+                  {
+                    "type": "string",
+                    "const": "stderr"
+                  },
+                  {
+                    "type": "string",
+                    "const": "pty"
+                  }
+                ]
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 65536,
+                "x-max-utf8-bytes": 65536
+              },
+              "encoding_replaced": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": ["stream", "text"],
+            "additionalProperties": false
+          },
+          "ProcessFailure": {
+            "type": "object",
+            "properties": {
+              "process_id": {
+                "$ref": "#/$defs/ProcessID"
+              },
+              "state": {
+                "$ref": "#/$defs/ProcessState"
+              },
+              "exit_code": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "termination_signal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TerminationSignal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deadline_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Null only when starting/lost and no confirmed spawn deadline is known."
+              },
+              "group_quiescent": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "$ref": "#/$defs/ToolError"
+              },
+              "first_available_cursor": {
+                "$ref": "#/$defs/Cursor"
+              }
+            },
+            "required": [
+              "process_id",
+              "state",
+              "exit_code",
+              "termination_signal",
+              "deadline_at",
+              "group_quiescent",
+              "error"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "enum": ["running", "terminating", "exited"]
+                    }
+                  },
+                  "required": ["state"]
+                },
+                "then": {
+                  "properties": {
+                    "deadline_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          },
+          "ProcessID": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "ProcessOutput": {
+            "type": "object",
+            "properties": {
+              "process_id": {
+                "$ref": "#/$defs/ProcessID"
+              },
+              "state": {
+                "$ref": "#/$defs/ProcessState"
+              },
+              "exit_code": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "termination_signal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TerminationSignal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deadline_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Null only when starting/lost and no confirmed spawn deadline is known."
+              },
+              "group_quiescent": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "chunks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/OutputChunk"
+                },
+                "maxItems": 65536,
+                "description": "Returned text is additionally bounded by this call's max_output_bytes in UTF-8; JSON framing is charged separately. The collection cap also bounds empty chunks."
+              },
+              "next_cursor": {
+                "$ref": "#/$defs/Cursor"
+              },
+              "first_available_cursor": {
+                "$ref": "#/$defs/Cursor"
+              },
+              "has_more": {
+                "type": "boolean"
+              },
+              "output_complete": {
+                "type": "boolean"
+              },
+              "output_truncated": {
+                "type": "boolean"
+              },
+              "error": {
+                "$ref": "#/$defs/ToolError",
+                "description": "May accompany a complete snapshot for a nonzero/signal exit; isError remains a standard MCP result flag."
+              }
+            },
+            "required": [
+              "process_id",
+              "state",
+              "exit_code",
+              "termination_signal",
+              "deadline_at",
+              "group_quiescent",
+              "chunks",
+              "next_cursor",
+              "first_available_cursor",
+              "has_more",
+              "output_complete",
+              "output_truncated"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "enum": ["running", "terminating", "exited"]
+                    }
+                  },
+                  "required": ["state"]
+                },
+                "then": {
+                  "properties": {
+                    "deadline_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          },
+          "ProcessState": {
+            "type": "string",
+            "enum": ["starting", "running", "terminating", "exited", "lost"]
+          },
+          "TerminationSignal": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "ToolError": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "message"],
+            "additionalProperties": false
+          },
+          "ToolFailure": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/ToolError"
+              }
+            },
+            "required": ["error"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "name": "bash_terminate",
+      "description": "Request termination of the managed process group. Graceful mode uses TERM then a fixed KILL grace period; the response is current evidence, not proof of exit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "process_id": {
+            "$ref": "#/$defs/ProcessID"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "graceful"
+              },
+              {
+                "type": "string",
+                "const": "force"
+              }
+            ],
+            "default": "graceful"
+          }
+        },
+        "required": ["process_id"],
+        "examples": [
+          {
+            "process_id": "proc-00000000000000000000000001",
+            "mode": "graceful"
+          }
+        ],
+        "description": "Request termination of the managed process group. Graceful mode uses TERM then a fixed KILL grace period; the response is current evidence, not proof of exit.",
+        "additionalProperties": false,
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ProcessID": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          }
+        }
+      },
+      "outputSchema": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BashTermination"
+          },
+          {
+            "$ref": "#/$defs/ProcessFailure"
+          },
+          {
+            "$ref": "#/$defs/ToolFailure"
+          }
+        ],
+        "examples": [
+          {
+            "error": {
+              "code": "process_not_found",
+              "message": "Process is unavailable"
+            }
+          },
+          {
+            "process_id": "proc-00000000000000000000000001",
+            "state": "terminating",
+            "exit_code": null,
+            "termination_signal": null,
+            "group_quiescent": false,
+            "deadline_at": "2026-10-28T00:10:00Z",
+            "termination_requested": true,
+            "termination_mode": "graceful"
+          }
+        ],
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "BashTermination": {
+            "type": "object",
+            "properties": {
+              "process_id": {
+                "$ref": "#/$defs/ProcessID"
+              },
+              "state": {
+                "$ref": "#/$defs/ProcessState"
+              },
+              "exit_code": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "termination_signal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TerminationSignal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deadline_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Null only when starting/lost and no confirmed spawn deadline is known."
+              },
+              "group_quiescent": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "termination_requested": {
+                "type": "boolean"
+              },
+              "termination_mode": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "graceful"
+                  },
+                  {
+                    "type": "string",
+                    "const": "force"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "process_id",
+              "state",
+              "exit_code",
+              "termination_signal",
+              "deadline_at",
+              "group_quiescent",
+              "termination_requested",
+              "termination_mode"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "enum": ["running", "terminating", "exited"]
+                    }
+                  },
+                  "required": ["state"]
+                },
+                "then": {
+                  "properties": {
+                    "deadline_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          },
+          "Cursor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "ProcessFailure": {
+            "type": "object",
+            "properties": {
+              "process_id": {
+                "$ref": "#/$defs/ProcessID"
+              },
+              "state": {
+                "$ref": "#/$defs/ProcessState"
+              },
+              "exit_code": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "termination_signal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TerminationSignal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "deadline_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Null only when starting/lost and no confirmed spawn deadline is known."
+              },
+              "group_quiescent": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "$ref": "#/$defs/ToolError"
+              },
+              "first_available_cursor": {
+                "$ref": "#/$defs/Cursor"
+              }
+            },
+            "required": [
+              "process_id",
+              "state",
+              "exit_code",
+              "termination_signal",
+              "deadline_at",
+              "group_quiescent",
+              "error"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "enum": ["running", "terminating", "exited"]
+                    }
+                  },
+                  "required": ["state"]
+                },
+                "then": {
+                  "properties": {
+                    "deadline_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          },
+          "ProcessID": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "ProcessState": {
+            "type": "string",
+            "enum": ["starting", "running", "terminating", "exited", "lost"]
+          },
+          "TerminationSignal": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "ToolError": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "message"],
+            "additionalProperties": false
+          },
+          "ToolFailure": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/ToolError"
+              }
+            },
+            "required": ["error"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "name": "bash_write",
+      "description": "Write UTF-8 text to a managed process or close ordinary stdin. Input receipts distinguish accepted, partial and indeterminate writes; never resend uncertain text automatically.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "process_id": {
+            "$ref": "#/$defs/ProcessID"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 16384,
+            "pattern": "^[^\\u0000]*$",
+            "x-max-utf8-bytes": 16384
+          },
+          "close_stdin": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": ["process_id"],
+        "examples": [
+          {
+            "process_id": "proc-00000000000000000000000001",
+            "close_stdin": true
+          },
+          {
+            "process_id": "proc-00000000000000000000000001",
+            "text": "continue\n"
+          }
+        ],
+        "description": "Write UTF-8 text to a managed process or close ordinary stdin. Input receipts distinguish accepted, partial and indeterminate writes; never resend uncertain text automatically.",
+        "anyOf": [
+          {
+            "required": ["text"],
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          {
+            "required": ["close_stdin"],
+            "properties": {
+              "close_stdin": {
+                "const": true
+              }
+            }
+          }
+        ],
+        "additionalProperties": false,
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ProcessID": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          }
+        }
+      },
+      "outputSchema": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BashWriteAccepted"
+          },
+          {
+            "$ref": "#/$defs/BashWritePartial"
+          },
+          {
+            "$ref": "#/$defs/BashWriteIndeterminate"
+          },
+          {
+            "$ref": "#/$defs/ToolFailure"
+          }
+        ],
+        "examples": [
+          {
+            "process_id": "proc-00000000000000000000000001",
+            "accepted_bytes": null,
+            "input_state": "indeterminate",
+            "error": {
+              "code": "execution_indeterminate",
+              "message": "Input needs reconciliation"
+            }
+          },
+          {
+            "process_id": "proc-00000000000000000000000001",
+            "accepted_bytes": 3,
+            "input_state": "partial",
+            "error": {
+              "code": "input_write_failed",
+              "message": "Input was only partially written"
+            }
+          },
+          {
+            "process_id": "proc-00000000000000000000000001",
+            "accepted_bytes": 9,
+            "stdin_closed": false,
+            "input_state": "accepted"
+          }
+        ],
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "BashWriteAccepted": {
+            "type": "object",
+            "properties": {
+              "process_id": {
+                "$ref": "#/$defs/ProcessID"
+              },
+              "accepted_bytes": {
+                "$ref": "#/$defs/ByteCount"
+              },
+              "stdin_closed": {
+                "type": "boolean"
+              },
+              "input_state": {
+                "type": "string",
+                "const": "accepted"
+              }
+            },
+            "required": ["process_id", "accepted_bytes", "stdin_closed", "input_state"],
+            "additionalProperties": false
+          },
+          "BashWriteIndeterminate": {
+            "type": "object",
+            "properties": {
+              "process_id": {
+                "$ref": "#/$defs/ProcessID"
+              },
+              "accepted_bytes": {
+                "type": "null"
+              },
+              "stdin_closed": {
+                "type": "boolean"
+              },
+              "input_state": {
+                "type": "string",
+                "const": "indeterminate"
+              },
+              "error": {
+                "$ref": "#/$defs/ToolError"
+              }
+            },
+            "required": ["process_id", "accepted_bytes", "input_state", "error"],
+            "additionalProperties": false
+          },
+          "BashWritePartial": {
+            "type": "object",
+            "properties": {
+              "process_id": {
+                "$ref": "#/$defs/ProcessID"
+              },
+              "accepted_bytes": {
+                "$ref": "#/$defs/ByteCount"
+              },
+              "stdin_closed": {
+                "type": "boolean"
+              },
+              "input_state": {
+                "type": "string",
+                "const": "partial"
+              },
+              "error": {
+                "$ref": "#/$defs/ToolError"
+              }
+            },
+            "required": ["process_id", "accepted_bytes", "input_state", "error"],
+            "additionalProperties": false
+          },
+          "ByteCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "ProcessID": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "ToolError": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "message"],
+            "additionalProperties": false
+          },
+          "ToolFailure": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/ToolError"
+              }
+            },
+            "required": ["error"],
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ]
+}

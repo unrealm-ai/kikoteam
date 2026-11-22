@@ -1,0 +1,91 @@
+name: 缺陷报告 (Bug Report)
+description: 报告 KIKO 企业级AI员工云平台在运行、渠道接入、沙箱执行或工作台界面中的功能异常
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈问题！请尽量提供完整的复现步骤与脱敏日志（**切勿粘贴包含 `KIKO_AUTH_SECRET`、数据库密码、模型 API Key 或 `docker compose config` 的敏感配置**）。
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 涉及组件 (Component)
+      description: 问题主要发生在哪个模块？
+      multiple: true
+      options:
+        - web (AI 员工工作台与管理端界面)
+        - backend (业务 API、权限、能力包、任务调度)
+        - event-hub (数据库迁移、飞书/钉钉/企微长连接、定时触发)
+        - agent-engine (Pi RPC 会话执行、模型与 MCP 调用)
+        - sandbox-runner / builtin-mcp (沙箱目录、文件与 Bash 工具)
+        - start.sh / Docker Compose 部署脚本
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deploy_mode
+    attributes:
+      label: 运行方式 (Deployment Mode)
+      options:
+        - 本地一键启动 (./start.sh / Docker Compose)
+        - 生产容器化部署 (GHCR 镜像 / 自建编排)
+        - 宿主机原生进程运行 (tools/runtime.py / go run)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / Git Commit SHA
+      description: 运行 `git rev-parse --short HEAD` 或查看 `./start.sh` 启动输出的 7 位提交号
+      placeholder: "例如：edb9fde 或 latest"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: 操作系统与模型/渠道环境
+      description: 宿主机系统、浏览器版本、使用的模型协议或办公渠道（如适用）
+      placeholder: "例如：macOS 15 arm64 / Ubuntu 24.04，DeepSeek Chat Completions，飞书 WebSocket"
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤 (Steps to Reproduce)
+      description: 请按顺序描述触发该问题的具体操作
+      placeholder: |
+        1. 进入「AI 员工 → 某员工 → 渠道」...
+        2. 点击「...」
+        3. 观察到...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际表现 (Actual Behavior)
+      description: 实际发生了什么？如有界面报错提示或 HTTP 状态码请一并说明
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望表现 (Expected Behavior)
+      description: 你期望的正常行为是什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志或截图 (Logs / Screenshots)
+      description: 可运行 `./start.sh logs` 提取相关错误片段（请先确认已剔除密钥与私人信息）
+      render: shell
+    validations:
+      required: false

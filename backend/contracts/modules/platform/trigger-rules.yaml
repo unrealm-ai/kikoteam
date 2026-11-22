@@ -1,0 +1,498 @@
+{
+  "collection": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "getAgentTriggerRules",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Result",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "version",
+                  "rules"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "rules": {
+                    "type": "array",
+                    "maxItems": 48,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "type",
+                        "name",
+                        "pattern",
+                        "enabled",
+                        "description",
+                        "channels"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "description": "Blank for a new rule; existing stable ID otherwise."
+                        },
+                        "type": {
+                          "enum": [
+                            "keyword",
+                            "regex"
+                          ]
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "channels": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 2,
+                          "uniqueItems": true,
+                          "items": {
+                            "enum": [
+                              "web",
+                              "feishu"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid rule or unsupported Go RE2 expression"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Workspace owner/admin required"
+        },
+        "404": {
+          "description": "Employee not found"
+        },
+        "409": {
+          "description": "Version conflict"
+        }
+      }
+    },
+    "patch": {
+      "operationId": "replaceAgentTriggerRules",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Replaces the employee-wide rules only using usage_version CAS; access/history/mention unchanged. 32 keyword/16 regex maximum. Keywords split on Chinese/English commas, case-insensitive substring. Regex uses Go RE2, no /pattern/flags. No retry on stale version.",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "rules"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "rules": {
+                  "type": "array",
+                  "maxItems": 48,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "type",
+                      "name",
+                      "pattern",
+                      "enabled",
+                      "description",
+                      "channels"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "description": "Blank for a new rule; existing stable ID otherwise."
+                      },
+                      "type": {
+                        "enum": [
+                          "keyword",
+                          "regex"
+                        ]
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "pattern": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "channels": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 2,
+                        "uniqueItems": true,
+                        "items": {
+                          "enum": [
+                            "web",
+                            "feishu"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Result",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "version",
+                  "rules"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "rules": {
+                    "type": "array",
+                    "maxItems": 48,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "type",
+                        "name",
+                        "pattern",
+                        "enabled",
+                        "description",
+                        "channels"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "maxLength": 128,
+                          "description": "Blank for a new rule; existing stable ID otherwise."
+                        },
+                        "type": {
+                          "enum": [
+                            "keyword",
+                            "regex"
+                          ]
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "channels": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 2,
+                          "uniqueItems": true,
+                          "items": {
+                            "enum": [
+                              "web",
+                              "feishu"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid rule or unsupported Go RE2 expression"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Workspace owner/admin required"
+        },
+        "404": {
+          "description": "Employee not found"
+        },
+        "409": {
+          "description": "Version conflict"
+        }
+      }
+    }
+  },
+  "test": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "testAgentTriggerRules",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Tests supplied unsaved rules using the same matcher as EventHub/Manager. Does not save configuration, create messages or trigger employees. Requires workspace owner/admin; POST CSRF protection.",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "channel",
+                "text",
+                "rules"
+              ],
+              "properties": {
+                "channel": {
+                  "enum": [
+                    "web",
+                    "feishu"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 65536
+                },
+                "rules": {
+                  "type": "array",
+                  "maxItems": 48,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "type",
+                      "name",
+                      "pattern",
+                      "enabled",
+                      "description",
+                      "channels"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "description": "Blank for a new rule; existing stable ID otherwise."
+                      },
+                      "type": {
+                        "enum": [
+                          "keyword",
+                          "regex"
+                        ]
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "pattern": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "channels": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 2,
+                        "uniqueItems": true,
+                        "items": {
+                          "enum": [
+                            "web",
+                            "feishu"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Result",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "matched_count",
+                  "matched"
+                ],
+                "properties": {
+                  "matched_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "matched": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "rule_id",
+                        "rule_name",
+                        "type",
+                        "matched_text"
+                      ],
+                      "properties": {
+                        "rule_id": {
+                          "type": "string"
+                        },
+                        "rule_name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "matched_text": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid rule or unsupported Go RE2 expression"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Workspace owner/admin required"
+        },
+        "404": {
+          "description": "Employee not found"
+        },
+        "409": {
+          "description": "Version conflict"
+        }
+      }
+    }
+  }
+}

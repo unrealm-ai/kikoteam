@@ -1,0 +1,521 @@
+{
+  "claim": {
+    "post": {
+      "operationId": "triggerNotificationClaim",
+      "description": "Independent trigger result/reminder notification ledger, not an Inbox reply. Lease durable pending work. History is authorized before provider fetch; sending delivery lease expiry becomes unknown and is not blindly retried.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "./channels.yaml#/schemas/Delivery"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "limit"
+              ],
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "authorize": {
+    "post": {
+      "operationId": "triggerNotificationAuthorize",
+      "description": "Independent trigger result/reminder notification ledger, not an Inbox reply. Recheck current binding generation and scope immediately before I/O; return immutable canonical target. History repeats this before each page. Browser identity is never a channel principal.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./channels.yaml#/schemas/Delivery"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "complete": {
+    "post": {
+      "operationId": "triggerNotificationComplete",
+      "description": "Independent trigger result/reminder notification ledger, not an Inbox reply. Record same-attempt transport facts, including late proof after authorization revocation. Never authorize or retry a send. Feishu message ID and WeCom matched business ACK prove sent; DingTalk acceptance only permits bounded read-only status queries. Unknown is never blindly replayed.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed."
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token",
+                "status",
+                "target_digest"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "status": {
+                  "enum": [
+                    "sent",
+                    "accepted",
+                    "failed",
+                    "unknown"
+                  ]
+                },
+                "provider_message_id": {
+                  "type": "string"
+                },
+                "error_code": {
+                  "type": "string"
+                },
+                "provider_request_id": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "target_digest": {
+                  "type": "string",
+                  "pattern": "^[a-fA-F0-9]{64}$"
+                },
+                "query_token": {
+                  "type": "string"
+                },
+                "evidence_type": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "provider_session_id": {
+                  "type": "string"
+                },
+                "provider_created_at_ms": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$",
+                  "description": "Trusted Feishu response timestamp, never local send time."
+                },
+                "provider_chat_id": {
+                  "type": "string"
+                },
+                "provider_thread_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "queryClaim": {
+    "post": {
+      "operationId": "triggerNotificationQueryClaim",
+      "description": "Independent trigger result/reminder notification ledger, not an Inbox reply. Lease read-only queries for original DingTalk request keys, at most five within five minutes, at 2/5/10/20/30-second intervals. Does not authorize sending; target_digest and original lease_token identify original attempt, query_token identifies reconciliation. Text is empty.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "./channels.yaml#/schemas/Delivery"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "limit"
+              ],
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "contextClaim": {
+    "post": {
+      "operationId": "triggerNotificationContextClaim",
+      "description": "Independent sent-notification context admission; never creates or forges Inbox. Missing reliable anchors leave context unavailable without Input or boundary advancement.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "./channels.yaml#/schemas/HistoryJob"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "limit"
+              ],
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "contextAuthorize": {
+    "post": {
+      "operationId": "triggerNotificationContextAuthorize",
+      "description": "Independent sent-notification context admission; never creates or forges Inbox. Missing reliable anchors leave context unavailable without Input or boundary advancement.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "./channels.yaml#/schemas/HistoryJob"
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  },
+  "contextComplete": {
+    "post": {
+      "operationId": "triggerNotificationContextComplete",
+      "description": "Independent sent-notification context admission; never creates or forges Inbox. Missing reliable anchors leave context unavailable without Input or boundary advancement.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durable result, not proof that execution or remote delivery completed."
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub identity required; cookies and Origin rejected."
+        },
+        "409": {
+          "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "503": {
+          "description": "Transient dependency failure; never acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token",
+                "snapshot"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "snapshot": {
+                  "$ref": "./channels.yaml#/schemas/HistorySnapshot"
+                },
+                "anchor_message_id": {
+                  "type": "string"
+                },
+                "anchor_created_at_ms": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "chat_id": {
+                  "type": "string"
+                },
+                "thread_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  }
+}

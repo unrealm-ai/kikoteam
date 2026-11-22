@@ -1,0 +1,1630 @@
+{
+  "registration": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "getFeishuSetup",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin and registration owner only. Cache-Control: no-store. Provider operations use fixed official endpoints. Read operations do not poll or create apps. Poll respects the persisted interval; uncertain polling outcomes are not blindly retried.",
+      "responses": {
+        "200": {
+          "description": "Setup state or current saved-binding diagnostics",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "registration",
+                  "permissions"
+                ],
+                "properties": {
+                  "registration": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "starting",
+                          "awaiting_confirmation",
+                          "polling",
+                          "credentials_saved",
+                          "checking",
+                          "needs_attention",
+                          "connected",
+                          "cancelled",
+                          "expired",
+                          "denied",
+                          "failed",
+                          "interrupted"
+                        ]
+                      },
+                      "app_id": {
+                        "type": "string"
+                      },
+                      "verification_url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "next_poll_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "credential_saved": {
+                        "type": "boolean"
+                      },
+                      "error_code": {
+                        "type": "string"
+                      },
+                      "diagnostics": {
+                        "type": "object",
+                        "required": [
+                          "checked_at",
+                          "credential_status",
+                          "bot_status",
+                          "directory_status",
+                          "scope_status",
+                          "permissions",
+                          "ready",
+                          "error_code"
+                        ],
+                        "properties": {
+                          "checked_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "credential_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "bot_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "directory_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "scope_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "permissions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "scope",
+                                "required",
+                                "status"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unknown",
+                                    "granted",
+                                    "missing"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "error_code": {
+                            "type": "string"
+                          },
+                          "error_detail": {
+                            "type": "string",
+                            "description": "Feishu error code and sanitized message, or the local directory failure code when Feishu did not disclose a valid scope."
+                          }
+                        }
+                      },
+                      "poll_interval_seconds": {
+                        "type": "integer"
+                      },
+                      "auto_retry_blocked": {
+                        "type": "boolean"
+                      },
+                      "replaces_registration_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "auto_check": {
+                        "type": "object",
+                        "properties": {
+                          "eligible": {
+                            "type": "boolean"
+                          },
+                          "in_progress": {
+                            "type": "boolean"
+                          },
+                          "next_check_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "description": "Never includes device codes or application secrets. Canceling local setup does not delete an external app. connected means validated configuration persisted; Event Hub connection status remains separate."
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "scope",
+                        "required",
+                        "status"
+                      ],
+                      "properties": {
+                        "scope": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unknown",
+                            "granted",
+                            "missing"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Workspace management denied"
+        },
+        "404": {
+          "description": "Agent or own registration not found"
+        },
+        "409": {
+          "description": "Concurrent setup or binding changed"
+        },
+        "429": {
+          "description": "Too many registrations"
+        },
+        "502": {
+          "description": "Provider response unavailable"
+        },
+        "503": {
+          "description": "Dependency unavailable"
+        }
+      }
+    },
+    "post": {
+      "operationId": "startFeishuSetup",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin and registration owner only. Cache-Control: no-store. Provider operations use fixed official endpoints. Read operations do not poll or create apps. Poll respects the persisted interval; uncertain polling outcomes are not blindly retried.",
+      "responses": {
+        "202": {
+          "description": "Setup state or current saved-binding diagnostics",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "registration",
+                  "permissions"
+                ],
+                "properties": {
+                  "registration": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "starting",
+                          "awaiting_confirmation",
+                          "polling",
+                          "credentials_saved",
+                          "checking",
+                          "needs_attention",
+                          "connected",
+                          "cancelled",
+                          "expired",
+                          "denied",
+                          "failed",
+                          "interrupted"
+                        ]
+                      },
+                      "app_id": {
+                        "type": "string"
+                      },
+                      "verification_url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "next_poll_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "credential_saved": {
+                        "type": "boolean"
+                      },
+                      "error_code": {
+                        "type": "string"
+                      },
+                      "diagnostics": {
+                        "type": "object",
+                        "required": [
+                          "checked_at",
+                          "credential_status",
+                          "bot_status",
+                          "directory_status",
+                          "scope_status",
+                          "permissions",
+                          "ready",
+                          "error_code"
+                        ],
+                        "properties": {
+                          "checked_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "credential_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "bot_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "directory_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "scope_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "permissions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "scope",
+                                "required",
+                                "status"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unknown",
+                                    "granted",
+                                    "missing"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "error_code": {
+                            "type": "string"
+                          },
+                          "error_detail": {
+                            "type": "string",
+                            "description": "Feishu error code and sanitized message, or the local directory failure code when Feishu did not disclose a valid scope."
+                          }
+                        }
+                      },
+                      "poll_interval_seconds": {
+                        "type": "integer"
+                      },
+                      "auto_retry_blocked": {
+                        "type": "boolean"
+                      },
+                      "replaces_registration_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "auto_check": {
+                        "type": "object",
+                        "properties": {
+                          "eligible": {
+                            "type": "boolean"
+                          },
+                          "in_progress": {
+                            "type": "boolean"
+                          },
+                          "next_check_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "description": "Never includes device codes or application secrets. Canceling local setup does not delete an external app. connected means validated configuration persisted; Event Hub connection status remains separate."
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "scope",
+                        "required",
+                        "status"
+                      ],
+                      "properties": {
+                        "scope": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unknown",
+                            "granted",
+                            "missing"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Workspace management denied"
+        },
+        "404": {
+          "description": "Agent or own registration not found"
+        },
+        "409": {
+          "description": "Concurrent setup or binding changed"
+        },
+        "429": {
+          "description": "Too many registrations"
+        },
+        "502": {
+          "description": "Provider response unavailable"
+        },
+        "503": {
+          "description": "Dependency unavailable"
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        },
+        {
+          "name": "Idempotency-Key",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          },
+          "description": "Same key within workspace+agent returns the same registration and never reissues begin. Different actor cannot replay it."
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "all_contacts": {
+                  "type": "boolean",
+                  "description": "Request the all-member contact range. Defaults to true on first registration and to the previous choice on replacement."
+                },
+                "replace_registration_id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Explicitly replace this administrator’s failed, unbound registration. Retirement and creation are atomic. Reuse the same idempotency key to replay this request."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "poll": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "registration_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "pollFeishuSetup",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin and registration owner only. Cache-Control: no-store. Provider operations use fixed official endpoints. Read operations do not poll or create apps. Poll respects the persisted interval; uncertain polling outcomes are not blindly retried.",
+      "responses": {
+        "200": {
+          "description": "Setup state or current saved-binding diagnostics",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "registration",
+                  "permissions"
+                ],
+                "properties": {
+                  "registration": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "starting",
+                          "awaiting_confirmation",
+                          "polling",
+                          "credentials_saved",
+                          "checking",
+                          "needs_attention",
+                          "connected",
+                          "cancelled",
+                          "expired",
+                          "denied",
+                          "failed",
+                          "interrupted"
+                        ]
+                      },
+                      "app_id": {
+                        "type": "string"
+                      },
+                      "verification_url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "next_poll_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "credential_saved": {
+                        "type": "boolean"
+                      },
+                      "error_code": {
+                        "type": "string"
+                      },
+                      "diagnostics": {
+                        "type": "object",
+                        "required": [
+                          "checked_at",
+                          "credential_status",
+                          "bot_status",
+                          "directory_status",
+                          "scope_status",
+                          "permissions",
+                          "ready",
+                          "error_code"
+                        ],
+                        "properties": {
+                          "checked_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "credential_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "bot_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "directory_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "scope_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "permissions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "scope",
+                                "required",
+                                "status"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unknown",
+                                    "granted",
+                                    "missing"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "error_code": {
+                            "type": "string"
+                          },
+                          "error_detail": {
+                            "type": "string",
+                            "description": "Feishu error code and sanitized message, or the local directory failure code when Feishu did not disclose a valid scope."
+                          }
+                        }
+                      },
+                      "poll_interval_seconds": {
+                        "type": "integer"
+                      },
+                      "auto_retry_blocked": {
+                        "type": "boolean"
+                      },
+                      "replaces_registration_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "auto_check": {
+                        "type": "object",
+                        "properties": {
+                          "eligible": {
+                            "type": "boolean"
+                          },
+                          "in_progress": {
+                            "type": "boolean"
+                          },
+                          "next_check_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "description": "Never includes device codes or application secrets. Canceling local setup does not delete an external app. connected means validated configuration persisted; Event Hub connection status remains separate."
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "scope",
+                        "required",
+                        "status"
+                      ],
+                      "properties": {
+                        "scope": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unknown",
+                            "granted",
+                            "missing"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Workspace management denied"
+        },
+        "404": {
+          "description": "Agent or own registration not found"
+        },
+        "409": {
+          "description": "Concurrent setup or binding changed"
+        },
+        "429": {
+          "description": "Too many registrations"
+        },
+        "502": {
+          "description": "Provider response unavailable"
+        },
+        "503": {
+          "description": "Dependency unavailable"
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    }
+  },
+  "retry": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "registration_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "retryFeishuSetup",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin and registration owner only. Cache-Control: no-store. Provider operations use fixed official endpoints. Read operations do not poll or create apps. Poll respects the persisted interval; uncertain polling outcomes are not blindly retried.",
+      "responses": {
+        "200": {
+          "description": "Setup state or current saved-binding diagnostics",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "registration",
+                  "permissions"
+                ],
+                "properties": {
+                  "registration": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "starting",
+                          "awaiting_confirmation",
+                          "polling",
+                          "credentials_saved",
+                          "checking",
+                          "needs_attention",
+                          "connected",
+                          "cancelled",
+                          "expired",
+                          "denied",
+                          "failed",
+                          "interrupted"
+                        ]
+                      },
+                      "app_id": {
+                        "type": "string"
+                      },
+                      "verification_url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "next_poll_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "credential_saved": {
+                        "type": "boolean"
+                      },
+                      "error_code": {
+                        "type": "string"
+                      },
+                      "diagnostics": {
+                        "type": "object",
+                        "required": [
+                          "checked_at",
+                          "credential_status",
+                          "bot_status",
+                          "directory_status",
+                          "scope_status",
+                          "permissions",
+                          "ready",
+                          "error_code"
+                        ],
+                        "properties": {
+                          "checked_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "credential_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "bot_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "directory_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "scope_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "permissions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "scope",
+                                "required",
+                                "status"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unknown",
+                                    "granted",
+                                    "missing"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "error_code": {
+                            "type": "string"
+                          },
+                          "error_detail": {
+                            "type": "string",
+                            "description": "Feishu error code and sanitized message, or the local directory failure code when Feishu did not disclose a valid scope."
+                          }
+                        }
+                      },
+                      "poll_interval_seconds": {
+                        "type": "integer"
+                      },
+                      "auto_retry_blocked": {
+                        "type": "boolean"
+                      },
+                      "replaces_registration_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "auto_check": {
+                        "type": "object",
+                        "properties": {
+                          "eligible": {
+                            "type": "boolean"
+                          },
+                          "in_progress": {
+                            "type": "boolean"
+                          },
+                          "next_check_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "description": "Never includes device codes or application secrets. Canceling local setup does not delete an external app. connected means validated configuration persisted; Event Hub connection status remains separate."
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "scope",
+                        "required",
+                        "status"
+                      ],
+                      "properties": {
+                        "scope": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unknown",
+                            "granted",
+                            "missing"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Workspace management denied"
+        },
+        "404": {
+          "description": "Agent or own registration not found"
+        },
+        "409": {
+          "description": "Concurrent setup or binding changed"
+        },
+        "429": {
+          "description": "Too many registrations"
+        },
+        "502": {
+          "description": "Provider response unavailable"
+        },
+        "503": {
+          "description": "Dependency unavailable"
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    }
+  },
+  "cancel": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "registration_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "cancelFeishuSetup",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin and registration owner only. Cache-Control: no-store. Provider operations use fixed official endpoints. Read operations do not poll or create apps. Poll respects the persisted interval; uncertain polling outcomes are not blindly retried.",
+      "responses": {
+        "200": {
+          "description": "Setup state or current saved-binding diagnostics",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "registration",
+                  "permissions"
+                ],
+                "properties": {
+                  "registration": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "starting",
+                          "awaiting_confirmation",
+                          "polling",
+                          "credentials_saved",
+                          "checking",
+                          "needs_attention",
+                          "connected",
+                          "cancelled",
+                          "expired",
+                          "denied",
+                          "failed",
+                          "interrupted"
+                        ]
+                      },
+                      "app_id": {
+                        "type": "string"
+                      },
+                      "verification_url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "next_poll_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "updated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "credential_saved": {
+                        "type": "boolean"
+                      },
+                      "error_code": {
+                        "type": "string"
+                      },
+                      "diagnostics": {
+                        "type": "object",
+                        "required": [
+                          "checked_at",
+                          "credential_status",
+                          "bot_status",
+                          "directory_status",
+                          "scope_status",
+                          "permissions",
+                          "ready",
+                          "error_code"
+                        ],
+                        "properties": {
+                          "checked_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "credential_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "bot_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "directory_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "scope_status": {
+                            "type": "string",
+                            "enum": [
+                              "unknown",
+                              "pass",
+                              "failed"
+                            ]
+                          },
+                          "permissions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "scope",
+                                "required",
+                                "status"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unknown",
+                                    "granted",
+                                    "missing"
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "ready": {
+                            "type": "boolean"
+                          },
+                          "error_code": {
+                            "type": "string"
+                          },
+                          "error_detail": {
+                            "type": "string",
+                            "description": "Feishu error code and sanitized message, or the local directory failure code when Feishu did not disclose a valid scope."
+                          }
+                        }
+                      },
+                      "poll_interval_seconds": {
+                        "type": "integer"
+                      },
+                      "auto_retry_blocked": {
+                        "type": "boolean"
+                      },
+                      "replaces_registration_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "auto_check": {
+                        "type": "object",
+                        "properties": {
+                          "eligible": {
+                            "type": "boolean"
+                          },
+                          "in_progress": {
+                            "type": "boolean"
+                          },
+                          "next_check_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "description": "Never includes device codes or application secrets. Canceling local setup does not delete an external app. connected means validated configuration persisted; Event Hub connection status remains separate."
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "scope",
+                        "required",
+                        "status"
+                      ],
+                      "properties": {
+                        "scope": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unknown",
+                            "granted",
+                            "missing"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Workspace management denied"
+        },
+        "404": {
+          "description": "Agent or own registration not found"
+        },
+        "409": {
+          "description": "Concurrent setup or binding changed"
+        },
+        "429": {
+          "description": "Too many registrations"
+        },
+        "502": {
+          "description": "Provider response unavailable"
+        },
+        "503": {
+          "description": "Dependency unavailable"
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    }
+  },
+  "diagnostics": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "diagnosticsFeishuSetup",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Workspace owner/admin and registration owner only. Cache-Control: no-store. Provider operations use fixed official endpoints. Read operations do not poll or create apps. Poll respects the persisted interval; uncertain polling outcomes are not blindly retried.",
+      "responses": {
+        "200": {
+          "description": "Setup state or current saved-binding diagnostics",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "checked_at",
+                  "credential_status",
+                  "bot_status",
+                  "directory_status",
+                  "scope_status",
+                  "permissions",
+                  "ready",
+                  "error_code"
+                ],
+                "properties": {
+                  "checked_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "credential_status": {
+                    "type": "string",
+                    "enum": [
+                      "unknown",
+                      "pass",
+                      "failed"
+                    ]
+                  },
+                  "bot_status": {
+                    "type": "string",
+                    "enum": [
+                      "unknown",
+                      "pass",
+                      "failed"
+                    ]
+                  },
+                  "directory_status": {
+                    "type": "string",
+                    "enum": [
+                      "unknown",
+                      "pass",
+                      "failed"
+                    ]
+                  },
+                  "scope_status": {
+                    "type": "string",
+                    "enum": [
+                      "unknown",
+                      "pass",
+                      "failed"
+                    ]
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "scope",
+                        "required",
+                        "status"
+                      ],
+                      "properties": {
+                        "scope": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unknown",
+                            "granted",
+                            "missing"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "ready": {
+                    "type": "boolean"
+                  },
+                  "error_code": {
+                    "type": "string"
+                  },
+                  "error_detail": {
+                    "type": "string",
+                    "description": "Feishu error code and sanitized message, or the local directory failure code when Feishu did not disclose a valid scope."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "401": {
+          "description": "Unauthenticated"
+        },
+        "403": {
+          "description": "Workspace management denied"
+        },
+        "404": {
+          "description": "Agent or own registration not found"
+        },
+        "409": {
+          "description": "Concurrent setup or binding changed"
+        },
+        "429": {
+          "description": "Too many registrations"
+        },
+        "502": {
+          "description": "Provider response unavailable"
+        },
+        "503": {
+          "description": "Dependency unavailable"
+        }
+      },
+      "parameters": [
+        {
+          "name": "X-CSRF-Protection",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "const": "1"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

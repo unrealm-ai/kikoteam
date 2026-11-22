@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🔒 报告安全漏洞 (Security Vulnerability)
+    url: https://github.com/unrealm-ai/kikoteam/security/advisories/new
+    about: 请勿在公开 Issue 中披露安全漏洞细节，请通过 GitHub Security Advisories 私密提交（详见 SECURITY.md）。
+  - name: 📖 查阅使用与部署文档 (Documentation)
+    url: https://github.com/unrealm-ai/kikoteam/blob/main/docs/README.md
+    about: 提问前可先查阅 5 分钟快速上手、渠道接入指南与部署配置说明。

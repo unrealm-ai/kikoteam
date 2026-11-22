@@ -1,0 +1,189 @@
+collection:
+  parameters:
+    - $ref: './conversations.yaml#/parameters/workspace'
+  get:
+    operationId: listTasks
+    description: Cookie authenticated read projection of existing Task/Session facts. Session visibility, including private Web ownership, applies before filtering. No execution commands or side effects. Read retry is safe. Task created_at DESC,id DESC cursor. Unknown or duplicate scalar query parameters are rejected. Search is case insensitive literal title substring or exact full task UUID. Null latest_input/latest_turn means none exists; they are independent facts.
+    parameters:
+      - {name: q, in: query, schema: {type: string, maxLength: 200}}
+      - {name: agent_id, in: query, schema: {type: string, format: uuid}}
+      - {name: conversation_id, in: query, schema: {type: string, format: uuid}}
+      - {name: task_space_id, in: query, schema: {type: string, format: uuid}}
+      - {name: execution_state, in: query, schema: {enum: [idle, queued, running, stopping, blocked]}}
+      - {name: latest_turn_status, in: query, schema: {enum: [running, stopping, completed, failed, canceled, interrupted]}}
+      - {name: lifecycle, in: query, schema: {enum: [active, archived]}}
+      - $ref: '#/parameters/cursor'
+      - $ref: '#/parameters/limit'
+      - {name: include_counts, in: query, schema: {type: boolean}, description: Include authorized counts across all pages.}
+      - {name: work_item_id, in: query, schema: {type: string, format: uuid}, description: Visible root or assignment tasks of a visible item.}
+    responses:
+      '200':
+        description: Authorized task page. Cursor binds account, workspace and filters. Changed execution filters are evaluated at each read; clients refresh their current page.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, next_cursor]
+              properties:
+                items: {type: array, items: {$ref: '#/schemas/Task'}}
+                status_counts: {type: object, additionalProperties: {type: integer}, description: Execution states before applying the execution_state filter.}
+                next_cursor: {type: [string, 'null']}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+item:
+  parameters:
+    - $ref: './conversations.yaml#/parameters/workspace'
+    - $ref: '#/parameters/task'
+  get:
+    operationId: getTask
+    description: Read-only task detail under current Session visibility. Unknown or inaccessible IDs return resource_not_found (404); malformed IDs hide existence too. The supplement action describes manual input admission, including system-managed task spaces. Actions are current hints and commands revalidate. No query parameters. Safe to retry. Full messages and tools remain paginated Session events.
+    responses:
+      '200':
+        description: Task detail. Latest result is at most 1600 Unicode characters and explicitly marks truncation.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/schemas/Task'
+                - type: object
+                  required: [initial_input, latest_result]
+                  properties:
+                    work_item_id: {type: string, format: uuid, description: Latest related handoff item}
+                    initial_input:
+                      oneOf:
+                        - $ref: './session-schemas.yaml#/Input'
+                        - {type: 'null'}
+                    latest_result:
+                      type: [object, 'null']
+                      required: [turn_id, text, truncated]
+                      properties:
+                        turn_id: {type: string, format: uuid}
+                        text: {type: string, maxLength: 1600}
+                        truncated: {type: boolean}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+reports:
+  parameters:
+    - $ref: './conversations.yaml#/parameters/workspace'
+    - $ref: '#/parameters/task'
+  get:
+    operationId: listTaskReports
+    description: Cookie authenticated read; same task visibility, and target fields require target Session visibility. One entry per ended Turn (starting Input only), or canceled/rejected Input without a Turn. Source input seq DESC. pending/not_enabled/not_applicable are derived, not persistent report statuses. An admitted report proves only target Input acceptance; target processing/context/Turn are separate facts and do not prove a dedicated reply or channel delivery. Safe to retry. Unknown/duplicate scalar parameters rejected; turn_id/input_id are mutually exclusive.
+    parameters:
+      - {name: turn_id, in: query, schema: {type: string, format: uuid}}
+      - {name: input_id, in: query, schema: {type: string, format: uuid}}
+      - $ref: '#/parameters/cursor'
+      - $ref: '#/parameters/limit'
+    responses:
+      '200':
+        description: Report page, including historical report-disabled inputs. report_id/created_at/target are null until a persistent record exists. Cursor binds user, workspace, task and filters.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, next_cursor]
+              properties:
+                items: {type: array, items: {$ref: '#/schemas/Report'}}
+                next_cursor: {type: [string, 'null']}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+parameters:
+  task: {name: task_id, in: path, required: true, schema: {type: string, format: uuid}}
+  cursor: {name: cursor, in: query, schema: {type: string}, description: Opaque signed cursor. Reusing it with other scope or filters returns invalid_cursor.}
+  limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+schemas:
+  Task:
+    type: object
+    required: [task_id, session_id, title, agent, source, lifecycle, execution, latest_input, latest_turn, created_at, revision, accepts_input, input_block_reason, actions]
+    oneOf:
+      - required: [conversation_id]
+        not: {required: [task_space_id]}
+      - required: [task_space_id]
+        not: {required: [conversation_id]}
+    properties:
+      planning_state: {type: string, enum: [planned, started, canceled]}
+      planning_version: {type: string, pattern: '^[1-9][0-9]*$'}
+      work_item_id: {type: string, format: uuid, description: Latest visible related handoff item.}
+      task_id: {type: string, format: uuid}
+      session_id: {type: string, format: uuid}
+      conversation_id: {type: string, format: uuid}
+      task_space_id: {type: string, format: uuid}
+      title: {type: [string, 'null']}
+      agent:
+        type: object
+        required: [id, name, avatar]
+        properties:
+          id: {type: string, format: uuid}
+          name: {type: string}
+          avatar: {type: string}
+      source:
+        type: object
+        required: [kind, chat_session_id, chat_input_id]
+        properties:
+          kind: {enum: [chat_delegation, unspecified]}
+          chat_session_id: {type: [string, 'null'], format: uuid}
+          chat_input_id: {type: [string, 'null'], format: uuid}
+      lifecycle: {enum: [active, archived]}
+      execution: {$ref: './session-schemas.yaml#/Execution'}
+      latest_input:
+        type: [object, 'null']
+        required: [id, status, delivery_mode, turn_id]
+        properties:
+          id: {type: string, format: uuid}
+          status: {enum: [queued, started, processed, canceled, rejected]}
+          delivery_mode: {enum: [steer, queue]}
+          turn_id: {type: [string, 'null'], format: uuid}
+      latest_turn:
+        type: [object, 'null']
+        required: [id, turn_no, status, started_at, finished_at, has_unknown_tool_results]
+        properties:
+          id: {type: string, format: uuid}
+          turn_no: {type: string, pattern: '^[1-9][0-9]*$'}
+          status: {enum: [running, stopping, completed, failed, canceled, interrupted]}
+          started_at: {type: string, format: date-time}
+          finished_at: {type: [string, 'null'], format: date-time}
+          has_unknown_tool_results: {type: boolean}
+      created_at: {type: string, format: date-time}
+      revision: {type: string, pattern: '^[1-9][0-9]*$'}
+      accepts_input: {type: boolean}
+      input_block_reason: {type: [string, 'null']}
+      actions:
+        type: object
+        required: [rename, stop, archive]
+        additionalProperties:
+          type: object
+          required: [allowed, reason]
+          properties:
+            allowed: {type: boolean}
+            reason: {type: [string, 'null']}
+  Report:
+    type: object
+    required: [report_id, source_input_id, source_input_seq, source_turn_id, outcome, status, reason, target, created_at, supplement_receipts, supplement_receipts_truncated]
+    properties:
+      report_id: {type: [string, 'null'], format: uuid}
+      source_input_id: {type: string, format: uuid}
+      source_input_seq: {type: string, pattern: '^[1-9][0-9]*$'}
+      source_turn_id: {type: [string, 'null'], format: uuid}
+      supplement_receipts:
+        type: array
+        maxItems: 100
+        description: User steer inputs attached to the source Turn, ordered by input sequence. Native context evidence does not prove application.
+        items:
+          type: object
+          required: [input_id, input_seq, context_state]
+          properties:
+            input_id: {type: string, format: uuid}
+            input_seq: {type: string, pattern: '^[1-9][0-9]*$'}
+            context_state: {type: [string, 'null'], enum: [pending, committed, absent, unknown, null]}
+      supplement_receipts_truncated: {type: boolean}
+      outcome: {enum: [completed, failed, interrupted, canceled, rejected, awaiting_confirmation]}
+      status: {enum: [pending, admitted, suppressed, not_enabled, not_applicable]}
+      reason: {type: [string, 'null']}
+      created_at: {type: [string, 'null'], format: date-time}
+      target:
+        type: [object, 'null']
+        required: [session_id, input_id, input_status, context_state, turn_id, turn_status]
+        properties:
+          session_id: {type: string, format: uuid}
+          input_id: {type: string, format: uuid}
+          input_status: {enum: [queued, started, processed, canceled, rejected]}
+          context_state: {type: [string, 'null'], enum: [pending, committed, absent, unknown, null]}
+          turn_id: {type: [string, 'null'], format: uuid}
+          turn_status: {type: [string, 'null'], enum: [running, stopping, completed, failed, interrupted, canceled, null]}

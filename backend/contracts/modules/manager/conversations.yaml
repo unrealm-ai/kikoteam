@@ -1,0 +1,139 @@
+collection:
+  parameters:
+    - $ref: '#/parameters/workspace'
+  get:
+    operationId: listConversations
+    description: Active workspace members list conversations in stable created_at DESC,id DESC order. Cursor binds workspace, actor and filters.
+    parameters:
+      - {name: agent_id, in: query, schema: {type: string, format: uuid}}
+      - {name: lifecycle, in: query, schema: {type: string, enum: [active, archived]}}
+      - {name: cursor, in: query, schema: {type: string}}
+      - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+    responses:
+      '200':
+        description: Authorized conversations; an empty page has items [].
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, next_cursor]
+              properties:
+                items: {type: array, items: {$ref: '#/schemas/Conversation'}}
+                next_cursor: {type: [string, 'null']}
+      default: {$ref: '#/responses/Error'}
+  post:
+    operationId: createConversation
+    description: Create metadata only; do not allocate Pi or Sandbox. No request deduplication; a repeat can create another Conversation.
+    parameters:
+      - $ref: '#/parameters/csrf'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [agent_id]
+            properties:
+              agent_id: {type: string, format: uuid}
+              title: {type: [string, 'null'], minLength: 1, maxLength: 200}
+          example: {agent_id: '11111111-1111-4111-8111-111111111111', title: '项目讨论'}
+    responses:
+      '201':
+        description: Metadata committed.
+        content:
+          application/json:
+            schema: {$ref: '#/schemas/Conversation'}
+      default: {$ref: '#/responses/Error'}
+item:
+  parameters:
+    - $ref: '#/parameters/workspace'
+    - $ref: '#/parameters/conversation'
+  get:
+    operationId: getConversation
+    responses:
+      '200':
+        description: Current lifecycle and derived cleanup status; archived history remains readable.
+        content:
+          application/json:
+            schema: {$ref: '#/schemas/Conversation'}
+      default: {$ref: '#/responses/Error'}
+archive:
+  parameters:
+    - $ref: '#/parameters/workspace'
+    - $ref: '#/parameters/conversation'
+  post:
+    operationId: archiveConversation
+    description: Require all associated Sessions to have no active turn, queued input, local background work, unconfirmed stop or unknown local activity; otherwise return 409 conversation_busy without mutation. Atomically close parent admission, then archive associated Sessions. Repeat continues unfinished cleanup. Retain project files and native history. Unknown remote outcomes alone do not prevent archive and remain visible in cleanup_pending. No idempotency key or public control resource.
+    parameters:
+      - $ref: '#/parameters/csrf'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {type: object, additionalProperties: false, maxProperties: 0}
+    responses:
+      '200':
+        description: Archived, with cleanup_pending indicating actual remaining work on repeated calls.
+        content:
+          application/json:
+            schema: {$ref: '#/schemas/Conversation'}
+      '202':
+        description: Parent admission closed; child cleanup remains in progress.
+        content:
+          application/json:
+            schema: {$ref: '#/schemas/Conversation'}
+      default: {$ref: '#/responses/Error'}
+parameters:
+  workspace: {name: workspace_id, in: path, required: true, schema: {type: string, format: uuid}}
+  conversation: {name: conversation_id, in: path, required: true, schema: {type: string, format: uuid}}
+  csrf: {name: X-CSRF-Protection, in: header, required: true, schema: {type: string, const: '1'}}
+responses:
+  Error:
+    description: 400 invalid_argument or invalid_cursor; 401 unauthenticated; 403 permission_denied or csrf_rejected; 404 resource_not_found for invisible/mismatched resources; 409 agent_disabled; 503 dependency_unavailable. No error implies that unknown external work was rolled back.
+    content:
+      application/json:
+        schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}
+schemas:
+  Conversation:
+    type: object
+    additionalProperties: false
+    required: [id, workspace_id, agent_id, created_by, title, lifecycle, chat_session_id, cleanup_pending, created_at, archived_at]
+    properties:
+      id: {type: string, format: uuid}
+      workspace_id: {type: string, format: uuid}
+      agent_id: {type: string, format: uuid}
+      created_by: {type: string, format: uuid}
+      web_user_id: {type: [string, 'null'], format: uuid, description: Private Web owner. Only this active member may read or control this conversation and its Sessions. Null retains generic conversation rules.}
+      title: {type: [string, 'null']}
+      lifecycle: {type: string, enum: [active, archived]}
+      chat_session_id: {type: [string, 'null'], format: uuid}
+      cleanup_pending: {type: boolean}
+      created_at: {type: string, format: date-time}
+      archived_at: {type: [string, 'null'], format: date-time}
+
+webDirect:
+  parameters:
+    - $ref: '#/parameters/workspace'
+  post:
+    operationId: resolveWebConversation
+    description: Resolve or create the caller's stable private Web conversation for the employee. Atomic business uniqueness by workspace, authenticated user and employee; safe to retry without a request key. Does not allocate a Session or environment. Existing generic conversations are not implicitly adopted. Manual archive retains existing quiescence rules. Archived private mappings still resolve to the same Conversation and chat_session_id for read-only history; never replace or automatically restore them. All reads, lists, writes and streams enforce owner isolation. Existing history can be resolved when an employee is disabled; new creation returns 409.
+    parameters:
+      - $ref: '#/parameters/csrf'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [agent_id]
+            properties:
+              agent_id: {type: string, format: uuid}
+    responses:
+      '200':
+        description: Stable private Conversation, newly created or existing. An active Conversation with null chat_session_id creates its unique chat Session on first message. An archived Conversation remains read-only even when chat_session_id is null.
+        content:
+          application/json:
+            schema: {$ref: '#/schemas/Conversation'}
+      default: {$ref: '#/responses/Error'}

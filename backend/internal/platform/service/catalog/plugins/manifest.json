@@ -1,0 +1,204 @@
+[
+  {
+    "key": "stock",
+    "name": "A 股行情快查",
+    "description": "社区公开行情，提供三大指数和个股快照。免认证，附上游报价时间。",
+    "endpoint": "https://mcp.pianam.cn/stock-mcp/mcp",
+    "auth": "none",
+    "tools": [
+      "query_index",
+      "query_stock_quote"
+    ],
+    "public_tools": [
+      {
+        "name": "query_stock_quote",
+        "description": "查询个股实时行情，支持股票代码（如 sh600519、600519）或名称（如 贵州茅台）。返回现价、涨跌额、涨跌幅、今开、昨收、最高、最低、成交量等数据。",
+        "input_schema": {
+          "properties": {
+            "stock": {
+              "type": "string",
+              "description": "股票代码或名称，如 \"sh600519\"、\"600519\"、\"贵州茅台\""
+            }
+          },
+          "required": [
+            "stock"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "schema_digest": "d98019a6eeaa3a3ccb58946424d87c9a074b8b39be7054e9b0ecfddad48a1441"
+      },
+      {
+        "name": "query_index",
+        "description": "查询A股三大指数实时行情，包括上证指数、深证成指、创业板指的点位、涨跌幅和市场整体趋势。",
+        "input_schema": {
+          "properties": {},
+          "type": "object",
+          "additionalProperties": false
+        },
+        "schema_digest": "99334726611ccf58a148b0814696bfa6fe08c1b2d027e946beccf5a74331c9aa"
+      }
+    ]
+  },
+  {
+    "key": "hithink",
+    "name": "同花顺 A 股行情",
+    "description": "空间提供同花顺 API Key，查询 A 股现价、历史行情和财务指标。",
+    "endpoint": "https://fuyao.aicubes.cn/mcp/a-share",
+    "auth": "api_key",
+    "tools": [
+      "get_a_share_prices_snapshot",
+      "get_a_share_prices_historical",
+      "get_a_share_financials_indicators"
+    ],
+    "header": "X-api-key"
+  },
+  {
+    "key": "github",
+    "name": "GitHub",
+    "description": "使用个人访问令牌（PAT）或 GitHub 网页授权，只读访问获准仓库的 PR、Issue、差异和提交记录。",
+    "endpoint": "https://api.githubcopilot.com/mcp/readonly",
+    "auth": "bearer",
+    "tools": [
+      "list_pull_requests",
+      "pull_request_read",
+      "list_issues",
+      "issue_read",
+      "list_commits",
+      "get_commit"
+    ]
+  },
+  {
+    "key": "tavily",
+    "name": "Tavily 联网搜索",
+    "description": "使用 Tavily API Key 搜索资讯、提取网页正文、发现站点链接和抓取相关页面。",
+    "endpoint": "https://mcp.tavily.com/mcp",
+    "auth": "bearer",
+    "tools": [
+      "tavily_search",
+      "tavily_extract",
+      "tavily_map",
+      "tavily_crawl"
+    ]
+  },
+  {
+    "key": "exa",
+    "name": "Exa 公开资料检索",
+    "description": "检索公开网页及来源，匿名服务受供应商限流。",
+    "endpoint": "https://mcp.exa.ai/mcp",
+    "auth": "none",
+    "tools": [
+      "web_search_exa"
+    ],
+    "public_tools": [
+      {
+        "name": "web_search_exa",
+        "description": "Search the web for any topic and get clean, ready-to-use content.\n\n      Best for: Finding current information, news, facts, people, companies, or answering questions about any topic.\n      Returns: Clean text content from top search results.\n\n      Query tips:\n      describe the ideal page, not keywords. \"blog post comparing React and Vue performance\" not \"React vs Vue\".\n      Use category:people / category:company to search through Linkedin profiles / companies respectively.\n      If highlights are insufficient, follow up with web_fetch_exa on the best URLs.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Natural language search query. Should be a semantically rich description of the ideal page, not just keywords. Optionally include category:<type> (company, people) to focus results — e.g. 'category:people John Doe software engineer'."
+            },
+            "numResults": {
+              "type": "number",
+              "description": "Number of search results to return (default: 10)."
+            },
+            "objective": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "Goal for this search turn; say which documents should rank first, which should be excluded, and what specific facts or figures to pull from them."
+            }
+          },
+          "required": [
+            "query",
+            "objective"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "schema_digest": "37eca4517c8bf93f904ed6bbcc6977bfa2a538213ae743906cf7b42cb44ba619"
+      }
+    ]
+  },
+  {
+    "key": "zhipu",
+    "name": "智谱联网搜索",
+    "description": "使用支持联网搜索 MCP 的 GLM Coding Plan API Key。",
+    "endpoint": "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp",
+    "auth": "bearer",
+    "tools": [
+      "webSearchPrime"
+    ]
+  },
+  {
+    "key": "feishu",
+    "name": "飞书云文档",
+    "description": "需飞书自建应用 App ID、App Secret 以及目标文档的读取权限。",
+    "endpoint": "https://mcp.feishu.cn/mcp",
+    "auth": "api_key",
+    "tools": [
+      "search-doc",
+      "fetch-doc",
+      "list-docs"
+    ],
+    "header": "X-Lark-MCP-TAT"
+  },
+  {
+    "key": "tencent_meeting",
+    "name": "腾讯会议纪要",
+    "description": "使用腾讯会议个人 Token，查询已结束会议、录制和智能纪要。",
+    "endpoint": "https://mcp.meeting.tencent.com/mcp/wemeet-open/v1",
+    "auth": "api_key",
+    "tools": [
+      "get_user_ended_meetings",
+      "get_records_list",
+      "get_smart_minutes",
+      "get_transcripts_paragraphs",
+      "get_transcripts_details"
+    ],
+    "header": "X-Tencent-Meeting-Token"
+  },
+  {
+    "key": "dingtalk",
+    "name": "钉钉待办",
+    "description": "从钉钉 MCP 广场复制待办专属服务 URL，按条件查询事项。",
+    "endpoint": "https://mcp-gw.dingtalk.com/mserver",
+    "auth": "api_key",
+    "tools": [
+      "get_user_todos_in_current_org",
+      "get_todo_detail",
+      "list_sub_tasks"
+    ],
+    "header": "X-Kiko-Connection"
+  },
+  {
+    "key": "fxiaoke",
+    "name": "纷享销客 CRM",
+    "description": "使用企业提供的 MCP 服务地址和授权，只查询商机、客户和跟进记录。",
+    "endpoint": "https://open.fxiaoke.com/mcp",
+    "auth": "oauth",
+    "tools": [
+      "tenant_read_tools"
+    ]
+  },
+  {
+    "key": "amap",
+    "name": "高德地图",
+    "description": "输入高德 Web 服务 Key，查询门店、距离和拜访路线。",
+    "endpoint": "https://mcp.amap.com/mcp",
+    "auth": "api_key",
+    "tools": [
+      "maps_geo",
+      "maps_regeocode",
+      "maps_direction_driving",
+      "maps_distance",
+      "maps_text_search",
+      "maps_around_search"
+    ],
+    "header": "X-Kiko-Connection"
+  }
+]

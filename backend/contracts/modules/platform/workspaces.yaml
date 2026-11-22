@@ -1,0 +1,92 @@
+get:
+  operationId: listWorkspaces
+  summary: listWorkspaces
+  description: ''
+  security:
+  - sessionCookie: []
+  responses:
+    '200':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+          description: Request trace identifier
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/WorkspacePage
+    default:
+      description: Structured error (400 invalid input, 401 no session, 403 forbidden/CSRF,
+        404 missing resource, 409 stale version/conflict, 410 invalid invite, 429
+        rate limit, 503 dependency unavailable).
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+  parameters:
+  - name: page
+    in: query
+    schema:
+      type: integer
+      minimum: 1
+      maximum: 1000000
+      default: 1
+  - name: page_size
+    in: query
+    schema:
+      type: integer
+      minimum: 1
+      maximum: 100
+      default: 50
+post:
+  operationId: createWorkspace
+  summary: createWorkspace
+  description: Creates workspace and owner membership atomically; retry can create
+    a second workspace.
+  security:
+  - sessionCookie: []
+  responses:
+    '201':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+          description: Request trace identifier
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Workspace
+    default:
+      description: Structured error (400 invalid input, 401 no session, 403 forbidden/CSRF,
+        404 missing resource, 409 stale version/conflict, 410 invalid invite, 429
+        rate limit, 503 dependency unavailable).
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+  parameters:
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema:
+      type: string
+      const: '1'
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          additionalProperties: false
+          properties:
+            name:
+              type: string
+              minLength: 1
+              maxLength: 100
+            description:
+              type: string
+              maxLength: 2000
+          required:
+          - name

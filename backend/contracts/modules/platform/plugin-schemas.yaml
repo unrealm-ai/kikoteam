@@ -1,0 +1,430 @@
+{
+  "Plugin": {
+    "type": "object",
+    "properties": {
+      "supported_auth_methods": {"type": "array", "items": {"enum": ["none", "bearer", "api_key", "oauth"]}},
+      "default_auth_method": {"enum": ["none", "bearer", "api_key", "oauth"]},
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "endpoint": {
+        "type": "string",
+        "format": "uri"
+      },
+      "auth_type": {
+        "type": "string",
+        "enum": [
+          "none",
+          "bearer",
+          "api_key",
+          "oauth"
+        ]
+      },
+      "header_name": {
+        "type": "string"
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "version": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "definition_version": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Number of the returned plugin definition version."
+      },
+      "version_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "scope": {
+        "type": "string",
+        "enum": [
+          "official",
+          "workspace"
+        ]
+      },
+      "listed": {
+        "type": "boolean"
+      },
+      "card": {
+        "$ref": "./resource-catalog-schemas.yaml#/ResourceCard"
+      },
+      "shared_connection_state": {
+        "type": "string",
+        "enum": ["missing", "connected", "unvalidated", "revoked"],
+        "description": "Shared connection for this workspace and exact plugin version. Omitted without a workspace or for anonymous plugins."
+      },
+      "assigned_agent_count": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "oauth": {
+        "$ref": "#/OAuthClient"
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "description",
+      "endpoint",
+      "auth_type",
+      "supported_auth_methods",
+      "default_auth_method",
+      "header_name",
+      "enabled",
+      "version",
+      "version_id",
+      "created_at",
+      "updated_at"
+    ],
+    "additionalProperties": false
+  },
+  "PluginCreate": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "endpoint": {
+        "type": "string",
+        "format": "uri"
+      },
+      "auth_type": {
+        "type": "string",
+        "enum": [
+          "none",
+          "bearer",
+          "api_key",
+          "oauth"
+        ]
+      },
+      "header_name": {
+        "type": "string"
+      },
+      "oauth": {
+        "$ref": "#/OAuthClientInput"
+      }
+    },
+    "required": [
+      "name",
+      "endpoint",
+      "auth_type"
+    ],
+    "additionalProperties": false
+  },
+  "PluginPatch": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "endpoint": {
+        "type": "string",
+        "format": "uri"
+      },
+      "auth_type": {
+        "type": "string",
+        "enum": [
+          "none",
+          "bearer",
+          "api_key",
+          "oauth"
+        ]
+      },
+      "header_name": {
+        "type": "string"
+      },
+      "version": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "oauth": {
+        "$ref": "#/OAuthClientInput"
+      }
+    },
+    "required": [
+      "version"
+    ],
+    "additionalProperties": false
+  },
+  "PluginPage": {
+    "type": "object",
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "./plugin-schemas.yaml#/Plugin"
+        }
+      },
+      "total": {
+        "type": "integer"
+      },
+      "page": {
+        "type": "integer"
+      },
+      "page_size": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "items",
+      "total",
+      "page",
+      "page_size"
+    ],
+    "additionalProperties": false
+  },
+  "MCPTool": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "schema_digest": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "description",
+      "input_schema",
+      "schema_digest"
+    ],
+    "additionalProperties": false
+  },
+  "PluginAccount": {
+    "type": "object",
+    "properties": {
+      "auth_method": {"enum": ["none", "bearer", "api_key", "oauth"]},
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "agent_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "plugin_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "plugin_version_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string"
+      },
+      "version": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "validated": {
+        "type": "boolean"
+      },
+      "validated_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "tools": {
+        "type": "array",
+        "items": {
+          "$ref": "./plugin-schemas.yaml#/MCPTool"
+        }
+      },
+      "source": {
+        "type": "string",
+        "enum": [
+          "workspace",
+          "agent"
+        ]
+      },
+      "agent_count": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "granted_scopes": {
+        "type": "string"
+      },
+      "external_account": {
+        "type": "string"
+      },
+      "expires_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "required": [
+      "id",
+      "plugin_id",
+      "plugin_version_id",
+      "auth_method",
+      "name",
+      "version",
+      "enabled",
+      "validated",
+      "validated_at",
+      "tools"
+    ],
+    "additionalProperties": false
+  },
+  "PluginAccountPut": {
+    "type": "object",
+    "properties": {
+      "auth_method": {"enum": ["none", "bearer", "api_key"], "description": "Explicit static method. Omitting it preserves the current method, or uses the default on a new connection."},
+      "plugin_version_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string"
+      },
+      "version": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "secret": {
+        "type": "string",
+        "maxLength": 8192,
+        "writeOnly": true
+      }
+    },
+    "required": [
+      "plugin_version_id",
+      "name",
+      "version"
+    ],
+    "additionalProperties": false
+  },
+  "PluginAccountRevoke": {
+    "type": "object",
+    "properties": {
+      "version": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "required": [
+      "version"
+    ],
+    "additionalProperties": false
+  },
+  "OAuthClient": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "issuer": {
+        "type": "string",
+        "format": "uri"
+      },
+      "resource": {
+        "type": "string",
+        "format": "uri"
+      },
+      "client_id": {
+        "type": "string"
+      },
+      "scopes": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "required": [
+      "issuer",
+      "resource",
+      "client_id"
+    ]
+  },
+  "OAuthClientInput": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "issuer": {
+        "type": "string",
+        "format": "uri"
+      },
+      "resource": {
+        "type": "string",
+        "format": "uri"
+      },
+      "client_id": {
+        "type": "string"
+      },
+      "scopes": {
+        "type": "string"
+      },
+      "client_secret": {
+        "type": "string",
+        "writeOnly": true
+      }
+    },
+    "required": [
+      "issuer",
+      "client_id"
+    ]
+  },
+  "ConnectionSource": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "source": {
+        "type": "string",
+        "enum": [
+          "workspace",
+          "agent"
+        ]
+      },
+      "revision": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "account": {
+        "$ref": "#/PluginAccount"
+      }
+    },
+    "required": [
+      "source",
+      "revision"
+    ]
+  }
+}

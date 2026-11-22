@@ -1,0 +1,188 @@
+ModelProfile:
+  type: object
+  additionalProperties: false
+  properties:
+    source: {type: string, const: workspace}
+    name: &id001
+      type: string
+      minLength: 1
+      maxLength: 100
+    description: &id002
+      type: string
+      maxLength: 2000
+      default: ''
+    protocol: &id003
+      type: string
+      enum:
+      - chat_completions
+      - openai_responses
+      - anthropic_messages
+    base_url: &id004
+      type: string
+      format: uri
+      maxLength: 2048
+    model_id: &id005
+      type: string
+      minLength: 1
+      maxLength: 256
+    id:
+      type: string
+      format: uuid
+    version: &id006
+      type: integer
+      minimum: 1
+    has_key:
+      type: boolean
+    validated:
+      type: boolean
+    enabled:
+      type: boolean
+    is_default:
+      type: boolean
+    vision_status:
+      type: string
+      enum:
+      - passed
+      - unsupported
+      - unknown
+    tested_at:
+      type: string
+      format: date-time
+  required:
+  - id
+  - version
+  - name
+  - description
+  - protocol
+  - base_url
+  - model_id
+  - has_key
+  - validated
+  - enabled
+  - is_default
+  - vision_status
+  - tested_at
+ModelPage:
+  type: object
+  additionalProperties: false
+  properties:
+    items:
+      type: array
+      items:
+        oneOf:
+        - $ref: ./model-schemas.yaml#/ModelProfile
+        - $ref: ./model-schemas.yaml#/OfficialChoice
+    total:
+      type: integer
+    page:
+      type: integer
+    page_size:
+      type: integer
+  required:
+  - items
+  - total
+  - page
+  - page_size
+OfficialChoice:
+  type: object
+  additionalProperties: false
+  required: [id, name, source, protocol, enabled, validated, is_default, prices]
+  properties:
+    id: {type: string, format: uuid}
+    name: {type: string}
+    source: {type: string, const: platform}
+    protocol: *id003
+    enabled: {type: boolean, const: true}
+    validated: {type: boolean, const: true}
+    is_default: {type: boolean}
+    prices: {$ref: ./model-proxy.yaml#/schemas/Price}
+ModelTestRequest:
+  type: object
+  additionalProperties: false
+  properties:
+    name: *id001
+    description: *id002
+    protocol: *id003
+    base_url: *id004
+    model_id: *id005
+    api_key: &id007
+      type: string
+      maxLength: 8192
+      writeOnly: true
+      description: Omit to keep an existing credential; explicit empty string means
+        no authentication. Never returned.
+    model_profile_id:
+      type: string
+      format: uuid
+    version: *id006
+  required:
+  - name
+  - protocol
+  - base_url
+  - model_id
+ModelSaveRequest:
+  type: object
+  additionalProperties: false
+  properties:
+    name: *id001
+    description: *id002
+    protocol: *id003
+    base_url: *id004
+    model_id: *id005
+    api_key: *id007
+    version: *id006
+    test_receipt:
+      type: string
+      minLength: 64
+      maxLength: 64
+  required:
+  - name
+  - protocol
+  - base_url
+  - model_id
+  - test_receipt
+ModelTestReceipt:
+  type: object
+  additionalProperties: false
+  properties:
+    receipt:
+      type: string
+      description: Empty when text test failed. One save per receipt, same request
+        retries return the saved resource.
+    expires_at:
+      type: string
+      format: date-time
+    text: &id008
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum:
+          - passed
+          - failed
+          - unsupported
+          - unknown
+        output:
+          type: string
+          maxLength: 4096
+        issue:
+          type: string
+        duration_ms:
+          type: integer
+          minimum: 0
+        http_status:
+          type: integer
+          minimum: 0
+      required:
+      - status
+      - output
+      - issue
+      - duration_ms
+      - http_status
+    image: *id008
+  required:
+  - receipt
+  - expires_at
+  - text
+  - image

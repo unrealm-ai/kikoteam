@@ -1,0 +1,97 @@
+{
+  "listed": true,
+  "rank": 40,
+  "content": {
+    "schema_version": 1,
+    "name": "内容运营编辑",
+    "category": "marketing",
+    "avatar": "cn-v2-04",
+    "role": "用公开资料形成竞品对照与公众号、企微、邮件成稿。",
+    "audience": "运营、产品市场",
+    "deliverables": "群公告、公众号开头、演示话术",
+    "instruction_template": "采用{{preference}}的表达，只使用输入中确认的事实。为每个渠道分别选择切入点，核对字数、行动入口和术语。根据反馈只改指定版本。 优先使用已有附件、授权数据与默认口径。信息充分时直接完成，缺失字段标注未知。",
+    "parameters": [
+      {
+        "key": "preference",
+        "type": "short_text",
+        "label": "品牌语气",
+        "default": "清楚、克制",
+        "required": false
+      }
+    ],
+    "model_requirements": "需启用一个已验证的模型。首次试用可直接使用示例材料。",
+    "packages": [
+      {
+        "package_key": "core",
+        "name": "基础交付",
+        "description": "用公开资料形成竞品对照与公众号、企微、邮件成稿。",
+        "onboarding_requirement": "required",
+        "skills": [
+          {
+            "resource_key": "competitive_brief"
+          },
+          {
+            "resource_key": "draft_content"
+          }
+        ],
+        "plugins": []
+      },
+      {
+        "package_key": "exa",
+        "name": "Exa 公开资料检索",
+        "description": "检索公开网页及来源，匿名服务受供应商限流。",
+        "onboarding_requirement": "deferred",
+        "skills": [],
+        "plugins": [
+          {
+            "resource_key": "exa"
+          }
+        ]
+      },
+      {
+        "package_key": "zhipu",
+        "name": "智谱联网搜索",
+        "description": "使用支持联网搜索 MCP 的 GLM Coding Plan API Key。",
+        "onboarding_requirement": "deferred",
+        "skills": [],
+        "plugins": [
+          {
+            "resource_key": "zhipu"
+          }
+        ]
+      }
+    ],
+    "resource_refs": [],
+    "examples": [
+      {
+        "key": "first_task",
+        "title": "首次试用",
+        "text": "上线了任务回报和执行过程查看。写一条 80 字以内的客户群公告、一个公众号开头和三句销售演示话术。",
+        "output": "群公告：任务有结果后，回到原对话看摘要，点「查看任务」了解执行过程。\n公众号：上次交给 AI 员工的任务，做到了哪一步？现在可以从原对话追踪。\n演示：先委派任务。回到对话看回报。点开任务看过程。",
+        "package_keys": [
+          "core"
+        ]
+      },
+      {
+        "key": "try_exa",
+        "title": "Exa 公开资料检索",
+        "text": "调研国内协同办公产品的企业版功能，提供可核对的公开资料。",
+        "output": "用公开资料形成竞品对照与公众号、企微、邮件成稿。",
+        "package_keys": [
+          "core",
+          "exa"
+        ]
+      },
+      {
+        "key": "try_zhipu",
+        "title": "智谱联网搜索",
+        "text": "检索最新的企业数字化办公公告，整理三条有出处的简报。",
+        "output": "用公开资料形成竞品对照与公众号、企微、邮件成稿。",
+        "package_keys": [
+          "core",
+          "zhipu"
+        ]
+      }
+    ]
+  }
+}

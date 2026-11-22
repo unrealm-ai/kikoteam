@@ -1,0 +1,143 @@
+{
+  "get": {
+    "operationId": "listSkills",
+    "description": "Active workspace members read; owner/admin writes. Immutable Skill directory snapshots. Imports are actor-bound, expire after one hour, and are consumed idempotently by publish. GitHub imports resolve a commit and download once; no automatic refresh. Publish updates require the current resource version. ZIP max 20 MiB, expanded max 100 MiB, 1000 files; links/traversal/secrets rejected.",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "default": 1
+        }
+      },
+      {
+        "name": "page_size",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      {
+        "name": "q",
+        "in": "query",
+        "schema": {"type": "string", "maxLength": 200}
+      },
+      {
+        "name": "scope",
+        "in": "query",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "official",
+            "all"
+          ],
+          "default": "workspace"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Success",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "./skill-schemas.yaml#/SkillPage"
+            }
+          }
+        }
+      },
+      "default": {
+        "description": "400 invalid; 401 unauthenticated; 403 forbidden; 404 absent; 409 stale/expired; 413 body too large; 503 storage unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "post": {
+    "operationId": "createSkill",
+    "description": "Active workspace members read; owner/admin writes. Immutable Skill directory snapshots. Imports are actor-bound, expire after one hour, and are consumed idempotently by publish. GitHub imports resolve a commit and download once; no automatic refresh. Publish updates require the current resource version. ZIP max 20 MiB, expanded max 100 MiB, 1000 files; links/traversal/secrets rejected.",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "X-CSRF-Protection",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "const": "1"
+        }
+      }
+    ],
+    "responses": {
+      "201": {
+        "description": "Success",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "./skill-schemas.yaml#/Skill"
+            }
+          }
+        }
+      },
+      "default": {
+        "description": "400 invalid; 401 unauthenticated; 403 forbidden; 404 absent; 409 stale/expired; 413 body too large; 503 storage unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "./skill-schemas.yaml#/SkillPublish"
+          }
+        }
+      }
+    }
+  }
+}

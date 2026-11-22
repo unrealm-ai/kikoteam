@@ -1,0 +1,94 @@
+{
+  "listed": true,
+  "rank": 30,
+  "content": {
+    "schema_version": 1,
+    "name": "客户跟进助理",
+    "category": "sales",
+    "avatar": "cn-v2-03",
+    "role": "从现有材料整理跟进简报、停滞商机和拜访路线。",
+    "audience": "销售、客户成功团队",
+    "deliverables": "客户跟进卡、消息草稿、待核实问题",
+    "instruction_template": "从{{preference}}的角度起草消息。分开客户明确表达的需求、未验证的判断和下一步。不要承诺材料未证实的功能、价格或上线时间。消息交给用户确认。 优先使用已有附件、授权数据与默认口径。信息充分时直接完成，缺失字段标注未知。",
+    "parameters": [
+      {
+        "key": "preference",
+        "type": "short_text",
+        "label": "沟通语气",
+        "default": "简洁、专业",
+        "required": false
+      }
+    ],
+    "model_requirements": "需启用一个已验证的模型。首次试用可直接使用示例材料。",
+    "packages": [
+      {
+        "package_key": "core",
+        "name": "基础交付",
+        "description": "从现有材料整理跟进简报、停滞商机和拜访路线。",
+        "onboarding_requirement": "required",
+        "skills": [
+          {
+            "resource_key": "status_report"
+          }
+        ],
+        "plugins": []
+      },
+      {
+        "package_key": "fxiaoke",
+        "name": "纷享销客 CRM",
+        "description": "使用企业提供的 MCP 服务地址和授权，只查询商机、客户和跟进记录。",
+        "onboarding_requirement": "deferred",
+        "skills": [],
+        "plugins": [
+          {
+            "resource_key": "fxiaoke"
+          }
+        ]
+      },
+      {
+        "package_key": "amap",
+        "name": "高德地图",
+        "description": "输入高德 Web 服务 Key，查询门店、距离和拜访路线。",
+        "onboarding_requirement": "deferred",
+        "skills": [],
+        "plugins": [
+          {
+            "resource_key": "amap"
+          }
+        ]
+      }
+    ],
+    "resource_refs": [],
+    "examples": [
+      {
+        "key": "first_task",
+        "title": "首次试用",
+        "text": "客户想先让 5 人试用，最关心权限隔离，预算等下月审批。帮我写会后消息和下次通话的两个问题。",
+        "output": "草稿：建议先约一次权限验证，再确定五人试用范围。待问：试点需要验证哪些角色边界？下月预算评审安排在哪一天？",
+        "package_keys": [
+          "core"
+        ]
+      },
+      {
+        "key": "try_fxiaoke",
+        "title": "纷享销客 CRM",
+        "text": "整理两周内没有跟进记录的商机，并列出最后一次沟通时间。",
+        "output": "从现有材料整理跟进简报、停滞商机和拜访路线。",
+        "package_keys": [
+          "core",
+          "fxiaoke"
+        ]
+      },
+      {
+        "key": "try_amap",
+        "title": "高德地图",
+        "text": "计算上海虹桥火车站到上海国际会议中心的驾车里程，附路线概览。",
+        "output": "从现有材料整理跟进简报、停滞商机和拜访路线。",
+        "package_keys": [
+          "core",
+          "amap"
+        ]
+      }
+    ]
+  }
+}

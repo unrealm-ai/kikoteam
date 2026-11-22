@@ -1,0 +1,288 @@
+{
+  "commit": "ff8544165cd414bc587abda92c6810e923e10cb9",
+  "files": [
+    {
+      "source": "sandbox-executor/builtin-mcp/eslint.config.mjs",
+      "path": "eslint.config.mjs",
+      "sha256": "cbe3fcbdc8ffcd12d6970e1b5248b941fdbcff38795d687160685adab69b6bb0"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/package.json",
+      "path": "package.json",
+      "sha256": "48698754a02c5b3ff036ba5ea5975364266d3c217aecad12bb75703ab03f1b0a"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/scripts/resources.mjs",
+      "path": "scripts/resources.mjs",
+      "sha256": "80c9b448fef70d28558488e2bb69870ab27f1ea4c646d939ffe90f4e20952fba"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tsconfig.json",
+      "path": "tsconfig.json",
+      "sha256": "1320efee353d241e2e98871a363ddbec4d47b9191267de6fcf81cb79f9349237"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/activity-protocol.ts",
+      "path": "src/activity-protocol.ts",
+      "sha256": "b85e7d58b1203630e72c749daf83d7fe7744f95989066dae3d5546c3f00bfadc"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/catalog.ts",
+      "path": "src/catalog.ts",
+      "sha256": "143f38d14324206a17524ff0dd1019db847ec82e5bbd11ba3012ffc1ec1b5219"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/config.ts",
+      "path": "src/config.ts",
+      "sha256": "02c38819487e7cf8518af3dd2f63ad4ca6112763228f8f670771db198f2ec1de"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/context.ts",
+      "path": "src/context.ts",
+      "sha256": "9fbbc041087135fb8a8dabc30687f536fae5d84fa081d65ea7a165c135ab1d76"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/definitions.ts",
+      "path": "src/definitions.ts",
+      "sha256": "b93dbfb149a8b564c242789f58e7cda10d358dd041c2abb8a4f89d71eb5bd07d"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/errors.ts",
+      "path": "src/errors.ts",
+      "sha256": "f1c03aeb5a8500957f43149227fae8351b1834f205d669933415a705e361bcd0"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/file-worker-entry.ts",
+      "path": "src/file-worker-entry.ts",
+      "sha256": "4d45e505dcee61ca057eb2c438843eb86c91d178bcaaf846fe3d4ace4f4c230d"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/file-worker.ts",
+      "path": "src/file-worker.ts",
+      "sha256": "4e137bd151b15fc402fd450c91ff246e1041341e9e1bde1d5af42818bd55bb41"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/files.ts",
+      "path": "src/files.ts",
+      "sha256": "10181ae277aaba6bf8dc1e97f730e3c121311af1de7eb3b83575ba17a59ee2da"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/logging.ts",
+      "path": "src/logging.ts",
+      "sha256": "91a3b556b353d1ad55ef37e1f0d0b7bb0e0da5d02900157a31a4b1010cccafb7"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/main.ts",
+      "path": "src/main.ts",
+      "sha256": "1a5e891ed1f320fb89deea76e1158ab70ec84ae98148a1b97c1302549ed2863f"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/results.ts",
+      "path": "src/results.ts",
+      "sha256": "727b8e969d2f35a92a3028357527276743dc4334a8395f6c8cda4fdc4ecc04a8"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/server.ts",
+      "path": "src/server.ts",
+      "sha256": "f269dc630d9764bbd74b40e781accab306e17470d9aad54a7b97951571e3a3c6"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/state-guard.ts",
+      "path": "src/state-guard.ts",
+      "sha256": "eb2fe599c0c40fe90ed7c4a61be55c93b34ff64b8fea5df75282c535eb7f7852"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/activity.ts",
+      "path": "src/process/activity.ts",
+      "sha256": "4e9ac35e29ff6c3cd9467675a0dbf91af3da0dfe7563058547363873628735d0"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/child-entry.ts",
+      "path": "src/process/child-entry.ts",
+      "sha256": "866c44526337a0d089799f905e0821e2a2a676e0585f6cfad00ff65ce93b8a38",
+      "removed": true,
+      "replacement": "TS supervisor handshake and inherited UID/GID; no pidfd helper"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/control.ts",
+      "path": "src/process/control.ts",
+      "sha256": "034b41427d7586e91b43512a67f9b4196ace9feef9a0fc71b1a6044fac10c05d"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/driver.ts",
+      "path": "src/process/driver.ts",
+      "sha256": "db0d5de5b74dce0c49634d14f68afc84bffd3ee2cfc7c93eec233a721c91e674"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/group.ts",
+      "path": "src/process/group.ts",
+      "sha256": "a0f30a718b56a946f1d94474e754bf402a9d5aaf8b1f0e40bc7b03832c53b896"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/identity-signal.ts",
+      "path": "src/process/identity-signal.ts",
+      "sha256": "281f122d4d54ce582fbdd859c9f2bd2468b7ebdb84244ab1d06e6230df25cf96",
+      "removed": true,
+      "replacement": "TS supervisor handshake and inherited UID/GID; no pidfd helper"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/identity.ts",
+      "path": "src/process/identity.ts",
+      "sha256": "d678d7091ab9fabdb2d965a08868ce826f078617c47edb11f18768241c98fd46"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/manager.ts",
+      "path": "src/process/manager.ts",
+      "sha256": "cc8321418f92a8a646ed05a26c91b85b03ee46d0d6cd6683d7b3d63acd640ba6"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/model.ts",
+      "path": "src/process/model.ts",
+      "sha256": "249b11e1ca2b2447e31ce3bd28adf13558b5ec93ca7cec236d3abad952d7cc7a"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/output.ts",
+      "path": "src/process/output.ts",
+      "sha256": "30e97c0da0c11e90ccbccb2c5b9c308d186214c63aab9cb77f53ec345e01e2e0"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/pty-native.ts",
+      "path": "src/process/pty-native.ts",
+      "sha256": "94f0777e172a1129687df27211612b548e1d540b3dd04123af19ab795a06836b"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/result.ts",
+      "path": "src/process/result.ts",
+      "sha256": "e2a28d320f8308db59b763eb80abb3d271ee2dfc53efd09ec83b943452ac8859"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/store.ts",
+      "path": "src/process/store.ts",
+      "sha256": "9942bc82c76a0bd12121a3eb56a41bdc5330f09d657c8efb4fbede3c974b992b"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/supervisor-entry.ts",
+      "path": "src/process/supervisor-entry.ts",
+      "sha256": "28b10c47b83e1fa6c155be83e7d1087deed40ce485939ffceb68de29f72e0a7e"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/src/process/tools.ts",
+      "path": "src/process/tools.ts",
+      "sha256": "3ec77e2e9c24fa6290239a7a843d92d047a06ea6aae0e7bb75dea9b3101b86e1"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/native/exec-gate.c",
+      "path": "native/exec-gate.c",
+      "sha256": "057b4de0fb98d002a5e537e78c64eb703a45f6caacdf790bb2443dfd1be8f57f",
+      "removed": true,
+      "replacement": "TS supervisor handshake and inherited UID/GID; no pidfd helper"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/native/identity-signal.c",
+      "path": "native/identity-signal.c",
+      "sha256": "a7884d1ac44acb1e286c03a68068bed7827e5da72188adadea49d6cb202173b2",
+      "removed": true,
+      "replacement": "TS supervisor handshake and inherited UID/GID; no pidfd helper"
+    },
+    {
+      "source": "contracts/typespec/tools/builtin/main.tsp",
+      "path": "references/typespec/tools/builtin/main.tsp",
+      "sha256": "80d0d4f619a6e1c09b0bc0a7fce7da5b39ed5a69e056dabdb30fb7cf93eb705f"
+    },
+    {
+      "source": "contracts/typespec/internal/engine/builtin-activity.tsp",
+      "path": "references/typespec/internal/engine/builtin-activity.tsp",
+      "sha256": "eaf490ffd4bfb9dc41a586f7c1028df6ae0cdeaaec46cebcfd63c70e66f26a54"
+    },
+    {
+      "source": "contracts/json-schema/builtin/tools.json",
+      "path": "contracts/json-schema/builtin/tools.json",
+      "sha256": "de26cd516be231e775be1768dc1c660f3801426904b3261aa77247e9c22753bd"
+    },
+    {
+      "source": "contracts/json-schema/builtin/activity.json",
+      "path": "contracts/json-schema/builtin/activity.json",
+      "sha256": "85154f2b50230538d22c67f2fdd561d493b31d062dae761a5c003ef7da899411"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/fixtures/tools.json",
+      "path": "fixtures/tools.json",
+      "sha256": "5ccdc5588e237b67df9e16cfa40d2cb23976ac9c08fea9073c05da18ea366a2f"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/activity-store.test.mjs",
+      "path": "tests/activity-store.test.mjs",
+      "sha256": "c00d71f9c92c62957333befc5eb40ba83e0370180f6a720d90d8aa593943842c"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/catalog.test.mjs",
+      "path": "tests/catalog.test.mjs",
+      "sha256": "0d537c984ad7ae012f72297cda97742d3fabbcb52e5da3e1d9a811b701a9d8b6"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/control.test.mjs",
+      "path": "tests/control.test.mjs",
+      "sha256": "5deaafde79f90d6fd6bb07945ea4980b611106c6662f4014dc6db4c59fd92dde"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/linux-isolation.mjs",
+      "path": "tests/linux-process.mjs",
+      "sha256": "2155cffe1671991c8ce2eaa08ee1a0c75ead63c223b664be27454eb8fdea0e3a"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/linux.Dockerfile",
+      "path": "Dockerfile",
+      "sha256": "553fe7b5075e610bd4c2731b7a750b3f8de2d55c7830d472110a794ece93f99a"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/proc-race-loader.mjs",
+      "path": "tests/proc-race-loader.mjs",
+      "sha256": "ad7f707d30195ff9a3ce4e3a789f8c2226efceadeb25635dbc3756ae1c8fb772"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/process-platform.mjs",
+      "path": "tests/process-platform.mjs",
+      "sha256": "cd6b6a03e7c975eb1bd5cf710c6b69c99d4cc08f05b50edca0763a8d563cf4eb",
+      "removed": true,
+      "replacement": "TS supervisor handshake and inherited UID/GID; no pidfd helper"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/process-platform.test.mjs",
+      "path": "tests/process-platform.test.mjs",
+      "sha256": "6cfb1afaf4431a73a4baa2d190e8bfcccaf9fef497ca35270dab5913bbd62551",
+      "removed": true,
+      "replacement": "TS supervisor handshake and inherited UID/GID; no pidfd helper"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/process-server.mjs",
+      "path": "tests/process-server.mjs",
+      "sha256": "fccc5c9816652962bc161fa7f51c845d963e2aa17f7fea7c37e40f6ee458150d"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/process-stdio.test.mjs",
+      "path": "tests/process-stdio.test.mjs",
+      "sha256": "6674bfd74148dbf20f1434f134585154ed7cdca27c0069a8497dca0ad8c0ca77"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/process-store.test.mjs",
+      "path": "tests/process-store.test.mjs",
+      "sha256": "4fb904d4f4566a2dddde7528920003a2150a2ff067a6ca62d419296c10258e69"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/process.test.mjs",
+      "path": "tests/process.test.mjs",
+      "sha256": "8fb73c0d8d55a79b11c8945792698c080851874b9cada6e9803961d8cf5b41cc"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/startup.test.mjs",
+      "path": "tests/startup.test.mjs",
+      "sha256": "606191e3a18574e8674f35b97813ded25914b7985d47cde7353ef37c82b35ccf"
+    },
+    {
+      "source": "sandbox-executor/builtin-mcp/tests/stdio.test.mjs",
+      "path": "tests/stdio.test.mjs",
+      "sha256": "1aa082f9560860b6fbc173d05949695be88dbffa520d377e7c9404487d112c25"
+    }
+  ],
+  "note": "Hashes identify the original archive before adaptation. path identifies the import destination; removed entries are retained only as source provenance. Pi source provenance is maintained separately in vendor/pi-tools/provenance.json."
+}

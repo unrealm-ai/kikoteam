@@ -1,0 +1,19 @@
+Use case: precise-object-edit
+Asset type: high-fidelity Simplified Chinese desktop ui-mockup for KIKO 企业级AI员工云平台.
+Input image: the attached local screenshot is the edit target. Preserve its overall layout, KIKO topbar, workspace selector, illustration avatar, typography, neutral white and gray surfaces, blue accent, spacing, three-step wizard, right summary, and footer buttons.
+
+Revise the product semantics and exact Chinese labels below. The user has confirmed that ALL work capabilities are preset by the employee template. Users do not select capabilities, skills, plugins or tool operations while creating from a template. The screen presents these as read-only information. Users select the model and learn which business accounts must be connected after creation.
+
+1. Rename every market label to "AI 员工市场". Update the selected sidebar item and the first breadcrumb. Never display "人才市场" or the abbreviated "员工市场". Keep the full six-character navigation name legible without clipping; modestly adjust the navigation spacing if needed.
+2. Keep the page title "创建 AI 员工". Change its subtitle to "填写岗位信息，创建后完成业务账号接入。".
+3. Keep wizard steps 1 and 3. Change current step 2 to "模型与接入". Step 1 is completed "岗位设定", step 3 remains "确认创建".
+4. Keep the execution model dropdown and all its content. This is still an editable model selection.
+5. Change the "工作能力" section title to "模板已预设的能力" and its helper to "以下能力将完整带入，无需选择。".
+6. Completely remove ALL capability checkboxes, check marks in square boxes, selection toggles and selected-blue outlines from both capability cards. Do not replace them with disabled or locked form controls. Use ordinary read-only white cards with thin neutral borders and small document or report outline icons. Keep disclosure chevrons for viewing details.
+7. First card: retain "整理研发周报" and its description. Replace the "必需" badge with a subtle neutral badge "模板预设". Retain the table rows for "工作方法" and "业务系统". Rename the row "建议操作" to "所需授权", and retain its value "查询工单、读取详情". Update the amber connection note to "工单系统：创建后连接账号并完成授权。".
+8. Second card: retain "补充代码变更" and "将代码提交与合并记录补充到周报中。". Replace its "可选" badge with the SAME neutral badge "模板预设". No checkbox or toggle. The connection note must read "代码仓库：可稍后连接，能力已包含。". The capability is already included in the template and remains included even if the repository account is not connected yet.
+9. Replace the technical helper below the two capability cards with "工作能力由模板预设，创建时完整带入。".
+10. Right summary retains "即将创建", "支付组周报助手", "来自 研发周报员 · v1.0", project fields and "仅自己". Under "创建后待完成", retain "连接工单账号" and "运行示例任务", but change "确认查询权限" to "确认账号授权". Keep the team-sharing helper and independent-template-update note unchanged.
+11. Footer retains "上一步", "下一步：确认创建", the not-yet-created note and the design-example label.
+
+Constraints: edit only what is needed for these corrections, keeping the professional visual quality and readability of the reference. ALL capability cards are read-only and fully included, never selectable or optional. Optionality belongs only to when a business account is connected. No account credential fields, no new capabilities, no extra technical configuration, no fabricated completed authorizations, no code, no extra screen. Maintain the original wide landscape aspect ratio and crisp Chinese text.

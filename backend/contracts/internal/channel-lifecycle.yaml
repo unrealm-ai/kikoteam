@@ -1,0 +1,298 @@
+{
+  "event": {
+    "post": {
+      "operationId": "receiveChannelLifecycle",
+      "description": "Verified Feishu events only. Identity epoch and tenant scoped dedup, atomic group/member fences. Member removal does not imply bot removal. Disband is terminal. Provider event time is milliseconds.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durably accepted.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "status"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "enum": [
+                      "accepted",
+                      "duplicate"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub service identity required. Cookies/Origin rejected."
+        },
+        "409": {
+          "description": "Stale binding or lease, or same event identity with conflicting content."
+        },
+        "503": {
+          "description": "Dependency unavailable. Do not acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "binding_id",
+                "connection_generation",
+                "config_revision",
+                "external_tenant_id",
+                "external_chat_id",
+                "provider_event_id",
+                "occurred_at_ms",
+                "event_type",
+                "member_ids"
+              ],
+              "properties": {
+                "binding_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "connection_generation": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "config_revision": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "external_tenant_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "external_chat_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "provider_event_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "occurred_at_ms": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "event_type": {
+                  "enum": [
+                    "bot_added",
+                    "bot_removed",
+                    "chat_disbanded",
+                    "members_added",
+                    "members_removed"
+                  ]
+                },
+                "member_ids": {
+                  "type": "array",
+                  "maxItems": 1000,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "claim": {
+    "post": {
+      "operationId": "claimChannelGroupChecks",
+      "description": "Claims up to five pending remote checks with a 30 second lease; expired leases are reclaimable. Read-only provider queries; errors remain unknown and are retried with bounded backoff.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durably accepted.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "binding_id",
+                        "connection_generation",
+                        "config_revision",
+                        "external_tenant_id",
+                        "external_chat_id",
+                        "id",
+                        "lease_token"
+                      ],
+                      "properties": {
+                        "binding_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "connection_generation": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "config_revision": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "external_tenant_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "external_chat_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "lease_token": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      }
+                    },
+                    "maxItems": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub service identity required. Cookies/Origin rejected."
+        },
+        "409": {
+          "description": "Stale binding or lease, or same event identity with conflicting content."
+        },
+        "503": {
+          "description": "Dependency unavailable. Do not acknowledge as durable."
+        }
+      }
+    }
+  },
+  "complete": {
+    "post": {
+      "operationId": "completeChannelGroupCheck",
+      "description": "Current binding, identity, tenant and lease revalidated. present=null means verification unavailable, never confirmed absence.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Durably accepted.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "accepted"
+                ],
+                "properties": {
+                  "accepted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid strict payload."
+        },
+        "401": {
+          "description": "Hub service identity required. Cookies/Origin rejected."
+        },
+        "409": {
+          "description": "Stale binding or lease, or same event identity with conflicting content."
+        },
+        "503": {
+          "description": "Dependency unavailable. Do not acknowledge as durable."
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "lease_token"
+              ],
+              "properties": {
+                "lease_token": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "present": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ]
+  }
+}

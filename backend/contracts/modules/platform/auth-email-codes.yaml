@@ -1,0 +1,55 @@
+post:
+  operationId: requestEmailCode
+  summary: requestEmailCode
+  description: Sends a single-use 5-minute code. Resends invalidate previous code
+    for the same email and purpose. 60-second cooldown and distributed rate limits
+    apply; no code is returned.
+  security: []
+  responses:
+    '200':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+          description: Request trace identifier
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/CodeReceipt
+    default:
+      description: Structured error (400 invalid input, 401 no session, 403 forbidden/CSRF/email_code_disabled (email disabled),
+        404 missing resource, 409 stale version/conflict, 410 invalid invite, 429
+        rate limit, 503 dependency unavailable).
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+  parameters:
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema:
+      type: string
+      const: '1'
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          additionalProperties: false
+          properties:
+            email:
+              type: string
+              format: email
+              maxLength: 254
+            purpose:
+              type: string
+              enum:
+              - login
+              - register
+              - reset_password
+          required:
+          - email
+          - purpose

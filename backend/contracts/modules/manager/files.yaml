@@ -1,0 +1,80 @@
+collection:
+  parameters: &scope
+    - {$ref: './conversations.yaml#/parameters/workspace'}
+    - {in: path, name: conversation_id, required: true, schema: {type: string, format: uuid}}
+  get:
+    operationId: listConversationFiles
+    description: List one level of the caller's private conversation project. Empty path selects the root.
+    parameters:
+      - {in: query, name: path, schema: {type: string, default: ""}}
+    responses:
+      '200':
+        description: Direct children, directories first then names in ascending order.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, entries]
+              properties:
+                path: {type: string}
+                entries:
+                  type: array
+                  items:
+                    type: object
+                    required: [kind, name, path]
+                    properties:
+                      kind: {enum: [directory, file]}
+                      name: {type: string}
+                      path: {type: string}
+                      size_bytes: {type: integer, minimum: 0}
+                      modified_at: {type: string, format: date-time}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+  post:
+    operationId: uploadConversationFile
+    description: Atomically publish one file up to 32 MiB in an active private project. A name collision gets a numbered suffix. Keys are case-sensitive. The same key and identical directory, name and bytes replay the original result.
+    parameters:
+      - {$ref: './conversations.yaml#/parameters/csrf'}
+      - {in: header, name: Idempotency-Key, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,128}$'}}
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [file]
+            properties:
+              file: {type: string, format: binary}
+              directory: {type: string, default: uploads, description: Empty string selects the project root.}
+    responses:
+      '201': &uploaded
+        description: File with its final project-relative path.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: '#/Attachment'}
+                - {type: object, required: [media_type], properties: {media_type: {type: string}}}
+      '200': *uploaded
+      '408': {description: Upload body did not arrive within two minutes. Retry with the original key.}
+      '413': {description: File exceeds the upload limit.}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+content:
+  parameters: *scope
+  get:
+    operationId: downloadConversationFile
+    description: Download current bytes of a regular file in the caller's private project, including archived conversations.
+    parameters:
+      - {in: query, name: path, required: true, schema: {type: string, minLength: 1}}
+    responses:
+      '200':
+        description: File download with Content-Disposition attachment.
+        content: {'*/*': {schema: {type: string, format: binary}}}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+Attachment:
+  type: object
+  required: [path,name,size_bytes]
+  properties:
+    path: {type: string}
+    name: {type: string}
+    size_bytes: {type: integer, minimum: 0}

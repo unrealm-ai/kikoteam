@@ -1,0 +1,508 @@
+openapi: 3.1.0
+info:
+  title: Backend execution control
+  version: 1.0.0
+  description: Local execution pool. Separate deployment credential; never accepts a browser cookie as service authority. Session execution facts remain Engine writes in PostgreSQL. This first contract uses polling for owned assignments and short database transactions for dispatch.
+security:
+  - engineBearer: []
+paths:
+  /mcp/plugin-connections/{connection_id}:
+    post:
+      operationId: pluginConnectionMCP
+      description: Assignment and input scoped Streamable HTTP MCP for discovery and authorized tool calls.
+      parameters:
+        - {name: connection_id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Authorization, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object}}}
+      responses:
+        '200': {description: JSON-RPC result or error}
+        '202': {description: Notification accepted}
+        '401': {description: Invalid relay credential}
+        '403': {description: Task no longer authorized}
+  /api/internal/v1/sessions/{session_id}/work-item-tools:
+    parameters:
+      - $ref: '#/components/parameters/session'
+      - {name: X-Kiko-Work-Input, in: header, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: callRuntimeWorkItemTool
+      description: Register a handoff or result submission for the active Turn, or check its Engine fence. Reuse operation_id and the same payload after delivery uncertainty. A preparing receipt confirms intent acceptance.
+      security: [{workToolBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [operation, arguments]
+              properties:
+                operation: {enum: [handoff, submit, fenced]}
+                arguments:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    operation_id: {type: string, minLength: 1, maxLength: 200}
+                    boundary_id: {type: string, format: uuid}
+                    target_employee_id: {type: string, format: uuid}
+                    expected_assignment_id: {type: string, format: uuid}
+                    submission_id: {type: string, format: uuid}
+                    expected_version: {type: string, pattern: '^[1-9][0-9]*$'}
+                    title: {type: string, minLength: 1, maxLength: 200}
+                    goal: {type: string, minLength: 1, maxLength: 4000}
+                    criteria: {type: string, minLength: 1, maxLength: 4000}
+                    summary: {type: string, minLength: 1, maxLength: 4000}
+                    result: {type: string, minLength: 1, maxLength: 10000}
+                    completion_evidence: {type: string, minLength: 1, maxLength: 4000}
+      responses:
+        '200':
+          description: Prepared intent receipt or fence state.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [id, status]
+                    properties:
+                      id: {type: string, format: uuid}
+                      status: {const: preparing}
+                  - type: object
+                    required: [fenced]
+                    properties:
+                      fenced: {type: boolean}
+        default: {$ref: '#/components/responses/Error'}
+  /api/internal/v1/sessions/{session_id}/human-tools:
+    parameters:
+      - $ref: '#/components/parameters/session'
+      - {name: X-Kiko-Human-Input, in: header, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: callRuntimeHumanTool
+      description: The credential is bound to the session assignment and exact active Input. Fixed private chat can submit a proposal with an operationId and look up that receipt using the same request_id and operationId in the same Input.
+      security: [{humanToolBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [operation]
+              properties:
+                operation: {enum: [recipients, request, fenced, pending, answer, propose, receipt]}
+                operationId: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
+                request_id: {type: string, format: uuid}
+                question: {$ref: '../modules/manager/human-requests.yaml#/question'}
+                answer: {$ref: '../modules/manager/human-requests.yaml#/answer'}
+      responses:
+        '200': {description: Operation-specific runtime result}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+  /api/internal/v1/shared-group-history/claim:
+    $ref: ./shared-group-history.yaml#/claim
+  /api/internal/v1/shared-group-history/{id}/authorize:
+    $ref: ./shared-group-history.yaml#/authorize
+  /api/internal/v1/shared-group-history/{id}/complete:
+    $ref: ./shared-group-history.yaml#/complete
+  /api/internal/v1/wecom-group-refreshes/claim:
+    $ref: ./wecom-group-refresh.yaml#/claim
+  /api/internal/v1/wecom-group-refreshes/{id}/authorize:
+    $ref: ./wecom-group-refresh.yaml#/authorize
+  /api/internal/v1/wecom-group-refreshes/{id}/complete:
+    $ref: ./wecom-group-refresh.yaml#/complete
+  /api/internal/v1/trigger-schedules/poll:
+    $ref: ./trigger-schedules.yaml#/poll
+  /api/internal/v1/trigger-schedules/{id}/tick:
+    $ref: ./trigger-schedules.yaml#/tick
+  /api/internal/v1/trigger-notification-contexts/claim:
+    $ref: ./trigger-notifications.yaml#/contextClaim
+  /api/internal/v1/trigger-notification-contexts/{id}/authorize:
+    $ref: ./trigger-notifications.yaml#/contextAuthorize
+  /api/internal/v1/trigger-notification-contexts/{id}/complete:
+    $ref: ./trigger-notifications.yaml#/contextComplete
+  /api/internal/v1/trigger-notifications/claim:
+    $ref: ./trigger-notifications.yaml#/claim
+  /api/internal/v1/trigger-notifications/{id}/authorize:
+    $ref: ./trigger-notifications.yaml#/authorize
+  /api/internal/v1/trigger-notifications/{id}/complete:
+    $ref: ./trigger-notifications.yaml#/complete
+  /api/internal/v1/trigger-notification-queries/claim:
+    $ref: ./trigger-notifications.yaml#/queryClaim
+  /api/internal/v1/human-notices/claim:
+    $ref: ./human-notices.yaml#/claim
+  /api/internal/v1/human-notices/queries/claim:
+    $ref: ./human-notices.yaml#/queryClaim
+  /api/internal/v1/human-notices/{id}/authorize:
+    $ref: ./human-notices.yaml#/authorize
+  /api/internal/v1/human-notices/{id}/dispatch-check:
+    $ref: ./human-notices.yaml#/dispatchCheck
+  /api/internal/v1/human-notices/{id}/complete:
+    $ref: ./human-notices.yaml#/complete
+  /api/internal/v1/model-proxy/reconcile:
+    post:
+      operationId: reconcileModelProxyUsage
+      description: Event Hub only. Rechecks bounded batches of overdue or unbilled usage without sending model requests. Safe to retry.
+      security: [{hubBearer: []}]
+      responses:
+        '204': {description: Reconciliation batch completed}
+        '401': {description: Invalid service identity}
+        '503': {description: Reconciliation remains pending}
+  /api/internal/v1/task-results/callback:
+    $ref: ./task-results.yaml#/callback
+  /api/internal/v1/task-results/reconcile:
+    $ref: ./task-results.yaml#/reconcile
+  /api/internal/v1/channel-bindings:
+    $ref: ./channels.yaml#/bindings
+  /api/internal/v1/channel-bindings/{id}/applied:
+    $ref: ./channels.yaml#/applied
+  /api/internal/v1/channel-lifecycle:
+    $ref: ./channel-lifecycle.yaml#/event
+  /api/internal/v1/channel-groups/claim:
+    $ref: ./channel-lifecycle.yaml#/claim
+  /api/internal/v1/channel-groups/{id}/complete:
+    $ref: ./channel-lifecycle.yaml#/complete
+  /api/internal/v1/channel-inbox:
+    $ref: ./channels.yaml#/inbox
+  /api/internal/v1/channel-media/claim:
+    $ref: ./channels.yaml#/mediaClaim
+  /api/internal/v1/channel-media/{id}/{ordinal}:
+    $ref: ./channels.yaml#/mediaFinish
+  /api/internal/v1/channel-media/{id}/{ordinal}/failed:
+    $ref: ./channels.yaml#/mediaFail
+  /api/internal/v1/channel-deliveries/{id}/content:
+    $ref: ./channels.yaml#/mediaContent
+  /api/internal/v1/channel-deliveries/{id}/dispatch-check:
+    $ref: ./channels.yaml#/mediaDispatch
+  /api/internal/v1/channel-delivery-queries/claim:
+    $ref: './channels.yaml#/deliveryQueryClaim'
+  /api/internal/v1/channel-deliveries/claim:
+    $ref: ./channels.yaml#/deliveryClaim
+  /api/internal/v1/channel-deliveries/{id}/authorize:
+    $ref: ./channels.yaml#/deliveryAuthorize
+  /api/internal/v1/channel-deliveries/{id}/complete:
+    $ref: ./channels.yaml#/deliveryComplete
+  /api/internal/v1/channel-history/claim:
+    $ref: ./channels.yaml#/historyClaim
+  /api/internal/v1/channel-history/{id}/authorize:
+    $ref: ./channels.yaml#/historyAuthorize
+  /api/internal/v1/channel-history/{id}/complete:
+    $ref: ./channels.yaml#/historyComplete
+  /api/internal/v1/sessions/{session_id}/skill-files:
+    parameters:
+      - $ref: '#/components/parameters/session'
+    get:
+      operationId: readExecutionSkillFile
+      description: Engine credential plus current started Input and assignment required. Reads only the fixed Skill version in the Session/current-package intersection. Membership and grant are checked again after asset I/O. No arbitrary storage keys or paths outside the manifest.
+      parameters:
+        - {name: engine_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: assignment_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: generation, in: query, required: true, schema: {type: string, pattern: '^[1-9][0-9]*$'}}
+        - {name: input_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: skill_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: version_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: path, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Verified immutable asset, up to 20 MiB before base64 encoding.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [path, size, sha256, content_base64]
+                properties:
+                  path: {type: string}
+                  size: {type: integer, minimum: 0, maximum: 20971520}
+                  sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+                  content_base64: {type: string, contentEncoding: base64}
+        default: {$ref: '#/components/responses/Error'}
+  /api/internal/v1/sessions/{session_id}/capability-calls:
+    parameters:
+      - $ref: '#/components/parameters/session'
+    post:
+      operationId: authorizeOrFinishCapabilityCall
+      security: [{capabilityBearer: []}]
+      description: Trusted Pi extension credential scoped to Session/Engine/assignment/generation. Resolves caller from the current started Input, rechecks package/account/tool/schema and performs fresh read-only discovery before authorizing. Writes a credential-free audit receipt before remote execution. Finish records a reported tool result; a missing finish remains an unknown outcome. No automatic remote retry to repair an audit receipt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: './capabilities.yaml#/Authorize'
+                - $ref: './capabilities.yaml#/Finish'
+      responses:
+        '200':
+          description: Authorization decision or completion receipt.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - {type: object, additionalProperties: false, required: [allowed, call_id], properties: {allowed: {type: boolean}, call_id: {type: string, format: uuid}}}
+                  - {type: object, additionalProperties: false, required: [recorded], properties: {recorded: {type: boolean}}}
+        default: {$ref: '#/components/responses/Error'}
+  /api/internal/v1/engines/{engine_id}/sandboxes:
+    parameters:
+      - $ref: '#/components/parameters/engine'
+    get:
+      operationId: listManagedSandboxes
+      description: Engine deployment credential required. Lists its managed environments independently of Session assignments. Includes a scoped Runner configuration token; never log it. Repeated reads have no effects.
+      responses:
+        '200':
+          description: Managed environments and reclaim authorization.
+          content:
+            application/json:
+              schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/Sandbox'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /api/internal/v1/sandbox-instances/{sandbox_id}/config:
+    parameters:
+      - $ref: '#/components/parameters/sandbox'
+    get:
+      operationId: getRunnerConfig
+      security: [{runnerBearer: []}]
+      description: Only the limited configuration token bound to this Sandbox and manager Engine is accepted. Rechecks current ownership. No model or platform credentials. Archived environments allow cleanup, never opening execution windows.
+      parameters:
+        - {name: engine_id, in: query, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Current trusted scope., content: {application/json: {schema: {$ref: '#/components/schemas/Sandbox'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /api/internal/v1/sandbox-instances/{sandbox_id}/state:
+    parameters:
+      - $ref: '#/components/parameters/sandbox'
+    post:
+      operationId: reportSandboxState
+      description: Current manager reports observed state after process actions. Repeated identical reports are safe. Stopped is rejected while any owned Session assignment, active or unknown work, or unapplied stop remains. No PID-based recovery.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [engine_id, state]
+              properties:
+                engine_id: {type: string, format: uuid}
+                state: {enum: [ready, stopped, unknown]}
+      responses:
+        '200': {description: State recorded., content: {application/json: {schema: {type: object, required: [accepted], properties: {accepted: {type: boolean}}}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /api/internal/v1/engines:
+    post:
+      operationId: registerEngine
+      description: Register a fresh process identity and stable host. Repeating identical registration is safe; changing fixed identity fields conflicts. Registration does not renew an existing heartbeat.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [engine_id, host_id, endpoint, capacity]
+              properties:
+                engine_id: {type: string, format: uuid}
+                host_id: {type: string, minLength: 1, maxLength: 256}
+                endpoint: {type: string, format: uri}
+                capacity: {type: integer, minimum: 1, maximum: 1000}
+                heartbeat_seq: {type: string, pattern: '^[0-9]+$'}
+                accepting: {type: boolean}
+      responses:
+        '201': {description: Registered identity., content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /api/internal/v1/engines/{engine_id}/heartbeat:
+    parameters:
+      - $ref: '#/components/parameters/engine'
+    post:
+      operationId: heartbeatEngine
+      description: Monotonic sequence. Only a newer heartbeat updates liveness and accepting; duplicate or older heartbeats do not resurrect an Engine.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [heartbeat_seq, accepting]
+              properties:
+                heartbeat_seq: {type: string, pattern: '^[1-9][0-9]*$'}
+                accepting: {type: boolean}
+      responses:
+        '200': {description: Current registration accepted the heartbeat., content: {application/json: {schema: {type: object, required: [accepted], properties: {accepted: {type: boolean}}}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /api/internal/v1/engines/{engine_id}/assignments:
+    parameters:
+      - $ref: '#/components/parameters/engine'
+    get:
+      operationId: listEngineAssignments
+      description: Owned assignments only; capacity bounds the list. Periodic polling discovers committed work after a missed notification. Does not grant a new assignment.
+      responses:
+        '200':
+          description: Owned Session assignments.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 1000
+                    items:
+                      type: object
+                      required: [session_id, assignment_id, generation]
+                      properties:
+                        session_id: {type: string, format: uuid}
+                        assignment_id: {type: string, format: uuid}
+                        generation: {type: string, pattern: '^[1-9][0-9]*$'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/internal/v1/sessions/{session_id}/harness-config:
+    parameters:
+      - $ref: '#/components/parameters/session'
+    get:
+      operationId: getSessionHarnessConfig
+      description: Current assignment and started Input required. Resolve the original input actor's current permission and model credential. Fixed configuration targets cannot silently receive another target's key. Sensitive response, no-store; do not log or return it through public APIs.
+      parameters:
+        - {name: engine_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: assignment_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: generation, in: query, required: true, schema: {type: string, pattern: '^[1-9][0-9]*$'}}
+        - {name: input_id, in: query, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Fixed targets and currently authorized credential.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_id, workspace_id, agent_id, mode, configuration, api_key]
+                oneOf:
+                  - required: [conversation_id]
+                    not: {required: [task_space_id]}
+                  - required: [task_space_id, task_id]
+                    properties: {mode: {const: task}}
+                    not: {required: [conversation_id]}
+                properties:
+                  session_id: {type: string, format: uuid}
+                  workspace_id: {type: string, format: uuid}
+                  agent_id: {type: string, format: uuid}
+                  conversation_id: {type: string, format: uuid}
+                  task_space_id: {type: string, format: uuid}
+                  task_id: {type: string, format: uuid}
+                  mode: {enum: [chat, task]}
+                  api_key: {type: string, description: Sensitive runtime value.}
+                  report_only: {type: boolean, description: Pure task report chat round with restricted tool exposure.}
+                  delegation_token: {type: string, description: Sensitive chat-only assignment-bound MCP credential. Source actor is resolved from the current started Input for every call; no task recursion.}
+                  group_history_token: {type: string, description: Sensitive task-only purpose-bound group-history MCP credential; current input and direct sharing grants are revalidated per call. No TaskSpace or system result authority.}
+                  task_space_history_token: {type: string, description: Sensitive TaskSpace summary MCP credential bound to the current execution assignment and Input. Issued only for TaskSpace task sessions.}
+                  webhook_file:
+                    type: object
+                    required: [event_id, sha256, body]
+                    description: Original webhook bytes for the current started Input and authorized task assignment. Materialize in this task project before execution.
+                    properties:
+                      event_id: {type: string, format: uuid}
+                      sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+                      body: {type: string, contentEncoding: base64}
+                  human_tools_token: {type: string, description: Sensitive credential for the current Input only.}
+                  work_role: {enum: [ordinary, assignee, review], description: Trusted role for the current Task Input.}
+                  work_local_token: {type: string, description: Sensitive credential for local work-item boundary calls.}
+                  work_mcp_token: {type: string, description: Sensitive work-item MCP credential bound to the Input and role.}
+                  human_mcp_token: {type: string, description: Sensitive human confirmation MCP credential bound to the current Input and Session role.}
+                  capability_token: {type: string, description: Sensitive task-only assignment-bound policy credential. Not an Engine deployment or third-party credential.}
+                  resources: {$ref: './capabilities.yaml#/Resources'}
+                  configuration:
+                    type: object
+                    required: [model_profile_id, model_version, protocol, base_url, model_id, harness, skills, plugins]
+                    properties:
+                      model_profile_id: {type: string, anyOf: [{format: uuid}, {const: ""}]}
+                      platform_model_id: {type: string, format: uuid}
+                      model_version: {type: string}
+                      protocol: {enum: [chat_completions, openai_responses, anthropic_messages]}
+                      base_url: {type: string, format: uri}
+                      supports_images: {type: boolean}
+                      model_id: {type: string}
+                      instruction: {type: string}
+                      harness: {const: pi}
+                      skills: {type: array, items: {type: string, format: uuid}}
+                      plugins: {type: array, items: {type: string, format: uuid}}
+                      capabilities: {type: object, description: Server-owned immutable package provenance, fixed resources/tool ranges and account identities/versions. No credential.}
+        default: {$ref: '#/components/responses/Error'}
+  /api/internal/v1/sessions/{session_id}/assignments/{assignment_id}/release:
+    parameters:
+      - $ref: '#/components/parameters/session'
+      - {name: assignment_id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: releaseSessionAssignment
+      description: Engine calls only after its owned Pi has exited and work is confirmed quiet. The database independently checks no active Turn, background/unknown work or unapplied stop. Timeout is not release evidence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [engine_id, generation]
+              properties:
+                engine_id: {type: string, format: uuid}
+                generation: {type: string, pattern: '^[1-9][0-9]*$'}
+      responses:
+        '200': {description: Assignment released; native history and host affinity retained., content: {application/json: {schema: {type: object, required: [released], properties: {released: {type: boolean}}}}}}
+        default: {$ref: '#/components/responses/Error'}
+components:
+  schemas:
+    Sandbox:
+      type: object
+      required: [sandbox_id, workspace_id, agent_id, engine_id, lifecycle, state, reclaim_allowed, sessions]
+      oneOf:
+        - required: [conversation_id]
+          not: {anyOf: [{required: [task_space_id]}, {required: [task_id]}]}
+        - required: [task_space_id, task_id]
+          not: {required: [conversation_id]}
+      properties:
+        sandbox_id: {type: string, format: uuid}
+        workspace_id: {type: string, format: uuid}
+        agent_id: {type: string, format: uuid}
+        conversation_id: {type: string, format: uuid}
+        task_space_id: {type: string, format: uuid}
+        task_id: {type: string, format: uuid}
+        engine_id: {type: string, format: uuid}
+        lifecycle: {enum: [active, archived]}
+        state: {enum: [preparing, ready, stopping, stopped, unknown]}
+        reclaim_allowed: {type: boolean}
+        config_token: {type: string, description: Sensitive limited token, present only for the Engine list.}
+        sessions:
+          type: array
+          items:
+            type: object
+            required: [session_id, assignment_id, generation, lifecycle, engine_id]
+            oneOf:
+              - required: [conversation_id]
+                not: {required: [task_space_id]}
+              - required: [task_space_id, task_id]
+                not: {required: [conversation_id]}
+            properties:
+              session_id: {type: string, format: uuid}
+              conversation_id: {type: string, format: uuid}
+              task_space_id: {type: string, format: uuid}
+              task_id: {type: string, format: uuid}
+              assignment_id: {type: [string, 'null'], format: uuid}
+              generation: {type: string, pattern: '^[0-9]+$'}
+              lifecycle: {enum: [active, archived]}
+              engine_id: {type: [string, 'null'], format: uuid}
+  securitySchemes:
+    workToolBearer: {type: http, scheme: bearer, description: Local work-item credential scoped to the active Input and Engine assignment.}
+    humanToolBearer: {type: http, scheme: bearer, description: Scoped to one trusted Engine assignment and active Input.}
+    hubBearer: {type: http, scheme: bearer, description: Dedicated KIKO_HUB_TOKEN. Never accepts browser cookies or Engine credentials.}
+    capabilityBearer: {type: http, scheme: bearer, description: Purpose-bound Pi policy credential; never accepts browser/Engine/Runner/PluginAuth tokens.}
+    engineBearer: {type: http, scheme: bearer}
+    runnerBearer: {type: http, scheme: bearer}
+  parameters:
+    engine: {name: engine_id, in: path, required: true, schema: {type: string, format: uuid}}
+    session: {name: session_id, in: path, required: true, schema: {type: string, format: uuid}}
+    sandbox: {name: sandbox_id, in: path, required: true, schema: {type: string, format: uuid}}
+  responses:
+    Error:
+      description: 400 invalid_argument; 401 unauthenticated; 404 resource_not_found; 409 engine_identity_conflict/assignment_unresolved; 422 configuration_unusable; 503 dependency_unavailable.
+      content:
+        application/json:
+          schema: {$ref: '../openapi.yaml#/components/schemas/Error'}

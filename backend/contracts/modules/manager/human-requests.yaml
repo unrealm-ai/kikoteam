@@ -1,0 +1,250 @@
+workspace:
+  name: workspace_id
+  in: path
+  required: true
+  schema: {type: string, format: uuid}
+version:
+  type: string
+  pattern: '^(0|[1-9][0-9]*)$'
+recipient:
+  type: object
+  additionalProperties: false
+  required: [scope, ref]
+  properties:
+    id: {type: string, format: uuid, description: Server-selected stable candidate ID.}
+    name: {type: string, description: Current name resolved by the server.}
+    scope: {type: string, maxLength: 1000, description: Required for a specialist rule. May be empty for a fallback-only recipient.}
+    is_default: {type: boolean, default: false, description: At most one eligible person across supported providers can be configured as the fallback.}
+    ref: {$ref: '../platform/people-selectors.yaml#/schemas/SelectionRef'}
+rules:
+  type: object
+  additionalProperties: false
+  required: [version, recipients]
+  properties:
+    version: {$ref: '#/version'}
+    recipients: {type: array, maxItems: 40, items: {$ref: '#/recipient'}}
+questionItem:
+  type: object
+  required: [id, text, required, answerType]
+  properties:
+    id: {type: string}
+    text: {type: string}
+    required: {type: boolean}
+    answerType: {enum: [text, choice, boolean, number]}
+    constraints: {type: array, items: {type: string}}
+question:
+  type: object
+  additionalProperties: false
+  required: [recipient_id, rules_version, question, answer_type]
+  properties:
+    recipient_id: {type: string, format: uuid}
+    rules_version: {$ref: '#/version'}
+    question: {type: string, minLength: 1, maxLength: 12000}
+    candidateId: {type: string, format: uuid}
+    questionScope: {type: string}
+    decisionRequired: {type: boolean}
+    goal: {type: string}
+    knownFacts: {type: [array, 'null'], items: {type: object}}
+    questions: {type: array, items: {$ref: '#/questionItem'}}
+    completionCriteria: {type: array, items: {type: string}}
+    proposedAction: {type: string}
+    impactScope: {type: string}
+    ifNotConfirmed: {type: string}
+    background: {type: string, maxLength: 3000}
+    answer_type: {enum: [decision, information]}
+answer:
+  type: object
+  additionalProperties: false
+  required: [version, decision]
+  properties:
+    version: {$ref: '#/version'}
+    decision: {enum: [approve, reject, information, revise, needs_more]}
+    text: {type: string, maxLength: 4000, description: Required for revise and needs_more.}
+    answers:
+      type: array
+      maxItems: 12
+      items:
+        type: object
+        additionalProperties: false
+        required: [questionId, value]
+        properties:
+          questionId: {type: string}
+          value: {type: string, maxLength: 2000}
+request:
+  type: object
+  required: [id, version, state, question]
+  properties:
+    id: {type: string, format: uuid}
+    version: {$ref: '#/version'}
+    state: {enum: [pending]}
+    question: {$ref: '#/question'}
+    fenced: {type: boolean}
+configuration:
+  parameters:
+    - $ref: '#/workspace'
+    - {name: agent_id, in: path, required: true, schema: {type: string, format: uuid}}
+  get:
+    operationId: getHumanRecipients
+    description: Workspace owner or admin. An employee without a saved configuration has version zero and an empty list.
+    responses:
+      '200':
+        description: Versioned employee routing candidates
+        content:
+          application/json:
+            schema: {$ref: '#/rules'}
+      '401': {description: Authentication required}
+      '404': {description: Employee not visible}
+  patch:
+    operationId: updateHumanRecipients
+    description: Replaces the rules at the expected version. New assignments require a verified person from Web, Feishu, DingTalk, or WeCom with current access to the employee. A retained inactive rule may be displayed but is omitted from runtime queries.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: '#/rules'}
+    responses:
+      '200':
+        description: Saved employee routing candidates
+        content:
+          application/json:
+            schema: {$ref: '#/rules'}
+      '400': {description: Invalid candidate or problem scope}
+      '401': {description: Authentication required}
+      '403': {description: A selected member cannot use the employee}
+      '404': {description: Employee not visible}
+      '409': {description: Rules version changed}
+inbox:
+  parameters:
+    - $ref: '#/workspace'
+  get:
+    parameters:
+      - {name: offset, in: query, schema: {type: integer, minimum: 0}}
+      - {name: request_id, in: query, schema: {type: string, format: uuid}}
+    operationId: listHumanRequests
+    description: Up to 100 open requests assigned to the active Web identity. The recipient may access their assigned question after losing ordinary employee use. Originating sessions retain their own access policy.
+    responses:
+      '200':
+        description: Pending questions
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                total: {type: integer, description: Total visible matching requests across all pages.}
+                items: {type: array, items: {$ref: '#/request'}}
+      '401': {description: Authentication required}
+      '403': {description: Workspace access unavailable}
+summary:
+  parameters:
+    - $ref: '#/workspace'
+  get:
+    operationId: getHumanRequestSummary
+    description: Counts all open human requests in the workspace, with the same states as the history pending filter.
+    responses:
+      '200':
+        description: Workspace pending count
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pending]
+              properties:
+                pending: {type: integer, minimum: 0}
+      '401': {description: Authentication required}
+      '403': {description: Workspace access unavailable}
+history:
+  parameters:
+    - $ref: '#/workspace'
+  get:
+    operationId: listHumanRequestHistory
+    description: Active workspace members can read confirmation status summaries for all recipients, newest first. Only the authenticated Web assignee or a viewer authorized to read the source Session can see the confirmation details. Counts cover all matching records before paging. A direct ID uses the same visibility rules.
+    parameters:
+      - {name: offset, in: query, schema: {type: integer, minimum: 0}}
+      - {name: request_id, in: query, schema: {type: string, format: uuid}}
+      - {name: filter, in: query, schema: {enum: [pending, resolved, all], default: all}}
+    responses:
+      '200':
+        description: Up to 100 matching records. Pending includes preparing and blocked requests.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, total, pending, resolved]
+              properties:
+                total: {type: integer}
+                pending: {type: integer}
+                resolved: {type: integer}
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, version, state, detail_visible, created_at]
+                    if:
+                      properties:
+                        detail_visible: {const: true}
+                    then:
+                      required: [question, recipient_name, recipient_provider, agent_name]
+                    else:
+                      properties:
+                        question: false
+                        recipient_name: false
+                        recipient_provider: false
+                        agent_name: false
+                        answer: false
+                        clarification: false
+                    properties:
+                      id: {type: string, format: uuid}
+                      version: {$ref: '#/version'}
+                      state: {enum: [pending, preparing, blocked, approved, rejected, revised, cancelled]}
+                      detail_visible: {type: boolean, description: Whether the viewer can read the confirmation details.}
+                      question:
+                        type: object
+                        required: [question, answer_type]
+                        properties:
+                          question: {type: string}
+                          background: {type: string}
+                          answer_type: {enum: [decision, information]}
+                          questions: {type: array, items: {$ref: '#/questionItem'}}
+                          proposedAction: {type: string}
+                          impactScope: {type: string}
+                      recipient_name: {type: string}
+                      recipient_provider: {type: string}
+                      agent_name: {type: string}
+                      created_at: {type: string, format: date-time}
+                      answered_at: {type: string, format: date-time}
+                      answer: {$ref: '#/answer'}
+                      clarification: {type: string}
+      '400': {description: Invalid history filter or pagination}
+      '401': {description: Authentication required}
+      '403': {description: Workspace access unavailable}
+respond:
+  parameters:
+    - $ref: '#/workspace'
+    - {name: request_id, in: path, required: true, schema: {type: string, format: uuid}}
+  post:
+    operationId: answerHumanRequest
+    description: The assigned active Web identity may answer a stopped task's request independently of ordinary employee use. The same authorized answer returns the current receipt. A different answer conflicts.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: '#/answer'}
+    responses:
+      '200':
+        description: Durable answer and disposition
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, state]
+              properties:
+                id: {type: string, format: uuid}
+                state: {enum: [approved, rejected, revised, needs_more, pending]}
+                remaining: {type: array, items: {type: integer, minimum: 1, maximum: 10}}
+                requires_approval: {type: boolean}
+                missingFields: {type: array, items: {type: string}}
+      '400': {description: Invalid answer for the question type}
+      '401': {description: Authentication required}
+      '404': {description: Request not visible to the current principal}
+      '409': {description: Question changed, ended, or already has a conflicting answer}

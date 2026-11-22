@@ -1,0 +1,186 @@
+{
+  "get": {
+    "operationId": "getSkill",
+    "description": "Active workspace members read; owner/admin writes. Immutable Skill directory snapshots. Imports are actor-bound, expire after one hour, and are consumed idempotently by publish. GitHub imports resolve a commit and download once; no automatic refresh. Publish updates require the current resource version. ZIP max 20 MiB, expanded max 100 MiB, 1000 files; links/traversal/secrets rejected.",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "skill_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Success",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "./skill-schemas.yaml#/Skill"
+            }
+          }
+        }
+      },
+      "default": {
+        "description": "400 invalid; 401 unauthenticated; 403 forbidden; 404 absent; 409 stale/expired; 413 body too large; 503 storage unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "patch": {
+    "operationId": "updateSkill",
+    "description": "Active workspace members read; owner/admin writes. Immutable Skill directory snapshots. Imports are actor-bound, expire after one hour, and are consumed idempotently by publish. GitHub imports resolve a commit and download once; no automatic refresh. Publish updates require the current resource version. ZIP max 20 MiB, expanded max 100 MiB, 1000 files; links/traversal/secrets rejected.",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "skill_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "X-CSRF-Protection",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "const": "1"
+        }
+      }
+    ],
+    "responses": {
+      "200": {
+        "description": "Success",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "./skill-schemas.yaml#/Skill"
+            }
+          }
+        }
+      },
+      "default": {
+        "description": "400 invalid; 401 unauthenticated; 403 forbidden; 404 absent; 409 stale/expired; 413 body too large; 503 storage unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "./skill-schemas.yaml#/SkillPatch"
+          }
+        }
+      }
+    }
+  },
+  "delete": {
+    "operationId": "archiveSkill",
+    "description": "Workspace administrators archive unreferenced resources with an expected version.",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "skill_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "X-CSRF-Protection",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "const": "1"
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "$ref": "./resource-catalog-schemas.yaml#/Revision"
+          }
+        }
+      }
+    },
+    "responses": {
+      "204": {
+        "description": "Success"
+      },
+      "default": {
+        "description": "Invalid input, insufficient authorization, conflict or service unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../openapi.yaml#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

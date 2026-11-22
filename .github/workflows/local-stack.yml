@@ -1,0 +1,43 @@
+name: Local Compose Stack
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-stack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Initialization safety tests
+        run: |
+          python3 -m unittest discover -s tools -p test_local.py -v
+          python3 -m unittest discover -s tools -p test_docker_support.py -v
+      - name: Build and start complete implemented stack
+        run: ./start.sh up
+      - name: Verify page and real backend
+        run: |
+          curl --fail --silent http://localhost:18080/healthz -o /dev/null
+          curl --fail --silent http://localhost:18080/ -o /dev/null
+          curl --fail --silent http://localhost:18080/api/v1/auth/options -o /dev/null
+      - name: Verify channels, Engine and repeated startup
+        run: |
+          docker exec kikoteam-local-event-hub-1 wget -qO- http://127.0.0.1:8081/status | jq -e '.phase == "running" and .workers_configured'
+          test "$(docker inspect -f '{{.State.Health.Status}}' kikoteam-local-agent-engine-1)" = healthy
+          cp .env /tmp/kiko-env-before
+          cp .kiko-local/runtime.env /tmp/kiko-runtime-env-before
+          ./start.sh down
+          ./start.sh up
+          cmp .env /tmp/kiko-env-before
+          cmp .kiko-local/runtime.env /tmp/kiko-runtime-env-before
+      - name: Diagnostics
+        if: failure()
+        run: ./start.sh logs
+      - name: Stop containers without deleting database
+        if: always()
+        run: ./start.sh down

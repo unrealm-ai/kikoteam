@@ -1,0 +1,21 @@
+type: object
+required: [allow_entries, deny_entries, package_names, package_deny_names, sharing_names, notification_names]
+properties:
+  allow_entries:
+    type: integer
+    minimum: 0
+  deny_entries:
+    type: integer
+    minimum: 0
+  package_names:
+    type: array
+    items: {type: string}
+  package_deny_names:
+    type: array
+    items: {type: string}
+  sharing_names:
+    type: array
+    items: {type: string}
+  notification_names:
+    type: array
+    items: {type: string}

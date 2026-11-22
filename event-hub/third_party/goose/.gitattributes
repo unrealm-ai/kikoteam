@@ -1,0 +1,5 @@
+# Unified diff context prefixes are required syntax, not source indentation.
+connection.patch -whitespace
+# Preserve these two upstream files byte-for-byte; check-goose verifies hashes.
+internal/dialects/dsql.go -whitespace
+internal/dialects/ydb.go -whitespace

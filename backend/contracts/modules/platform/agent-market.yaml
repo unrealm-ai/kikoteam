@@ -1,0 +1,1321 @@
+schemas:
+  Content:
+    type: object
+    additionalProperties: false
+    properties:
+      name: &id001
+        type: string
+      avatar: *id001
+      role: *id001
+      category: *id001
+      audience: *id001
+      deliverables: *id001
+      model_requirements: *id001
+      instruction_template: *id001
+      schema_version:
+        const: 1
+      parameters:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            key: *id001
+            label: *id001
+            description: *id001
+            type:
+              enum:
+              - short_text
+              - long_text
+              - single_select
+              - multi_select
+            required: &id003
+              type: boolean
+            default: {}
+            options:
+              type: array
+              items: *id001
+            max_length:
+              type: integer
+              minimum: 0
+              maximum: 8000
+          required:
+          - key
+          - type
+          - required
+      packages:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            package_key: *id001
+            name: *id001
+            description: *id001
+            onboarding_requirement:
+              enum:
+              - required
+              - deferred
+            skills:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                properties:
+                  resource_key: *id001
+                required:
+                - resource_key
+            plugins:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                properties:
+                  resource_key: *id001
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      properties:
+                        name: *id001
+                        schema_digest:
+                          type: string
+                          pattern: ^[a-f0-9]{64}$
+                      required:
+                      - name
+                      - schema_digest
+                required:
+                - resource_key
+                - tools
+          required:
+          - package_key
+          - name
+          - onboarding_requirement
+          - skills
+          - plugins
+      resource_refs:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            resource_key: *id001
+            kind:
+              enum:
+              - skill
+              - plugin
+            workspace_id: &id002
+              type: string
+              format: uuid
+            id: *id002
+            version_id: *id002
+          required:
+          - resource_key
+          - kind
+      examples:
+        type: array
+        items: &id005
+          type: object
+          additionalProperties: false
+          properties:
+            key: *id001
+            title: *id001
+            text: *id001
+            output: *id001
+            package_keys:
+              type: array
+              items: *id001
+            can_try: *id003
+          required:
+          - key
+          - text
+          - output
+          - package_keys
+    required:
+    - schema_version
+    - name
+  Template:
+    type: object
+    additionalProperties: false
+    properties:
+      id: *id002
+      latest_version_id: *id002
+      published_version_id: *id002
+      template_version_id: *id002
+      owner_workspace_id: *id002
+      scope:
+        enum:
+        - official
+        - workspace
+      version: &id004
+        type: integer
+        minimum: 1
+      sequence: *id004
+      content:
+        $ref: '#/schemas/Content'
+      is_listed: *id003
+      builtin_key:
+        type: string
+        description: Stable release-managed catalog key, present only for built-in official templates.
+      recommended_rank:
+        type: integer
+      has_unpublished_changes: *id003
+      status:
+        enum:
+        - draft
+        - published
+        - unlisted
+      created_at: *id001
+      updated_at: *id001
+      published_at:
+        type:
+        - string
+        - 'null'
+        format: date-time
+    required:
+    - id
+    - scope
+    - version
+    - sequence
+    - content
+    - is_listed
+    - status
+  TemplateVersion:
+    type: object
+    additionalProperties: false
+    properties:
+      id: *id002
+      template_id: *id002
+      sequence: *id004
+      content:
+        $ref: '#/schemas/Content'
+      change_note: *id001
+      created_at:
+        type: string
+        format: date-time
+      published_at:
+        type:
+        - string
+        - 'null'
+        format: date-time
+    required:
+    - id
+    - template_id
+    - sequence
+    - content
+    - change_note
+    - created_at
+    - published_at
+  TemplatePage:
+    type: object
+    additionalProperties: false
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/schemas/Template'
+      total:
+        type: integer
+        minimum: 0
+      page: *id004
+      page_size:
+        type: integer
+        minimum: 1
+        maximum: 100
+    required:
+    - items
+    - total
+    - page
+    - page_size
+  VersionPage:
+    type: object
+    additionalProperties: false
+    properties:
+      items:
+        type: array
+        items:
+          $ref: '#/schemas/TemplateVersion'
+      total:
+        type: integer
+        minimum: 0
+      page: *id004
+      page_size:
+        type: integer
+        minimum: 1
+        maximum: 100
+    required:
+    - items
+    - total
+    - page
+    - page_size
+  WebAccess:
+    type: object
+    additionalProperties: false
+    properties:
+      mode:
+        enum:
+        - workspace
+        - allowlist
+      allow_member_ids:
+        type: array
+        items: *id002
+        maxItems: 100
+      deny_member_ids:
+        type: array
+        items: *id002
+        maxItems: 100
+    required:
+    - mode
+    - allow_member_ids
+    - deny_member_ids
+  TemplateOrigin:
+    type: object
+    additionalProperties: false
+    properties:
+      template_id: *id002
+      template_version_id: *id002
+      parameters:
+        type: object
+        additionalProperties: true
+    required:
+    - template_id
+    - template_version_id
+    - parameters
+  CreateFromTemplate:
+    type: object
+    additionalProperties: false
+    properties:
+      template_id: *id002
+      template_version_id: *id002
+      name:
+        type: string
+        minLength: 1
+        maxLength: 100
+      model_profile_id: *id002
+      platform_model_id: *id002
+      parameters:
+        type: object
+        additionalProperties: true
+      role:
+        type: string
+        maxLength: 2000
+      avatar:
+        type: string
+        maxLength: 100
+      required_packages_only: {type: boolean, default: false}
+      instruction_override:
+        type: string
+        maxLength: 8000
+    required:
+    - template_id
+    - template_version_id
+    - name
+    - parameters
+    oneOf:
+    - required: [model_profile_id]
+    - required: [platform_model_id]
+  Setup:
+    type: object
+    additionalProperties: false
+    properties:
+      conversation_model:
+        type: object
+        additionalProperties: false
+        properties:
+          available: *id003
+        required:
+        - available
+      task_model:
+        type: object
+        additionalProperties: false
+        properties:
+          available: *id003
+        required:
+        - available
+      access_allowed: *id003
+      packages:
+        type: array
+        items:
+          $ref: ./capability-schemas.yaml#/CapabilityPackage
+      issues:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            package_id: *id002
+            resource_id: *id002
+            code:
+              enum:
+              - needs_connection
+              - missing_operation
+              - schema_changed
+              - resource_unavailable
+              - disabled
+          required:
+          - package_id
+          - resource_id
+          - code
+      examples:
+        type: array
+        items: *id005
+    required:
+    - conversation_model
+    - task_model
+    - access_allowed
+    - packages
+    - issues
+    - examples
+  AccountPage:
+    type: object
+    additionalProperties: false
+    properties:
+      items:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            id: *id002
+            name: *id001
+            email:
+              type: string
+              format: email
+            email_verified: *id003
+            is_platform_admin: *id003
+            credit_balance: {type: string, description: Current balance in decimal credits.}
+            platform_admin_version: *id004
+            created_at: *id001
+          required:
+          - id
+          - name
+          - email
+          - is_platform_admin
+          - platform_admin_version
+      total:
+        type: integer
+        minimum: 0
+      page: *id004
+      page_size:
+        type: integer
+        minimum: 1
+        maximum: 100
+    required:
+    - items
+    - total
+    - page
+    - page_size
+  AdminPatch:
+    type: object
+    additionalProperties: false
+    properties:
+      version: *id004
+      is_platform_admin: *id003
+    required:
+    - version
+    - is_platform_admin
+  AdminResult:
+    type: object
+    additionalProperties: false
+    properties:
+      account_id: *id002
+      version: *id004
+      is_platform_admin: *id003
+    required:
+    - account_id
+    - version
+    - is_platform_admin
+workspaceCollection:
+  get:
+    operationId: listWorkspaceAgentTemplates
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: q
+      in: query
+      schema: *id001
+    - name: category
+      in: query
+      schema: *id001
+    - name: sort_by
+      in: query
+      schema: *id001
+    - name: sort_order
+      in: query
+      schema: *id001
+    - name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2147483647
+    - name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    - name: view
+      in: query
+      schema: *id001
+    - name: status
+      in: query
+      schema: *id001
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/TemplatePage'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+  post:
+    operationId: createWorkspaceAgentTemplate
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '201':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/Template'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              content:
+                $ref: '#/schemas/Content'
+            required:
+            - content
+workspaceItem:
+  get:
+    operationId: getWorkspaceAgentTemplate
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: view
+      in: query
+      schema: *id001
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/Template'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+  patch:
+    operationId: updateWorkspaceAgentTemplate
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/Template'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              version: *id004
+              content:
+                $ref: '#/schemas/Content'
+              change_note: *id001
+              recommended_rank:
+                type: integer
+              is_listed: *id003
+            required:
+            - version
+  delete:
+    operationId: deleteWorkspaceAgentTemplate
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '204':
+        description: Success
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              version: *id004
+            required:
+            - version
+workspacePublish:
+  post:
+    operationId: publishWorkspaceAgentTemplate
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/Template'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              version: *id004
+              template_version_id: *id002
+            required:
+            - version
+            - template_version_id
+workspaceVersions:
+  get:
+    operationId: listWorkspaceAgentTemplateVersions
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: view
+      in: query
+      schema: *id001
+    - name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2147483647
+    - name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/VersionPage'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+workspaceVersion:
+  get:
+    operationId: getWorkspaceAgentTemplateVersion
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: version_id
+      in: path
+      required: true
+      schema: *id002
+    - name: view
+      in: query
+      schema:
+        enum:
+        - manage
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/TemplateVersion'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+officialCollection:
+  get:
+    operationId: listOfficialAgentTemplates
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: q
+      in: query
+      schema: *id001
+    - name: category
+      in: query
+      schema: *id001
+    - name: sort_by
+      in: query
+      schema: *id001
+    - name: sort_order
+      in: query
+      schema: *id001
+    - name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2147483647
+    - name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    - name: view
+      in: query
+      schema: *id001
+    - name: status
+      in: query
+      schema: *id001
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/TemplatePage'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+  post:
+    operationId: createOfficialAgentTemplate
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '201':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/Template'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              content:
+                $ref: '#/schemas/Content'
+            required:
+            - content
+officialItem:
+  get:
+    operationId: getOfficialAgentTemplate
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: view
+      in: query
+      schema: *id001
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/Template'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+  patch:
+    operationId: updateOfficialAgentTemplate
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/Template'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              version: *id004
+              content:
+                $ref: '#/schemas/Content'
+              change_note: *id001
+              recommended_rank:
+                type: integer
+              is_listed: *id003
+            required:
+            - version
+  delete:
+    operationId: deleteOfficialAgentTemplate
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '204':
+        description: Success
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              version: *id004
+            required:
+            - version
+officialPublish:
+  post:
+    operationId: publishOfficialAgentTemplate
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/Template'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              version: *id004
+              template_version_id: *id002
+            required:
+            - version
+            - template_version_id
+officialVersions:
+  get:
+    operationId: listOfficialAgentTemplateVersions
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: view
+      in: query
+      schema: *id001
+    - name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2147483647
+    - name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/VersionPage'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+officialVersion:
+  get:
+    operationId: getOfficialAgentTemplateVersion
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: template_id
+      in: path
+      required: true
+      schema: *id002
+    - name: version_id
+      in: path
+      required: true
+      schema: *id002
+    - name: view
+      in: query
+      schema:
+        enum:
+        - manage
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/TemplateVersion'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+createEmployee:
+  post:
+    operationId: createAgentFromTemplate
+    security:
+    - sessionCookie: []
+    description: Owner/admin only. Creates one independent employee and every preset
+      package atomically. No Idempotency-Key. Do not automatically retry an unknown
+      create result.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '201':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: ./agent-schemas.yaml#/Agent
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/schemas/CreateFromTemplate'
+fromEmployee:
+  post:
+    operationId: createAgentTemplateFromAgent
+    security:
+    - sessionCookie: []
+    description: Requires current template management permission for writes. All resources
+      are checked against their actual scope. Version conflicts return 409.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: agent_id
+      in: path
+      required: true
+      schema: *id002
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '201':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/Template'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              agent_version: *id004
+              config_version: *id004
+              name: *id001
+            required:
+            - agent_version
+            - config_version
+            - name
+setup:
+  get:
+    operationId: getAgentSetupStatus
+    security:
+    - sessionCookie: []
+    description: Owner/admin read-only aggregation. Model, resource and account facts
+      are rechecked during execution.
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: *id002
+    - name: agent_id
+      in: path
+      required: true
+      schema: *id002
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/Setup'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+accounts:
+  get:
+    operationId: listPlatformAccounts
+    security:
+    - sessionCookie: []
+    description: Platform administrator only. Returns safe account metadata.
+    parameters:
+    - name: q
+      in: query
+      schema: *id001
+    - name: is_platform_admin
+      in: query
+      schema: *id001
+    - name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2147483647
+    - name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/AccountPage'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+admin:
+  patch:
+    operationId: updateAccountPlatformAdmin
+    security:
+    - sessionCookie: []
+    description: Platform administrator only; last administrator cannot be revoked.
+      Version guards concurrent changes. No idempotency key.
+    parameters:
+    - name: account_id
+      in: path
+      required: true
+      schema: *id002
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema:
+        const: '1'
+    responses:
+      '200':
+        description: Success
+        content:
+          application/json:
+            schema:
+              $ref: '#/schemas/AdminResult'
+      default:
+        description: 400 invalid fields; 401 unauthenticated; 403 forbidden/CSRF;
+          404 invisible; 409 version or dependency conflict; 422 unsupported runtime;
+          503 unavailable.
+        content:
+          application/json:
+            schema:
+              $ref: ../../openapi.yaml#/components/schemas/Error
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/schemas/AdminPatch'

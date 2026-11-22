@@ -1,0 +1,56 @@
+openapi: 3.1.0
+info:
+  title: Event Hub internal operational API
+  version: 1.0.0
+  description: >-
+    Local health endpoints use anonymous GET; the separate leader notification listener requires a dedicated bearer token.
+    Bind to loopback by default; restrict network access if bound to a pod interface.
+    No migration or election mutation endpoints are exposed; configuration notifications only trigger authenticated Backend reads.
+servers:
+  - url: http://127.0.0.1:8081
+security: []
+paths:
+  /livez:
+    $ref: './modules/health.yaml#/paths/livez'
+  /readyz:
+    $ref: './modules/health.yaml#/paths/readyz'
+  /status:
+    $ref: './modules/health.yaml#/paths/status'
+  /api/internal/v1/channel-bindings/refresh:
+    servers:
+      - url: http://127.0.0.1:8082
+    post:
+      operationId: refreshChannelBindings
+      description: >-
+        Authenticated revision hint to the elected Hub. Schedules a full configuration pull;
+        acceptance does not imply applied or connected. Cookie and Origin headers are rejected.
+        Periodic pulls recover lost notifications. This listener is private and exists only on the leader.
+      security:
+        - hubBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revision]
+              properties:
+                revision:
+                  type: integer
+                  format: int64
+                  minimum: 0
+      responses:
+        '202':
+          description: Refresh scheduled or coalesced with an existing refresh
+        '400':
+          description: Invalid or oversized notification
+        '401':
+          description: Missing credentials, Cookie or Origin rejected
+        '405':
+          description: Method not supported
+components:
+  securitySchemes:
+    hubBearer:
+      type: http
+      scheme: bearer
+      description: Dedicated KIKO_HUB_TOKEN, never an Engine token or user cookie

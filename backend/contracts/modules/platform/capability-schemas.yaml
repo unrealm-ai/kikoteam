@@ -1,0 +1,340 @@
+PackageScope:
+  type: object
+  additionalProperties: false
+  properties:
+    mode:
+      type: string
+      enum:
+      - inherit_with_blacklist
+      - whitelist_with_blacklist
+    allow_member_ids: &id001
+      type: array
+      maxItems: 100
+      uniqueItems: true
+      items: &id002
+        type: string
+        format: uuid
+    deny_member_ids: *id001
+    allow:
+      type: array
+      maxItems: 200
+      items:
+        $ref: ./capability-schemas.yaml#/PackageSelector
+    deny:
+      type: array
+      maxItems: 200
+      items:
+        $ref: ./capability-schemas.yaml#/PackageSelector
+  required:
+  - mode
+  - allow_member_ids
+  - deny_member_ids
+PackageSkill:
+  type: object
+  additionalProperties: false
+  properties:
+    skill_id: *id002
+    version_id: *id002
+  required:
+  - skill_id
+PackagePlugin:
+  type: object
+  additionalProperties: false
+  properties:
+    plugin_id: *id002
+    version_id: *id002
+  required:
+  - plugin_id
+CapabilityPackage:
+  type: object
+  additionalProperties: false
+  properties:
+    name: &id003
+      type: string
+      minLength: 1
+      maxLength: 100
+    description: &id004
+      type: string
+      maxLength: 2000
+    enabled: &id005
+      type: boolean
+    trigger_scope:
+      $ref: ./capability-schemas.yaml#/PackageTriggerScope
+    scope: &id006
+      $ref: ./capability-schemas.yaml#/PackageScope
+    skills: &id007
+      type: array
+      maxItems: 100
+      items:
+        $ref: ./capability-schemas.yaml#/PackageSkill
+    plugins: &id008
+      type: array
+      maxItems: 100
+      items:
+        $ref: ./capability-schemas.yaml#/PackagePlugin
+    id: *id002
+    agent_id: *id002
+    source_template_id: *id002
+    version:
+      type: integer
+      minimum: 1
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+    work_scope:
+      $ref: './capability-schemas.yaml#/PackageWorkScope'
+    conversation_scope:
+      allOf:
+      - $ref: ./capability-schemas.yaml#/PackageConversationScope
+      nullable: true
+      description: Absent/null preserves legacy scope. Explicit editing opts into
+        fixed private/group scenes; cannot combine with scope writes.
+  required:
+  - name
+  - description
+  - enabled
+  - scope
+  - skills
+  - plugins
+  - id
+  - version
+  - created_at
+  - updated_at
+PackageCreate:
+  type: object
+  additionalProperties: false
+  properties:
+    name: *id003
+    description: *id004
+    enabled: *id005
+    trigger_scope:
+      $ref: ./capability-schemas.yaml#/PackageTriggerScope
+    scope: *id006
+    skills: *id007
+    plugins: *id008
+    work_scope:
+      $ref: './capability-schemas.yaml#/PackageWorkScope'
+    conversation_scope:
+      allOf:
+      - $ref: ./capability-schemas.yaml#/PackageConversationScope
+      nullable: true
+      description: Absent/null preserves legacy scope. Explicit editing opts into
+        fixed private/group scenes; cannot combine with scope writes.
+  required:
+  - name
+PackagePatch:
+  type: object
+  additionalProperties: false
+  properties:
+    name: *id003
+    description: *id004
+    enabled: *id005
+    trigger_scope:
+      $ref: ./capability-schemas.yaml#/PackageTriggerScope
+    scope: *id006
+    skills: *id007
+    plugins: *id008
+    version:
+      type: integer
+      minimum: 1
+    work_scope:
+      $ref: './capability-schemas.yaml#/PackageWorkScope'
+    conversation_scope:
+      allOf:
+      - $ref: ./capability-schemas.yaml#/PackageConversationScope
+      nullable: true
+      description: Absent/null preserves legacy scope. Explicit editing opts into
+        fixed private/group scenes; cannot combine with scope writes.
+  required:
+  - version
+PackageCopy:
+  type: object
+  additionalProperties: false
+  properties:
+    template_id: *id002
+    template_version:
+      type: integer
+      minimum: 1
+    name: *id003
+  required:
+  - template_id
+  - template_version
+PackagePage:
+  type: object
+  additionalProperties: false
+  properties:
+    items:
+      type: array
+      items:
+        $ref: ./capability-schemas.yaml#/CapabilityPackage
+    total:
+      type: integer
+      minimum: 0
+    page:
+      type: integer
+      minimum: 1
+    page_size:
+      type: integer
+      minimum: 1
+  required:
+  - items
+  - total
+  - page
+  - page_size
+PackageTriggerScope:
+  type: object
+  additionalProperties: false
+  description: Trigger authorization is independent of human member scope; deny takes
+    precedence.
+  required:
+  - mode
+  - allow_trigger_ids
+  - deny_trigger_ids
+  properties:
+    mode:
+      type: string
+      enum:
+      - all
+      - allowlist
+    allow_trigger_ids:
+      type: array
+      maxItems: 100
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+    deny_trigger_ids:
+      type: array
+      maxItems: 100
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+    enabled:
+      type: boolean
+      default: true
+PackageSelector:
+  type: object
+  additionalProperties: false
+  required:
+  - channel
+  - kind
+  - id
+  properties:
+    channel:
+      type: string
+      enum:
+      - web
+      - feishu
+      - dingtalk
+      - wecom
+    kind:
+      type: string
+      enum:
+      - user
+      - department
+    id:
+      type: string
+      minLength: 1
+      maxLength: 512
+    binding_id:
+      type: string
+      format: uuid
+    identity_epoch:
+      type: integer
+      minimum: 1
+    include_descendants:
+      type: boolean
+  description: Employee-scoped identity. External channels require the employee binding
+    and current identity_epoch; Web uses workspace user UUID with no binding. Departments
+    only Feishu/DingTalk. WeCom requires a verified callback identity, not search_user_id.
+    Template packages cannot carry external employee identities. Allow and deny are
+    additional package restrictions, never employee admission grants.
+PackageConversationScope:
+  type: object
+  additionalProperties: false
+  required:
+  - private
+  - group
+  properties:
+    private:
+      $ref: ./capability-schemas.yaml#/PackageConversationRule
+    group:
+      $ref: ./capability-schemas.yaml#/PackageConversationRule
+PackageConversationRule:
+  type: object
+  additionalProperties: false
+  required:
+  - enabled
+  - mode
+  - allow
+  - deny
+  description: Private rejects group selectors. allowlist forbids deny; inherit_with_blacklist
+    forbids allow. Both configured person/department and group categories must match.
+    Empty allow denies.
+  properties:
+    enabled:
+      type: boolean
+    mode:
+      type: string
+      enum:
+      - inherit_with_blacklist
+      - allowlist
+    allow:
+      type: array
+      maxItems: 200
+      items:
+        $ref: ./capability-schemas.yaml#/PackageConversationSelector
+    deny:
+      type: array
+      maxItems: 200
+      items:
+        $ref: ./capability-schemas.yaml#/PackageConversationSelector
+PackageConversationSelector:
+  type: object
+  additionalProperties: false
+  required:
+  - channel
+  - kind
+  - id
+  properties:
+    channel:
+      type: string
+      enum:
+      - web
+      - feishu
+      - dingtalk
+      - wecom
+    kind:
+      type: string
+      enum:
+      - user
+      - department
+      - group
+    id:
+      type: string
+      minLength: 1
+      maxLength: 512
+    binding_id:
+      type: string
+      format: uuid
+    identity_epoch:
+      type: integer
+      minimum: 1
+    include_descendants:
+      type: boolean
+  description: Employee-scoped identity. External channels require the employee binding
+    and current identity_epoch; Web uses workspace user UUID with no binding. Departments
+    only Feishu/DingTalk. WeCom requires a verified callback identity, not search_user_id.
+    Template packages cannot carry external employee identities. Allow and deny are
+    additional package restrictions, never employee admission grants.
+
+PackageWorkScope:
+  type: object
+  required: [mode, employee_ids]
+  properties:
+    mode: {enum: [inherit, allowlist, denylist]}
+    employee_ids: {type: array, maxItems: 200, uniqueItems: true, items: {type: string, format: uuid}}

@@ -1,0 +1,368 @@
+{
+  "SkillFile": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "size": {
+        "type": "integer"
+      },
+      "sha256": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "path",
+      "size",
+      "sha256"
+    ]
+  },
+  "SkillManifest": {
+    "type": "object",
+    "properties": {
+      "format_version": {
+        "type": "integer",
+        "const": 1
+      },
+      "files": {
+        "type": "array",
+        "items": {
+          "$ref": "./skill-schemas.yaml#/SkillFile"
+        }
+      },
+      "digest": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "format_version",
+      "files",
+      "digest"
+    ]
+  },
+  "SkillSource": {
+    "type": "object",
+    "properties": {
+      "type": {
+        "type": "string",
+        "enum": [
+          "zip",
+          "github",
+          "markdown",
+          "manual",
+          "agent_template",
+          "official",
+          "copy"
+        ]
+      },
+      "repository_url": {
+        "type": "string"
+      },
+      "ref": {
+        "type": "string"
+      },
+      "commit": {
+        "type": "string"
+      },
+      "subpath": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "type"
+    ]
+  },
+  "SkillVersion": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "sequence": {
+        "type": "integer"
+      },
+      "version_label": {
+        "type": "string"
+      },
+      "technical_name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "manifest": {
+        "$ref": "./skill-schemas.yaml#/SkillManifest"
+      },
+      "source": {
+        "$ref": "./skill-schemas.yaml#/SkillSource"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "required": [
+      "id",
+      "sequence",
+      "version_label",
+      "technical_name",
+      "description",
+      "manifest",
+      "source",
+      "created_at"
+    ]
+  },
+  "Skill": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "version": {
+        "type": "integer"
+      },
+      "current_version_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "current_version": {
+        "$ref": "./skill-schemas.yaml#/SkillVersion"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "scope": {
+        "type": "string",
+        "enum": [
+          "official",
+          "workspace"
+        ]
+      },
+      "listed": {
+        "type": "boolean"
+      },
+      "card": {
+        "$ref": "./resource-catalog-schemas.yaml#/ResourceCard"
+      },
+      "assigned_agent_count": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "description",
+      "enabled",
+      "version",
+      "current_version_id",
+      "current_version",
+      "created_at",
+      "updated_at"
+    ]
+  },
+  "SkillImport": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "technical_name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "manifest": {
+        "$ref": "./skill-schemas.yaml#/SkillManifest"
+      },
+      "source": {
+        "$ref": "./skill-schemas.yaml#/SkillSource"
+      },
+      "expires_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "required": [
+      "id",
+      "technical_name",
+      "description",
+      "manifest",
+      "source",
+      "expires_at"
+    ]
+  },
+  "SkillImportRequest": {
+    "type": "object",
+    "properties": {
+      "source": {
+        "type": "string",
+        "enum": [
+          "zip",
+          "github",
+          "markdown",
+          "manual"
+        ]
+      },
+      "zip_base64": {
+        "type": "string"
+      },
+      "markdown": {
+        "type": "string"
+      },
+      "repository_url": {
+        "type": "string"
+      },
+      "ref": {
+        "type": "string"
+      },
+      "subpath": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "description": {
+        "type": "string"
+      },
+      "body": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "source"
+    ]
+  },
+  "SkillPublish": {
+    "type": "object",
+    "properties": {
+      "import_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "name": {
+        "type": "string"
+      },
+      "version": {
+        "type": "integer"
+      },
+      "version_label": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "import_id"
+    ]
+  },
+  "SkillPatch": {
+    "type": "object",
+    "properties": {
+      "version": {
+        "type": "integer"
+      },
+      "name": {
+        "type": "string"
+      },
+      "enabled": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "version"
+    ]
+  },
+  "SkillFileContent": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "size": {
+        "type": "integer"
+      },
+      "sha256": {
+        "type": "string"
+      },
+      "content_base64": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "path",
+      "size",
+      "sha256",
+      "content_base64"
+    ]
+  },
+  "SkillPage": {
+    "type": "object",
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "./skill-schemas.yaml#/Skill"
+        }
+      },
+      "total": {
+        "type": "integer"
+      },
+      "page": {
+        "type": "integer"
+      },
+      "page_size": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "items",
+      "total",
+      "page",
+      "page_size"
+    ]
+  },
+  "SkillVersionPage": {
+    "type": "object",
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "./skill-schemas.yaml#/SkillVersion"
+        }
+      },
+      "total": {
+        "type": "integer"
+      },
+      "page": {
+        "type": "integer"
+      },
+      "page_size": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "items",
+      "total",
+      "page",
+      "page_size"
+    ]
+  }
+}

@@ -1,0 +1,118 @@
+collection:
+  parameters:
+    - $ref: './conversations.yaml#/parameters/workspace'
+  get:
+    operationId: listWorkItems
+    description: List visible items by descending creation time. Cursor binds actor and filters.
+    security: [{sessionCookie: []}]
+    parameters:
+      - {in: query, name: status, schema: {$ref: '#/status'}}
+      - {in: query, name: employee_id, schema: {type: string, format: uuid}}
+      - {$ref: './sessions.yaml#/parameters/cursor'}
+      - {$ref: './sessions.yaml#/parameters/limit'}
+      - {name: include_counts, in: query, schema: {type: boolean}, description: Include authorized counts across all pages.}
+    responses:
+      '200':
+        description: Work items
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, next_cursor]
+              properties:
+                items: {type: array, items: {$ref: '#/overview'}}
+                status_counts: {type: object, additionalProperties: {type: integer}, description: Counts matching current board filters.}
+                next_cursor: {type: [string, 'null']}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+item:
+  parameters:
+    - {$ref: './conversations.yaml#/parameters/workspace'}
+    - {name: work_item_id, in: path, required: true, schema: {type: string, format: uuid}}
+  get:
+    operationId: getWorkItem
+    security: [{sessionCookie: []}]
+    parameters:
+      - {in: query, name: before, schema: {type: string, pattern: '^[1-9][0-9]*$'}}
+      - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+    responses:
+      '200':
+        description: Current work item with newest events first
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: '#/overview'}
+                - type: object
+                  required: [events, has_more]
+                  properties:
+                    events: {type: array, items: {$ref: '#/history'}}
+                    has_more: {type: boolean}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+receiver:
+  parameters:
+    - {$ref: './conversations.yaml#/parameters/workspace'}
+    - {name: agent_id, in: path, required: true, schema: {type: string, format: uuid}}
+  get:
+    operationId: getHandoffScope
+    security: [{sessionCookie: []}]
+    responses:
+      '200': &policyResponse
+        description: Employee handoff source scope and revision
+        content: {application/json: {schema: {$ref: '#/receiverPolicy'}}}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+  put:
+    operationId: updateHandoffScope
+    description: Workspace administrator write. Send the revision read from GET. A stale revision returns 409.
+    security: [{sessionCookie: []}]
+    requestBody:
+      required: true
+      content: {application/json: {schema: {$ref: '#/receiverPolicy'}}}
+    responses:
+      '200': *policyResponse
+      default: {$ref: './sessions.yaml#/responses/Error'}
+status: {enum: [working, awaiting_acceptance, blocked, failed, completed, cancelled]}
+overview:
+  type: object
+  required: [id, title, status, reason, goal, criteria, origin_employee, current_employee, created_at, updated_at]
+  properties:
+    id: {type: string, format: uuid}
+    title: {type: string}
+    linked_task_ids: {type: array, maxItems: 3, items: {type: string, format: uuid}, description: Up to three most recent visible related tasks.}
+    goal: {type: string}
+    criteria: {type: string}
+    status: {$ref: '#/status'}
+    reason: {type: string}
+    origin_employee: {type: string}
+    current_employee: {type: string}
+    created_at: {type: string, format: date-time}
+    updated_at: {type: string, format: date-time}
+history:
+  type: object
+  required: [id, kind, employee, target_employee, summary, created_at, deliveries]
+  properties:
+    id: {type: string}
+    kind: {enum: [created, handoff, started, submitted, returned, completed, blocked, failed, cancelled]}
+    employee: {type: string}
+    target_employee: {type: string}
+    summary: {type: string}
+    created_at: {type: string, format: date-time}
+    deliveries:
+      type: array
+      items:
+        type: object
+        required: [conversation_id, destination, status]
+        properties:
+          conversation_id: {type: string, format: uuid}
+          destination: {type: string}
+          status: {type: string}
+receiverPolicy:
+  type: object
+  required: [version, scope]
+  properties:
+    version: {type: string, pattern: '^(0|[1-9][0-9]*)$'}
+    scope:
+      type: object
+      required: [mode, employee_ids]
+      properties:
+        mode: {enum: [all, allowlist, denylist]}
+        employee_ids: {type: array, maxItems: 200, uniqueItems: true, items: {type: string, format: uuid}}

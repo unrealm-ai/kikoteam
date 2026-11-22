@@ -1,0 +1,331 @@
+{
+  "collection": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      }
+    ],
+    "get": {
+      "operationId": "listTaskSpaces",
+      "description": "Creator-only visibility under current active workspace membership; workspace admin has no bypass. created_at DESC,id DESC; signed cursor binds actor/workspace. agents is empty in list rows; read detail for grants.",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current resource",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items",
+                  "next_cursor"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/TaskSpace"
+                    }
+                  },
+                  "next_cursor": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "./sessions.yaml#/parameters/cursor"
+        },
+        {
+          "$ref": "./sessions.yaml#/parameters/limit"
+        }
+      ]
+    },
+    "post": {
+      "operationId": "createTaskSpace",
+      "description": "Get-or-create by workspace/business_key; null or omitted key creates an independent space. Idempotency is actor/workspace/request-key scoped; changed request conflicts. Current employee usage permission rechecked even on replay. Same business key never grants another employee implicitly. Creator owns space; other creators cannot retrieve it by guessing its key. Creates only space, not a Task. 200 is request replay; otherwise 201 (including existing business-key lookup).",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current resource",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/TaskSpace"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        },
+        "201": {
+          "description": "Current resource",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/TaskSpace"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "./conversations.yaml#/parameters/csrf"
+        },
+        {
+          "name": "Idempotency-Key",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "agent_id"
+              ],
+              "properties": {
+                "agent_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "business_key": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Exact nonempty key, no surrounding whitespace or NUL. Not an authorization token."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "item": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "task_space_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "getTaskSpace",
+      "description": "Creator only under active workspace membership. Unknown or inaccessible resource returns 404. Returns explicit employee grants.",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current resource",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/TaskSpace"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      }
+    }
+  },
+  "agent": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "task_space_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "put": {
+      "operationId": "grantTaskSpaceAgent",
+      "description": "Space creator only, active workspace membership. Current version required; stale version conflicts. Enabling requires current employee usage permission. Disabling closes admission and requests stops for affected tasks; receipt does not prove runtime stopped. Re-enabling changes grant epoch and never revives old tasks. No shared files/context API.",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Current resource",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/TaskSpace"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "./conversations.yaml#/parameters/csrf"
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "enabled"
+              ],
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "schemas": {
+    "TaskSpace": {
+      "type": "object",
+      "required": [
+        "id",
+        "workspace_id",
+        "business_key",
+        "created_by",
+        "lifecycle",
+        "version",
+        "created_at",
+        "agents"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "business_key": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "created_by": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "lifecycle": {
+          "enum": [
+            "active",
+            "archived"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "agent_id",
+              "status",
+              "admission_epoch"
+            ],
+            "properties": {
+              "agent_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "removed"
+                ]
+              },
+              "admission_epoch": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

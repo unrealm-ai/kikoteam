@@ -1,0 +1,101 @@
+settings:
+  get:
+    operationId: getPlatformMailSettings
+    summary: Read instance mail transport and registration policy as a platform administrator
+    security:
+    - sessionCookie: []
+    responses:
+      '200':
+        $ref: '#/mailSettingsResponse'
+      default:
+        $ref: '#/error'
+  patch:
+    operationId: updatePlatformMailSettings
+    summary: Save instance mail transport and registration policy as a platform administrator
+    description: Version zero covers the environment fallback before the first database save. A stored disabled policy does not fall back to environment variables.
+    security:
+    - sessionCookie: []
+    parameters:
+    - $ref: '#/csrf'
+    requestBody:
+      $ref: '#/candidateRequest'
+    responses:
+      '200':
+        $ref: '#/mailSettingsResponse'
+      default:
+        $ref: '#/error'
+test:
+  post:
+    operationId: testPlatformMailSettings
+    summary: Send a test email to the signed-in platform administrator
+    description: Checks the candidate without saving it. The destination is the administrator's account email, not a request parameter.
+    security:
+    - sessionCookie: []
+    parameters:
+    - $ref: '#/csrf'
+    requestBody:
+      $ref: '#/candidateRequest'
+    responses:
+      '200':
+        description: The SMTP server accepted the test email for delivery
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ok]
+              properties:
+                ok: { type: boolean, const: true }
+      default:
+        $ref: '#/error'
+candidateRequest:
+  required: true
+  content:
+    application/json:
+      schema:
+        type: object
+        additionalProperties: false
+        required: [version, enabled, registration_verification_required, address, host, username, from, implicit_tls]
+        properties:
+          version: { type: integer, minimum: 0 }
+          enabled: { type: boolean }
+          registration_verification_required: { type: boolean }
+          address: { type: string }
+          host: { type: string }
+          username: { type: string }
+          from: { type: string }
+          implicit_tls: { type: boolean }
+          password:
+            type: string
+            writeOnly: true
+            description: Omit or leave blank to retain the current password only for the same server, TLS identity and username.
+mailSettingsResponse:
+  description: Effective mail settings; the password is not returned
+  content:
+    application/json:
+      schema:
+        type: object
+        additionalProperties: false
+        required: [version, source, enabled, registration_verification_required, address, host, username, from, implicit_tls, password_configured]
+        properties:
+          version: { type: integer, minimum: 0 }
+          source: { type: string, enum: [environment, database] }
+          enabled: { type: boolean }
+          registration_verification_required: { type: boolean }
+          address: { type: string }
+          host: { type: string }
+          username: { type: string }
+          from: { type: string }
+          implicit_tls: { type: boolean }
+          password_configured: { type: boolean }
+csrf:
+  name: X-CSRF-Protection
+  in: header
+  required: true
+  schema: { type: string, const: '1' }
+error:
+  description: Structured error
+  content:
+    application/json:
+      schema:
+        $ref: ../../openapi.yaml#/components/schemas/Error

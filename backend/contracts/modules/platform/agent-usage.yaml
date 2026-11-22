@@ -1,0 +1,917 @@
+{
+  "parameters": [
+    {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    {
+      "name": "agent_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+        "type": "string",
+        "format": "uuid"
+      }
+    }
+  ],
+  "get": {
+    "operationId": "getAgentUsage",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "description": "Owner/admin only. Employee-level unified configuration; no channel-specific writes. Returns configured selectors unchanged, including stale identities for display/removal.",
+    "responses": {
+      "200": {
+        "description": "Current usage configuration",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "usage_config"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "usage_config": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "access",
+                    "trigger",
+                    "history"
+                  ],
+                  "properties": {
+                    "access": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "mode",
+                        "group_members_enabled",
+                        "allow",
+                        "deny"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "all",
+                            "allowlist"
+                          ]
+                        },
+                        "group_members_enabled": {
+                          "type": "boolean",
+                          "default": true,
+                          "description": "In a group, bypass allow restrictions only; explicit deny and actual group membership requirements still apply."
+                        },
+                        "allow": {
+                          "type": "array",
+                          "maxItems": 200,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "channel",
+                              "kind",
+                              "id"
+                            ],
+                            "properties": {
+                              "channel": {
+                                "enum": [
+                                  "web",
+                                  "feishu",
+                                  "dingtalk",
+                                  "wecom"
+                                ]
+                              },
+                              "kind": {
+                                "enum": [
+                                  "user",
+                                  "department",
+                                  "group"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "maxLength": 512
+                              },
+                              "binding_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "identity_epoch": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "include_descendants": {
+                                "type": "boolean"
+                              }
+                            },
+                            "description": "Web user/group IDs belong to current workspace. External entries require binding_id plus identity_epoch. WeCom users must be verified callback identities; no WeCom departments. Stale entries remain readable but cannot grant across an epoch change."
+                          }
+                        },
+                        "deny": {
+                          "type": "array",
+                          "maxItems": 200,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "channel",
+                              "kind",
+                              "id"
+                            ],
+                            "properties": {
+                              "channel": {
+                                "enum": [
+                                  "web",
+                                  "feishu",
+                                  "dingtalk",
+                                  "wecom"
+                                ]
+                              },
+                              "kind": {
+                                "enum": [
+                                  "user",
+                                  "department",
+                                  "group"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "maxLength": 512
+                              },
+                              "binding_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "identity_epoch": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "include_descendants": {
+                                "type": "boolean"
+                              }
+                            },
+                            "description": "Web user/group IDs belong to current workspace. External entries require binding_id plus identity_epoch. WeCom users must be verified callback identities; no WeCom departments. Stale entries remain readable but cannot grant across an epoch change."
+                          }
+                        }
+                      }
+                    },
+                    "trigger": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "mention",
+                        "keywords",
+                        "regexes"
+                      ],
+                      "properties": {
+                        "mention": {
+                          "type": "boolean"
+                        },
+                        "keywords": {
+                          "type": "array",
+                          "maxItems": 32,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "text",
+                              "channels"
+                            ],
+                            "properties": {
+                              "text": {
+                                "type": "string",
+                                "maxLength": 256
+                              },
+                              "channels": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 2,
+                                "uniqueItems": true,
+                                "items": {
+                                  "enum": [
+                                    "web",
+                                    "feishu"
+                                  ]
+                                }
+                              },
+                              "id": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "name": {
+                                "type": "string",
+                                "maxLength": 100
+                              },
+                              "description": {
+                                "type": "string",
+                                "maxLength": 1000
+                              },
+                              "enabled": {
+                                "type": "boolean",
+                                "default": true
+                              }
+                            }
+                          }
+                        },
+                        "regexes": {
+                          "type": "array",
+                          "maxItems": 16,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "text",
+                              "channels"
+                            ],
+                            "properties": {
+                              "text": {
+                                "type": "string",
+                                "maxLength": 256
+                              },
+                              "channels": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 2,
+                                "uniqueItems": true,
+                                "items": {
+                                  "enum": [
+                                    "web",
+                                    "feishu"
+                                  ]
+                                }
+                              },
+                              "id": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "name": {
+                                "type": "string",
+                                "maxLength": 100
+                              },
+                              "description": {
+                                "type": "string",
+                                "maxLength": 1000
+                              },
+                              "enabled": {
+                                "type": "boolean",
+                                "default": true
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "history": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "enabled",
+                        "limit",
+                        "channels"
+                      ],
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        },
+                        "channels": {
+                          "type": "array",
+                          "uniqueItems": true,
+                          "items": {
+                            "enum": [
+                              "web",
+                              "feishu",
+                              "wecom"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Invalid configuration or unsupported capability"
+      },
+      "403": {
+        "description": "Owner/admin permission or CSRF required"
+      },
+      "409": {
+        "description": "usage_version_conflict; refresh before changing again"
+      }
+    }
+  },
+  "patch": {
+    "operationId": "updateAgentUsage",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "description": "Owner/admin only. Employee-level unified configuration; no channel-specific writes. Complete usage_config replacement with optimistic version check. Cookies require CSRF protection; no provider request is sent.",
+    "responses": {
+      "200": {
+        "description": "Current usage configuration",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "usage_config"
+              ],
+              "properties": {
+                "version": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "usage_config": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "access",
+                    "trigger",
+                    "history"
+                  ],
+                  "properties": {
+                    "access": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "mode",
+                        "group_members_enabled",
+                        "allow",
+                        "deny"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "all",
+                            "allowlist"
+                          ]
+                        },
+                        "group_members_enabled": {
+                          "type": "boolean",
+                          "default": true,
+                          "description": "In a group, bypass allow restrictions only; explicit deny and actual group membership requirements still apply."
+                        },
+                        "allow": {
+                          "type": "array",
+                          "maxItems": 200,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "channel",
+                              "kind",
+                              "id"
+                            ],
+                            "properties": {
+                              "channel": {
+                                "enum": [
+                                  "web",
+                                  "feishu",
+                                  "dingtalk",
+                                  "wecom"
+                                ]
+                              },
+                              "kind": {
+                                "enum": [
+                                  "user",
+                                  "department",
+                                  "group"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "maxLength": 512
+                              },
+                              "binding_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "identity_epoch": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "include_descendants": {
+                                "type": "boolean"
+                              }
+                            },
+                            "description": "Web user/group IDs belong to current workspace. External entries require binding_id plus identity_epoch. WeCom users must be verified callback identities; no WeCom departments. Stale entries remain readable but cannot grant across an epoch change."
+                          }
+                        },
+                        "deny": {
+                          "type": "array",
+                          "maxItems": 200,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "channel",
+                              "kind",
+                              "id"
+                            ],
+                            "properties": {
+                              "channel": {
+                                "enum": [
+                                  "web",
+                                  "feishu",
+                                  "dingtalk",
+                                  "wecom"
+                                ]
+                              },
+                              "kind": {
+                                "enum": [
+                                  "user",
+                                  "department",
+                                  "group"
+                                ]
+                              },
+                              "id": {
+                                "type": "string",
+                                "maxLength": 512
+                              },
+                              "binding_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "identity_epoch": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "include_descendants": {
+                                "type": "boolean"
+                              }
+                            },
+                            "description": "Web user/group IDs belong to current workspace. External entries require binding_id plus identity_epoch. WeCom users must be verified callback identities; no WeCom departments. Stale entries remain readable but cannot grant across an epoch change."
+                          }
+                        }
+                      }
+                    },
+                    "trigger": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "mention",
+                        "keywords",
+                        "regexes"
+                      ],
+                      "properties": {
+                        "mention": {
+                          "type": "boolean"
+                        },
+                        "keywords": {
+                          "type": "array",
+                          "maxItems": 32,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "text",
+                              "channels"
+                            ],
+                            "properties": {
+                              "text": {
+                                "type": "string",
+                                "maxLength": 256
+                              },
+                              "channels": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 2,
+                                "uniqueItems": true,
+                                "items": {
+                                  "enum": [
+                                    "web",
+                                    "feishu"
+                                  ]
+                                }
+                              },
+                              "id": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "name": {
+                                "type": "string",
+                                "maxLength": 100
+                              },
+                              "description": {
+                                "type": "string",
+                                "maxLength": 1000
+                              },
+                              "enabled": {
+                                "type": "boolean",
+                                "default": true
+                              }
+                            }
+                          }
+                        },
+                        "regexes": {
+                          "type": "array",
+                          "maxItems": 16,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "text",
+                              "channels"
+                            ],
+                            "properties": {
+                              "text": {
+                                "type": "string",
+                                "maxLength": 256
+                              },
+                              "channels": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 2,
+                                "uniqueItems": true,
+                                "items": {
+                                  "enum": [
+                                    "web",
+                                    "feishu"
+                                  ]
+                                }
+                              },
+                              "id": {
+                                "type": "string",
+                                "maxLength": 128
+                              },
+                              "name": {
+                                "type": "string",
+                                "maxLength": 100
+                              },
+                              "description": {
+                                "type": "string",
+                                "maxLength": 1000
+                              },
+                              "enabled": {
+                                "type": "boolean",
+                                "default": true
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "history": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "enabled",
+                        "limit",
+                        "channels"
+                      ],
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        },
+                        "channels": {
+                          "type": "array",
+                          "uniqueItems": true,
+                          "items": {
+                            "enum": [
+                              "web",
+                              "feishu",
+                              "wecom"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "400": {
+        "description": "Invalid configuration or unsupported capability"
+      },
+      "403": {
+        "description": "Owner/admin permission or CSRF required"
+      },
+      "409": {
+        "description": "usage_version_conflict; refresh before changing again"
+      }
+    },
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "usage_config"
+            ],
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "usage_config": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "access",
+                  "trigger",
+                  "history"
+                ],
+                "properties": {
+                  "access": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "mode",
+                      "group_members_enabled",
+                      "allow",
+                      "deny"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "enum": [
+                          "all",
+                          "allowlist"
+                        ]
+                      },
+                      "group_members_enabled": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "In a group, bypass allow restrictions only; explicit deny and actual group membership requirements still apply."
+                      },
+                      "allow": {
+                        "type": "array",
+                        "maxItems": 200,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "channel",
+                            "kind",
+                            "id"
+                          ],
+                          "properties": {
+                            "channel": {
+                              "enum": [
+                                "web",
+                                "feishu",
+                                "dingtalk",
+                                "wecom"
+                              ]
+                            },
+                            "kind": {
+                              "enum": [
+                                "user",
+                                "department",
+                                "group"
+                              ]
+                            },
+                            "id": {
+                              "type": "string",
+                              "maxLength": 512
+                            },
+                            "binding_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "identity_epoch": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "include_descendants": {
+                              "type": "boolean"
+                            }
+                          },
+                          "description": "Web user/group IDs belong to current workspace. External entries require binding_id plus identity_epoch. WeCom users must be verified callback identities; no WeCom departments. Stale entries remain readable but cannot grant across an epoch change."
+                        }
+                      },
+                      "deny": {
+                        "type": "array",
+                        "maxItems": 200,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "channel",
+                            "kind",
+                            "id"
+                          ],
+                          "properties": {
+                            "channel": {
+                              "enum": [
+                                "web",
+                                "feishu",
+                                "dingtalk",
+                                "wecom"
+                              ]
+                            },
+                            "kind": {
+                              "enum": [
+                                "user",
+                                "department",
+                                "group"
+                              ]
+                            },
+                            "id": {
+                              "type": "string",
+                              "maxLength": 512
+                            },
+                            "binding_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "identity_epoch": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "include_descendants": {
+                              "type": "boolean"
+                            }
+                          },
+                          "description": "Web user/group IDs belong to current workspace. External entries require binding_id plus identity_epoch. WeCom users must be verified callback identities; no WeCom departments. Stale entries remain readable but cannot grant across an epoch change."
+                        }
+                      }
+                    }
+                  },
+                  "trigger": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "mention",
+                      "keywords",
+                      "regexes"
+                    ],
+                    "properties": {
+                      "mention": {
+                        "type": "boolean"
+                      },
+                      "keywords": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "text",
+                            "channels"
+                          ],
+                          "properties": {
+                            "text": {
+                              "type": "string",
+                              "maxLength": 256
+                            },
+                            "channels": {
+                              "type": "array",
+                              "minItems": 1,
+                              "maxItems": 2,
+                              "uniqueItems": true,
+                              "items": {
+                                "enum": [
+                                  "web",
+                                  "feishu"
+                                ]
+                              }
+                            },
+                            "id": {
+                              "type": "string",
+                              "maxLength": 128
+                            },
+                            "name": {
+                              "type": "string",
+                              "maxLength": 100
+                            },
+                            "description": {
+                              "type": "string",
+                              "maxLength": 1000
+                            },
+                            "enabled": {
+                              "type": "boolean",
+                              "default": true
+                            }
+                          }
+                        }
+                      },
+                      "regexes": {
+                        "type": "array",
+                        "maxItems": 16,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "text",
+                            "channels"
+                          ],
+                          "properties": {
+                            "text": {
+                              "type": "string",
+                              "maxLength": 256
+                            },
+                            "channels": {
+                              "type": "array",
+                              "minItems": 1,
+                              "maxItems": 2,
+                              "uniqueItems": true,
+                              "items": {
+                                "enum": [
+                                  "web",
+                                  "feishu"
+                                ]
+                              }
+                            },
+                            "id": {
+                              "type": "string",
+                              "maxLength": 128
+                            },
+                            "name": {
+                              "type": "string",
+                              "maxLength": 100
+                            },
+                            "description": {
+                              "type": "string",
+                              "maxLength": 1000
+                            },
+                            "enabled": {
+                              "type": "boolean",
+                              "default": true
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "history": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "enabled",
+                      "limit",
+                      "channels"
+                    ],
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      },
+                      "channels": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": {
+                          "enum": [
+                            "web",
+                            "feishu",
+                            "wecom"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": "新使用范围仅支持 all + deny 或 allowlist + allow，名单仅 user/department，另一名单必须为空；group_members_enabled 独立。旧群规则或混合名单可原样保留用于无关编辑，替换必须明确确认。"
+              },
+              "replace_legacy_access": {
+                "type": "boolean",
+                "default": false,
+                "description": "仅用于管理员明确复核后将旧不可表示使用范围替换为合法新规则。必须携带当前 version；不确认移除旧限制返回 409 usage_policy_requires_review。非旧配置不得发送 true。"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

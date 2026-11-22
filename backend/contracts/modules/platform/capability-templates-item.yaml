@@ -1,0 +1,67 @@
+get:
+  operationId: getCapabilityPackageTemplates
+  description: Active workspace members read; stable created_at DESC,id DESC.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema: &id001
+      type: string
+      format: uuid
+  - name: package_id
+    in: path
+    required: true
+    schema: *id001
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: ./capability-schemas.yaml#/CapabilityPackage
+    default: &id002
+      description: 400 invalid fields/scope; 401 missing session; 403 inactive member/admin/CSRF;
+        404 wrong workspace or owner; 409 stale version, unavailable resource or invalid
+        reference; 503 unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+patch:
+  operationId: updateCapabilityPackageTemplates
+  description: Owner/admin only. First use selects the latest version. Employee bindings share the selected version until manual upgrade. Account credentials are never
+    copied. Scope only narrows employee admission. Create/copy retry may create another
+    package; no automatic retry. Patch requires current version.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema: *id001
+  - name: package_id
+    in: path
+    required: true
+    schema: *id001
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema:
+      type: string
+      const: '1'
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: ./capability-schemas.yaml#/CapabilityPackage
+    default: *id002
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ./capability-schemas.yaml#/PackagePatch

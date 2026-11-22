@@ -1,0 +1,692 @@
+openapi: 3.1.0
+info:
+  title: Kiko Platform API
+  version: 1.0.0
+  description: 'Platform identity and workspace API. Cookie credentials only; all writes require
+    X-CSRF-Protection: 1 and same-origin requests. Google OAuth is not implemented. Registration
+    atomically creates an account, a personal workspace and a session; invitation acceptance is a separate authenticated step.
+    Unexpected database errors fail only the current request.'
+paths:
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/human-recovery:
+    $ref: ./modules/manager/human-recovery.yaml#/list
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/human-recovery/{request_id}:
+    $ref: ./modules/manager/human-recovery.yaml#/recover
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/human-recipients:
+    $ref: ./modules/manager/human-requests.yaml#/configuration
+  /api/v1/workspaces/{workspace_id}/human-requests:
+    $ref: ./modules/manager/human-requests.yaml#/inbox
+  /api/v1/workspaces/{workspace_id}/human-requests/summary:
+    $ref: ./modules/manager/human-requests.yaml#/summary
+  /api/v1/workspaces/{workspace_id}/human-requests/history:
+    $ref: ./modules/manager/human-requests.yaml#/history
+  /api/v1/workspaces/{workspace_id}/human-requests/{request_id}/answer:
+    $ref: ./modules/manager/human-requests.yaml#/respond
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/test-connection:
+    $ref: ./modules/platform/channel-credential-tests.yaml#/feishu
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/dingtalk/test-connection:
+    $ref: ./modules/platform/channel-credential-tests.yaml#/dingtalk
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/wecom/test-connection:
+    $ref: ./modules/platform/channel-credential-tests.yaml#/wecom
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/sharing-policies:
+    $ref: ./modules/platform/group-sharing.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/sharing-policies/{policy_id}:
+    $ref: ./modules/platform/group-sharing.yaml#/item
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/sharing-policies/preview:
+    $ref: ./modules/platform/group-sharing.yaml#/preview
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/wecom/groups/refresh:
+    $ref: ./modules/platform/wecom-group-refresh.yaml#/refresh
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/wecom/groups/refresh/{id}:
+    $ref: ./modules/platform/wecom-group-refresh.yaml#/status
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/selectors/groups:
+    $ref: ./modules/platform/group-selectors.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/selectors/groups/resolve:
+    $ref: ./modules/platform/group-selectors.yaml#/resolve
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/selectors/people:
+    $ref: ./modules/platform/people-selectors.yaml#/people
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/selectors/departments:
+    $ref: ./modules/platform/people-selectors.yaml#/departments
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/selectors/people/sources:
+    $ref: ./modules/platform/people-selectors.yaml#/sources
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/selectors/people/resolve:
+    $ref: ./modules/platform/people-selectors.yaml#/resolve
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/triggers:
+    $ref: ./modules/manager/triggers.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/triggers/{trigger_id}:
+    $ref: ./modules/manager/triggers.yaml#/item
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/triggers/{trigger_id}/credentials:
+    $ref: ./modules/manager/triggers.yaml#/credentials
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/triggers/{trigger_id}/credentials/{key_id}:
+    $ref: ./modules/manager/triggers.yaml#/credential
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/triggers/{trigger_id}/events:
+    $ref: ./modules/manager/triggers.yaml#/events
+  /api/triggers/webhook/{trigger_id}:
+    $ref: ./modules/manager/triggers.yaml#/webhook
+  /api/triggers/github/{trigger_id}:
+    $ref: ./modules/manager/triggers.yaml#/github
+  /api/triggers/events/{trigger_id}:
+    $ref: ./modules/manager/triggers.yaml#/nativeEvent
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/trigger-group-candidates:
+    $ref: ./modules/manager/trigger-groups.yaml#/candidates
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/trigger-group-candidates/resolve:
+    $ref: ./modules/manager/trigger-groups.yaml#/resolve
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/groups/discover:
+    $ref: ./modules/manager/trigger-groups.yaml#/discover
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/trigger-notification-targets:
+    $ref: ./modules/manager/trigger-notification-reads.yaml#/targets
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/triggers/{trigger_id}/notifications:
+    $ref: ./modules/manager/trigger-notification-reads.yaml#/notifications
+  /api/v1/workspaces/{workspace_id}/work-items:
+    $ref: ./modules/manager/work-items.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/work-items/{work_item_id}:
+    $ref: ./modules/manager/work-items.yaml#/item
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/handoff-scope:
+    $ref: ./modules/manager/work-items.yaml#/receiver
+  /api/v1/workspaces/{workspace_id}/task-spaces:
+    $ref: ./modules/manager/task-spaces.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/task-spaces/{task_space_id}:
+    $ref: ./modules/manager/task-spaces.yaml#/item
+  /api/v1/workspaces/{workspace_id}/task-spaces/{task_space_id}/agents/{agent_id}:
+    $ref: ./modules/manager/task-spaces.yaml#/agent
+  /api/v1/workspaces/{workspace_id}/web-groups:
+    $ref: ./modules/platform/web-groups.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/web-groups/{group_id}:
+    $ref: ./modules/platform/web-groups.yaml#/item
+  /api/v1/workspaces/{workspace_id}/web-groups/{group_id}/leave:
+    $ref: ./modules/platform/web-groups.yaml#/leave
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/trigger-rules:
+    $ref: ./modules/platform/trigger-rules.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/trigger-rules/test:
+    $ref: ./modules/platform/trigger-rules.yaml#/test
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/usage-config:
+    $ref: ./modules/platform/agent-usage.yaml
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/wecom/contacts/permission:
+    $ref: ./modules/platform/wecom-contacts.yaml#/permission
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/wecom/contacts/search:
+    $ref: ./modules/platform/wecom-contacts.yaml#/search
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/wecom/contacts/verifications:
+    $ref: ./modules/platform/wecom-contacts.yaml#/verifications
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/wecom/contacts/verifications/{verification_id}:
+    $ref: ./modules/platform/wecom-contacts.yaml#/verification
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/wecom/contacts/verifications/{verification_id}/cancel:
+    $ref: ./modules/platform/wecom-contacts.yaml#/cancel
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/dingtalk:
+    $ref: ./modules/platform/channel-dingtalk.yaml
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/wecom:
+    $ref: ./modules/platform/channel-wecom.yaml
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/dingtalk/directory:
+    $ref: ./modules/platform/channel-dingtalk-directory.yaml#/status
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/dingtalk/directory/sync:
+    $ref: ./modules/platform/channel-dingtalk-directory.yaml#/sync
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/dingtalk/directory/users:
+    $ref: ./modules/platform/channel-dingtalk-directory.yaml#/users
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/dingtalk/directory/departments:
+    $ref: ./modules/platform/channel-dingtalk-directory.yaml#/departments
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/dingtalk/registration:
+    $ref: ./modules/platform/dingtalk-setup.yaml#/registration
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/dingtalk/registration/{registration_id}/poll:
+    $ref: ./modules/platform/dingtalk-setup.yaml#/poll
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/dingtalk/registration/{registration_id}/confirm:
+    $ref: ./modules/platform/dingtalk-setup.yaml#/confirm
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/dingtalk/registration/{registration_id}/cancel:
+    $ref: ./modules/platform/dingtalk-setup.yaml#/cancel
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/registration:
+    $ref: ./modules/platform/feishu-setup.yaml#/registration
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/registration/{registration_id}/poll:
+    $ref: ./modules/platform/feishu-setup.yaml#/poll
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/registration/{registration_id}/retry:
+    $ref: ./modules/platform/feishu-setup.yaml#/retry
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/registration/{registration_id}/cancel:
+    $ref: ./modules/platform/feishu-setup.yaml#/cancel
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/diagnostics:
+    $ref: ./modules/platform/feishu-setup.yaml#/diagnostics
+  /api/v1/platform-models:
+    $ref: ./modules/platform/model-proxy.yaml#/models
+  /api/v1/platform-models/test:
+    $ref: ./modules/platform/model-proxy.yaml#/test
+  /api/v1/platform-models/{model_id}:
+    $ref: ./modules/platform/model-proxy.yaml#/model
+  /api/v1/accounts/{account_id}/credit-wallet:
+    $ref: ./modules/platform/model-proxy.yaml#/wallet
+  /api/v1/accounts/{account_id}/credit-ledger:
+    $ref: ./modules/platform/model-proxy.yaml#/ledger
+  /api/v1/accounts/{account_id}/credit-grants:
+    $ref: ./modules/platform/model-proxy.yaml#/grant
+  /api/v1/credit-settings:
+    $ref: ./modules/platform/model-proxy.yaml#/settings
+  /api/v1/model-usage:
+    $ref: ./modules/platform/model-proxy.yaml#/usage
+  /api/v1/model-usage/{usage_id}/resolve:
+    $ref: ./modules/platform/model-proxy.yaml#/resolve
+  /api/v1/workspaces/{workspace_id}/agent-templates:
+    $ref: ./modules/platform/agent-market.yaml#/workspaceCollection
+  /api/v1/workspaces/{workspace_id}/agent-templates/{template_id}:
+    $ref: ./modules/platform/agent-market.yaml#/workspaceItem
+  /api/v1/workspaces/{workspace_id}/agent-templates/{template_id}/publish:
+    $ref: ./modules/platform/agent-market.yaml#/workspacePublish
+  /api/v1/workspaces/{workspace_id}/agent-templates/{template_id}/versions:
+    $ref: ./modules/platform/agent-market.yaml#/workspaceVersions
+  /api/v1/workspaces/{workspace_id}/agent-templates/{template_id}/versions/{version_id}:
+    $ref: ./modules/platform/agent-market.yaml#/workspaceVersion
+  /api/v1/official-agent-templates:
+    $ref: ./modules/platform/agent-market.yaml#/officialCollection
+  /api/v1/official-agent-templates/{template_id}:
+    $ref: ./modules/platform/agent-market.yaml#/officialItem
+  /api/v1/official-agent-templates/{template_id}/publish:
+    $ref: ./modules/platform/agent-market.yaml#/officialPublish
+  /api/v1/official-agent-templates/{template_id}/versions:
+    $ref: ./modules/platform/agent-market.yaml#/officialVersions
+  /api/v1/official-agent-templates/{template_id}/versions/{version_id}:
+    $ref: ./modules/platform/agent-market.yaml#/officialVersion
+  /api/v1/workspaces/{workspace_id}/agents/from-template:
+    $ref: ./modules/platform/agent-market.yaml#/createEmployee
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/agent-templates:
+    $ref: ./modules/platform/agent-market.yaml#/fromEmployee
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/setup-status:
+    $ref: ./modules/platform/agent-market.yaml#/setup
+  /api/v1/accounts:
+    $ref: ./modules/platform/agent-market.yaml#/accounts
+  /api/v1/accounts/{account_id}/platform-admin:
+    $ref: ./modules/platform/agent-market.yaml#/admin
+  /api/v1/workspaces/{workspace_id}/tasks:
+    $ref: ./modules/manager/tasks.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/tasks/{task_id}:
+    $ref: ./modules/manager/tasks.yaml#/item
+  /api/v1/workspaces/{workspace_id}/tasks/{task_id}/reports:
+    $ref: ./modules/manager/tasks.yaml#/reports
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/directory:
+    $ref: ./modules/platform/channel-directory.yaml#/status
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/directory/sync:
+    $ref: ./modules/platform/channel-directory.yaml#/sync
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/directory/users:
+    $ref: ./modules/platform/channel-directory.yaml#/users
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/directory/departments:
+    $ref: ./modules/platform/channel-directory.yaml#/departments
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu:
+    $ref: './modules/platform/channel-feishu.yaml'
+  /api/v1/workspaces/{workspace_id}/sessions:
+    $ref: ./modules/manager/sessions.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/sessions/{session_id}:
+    $ref: ./modules/manager/sessions.yaml#/item
+  /api/v1/workspaces/{workspace_id}/sessions/{session_id}/inputs:
+    $ref: ./modules/manager/sessions.yaml#/inputs
+  /api/v1/workspaces/{workspace_id}/sessions/{session_id}/inputs/{input_id}:
+    $ref: ./modules/manager/sessions.yaml#/input
+  /api/v1/workspaces/{workspace_id}/sessions/{session_id}/inputs/{input_id}/withdraw:
+    $ref: ./modules/manager/sessions.yaml#/withdraw
+  /api/v1/workspaces/{workspace_id}/sessions/{session_id}/turns:
+    $ref: ./modules/manager/sessions.yaml#/turns
+  /api/v1/workspaces/{workspace_id}/sessions/{session_id}/turns/{turn_id}:
+    $ref: ./modules/manager/sessions.yaml#/turn
+  /api/v1/workspaces/{workspace_id}/sessions/{session_id}/events:
+    $ref: ./modules/manager/sessions.yaml#/events
+  /api/v1/workspaces/{workspace_id}/sessions/{session_id}/events/stream:
+    $ref: ./modules/manager/sessions.yaml#/stream
+  /api/v1/workspaces/{workspace_id}/sessions/{session_id}/stop:
+    $ref: ./modules/manager/sessions.yaml#/stop
+  /api/v1/workspaces/{workspace_id}/sessions/{session_id}/archive:
+    $ref: ./modules/manager/sessions.yaml#/archive
+  /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/files:
+    $ref: ./modules/manager/files.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/files/content:
+    $ref: ./modules/manager/files.yaml#/content
+  /api/v1/workspaces/{workspace_id}/conversations/web-direct:
+    $ref: ./modules/manager/conversations.yaml#/webDirect
+  /api/v1/workspaces/{workspace_id}/conversations:
+    $ref: ./modules/manager/conversations.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}:
+    $ref: ./modules/manager/conversations.yaml#/item
+  /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/archive:
+    $ref: ./modules/manager/conversations.yaml#/archive
+  /api/v1/auth/email-codes:
+    $ref: ./modules/platform/auth-email-codes.yaml
+  /api/v1/auth/sessions:
+    $ref: ./modules/platform/auth-sessions.yaml
+  /api/v1/auth/registrations:
+    $ref: ./modules/platform/auth-registrations.yaml
+  /api/v1/auth/password-reset:
+    $ref: ./modules/platform/auth-password-reset.yaml
+  /api/v1/auth/session:
+    $ref: ./modules/platform/auth-session.yaml
+  /api/v1/me:
+    $ref: ./modules/platform/me.yaml
+  /api/v1/workspaces:
+    $ref: ./modules/platform/workspaces.yaml
+  /api/v1/workspaces/{workspace_id}:
+    $ref: ./modules/platform/workspaces-workspace_id.yaml
+  /api/v1/workspaces/{workspace_id}/members:
+    $ref: ./modules/platform/workspaces-workspace_id-members.yaml
+  /api/v1/workspaces/{workspace_id}/members/{user_id}:
+    $ref: ./modules/platform/workspaces-workspace_id-members-user_id.yaml
+  /api/v1/workspaces/{workspace_id}/invitations:
+    $ref: ./modules/platform/workspaces-workspace_id-invitations.yaml
+  /api/v1/workspaces/{workspace_id}/invitations/{invitation_id}/revoke:
+    $ref: ./modules/platform/workspaces-workspace_id-invitations-invitation_id-revoke.yaml
+  /api/v1/workspaces/{workspace_id}/invitations/{invitation_id}/retry-delivery:
+    $ref: ./modules/platform/invitation-retry-delivery.yaml
+  /api/v1/invitations/{token}:
+    $ref: ./modules/platform/invitations-token.yaml
+  /api/v1/invitations/{token}/accept:
+    $ref: ./modules/platform/invitations-token-accept.yaml
+  /api/v1/auth/options:
+    $ref: ./modules/platform/auth-options.yaml
+  /api/v1/platform/mail-settings:
+    $ref: ./modules/platform/mail-settings.yaml#/settings
+  /api/v1/platform/mail-settings/test:
+    $ref: ./modules/platform/mail-settings.yaml#/test
+  /api/v1/platform/oauth-apps/github:
+    $ref: ./modules/platform/github-oauth-app.yaml#/settings
+  /api/v1/workspaces/{workspace_id}/model-profiles:
+    $ref: ./modules/platform/model-profiles.yaml
+  /api/v1/workspaces/{workspace_id}/model-profiles/test:
+    $ref: ./modules/platform/model-test.yaml
+  /api/v1/workspaces/{workspace_id}/model-profiles/{model_profile_id}:
+    $ref: ./modules/platform/model-profile.yaml
+  /api/v1/workspaces/{workspace_id}/model-profiles/{model_profile_id}/set-default:
+    $ref: ./modules/platform/model-set-default.yaml
+  /api/v1/workspaces/{workspace_id}/model-profiles/{model_profile_id}/revoke-key:
+    $ref: ./modules/platform/model-revoke-key.yaml
+  /api/v1/workspaces/{workspace_id}/agents:
+    $ref: ./modules/platform/agents.yaml
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}:
+    $ref: ./modules/platform/agent.yaml
+  /api/v1/workspaces/{workspace_id}/plugins:
+    $ref: ./modules/platform/plugins.yaml
+  /api/v1/workspaces/{workspace_id}/plugins/{plugin_id}:
+    $ref: ./modules/platform/plugin.yaml
+  /api/v1/workspaces/{workspace_id}/plugins/{plugin_id}/versions:
+    $ref: ./modules/platform/plugin-versions.yaml
+  /api/v1/workspaces/{workspace_id}/plugin-accounts:
+    $ref: './modules/platform/plugin-connections.yaml#/list'
+  /api/v1/workspaces/{workspace_id}/plugin-accounts/{plugin_id}:
+    $ref: './modules/platform/plugin-connections.yaml#/shared'
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/plugins/{plugin_id}/connection-source:
+    $ref: './modules/platform/plugin-connections.yaml#/source'
+  /api/v1/workspaces/{workspace_id}/plugin-accounts/{plugin_id}/oauth/authorize:
+    $ref: './modules/platform/plugin-connections.yaml#/sharedOAuth'
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/plugin-accounts/{plugin_id}/oauth/authorize:
+    $ref: './modules/platform/plugin-connections.yaml#/agentOAuth'
+  /api/v1/auth/callbacks/plugin-oauth:
+    $ref: './modules/platform/plugin-connections.yaml#/callback'
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/plugin-accounts/{plugin_id}:
+    $ref: ./modules/platform/plugin-account.yaml
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/capability-packages:
+    $ref: ./modules/platform/capability-packages.yaml
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/capability-packages/{package_id}:
+    $ref: ./modules/platform/capability-packages-item.yaml
+  /api/v1/workspaces/{workspace_id}/capability-package-templates:
+    $ref: ./modules/platform/capability-templates.yaml
+  /api/v1/workspaces/{workspace_id}/capability-package-templates/{package_id}:
+    $ref: ./modules/platform/capability-templates-item.yaml
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/capability-upgrades:
+    $ref: ./modules/platform/capability-upgrades.yaml
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/capability-package-copies:
+    $ref: ./modules/platform/capability-copies.yaml
+  /api/v1/workspaces/{workspace_id}/skills:
+    $ref: ./modules/platform/skills.yaml
+  /api/v1/workspaces/{workspace_id}/skills/{skill_id}:
+    $ref: ./modules/platform/skill.yaml
+  /api/v1/workspaces/{workspace_id}/skill-imports:
+    $ref: ./modules/platform/skill-imports.yaml
+  /api/v1/workspaces/{workspace_id}/skill-imports/{import_id}:
+    $ref: ./modules/platform/skill-import.yaml
+  /api/v1/workspaces/{workspace_id}/skills/{skill_id}/versions:
+    $ref: ./modules/platform/skill-versions.yaml
+  /api/v1/workspaces/{workspace_id}/skills/{skill_id}/versions/{skill_version_id}/files:
+    $ref: ./modules/platform/skill-files.yaml
+  /api/v1/official-skills:
+    $ref: './modules/platform/skill-catalog.yaml#/collection'
+  /api/v1/official-skills/{skill_id}:
+    $ref: './modules/platform/skill-catalog.yaml#/item'
+  /api/v1/official-skills/{skill_id}/versions:
+    $ref: './modules/platform/skill-catalog.yaml#/versions'
+  /api/v1/workspaces/{workspace_id}/skills/{skill_id}/agents:
+    $ref: './modules/platform/skill-catalog.yaml#/agents'
+  /api/v1/workspaces/{workspace_id}/skills/{skill_id}/assign:
+    $ref: './modules/platform/skill-catalog.yaml#/assign'
+  /api/v1/workspaces/{workspace_id}/skills/{skill_id}/copy:
+    $ref: './modules/platform/skill-catalog.yaml#/copy'
+  /api/v1/official-plugins:
+    $ref: './modules/platform/plugin-catalog.yaml#/collection'
+  /api/v1/official-plugins/{plugin_id}:
+    $ref: './modules/platform/plugin-catalog.yaml#/item'
+  /api/v1/official-plugins/{plugin_id}/versions:
+    $ref: './modules/platform/plugin-catalog.yaml#/versions'
+  /api/v1/workspaces/{workspace_id}/plugins/{plugin_id}/agents:
+    $ref: './modules/platform/plugin-catalog.yaml#/agents'
+  /api/v1/workspaces/{workspace_id}/plugins/{plugin_id}/assign:
+    $ref: './modules/platform/plugin-catalog.yaml#/assign'
+  /api/v1/workspaces/{workspace_id}/plugins/{plugin_id}/copy:
+    $ref: './modules/platform/plugin-catalog.yaml#/copy'
+components:
+  securitySchemes:
+    githubWebhookSignature:
+      type: apiKey
+      in: header
+      name: X-Hub-Signature-256
+    gitlabWebhookSignature:
+      type: apiKey
+      in: header
+      name: webhook-signature
+    gitlabWebhookToken:
+      type: apiKey
+      in: header
+      name: X-Gitlab-Token
+    customWebhookToken:
+      type: http
+      scheme: bearer
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: kiko_session
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            request_id:
+              type: string
+          required:
+          - code
+          - message
+          - request_id
+      required:
+      - error
+    User:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        is_platform_admin:
+          type: boolean
+        platform_admin_version:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        email_verified:
+          type: boolean
+      required:
+      - id
+      - email
+      - name
+      - email_verified
+    Workspace:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 2000
+        role:
+          type: string
+          enum:
+          - owner
+          - admin
+          - member
+        version:
+          type: integer
+          minimum: 1
+      required:
+      - id
+      - name
+      - description
+      - role
+      - version
+    Member:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        role:
+          type: string
+          enum:
+          - owner
+          - admin
+          - member
+        status:
+          type: string
+          enum:
+          - active
+          - disabled
+        joined_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+      required:
+      - id
+      - name
+      - email
+      - role
+      - status
+      - version
+      - joined_at
+    Invitation:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [email, link]
+        email:
+          description: Present only for email-targeted invitations.
+          type: string
+          maxLength: 254
+        role:
+          type: string
+          enum:
+          - admin
+          - member
+        status:
+          type: string
+          enum:
+          - pending
+          - expired
+          - revoked
+          - accepted
+        shared:
+          type: boolean
+          description: Recipients share one verified-email link. Retry targets this row, and revocation closes all pending rows for the link.
+        delivery_status:
+          type: string
+          enum: [not_applicable, pending, sending, sent, failed, unknown, cancelled]
+          description: Sent means accepted by SMTP, not delivery to inbox.
+        expires_at:
+          type: string
+          format: date-time
+        contact_email:
+          type: string
+          format: email
+          maxLength: 254
+        link:
+          type: string
+          format: uri
+      required:
+      - id
+      - kind
+      - role
+      - status
+      - delivery_status
+      - expires_at
+      - contact_email
+    InvitationInspection:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum:
+          - valid
+          - expired
+          - revoked
+          - accepted
+          - unknown
+        kind:
+          type: string
+          enum: [email, link]
+        workspace_name:
+          type: string
+        contact_email:
+          type: string
+          format: email
+          maxLength: 254
+        email_masked:
+          type: string
+        role:
+          type: string
+          enum:
+          - owner
+          - admin
+          - member
+      required:
+      - status
+    CodeReceipt:
+      type: object
+      additionalProperties: false
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        resend_after:
+          type: integer
+          minimum: 0
+      required:
+      - challenge_id
+      - expires_at
+      - resend_after
+    AuthResult:
+      type: object
+      additionalProperties: false
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+      required:
+      - user
+    Me:
+      type: object
+      additionalProperties: false
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+      required:
+      - user
+      - workspaces
+    WorkspacePage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+      required:
+      - items
+      - total
+      - page
+      - page_size
+    MemberPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+      required:
+      - items
+      - total
+      - page
+      - page_size
+    InvitationPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+      required:
+      - items
+      - total
+      - page
+      - page_size
+security:
+- sessionCookie: []

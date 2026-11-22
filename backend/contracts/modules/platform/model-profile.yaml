@@ -1,0 +1,101 @@
+get:
+  operationId: getModelProfile
+  description: Active workspace membership required. Never returns credentials.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: model_profile_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  responses:
+    '200':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: ./model-schemas.yaml#/ModelProfile
+    default:
+      description: 400 invalid request; 401 no session; 403 not active admin or CSRF;
+        404 missing resource; 409 stale configuration, failed/expired/mismatched receipt;
+        503 dependency unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+patch:
+  operationId: updateModelProfile
+  description: Owner/admin, current version required. Either replace full configuration
+    with a passed receipt, or update enabled only; mixing is rejected. Omitted api_key
+    preserves the current credential. Every save creates an immutable configuration
+    version. Revoked keys cannot be enabled without retest.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: model_profile_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema:
+      type: string
+      const: '1'
+  responses:
+    '200':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: ./model-schemas.yaml#/ModelProfile
+    default:
+      description: 400 invalid request; 401 no session; 403 not active admin or CSRF;
+        404 missing resource; 409 stale configuration, failed/expired/mismatched receipt;
+        503 dependency unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          oneOf:
+          - $ref: ./model-schemas.yaml#/ModelSaveRequest
+          - type: object
+            additionalProperties: false
+            properties:
+              version:
+                type: integer
+                minimum: 1
+              enabled:
+                type: boolean
+            required:
+            - version
+            - enabled

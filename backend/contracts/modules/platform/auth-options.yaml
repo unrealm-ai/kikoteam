@@ -1,0 +1,30 @@
+get:
+  operationId: getAuthOptions
+  summary: Get public authentication capabilities
+  description: No secrets or SMTP server details. Registration verification policy is server-enforced. Uses the current database policy, or the legacy startup policy only when no database settings have been saved.
+  security: []
+  responses:
+    '200':
+      description: Public authentication capabilities
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+            - password_registration_enabled
+            - email_code_enabled
+            - registration_verification_required
+            properties:
+              password_registration_enabled:
+                type: boolean
+              email_code_enabled:
+                type: boolean
+              registration_verification_required:
+                type: boolean
+    default:
+      description: Structured error
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error

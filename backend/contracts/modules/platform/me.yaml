@@ -1,0 +1,27 @@
+get:
+  operationId: getMe
+  summary: getMe
+  description: Returns authenticated user and up to 100 workspaces. Use the paginated
+    workspaces endpoint to retrieve further entries.
+  security:
+  - sessionCookie: []
+  responses:
+    '200':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+          description: Request trace identifier
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Me
+    default:
+      description: Structured error (400 invalid input, 401 no session, 403 forbidden/CSRF,
+        404 missing resource, 409 stale version/conflict, 410 invalid invite, 429
+        rate limit, 503 dependency unavailable).
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error

@@ -1,0 +1,236 @@
+{
+  "targets": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listTriggerNotificationTargets",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Current workspace owner/admin only. Existing verified employee group conversations; Web additionally requires current group membership. At most 100; no arbitrary external IDs, names or topic guesses. Save only conversation_id; identity snapshots are server-controlled.",
+      "parameters": [
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Bounded latest page, explicit truncation",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items",
+                  "truncated"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "conversation_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "provider": {
+                          "enum": [
+                            "web",
+                            "feishu",
+                            "dingtalk",
+                            "wecom"
+                          ]
+                        },
+                        "label": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      }
+    }
+  },
+  "notifications": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "trigger_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listTriggerNotifications",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Current workspace owner/admin only. Specific execution-ended reports or fixed reminders, not permanent Task business completion. Transport sent is distinct from context admitted. Unknown is not automatically resent. Excludes attempt tokens, raw provider receipts and internal execution records.",
+      "parameters": [
+        {
+          "name": "limit",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Bounded latest page, explicit truncation",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items",
+                  "truncated"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "task_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "source_input_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "source_turn_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "reminder_event_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "conversation_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "leased",
+                            "sending",
+                            "accepted",
+                            "sent",
+                            "failed",
+                            "unknown",
+                            "cancelled"
+                          ]
+                        },
+                        "context_status": {
+                          "enum": [
+                            "pending",
+                            "admitted",
+                            "unavailable",
+                            "suppressed"
+                          ]
+                        },
+                        "context_error": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "error_code": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      }
+    }
+  }
+}

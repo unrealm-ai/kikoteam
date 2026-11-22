@@ -1,0 +1,190 @@
+{
+  "refresh": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "refreshWecomRecentGroups",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Current employee binding only. Recent seven-day groups, not a full membership enumeration. No chat contents. Failed or incomplete pagination publishes no candidates. Internal jobs are leased and source-fenced.",
+      "responses": {
+        "200": {
+          "description": "Current refresh fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "job_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "leased",
+                      "completed",
+                      "failed"
+                    ]
+                  },
+                  "error_code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "job_id",
+                  "status"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid input"
+        },
+        "401": {
+          "description": "Invalid identity"
+        },
+        "403": {
+          "description": "Permission denied"
+        },
+        "404": {
+          "description": "Resource unavailable"
+        },
+        "409": {
+          "description": "Source or lease changed"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {},
+              "required": []
+            }
+          }
+        }
+      }
+    }
+  },
+  "status": {
+    "parameters": [
+      {
+        "name": "workspace_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "getWecomGroupRefresh",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Current employee binding only. Recent seven-day groups, not a full membership enumeration. No chat contents. Failed or incomplete pagination publishes no candidates. Internal jobs are leased and source-fenced.",
+      "responses": {
+        "200": {
+          "description": "Current refresh fact",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "job_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "leased",
+                      "completed",
+                      "failed"
+                    ]
+                  },
+                  "error_code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "job_id",
+                  "status"
+                ]
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Invalid input"
+        },
+        "401": {
+          "description": "Invalid identity"
+        },
+        "403": {
+          "description": "Permission denied"
+        },
+        "404": {
+          "description": "Resource unavailable"
+        },
+        "409": {
+          "description": "Source or lease changed"
+        },
+        "503": {
+          "description": "Provider unavailable"
+        }
+      }
+    }
+  }
+}

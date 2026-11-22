@@ -1,0 +1,95 @@
+post:
+  operationId: registerAccount
+  summary: registerAccount
+  description: Registers by method password (requires deployment policy allowing it) or code
+    (default for existing clients). Password registration requires a password and creates email_verified=false,
+    without email-targeted invitation privileges (bearer link invitations are allowed). Code registration consumes a register challenge
+    atomically and creates email_verified=true. Never overwrites an existing email account.
+    Registration atomically creates an owned personal workspace and a session. Invitation
+    acceptance is a separate operation; failure does not undo registration.
+  security: []
+  responses:
+    '201':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+          description: Request trace identifier
+        Set-Cookie:
+          schema:
+            type: string
+          description: HttpOnly SameSite=Strict kiko_session; Secure on HTTPS. Never log.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/AuthResult
+    default:
+      description: Structured error (400 invalid input, 401 no session, 403 forbidden/CSRF/email_code_disabled (email disabled),
+        404 missing resource, 409 stale version/conflict, 410 invalid invite, 429 rate limit,
+        503 dependency unavailable).
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+  parameters:
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema:
+      type: string
+      const: '1'
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          additionalProperties: false
+          properties:
+            email:
+              type: string
+              format: email
+              maxLength: 254
+            name:
+              type: string
+              minLength: 1
+              maxLength: 100
+            password:
+              type: string
+              minLength: 10
+              maxLength: 72
+            code:
+              type: string
+              pattern: ^[0-9]{6}$
+            challenge_id:
+              type: string
+              format: uuid
+            method:
+              type: string
+              enum:
+              - password
+              - code
+              default: code
+          required:
+          - email
+          - name
+          oneOf:
+          - properties:
+              method:
+                const: password
+            required:
+            - method
+            - password
+            not:
+              anyOf:
+              - required:
+                - code
+              - required:
+                - challenge_id
+          - properties:
+              method:
+                const: code
+            required:
+            - code
+            - challenge_id

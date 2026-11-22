@@ -1,0 +1,90 @@
+[
+  {
+    "key": "status-report",
+    "name": "项目周报与风险汇总",
+    "file": "status-report.zip",
+    "source": "https://github.com/anthropics/knowledge-work-plugins/tree/b4c9a4e1de4b42868b74a6fe30ac766f64e43a3e/operations/skills/status-report",
+    "license": "Apache-2.0",
+    "sha256": "aef6bd363b1097321159f73c103761575c5ffd775c3c6edd102dd750d6d99678"
+  },
+  {
+    "key": "minimax-xlsx",
+    "name": "Excel 合并与公式校验",
+    "file": "minimax-xlsx.zip",
+    "source": "https://github.com/MiniMax-AI/skills/tree/02853d885acb1abc157477ce00c4d98a8ed14a71/skills/minimax-xlsx",
+    "license": "MIT",
+    "sha256": "e43a9a1d24c752e83c32ed79e70698dbd63a39f8199c8459fcc8da4a9b3f79f3"
+  },
+  {
+    "key": "reconciliation",
+    "name": "账表对账",
+    "file": "reconciliation.zip",
+    "source": "https://github.com/anthropics/knowledge-work-plugins/tree/b4c9a4e1de4b42868b74a6fe30ac766f64e43a3e/finance/skills/reconciliation",
+    "license": "Apache-2.0",
+    "sha256": "300a30bad08c11c73b6dea7c6579c27479b266b3550f9a1a29134946fc21cff8"
+  },
+  {
+    "key": "synthesize-research",
+    "name": "用户反馈归纳",
+    "file": "synthesize-research.zip",
+    "source": "https://github.com/anthropics/knowledge-work-plugins/tree/b4c9a4e1de4b42868b74a6fe30ac766f64e43a3e/product-management/skills/synthesize-research",
+    "license": "Apache-2.0",
+    "sha256": "5155c603d1c7d3f6b9c33176f305f280d306d0127034bb77933e064821d526fb"
+  },
+  {
+    "key": "kb-article",
+    "name": "客服 FAQ 整理",
+    "file": "kb-article.zip",
+    "source": "https://github.com/anthropics/knowledge-work-plugins/tree/b4c9a4e1de4b42868b74a6fe30ac766f64e43a3e/customer-support/skills/kb-article",
+    "license": "Apache-2.0",
+    "sha256": "95f27b160ff2f5f77973edb9e78aa8438cb60323ec77132bfd31d7898864b98b"
+  },
+  {
+    "key": "competitive-brief",
+    "name": "竞品与行业简报",
+    "file": "competitive-brief.zip",
+    "source": "https://github.com/anthropics/knowledge-work-plugins/tree/b4c9a4e1de4b42868b74a6fe30ac766f64e43a3e/product-management/skills/competitive-brief",
+    "license": "Apache-2.0",
+    "sha256": "0907bdb89fd78e141873d864f940e72df3adae351c2e1c963407f8157aa05bb1"
+  },
+  {
+    "key": "draft-content",
+    "name": "多渠道内容初稿",
+    "file": "draft-content.zip",
+    "source": "https://github.com/anthropics/knowledge-work-plugins/tree/b4c9a4e1de4b42868b74a6fe30ac766f64e43a3e/marketing/skills/draft-content",
+    "license": "Apache-2.0",
+    "sha256": "b4a7f44852b96e60c396f87c1ea816195cce8724eb50ee85b6c6dac735a7bc12"
+  },
+  {
+    "key": "pptx-generator",
+    "name": "汇报 PPT 制作",
+    "file": "pptx-generator.zip",
+    "source": "https://github.com/MiniMax-AI/skills/tree/02853d885acb1abc157477ce00c4d98a8ed14a71/skills/pptx-generator",
+    "license": "MIT",
+    "sha256": "d86ebecd8ea561dfa38ef0218b6576e87c6f454e808a2102040916afde6353b8"
+  },
+  {
+    "key": "code-review",
+    "name": "GitHub PR 评审",
+    "file": "code-review.zip",
+    "source": "https://github.com/anthropics/knowledge-work-plugins/tree/b4c9a4e1de4b42868b74a6fe30ac766f64e43a3e/engineering/skills/code-review",
+    "license": "Apache-2.0",
+    "sha256": "b9302969cc93b9df07c300b1980d7a34c3df98faebfc7fcc72159259d3364e88"
+  },
+  {
+    "key": "tavily-search",
+    "name": "Tavily 资讯检索与核实",
+    "file": "tavily-search.zip",
+    "source": "https://github.com/tavily-ai/skills/tree/90de383ad775f769692656ee8da4f935c2fb630b/skills/core/tavily-search",
+    "license": "MIT",
+    "sha256": "cefadfedad491cee57e7ac74cf323fa0dd9332b853ef895cb324d76f8a585166"
+  },
+  {
+    "key": "market-close",
+    "name": "A 股收盘简报",
+    "file": "market-close.md",
+    "source": "KikoTeam",
+    "license": "repository",
+    "sha256": "86e6b540053ba2bde561bc97dbecdca3c20784addefff2ff0b029dcb3c576f37"
+  }
+]

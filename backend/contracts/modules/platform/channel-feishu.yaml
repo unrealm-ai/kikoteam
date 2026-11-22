@@ -1,0 +1,153 @@
+{
+  "parameters": [
+    {
+      "name": "workspace_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    {
+      "name": "agent_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+        "type": "string",
+        "format": "uuid"
+      }
+    }
+  ],
+  "get": {
+    "parameters": [
+      {
+        "name": "include_rebind_impact",
+        "in": "query",
+        "description": "When true, return the impact on references to this binding's current identity. This is a read-only preview.",
+        "schema": {"type": "boolean", "default": false}
+      }
+    ],
+    "operationId": "getEmployeeFeishuChannel",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "responses": {
+      "200": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {"rebind_impact": {"$ref": "channel-rebind-impact-schema.yaml"}}
+            }
+          }
+        },
+        "description": "Saved binding and current connection observations. Optional permission_diagnostics and permission_groups report a background check fenced to the current credentials. Optional directory_status reports the automatic directory sync. Never includes app_secret."
+      },
+      "400": {
+        "description": "Invalid configuration or history currently unavailable"
+      },
+      "401": {
+        "description": "Unauthenticated"
+      },
+      "403": {
+        "description": "Only owner/admin may manage employee credentials"
+      },
+      "404": {
+        "description": "channel_not_configured or employee missing"
+      },
+      "409": {
+        "description": "Configuration version conflict or ambiguous enabled app binding"
+      },
+      "503": {
+        "description": "Dependency unavailable"
+      }
+    }
+  },
+  "put": {
+    "operationId": "putEmployeeFeishuChannel",
+    "security": [
+      {
+        "sessionCookie": []
+      }
+    ],
+    "parameters": [
+      {
+        "name": "X-CSRF-Protection",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "const": "1"
+        }
+      }
+    ],
+    "requestBody": {
+      "required": true,
+      "content": {
+        "application/json": {
+          "schema": {
+            "type": "object",
+            "required": [
+              "version",
+              "app_id",
+              "enabled"
+            ],
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "app_id": {
+                "type": "string"
+              },
+              "app_secret": {
+                "type": "string",
+                "writeOnly": true
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "test_receipt": {
+                "type": "string",
+                "writeOnly": true,
+                "description": "Required for Feishu/DingTalk whenever app_secret is supplied. Five-minute evidence binds actor, workspace, employee, provider, configuration revision and exact credentials. WeCom has no authenticated test receipt."
+              },
+              "confirmed_impact": {
+                "type": "boolean",
+                "default": false,
+                "description": "Must be true when replacing a saved app_id; does not bypass version checks."
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "responses": {
+      "200": {
+        "description": "Saved or current binding. Never includes app_secret. Saved does not imply applied or verified."
+      },
+      "400": {
+        "description": "Invalid configuration or history currently unavailable"
+      },
+      "401": {
+        "description": "Unauthenticated"
+      },
+      "403": {
+        "description": "Only owner/admin may manage employee credentials"
+      },
+      "404": {
+        "description": "channel_not_configured or employee missing"
+      },
+      "409": {
+        "description": "channel_version_conflict, channel_test_required, channel_rebind_confirmation_required, or binding conflict"
+      },
+      "503": {
+        "description": "Dependency unavailable"
+      }
+    }
+  }
+}

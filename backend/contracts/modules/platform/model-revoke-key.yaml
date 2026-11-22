@@ -1,0 +1,58 @@
+post:
+  operationId: revokeModelProfileKey
+  description: Owner/admin and current version required. Clears encrypted credential
+    and disables model/default; invalidates prior tests through new version. Requires
+    a fresh test before re-enable.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: model_profile_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema:
+      type: string
+      const: '1'
+  responses:
+    '200':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: ./model-schemas.yaml#/ModelProfile
+    default:
+      description: 400 invalid request; 401 no session; 403 not active admin or CSRF;
+        404 missing resource; 409 stale configuration, failed/expired/mismatched receipt;
+        503 dependency unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          additionalProperties: false
+          properties:
+            version:
+              type: integer
+              minimum: 1
+          required:
+          - version

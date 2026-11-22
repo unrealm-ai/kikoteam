@@ -1,0 +1,105 @@
+paths:
+  livez:
+    get:
+      operationId: getEventHubLiveness
+      description: Alive during election, standby, migration and shutdown cleanup. Anonymous and idempotent.
+      responses:
+        '200':
+          $ref: '#/responses/health'
+        '503':
+          $ref: '#/responses/unavailable'
+        '405':
+          $ref: '#/responses/methodNotAllowed'
+  readyz:
+    get:
+      operationId: getEventHubReadiness
+      description: >-
+        Ready in standby or running, not during migration/recovery/shutdown.
+        This does not mean the instance is leader or that business workers are configured.
+        Anonymous and idempotent; backend and Engine do not depend on this endpoint.
+      responses:
+        '200':
+          $ref: '#/responses/health'
+        '503':
+          $ref: '#/responses/unavailable'
+        '405':
+          $ref: '#/responses/methodNotAllowed'
+  status:
+    get:
+      operationId: getEventHubStatus
+      description: Current lifecycle snapshot, always 200 while the HTTP server is available. Anonymous and idempotent.
+      responses:
+        '200':
+          $ref: '#/responses/health'
+        '405':
+          $ref: '#/responses/methodNotAllowed'
+schemas:
+  health:
+    type: object
+    required: [phase, workers_configured]
+    additionalProperties: false
+    properties:
+      phase:
+        type: string
+        enum: [starting, connecting, reconnecting, standby, migrating, recovering, running, stopping, failed, stopped]
+      session_pid:
+        type: integer
+        minimum: 1
+        description: PostgreSQL backend PID; absent before election or after termination.
+      workers_configured:
+        type: boolean
+        description: False in the current infrastructure-only binary.
+    example: {phase: standby, workers_configured: false}
+  error:
+    type: object
+    required: [error]
+    additionalProperties: false
+    properties:
+      error:
+        type: object
+        required: [code, message, request_id, details]
+        additionalProperties: false
+        properties:
+          code:
+            type: string
+            enum: [not_ready, not_live, not_found, method_not_allowed]
+          message:
+            type: string
+          request_id:
+            type: string
+          details:
+            $ref: '#/schemas/health'
+headers:
+  requestID:
+    description: Generated correlation ID, also recorded as trace_id in the request log.
+    schema: {type: string}
+responses:
+  health:
+    description: Current lifecycle status.
+    headers:
+      X-Request-ID:
+        $ref: '#/headers/requestID'
+    content:
+      application/json:
+        schema:
+          $ref: '#/schemas/health'
+  unavailable:
+    description: Process is not ready/live; code identifies the probe condition.
+    headers:
+      X-Request-ID:
+        $ref: '#/headers/requestID'
+    content:
+      application/json:
+        schema:
+          $ref: '#/schemas/error'
+  methodNotAllowed:
+    description: Method is unsupported; use GET.
+    headers:
+      Allow:
+        schema: {type: string, const: GET}
+      X-Request-ID:
+        $ref: '#/headers/requestID'
+    content:
+      application/json:
+        schema:
+          $ref: '#/schemas/error'

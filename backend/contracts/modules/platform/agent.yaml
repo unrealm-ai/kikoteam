@@ -1,0 +1,85 @@
+get:
+  operationId: getAgent
+  description: Active workspace members read current configuration, including disabled
+    employee/model metadata.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: agent_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: ./agent-schemas.yaml#/Agent
+    default:
+      description: 400 invalid fields/id/version; 401 no session; 403 inactive member/not
+        admin/CSRF; 404 missing; 409 stale version or unavailable model; 503 database
+        unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+patch:
+  operationId: updateAgent
+  description: Owner/admin only. Required version checked atomically; stale returns
+    409. Omitted fields retained, null/unknown fields rejected. enabled must be sent
+    alone with version; no-op target status does not increment version. Configuration
+    updates increment version and config_version, keep immutable snapshots; enabling/disabling
+    increments version and admission_epoch only. Model reference changes and enabling
+    require available model. Unchanged disabled model permits edits and disabling.
+    web_access is an independent versioned update and cannot be mixed with configuration or enabled. Current employee access is checked at admission and runtime.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: agent_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema:
+      type: string
+      const: '1'
+  responses:
+    '200':
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: ./agent-schemas.yaml#/Agent
+    default:
+      description: 400 invalid fields/id/version; 401 no session; 403 inactive member/not
+        admin/CSRF; 404 missing; 409 stale version or unavailable model; 503 database
+        unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ./agent-schemas.yaml#/AgentPatch

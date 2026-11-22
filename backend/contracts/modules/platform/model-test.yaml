@@ -1,0 +1,48 @@
+post:
+  operationId: testModelProfile
+  description: Owner/admin only. At most one in-flight probe per actor/workspace (50s persisted lease, 409 model_probe_in_progress), and 10 attempts per minute (429). Text (20s) and image (40s) probes run concurrently.
+    Request budget45s. Test is external I/O outside database transaction. Text passed/failed;
+    image passed/unsupported/unknown. Outputs sanitized and capped. Failure is a test
+    result with empty receipt, not a fabricated success. Existing profile requires
+    its current version; revoked membership/config change during probe refuses receipt.
+    No automatic model-call retry.
+  security:
+  - sessionCookie: []
+  parameters:
+  - name: workspace_id
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+  - name: X-CSRF-Protection
+    in: header
+    required: true
+    schema:
+      type: string
+      const: '1'
+  responses:
+    '200':
+      description: Success
+      headers:
+        X-Request-ID:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: ./model-schemas.yaml#/ModelTestReceipt
+    default:
+      description: 400 invalid request; 401 no session; 403 not active admin or CSRF;
+        404 missing resource; 409 stale configuration, failed/expired/mismatched receipt;
+        503 dependency unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/Error
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ./model-schemas.yaml#/ModelTestRequest

@@ -1,6 +1,20 @@
 name: Backend
 
 on:
+  pull_request:
+    paths: &paths
+      - 'shared/trigger/**'
+      - 'backend/**'
+      - 'agent-engine/**'
+      - 'sandbox-runner/**'
+      - 'event-hub/database/postgres/migrations/**'
+      - 'tools/**'
+      - '.golangci.yml'
+      - 'Makefile'
+      - '.github/workflows/backend.yml'
+  push:
+    branches: [main]
+    paths: *paths
   workflow_dispatch:
 
 permissions:

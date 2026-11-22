@@ -134,8 +134,9 @@ docker pull ghcr.io/unrealm-ai/kikoteam/backend:latest
 <details>
 <summary>镜像触发规则与手动验收工作流说明</summary>
 
-- **构建跳过与排队**：仅更新仓库说明、文档目录或 Issue/PR 模板时跳过镜像发布（打包进产品的员工技能 Markdown 仍会触发构建）；连续推送时，正在运行的发布会完成，等待队列只保留最近入队的一次自动构建，跳过的提交沿用上一版镜像。
-- **本地检查与远端验收**：日常在本地运行 `make lint` 和受影响组件的测试；如需 GitHub 代跑，可在 **Actions** 中手动点击 **Run workflow**，选择 **Published image acceptance** 对已发布镜像运行部署准入与 Engine 端到端测试（默认 `latest`，也可指定完整提交 SHA）。
+- 每个 PR 和每次推送到 `main` 都会运行静态检查，涉及相应路径时还会运行组件检查和本地 Compose 集成测试。各检查也可在 **Actions** 中手动运行。
+- 每次推送到 `main` 都会构建三个镜像，包括纯文档变更。工作流按本次提交的 SHA 验证部署准入，并用打包后的 Engine 运行端到端测试。验收通过后才更新 `latest` 和部署指针。
+- 在 **Actions → Published image acceptance → Run workflow** 可以单独复验已发布的镜像，默认使用 `latest`，也可指定完整提交 SHA。
 
 </details>
 

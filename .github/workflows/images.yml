@@ -3,23 +3,6 @@ name: Publish images
 on:
   push:
     branches: [main]
-    # Markdown embedded by the application (for example employee skills) is a build input.
-    paths-ignore:
-      - '*.md'
-      - 'docs/**'
-      - '_internal/**'
-      - '*/docs/**'
-      - '*/README.md'
-      - 'shared/trigger/README.md'
-      - 'sandbox-runner/builtin-mcp/README.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-
-# Finish publishing the running revision; keep one pending automatic build.
-# Re-running an older revision must not displace a pending main push.
-concurrency:
-  group: publish-images-${{ github.run_attempt == 1 && github.ref || github.run_id }}
-  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -67,9 +50,18 @@ jobs:
           provenance: mode=max
           sbom: true
 
+  acceptance:
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/image-acceptance.yml
+    with:
+      commit_sha: ${{ github.sha }}
+
   release:
     name: Publish latest image tags
-    needs: build
+    needs: acceptance
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -85,7 +77,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Promote the built main revision
+      - name: Promote the verified main revision
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

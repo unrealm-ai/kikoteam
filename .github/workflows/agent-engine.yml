@@ -1,6 +1,16 @@
 name: Agent Engine
 
 on:
+  pull_request:
+    paths: &paths
+      - 'agent-engine/**'
+      - 'sandbox-runner/**'
+      - '.github/workflows/agent-engine.yml'
+      - '.golangci.yml'
+      - 'tools/**'
+  push:
+    branches: [main]
+    paths: *paths
   workflow_dispatch:
 
 permissions:

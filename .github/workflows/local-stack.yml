@@ -1,5 +1,26 @@
 name: Local Compose Stack
 on:
+  pull_request:
+    paths: &paths
+      - 'start.sh'
+      - 'compose.yaml'
+      - '.env.example'
+      - '.dockerignore'
+      - 'deploy/local/**'
+      - 'tools/local.py'
+      - 'tools/local-launcher.sh'
+      - 'tools/docker-support.sh'
+      - 'tools/test_local_launcher.py'
+      - 'backend/**'
+      - 'event-hub/**'
+      - 'agent-engine/**'
+      - 'sandbox-runner/**'
+      - 'shared/**'
+      - 'web/**'
+      - '.github/workflows/local-stack.yml'
+  push:
+    branches: [main]
+    paths: *paths
   workflow_dispatch:
 permissions:
   contents: read

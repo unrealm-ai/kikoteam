@@ -1,6 +1,14 @@
 name: Builtin MCP
 
 on:
+  pull_request:
+    paths: &paths
+      - 'sandbox-runner/builtin-mcp/**'
+      - '.github/workflows/builtin-mcp.yml'
+      - 'Makefile'
+  push:
+    branches: [main]
+    paths: *paths
   workflow_dispatch:
 
 permissions:

@@ -1,6 +1,17 @@
 name: Event Hub
 
 on:
+  pull_request:
+    paths: &paths
+      - 'shared/trigger/**'
+      - 'event-hub/**'
+      - '.github/workflows/event-hub.yml'
+      - '.golangci.yml'
+      - 'tools/**'
+      - 'Makefile'
+  push:
+    branches: [main]
+    paths: *paths
   workflow_dispatch:
     inputs:
       base_sha:
@@ -55,11 +66,13 @@ jobs:
           .venv/bin/pip install -r requirements-dev.txt
       - name: Check immutable migration history
         env:
-          BASE_SHA: ${{ inputs.base_sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || inputs.base_sha }}
         run: |
-          if [[ -z "$BASE_SHA" ]]; then
+          if [[ "$BASE_SHA" == 0000000000000000000000000000000000000000 ]]; then
+            BASE_SHA=$(git rev-list --first-parent --max-parents=0 HEAD)
+          elif [[ -z "$BASE_SHA" ]]; then
             BASE_SHA=$(git merge-base origin/main HEAD)
-            if [[ "$BASE_SHA" == "$GITHUB_SHA" ]]; then
+            if [[ "$BASE_SHA" == "$GITHUB_SHA" ]] && git rev-parse --verify --quiet HEAD^1 >/dev/null; then
               BASE_SHA=$(git rev-parse HEAD^1)
             fi
           fi

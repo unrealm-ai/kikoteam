@@ -1,6 +1,12 @@
 name: Published image acceptance
 
 on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: '本次构建的完整提交 SHA'
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       commit_sha:

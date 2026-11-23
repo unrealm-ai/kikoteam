@@ -159,7 +159,7 @@ docker_install_linux() {
     for kiko_docker_package in docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc; do
         if kiko_docker_status=$(run_step '检查冲突安装' 10 dpkg-query -W '-f=${Status}' "$kiko_docker_package" 2>/dev/null); then
             case $kiko_docker_status in
-                *'install ok installed'*) die "发现已有 $kiko_docker_package，不会自动卸载。请先按官方文档处理兼容性：$KIKO_DOCKER_ENGINE_DOC$KIKO_DOCKER_DISTRO/" ;;
+                *'install ok installed'*) die "发现已有 ${kiko_docker_package}，不会自动卸载。请先按官方文档处理兼容性：$KIKO_DOCKER_ENGINE_DOC$KIKO_DOCKER_DISTRO/" ;;
             esac
         else
             kiko_docker_query_status=$?

@@ -9,10 +9,10 @@
 | LOCAL-01 | 无参数等同 `up`，构建当前源码，不拉取。Git 工作区 `--update` 与 `restart` 先快进拉取再从更新后的入口启动；拉取失败不构建、不停止旧服务。源码归档 `restart` 直接构建，`--update` 报错。 |
 | LOCAL-02 | `init` 只初始化配置和内部令牌，不构建、启动或创建持久资产目录。首次 `up` 用模板产生 owner-only 配置，生成独立的数据库密码、认证密钥和两个不同内部令牌。已有凭据和指纹保持不变；启动器不搬迁既有配置或数据卷，应用 schema 迁移仍由 Event Hub 执行。 |
 | LOCAL-03 | 不执行 dotenv 代码；按字节校验密钥及兼容旧 SHA256 指纹，拒绝重复和歧义字段、不安全的配置文件、来源不明的已有卷及丢失配置的旧状态。仅允许与端口一致的 localhost/127.0.0.1 origin；单个 Docker 引擎默认用一套 Compose 项目及数据卷。 |
-| LOCAL-04 | `up` 先完整构建三个应用镜像，再停旧 Engine 和 Event Hub。等待 PostgreSQL、Backend、Hub 健康和迁移，先同步官方资源，再启动并等 Engine 就绪，成功后显示地址和构建版本。构建失败时旧服务不受影响。 |
+| LOCAL-04 | `up` 先完整构建三个应用镜像，再停旧 Engine 和 Event Hub。等待 PostgreSQL、Backend、Hub 健康和迁移，先同步官方资源，再启动并等 Engine 就绪，成功后显示地址和构建版本；有未提交改动时标注「含本地改动」，仍按正常顺序启动。构建失败时旧服务不受影响。 |
 | LOCAL-05 | `status` 查询 Compose 服务；`logs` 查每个服务最近 100 行；`down` 停止容器且不删数据、不修改凭据。三者不触发 Docker 安装或启动 Desktop。 |
 | LOCAL-06 | 启动器报告阶段、耗时和错误，命令有超时预算。可变更命令在同一 checkout 持有互斥锁，异常退出不抢占不明锁。可捕获的信号触发本机进程清理；不承诺撤销 Docker daemon 已接收的操作，或终止已提权/脱离进程树的工作。 |
-| LOCAL-07 | 缺 Docker 时按[原有安装流程](../../backend/docs/configuration.md#docker-安装辅助与可见进度)区分 macOS 与受支持的 apt 发行版。以官方来源和显式确认启动安装引导；不自动接受许可、授组、放宽 socket 或卸载冲突软件。Compose 缺失、连接失败和版本不兼容可区分诊断。 |
+| LOCAL-07 | 缺 Docker 时按[原有安装流程](../../backend/docs/configuration.md#docker-安装辅助与可见进度)区分 macOS 与受支持的 apt 发行版。以官方来源和显式确认启动安装引导；不自动接受许可、授组、放宽 socket 或卸载冲突软件。检测到冲突时，输出包含包名的提示并退出，不继续安装。Compose 缺失、连接失败和版本不兼容可区分诊断。 |
 
 ## 实现和兼容
 
@@ -24,9 +24,9 @@
 
 | 契约 | 可重复验证 |
 | --- | --- |
-| LOCAL-01、04、05 | [CLI 黑盒用例](../../tools/test_local_launcher.py)记录命令顺序，验证快进及中途失败；[独立 Compose 工作流](../../.github/workflows/local-stack.yml)构建、检查健康、重启。 |
+| LOCAL-01、04、05 | [CLI 黑盒用例](../../tools/test_local_launcher.py)记录命令顺序，验证快进、中途失败及 UTF-8 环境中的脏工作区版本提示；[独立 Compose 工作流](../../.github/workflows/local-stack.yml)构建、检查健康、重启。 |
 | LOCAL-02、03、06 | CLI 黑盒先移除启动路径中的 Python，再验证首次生成、旧版指纹、重复启动、缺失与非法状态、互斥、退出信号与超时。 |
-| LOCAL-07 | CLI 黑盒替换平台、安装器和网络命令，验证确认、拒绝、官方来源与不接管旧安装。它不替代真实系统安装。 |
+| LOCAL-07 | CLI 黑盒替换平台、安装器和网络命令，验证确认、拒绝、官方来源与不接管旧安装，严格检查 UTF-8 的冲突包提示。它不替代真实系统安装。 |
 
 启动器回归命令：`python3 -m unittest discover -s tools -p test_local_launcher.py -v`。Python 是测试驱动的依赖，启动器进程的 PATH 不含 Python。
 

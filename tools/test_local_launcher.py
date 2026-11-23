@@ -11,6 +11,8 @@ import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+# Older macOS versions do not reliably provide C.UTF-8.
+UTF8_LOCALE = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
 TOOLS = """sh awk basename cat chmod chown cmp cut date dd dirname env expr grep
 head id ln ls mkdir mkfifo mktemp mv od openssl ps pwd readlink realpath rm rmdir sed
 sha256sum shasum sleep sort stat tail tee timeout touch tr uname wc xargs""".split()
@@ -61,6 +63,7 @@ printf 'git %s\n' "$*" >> "$TRACE"
 case "$*" in
   'pull --ff-only --no-rebase') [ "${FAIL_PULL:-}" != yes ]; exit $? ;;
   *rev-parse*) printf '%s\n' abcdef0 ;;
+  'status --porcelain') [ "${DIRTY_GIT:-}" != yes ] || printf '%s\n' " M fixture" ;;
 esac
 exit 0
 """)
@@ -77,7 +80,7 @@ exit 0
     def launch(self, *args, success=True, **env):
         result = subprocess.run(
             ["./start.sh", *args], cwd=self.root, input="", capture_output=True,
-            text=True, timeout=35, env={
+            encoding="utf-8", errors="strict", timeout=35, env={
                 "PATH": str(self.bin), "HOME": str(self.root / "home"),
                 "TRACE": str(self.trace), "LC_ALL": "C", **env,
             },
@@ -115,6 +118,11 @@ exit 0
         self.assertIn(" ps", self.commands()[-1])
         self.launch("logs")
         self.assertIn(" logs", self.commands()[-1])
+
+    def test_dirty_checkout_keeps_revision_diagnostic_in_utf8_locale(self):
+        (self.root / ".git").mkdir()
+        result = self.launch("up", LC_ALL=UTF8_LOCALE, DIRTY_GIT="yes")
+        self.assertIn("Git abcdef0（含本地改动）", result.stdout)
 
     def test_repeated_secrets_are_identical_private_and_distinct(self):
         self.launch("up")
@@ -386,8 +394,8 @@ exit 0
         """Test public shell operations with read/install/network effects replaced."""
         proc = subprocess.run(
             ["/bin/sh", "-c", 'set -eu; . ./tools/docker-support.sh;\n' + body],
-            cwd=self.root, input="", text=True, capture_output=True, timeout=12,
-            env={"PATH": str(self.bin), "LC_ALL": "C.UTF-8", "TRACE": str(self.trace),
+            cwd=self.root, input="", encoding="utf-8", errors="strict", capture_output=True, timeout=12,
+            env={"PATH": str(self.bin), "LC_ALL": UTF8_LOCALE, "TRACE": str(self.trace),
                  "HOME": str(self.root / "home"), "TMPDIR": str(self.root)},
         )
         self.assertEqual(proc.returncode, status, proc.stdout + proc.stderr)
@@ -402,7 +410,7 @@ exit 0
         distro = "docker_linux_release(){ printf 'ID=ubuntu\\nVERSION_CODENAME=noble\\n'; }; "
         conflict = self.installer(distro + """run_step(){ printf 'install ok installed'; };
           docker_confirm(){ exit 77; }; docker_install_linux""", status=1)
-        self.assertIn("不会自动卸载", conflict.stderr)
+        self.assertIn("发现已有 docker.io，不会自动卸载。", conflict.stderr)
         sources = self.installer(distro + """run_step(){ return 1; };
           docker_apt_paths_clear(){ return 1; };
           docker_confirm(){ exit 77; }; docker_install_linux""", status=1)

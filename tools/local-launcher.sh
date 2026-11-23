@@ -352,7 +352,7 @@ start_services() {
         revision=$(cat "$scratch/revision")
         run_step '检查工作区版本' 10 git status --porcelain > "$scratch/git-status" ||
             die '无法检查 Git 工作区，当前服务未被停止。'
-        if [ -s "$scratch/git-status" ]; then revision="$revision（含本地改动）"; fi
+        if [ -s "$scratch/git-status" ]; then revision="${revision}（含本地改动）"; fi
     fi
     compose_step '构建 Web、Backend、Event Hub 和 Engine' 1800 build backend event-hub agent-engine
     compose_step '等待旧 Engine 停稳' 110 stop --timeout 90 agent-engine

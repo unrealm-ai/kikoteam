@@ -65,8 +65,17 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 			}
 		}
 		if name == "send_message" {
-			if len(tool.Schema.Properties) != 3 || len(tool.Schema.Required) != 1 || tool.Schema.Required[0] != "session_id" {
+			wantFields := []string{"session_id", "text", "attachment_paths", "attachment_ids"}
+			if len(tool.Schema.Properties) != len(wantFields) {
 				t.Errorf("unexpected append tool fields: %v", tool.Schema.Properties)
+			}
+			for _, field := range wantFields {
+				if _, ok := tool.Schema.Properties[field]; !ok {
+					t.Errorf("append tool missing property %s", field)
+				}
+			}
+			if len(tool.Schema.Required) != 1 || tool.Schema.Required[0] != "session_id" {
+				t.Errorf("unexpected append tool required fields: %v", tool.Schema.Required)
 			}
 		}
 		if name == "create_todo" {

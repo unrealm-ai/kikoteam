@@ -17,38 +17,32 @@ func validInboundMedia(refs []service.MediaReference) bool {
 		return false
 	}
 	for _, m := range refs {
-		if m.Kind != "image" && m.Kind != "file" || m.Name == "" || len(m.Name) > 240 || strings.ContainsAny(m.Name, "/\\\r\n\x00") || m.Name == "." || m.Name == ".." || m.Locator == "" || len(m.Locator) > 16384 {
+		if m.Kind != "image" && m.Kind != "file" || len(m.Name) > 240 || strings.ContainsAny(m.Name, "/\\\r\n\x00") || m.Name == "." || m.Name == ".." || m.Locator == "" || len(m.Locator) > 16384 {
 			return false
 		}
 	}
 	return true
 }
-func inboxMediaPaths(ctx context.Context, tx *sql.Tx, id string) ([]string, bool, bool, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT COALESCE(path,''),error_code IS NOT NULL FROM manager_channel_media WHERE inbox_id=$1 ORDER BY ordinal`, id)
+func inboxMediaReferences(ctx context.Context, tx *sql.Tx, id string) ([]service.Attachment, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT ordinal,name,CASE WHEN path IS NOT NULL THEN 'ready' WHEN error_code IS NOT NULL THEN 'failed' ELSE 'downloading' END FROM manager_channel_media WHERE inbox_id=$1 ORDER BY ordinal`, id)
 	if err != nil {
-		return nil, false, false, err
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }() //nolint:errcheck // Iteration errors are returned.
-	var paths []string
-	var waiting, unavailable bool
+	var out []service.Attachment
 	for rows.Next() {
-		var path string
-		var failed bool
-		if err := rows.Scan(&path, &failed); err != nil {
-			return nil, false, false, err
+		var n int
+		var a service.Attachment
+		if err = rows.Scan(&n, &a.Name, &a.Status); err != nil {
+			return nil, err
 		}
-		if failed {
-			unavailable = true
-		} else if path == "" {
-			waiting = true
-		} else {
-			paths = append(paths, path)
-		}
+		a.ID = fmt.Sprintf("%s:%d", id, n)
+		out = append(out, a)
 	}
-	return paths, waiting, unavailable, rows.Err()
+	return out, rows.Err()
 }
 
-const mediaAllowed = `n.status='pending' AND EXISTS(SELECT FROM manager_conversations c JOIN platform_agents a ON a.id=c.agent_id WHERE c.id=n.conversation_id AND c.lifecycle='active' AND a.enabled) AND n.principal_id IS NOT NULL AND b.enabled AND b.connection_generation=n.connection_generation AND b.identity_epoch=n.identity_epoch AND b.external_tenant_id=n.external_tenant_id AND manager_channel_actor_allowed(n.principal_id,n.conversation_id,n.connection_generation)`
+const mediaAllowed = `n.status IN ('pending','processing','accepted') AND EXISTS(SELECT FROM manager_conversations c JOIN platform_agents a ON a.id=c.agent_id WHERE c.id=n.conversation_id AND c.lifecycle='active' AND a.enabled) AND n.principal_id IS NOT NULL AND b.enabled AND b.connection_generation=n.connection_generation AND b.identity_epoch=n.identity_epoch AND b.external_tenant_id=n.external_tenant_id AND manager_channel_actor_allowed(n.principal_id,n.conversation_id,n.connection_generation)`
 
 const mediaMaxAttempts = 3
 
@@ -119,7 +113,7 @@ func (s *Store) reconcileExpiredMedia(ctx context.Context, mgr *service.Service)
 	return err
 }
 
-func (s *Store) FinishMedia(ctx context.Context, mgr *service.Service, id string, index int, lease string, data []byte, failed bool) error {
+func (s *Store) FinishMedia(ctx context.Context, mgr *service.Service, id string, index int, lease string, data []byte, failed bool, providerNames ...string) error {
 	if !service.ValidID(id) || !service.ValidID(lease) || index < 0 || index >= 32 {
 		return service.Fail("invalid_argument", 400, "附件身份无效")
 	}
@@ -131,8 +125,24 @@ func (s *Store) FinishMedia(ctx context.Context, mgr *service.Service, id string
 	if failed {
 		return s.reconcileMedia(ctx, mgr, m, false)
 	}
+	if len(providerNames) == 1 && providerNames[0] != "" {
+		// Bind the independently downloaded filename to this attempt so a lost
+		// response can recover the same upload journal entry.
+		err = s.DB.QueryRowContext(ctx, `UPDATE manager_channel_media z SET name=$4
+ WHERE z.inbox_id=$1 AND z.ordinal=$2 AND z.lease_token=$3 AND z.lease_until>now()
+ AND z.path IS NULL AND z.error_code IS NULL AND EXISTS(SELECT 1 FROM manager_channel_inbox n
+ JOIN platform_channel_bindings b ON b.id=n.binding_id WHERE n.id=z.inbox_id AND b.provider='wecom' AND `+mediaAllowed+`)
+ RETURNING z.name`, id, index, lease, providerNames[0]).Scan(&m.name)
+		if err != nil {
+			return visibleError(err)
+		}
+	}
 	ctx = m.uploadContext(ctx)
-	file, err := mgr.UploadChannelMedia(ctx, m.c, m.principal, m.uploadKey(), m.name, bytes.NewReader(data), func() error {
+	storageName := m.name
+	if storageName == "" {
+		storageName = "attachment" // A storage basename is not a sender-provided filename.
+	}
+	file, err := mgr.UploadChannelMedia(ctx, m.c, m.principal, m.uploadKey(), storageName, bytes.NewReader(data), func() error {
 		var present int
 		err := s.DB.QueryRowContext(ctx, `SELECT 1 FROM manager_channel_media m JOIN manager_channel_inbox n ON n.id=m.inbox_id
  JOIN platform_channel_bindings b ON b.id=n.binding_id WHERE `+mediaAllowed+`

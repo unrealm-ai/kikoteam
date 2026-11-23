@@ -51,16 +51,8 @@ func (s *Server) uploadProjectFile(r *http.Request, actor string) (any, int, err
 	if err != nil {
 		return nil, 0, err
 	}
-	if err = r.ParseMultipartForm(1 << 20); err != nil {
-		var networkError net.Error
-		if errors.As(err, &networkError) && networkError.Timeout() {
-			return nil, 0, service.Fail("upload_timeout", http.StatusRequestTimeout, "上传超时，请重试")
-		}
-		var large *http.MaxBytesError
-		if errors.As(err, &large) {
-			return nil, 0, service.Fail("file_too_large", 413, "文件超过大小限制")
-		}
-		return nil, 0, service.Fail("invalid_argument", 400, "需要 multipart 文件上传")
+	if err := parseProjectMultipart(r); err != nil {
+		return nil, 0, err
 	}
 	defer func() {
 		if err := r.MultipartForm.RemoveAll(); err != nil && s.Logger != nil {
@@ -89,4 +81,19 @@ func (s *Server) uploadProjectFile(r *http.Request, actor string) (any, int, err
 		status = 200
 	}
 	return receipt{Value: v, Replay: replay}, status, err
+}
+
+func parseProjectMultipart(r *http.Request) error {
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		var networkError net.Error
+		if errors.As(err, &networkError) && networkError.Timeout() {
+			return service.Fail("upload_timeout", http.StatusRequestTimeout, "上传超时，请重试")
+		}
+		var large *http.MaxBytesError
+		if errors.As(err, &large) {
+			return service.Fail("file_too_large", 413, "文件超过大小限制")
+		}
+		return service.Fail("invalid_argument", 400, "需要 multipart 文件上传")
+	}
+	return nil
 }

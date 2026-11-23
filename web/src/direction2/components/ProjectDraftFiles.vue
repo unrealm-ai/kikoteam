@@ -26,14 +26,16 @@ const picker = ref<HTMLInputElement>();
         if (picker) picker.value = '';
       "
     />
-    <div v-for="f in draft.items.value" :key="f.key" class="chip" :title="f.path || f.name">
+    <div v-for="f in [...draft.items.value, ...draft.uploads.value]" :key="f.key" class="chip" :title="f.path || f.name">
       <span>{{ f.name }}</span>
+      <span v-if="f.status === 'reserving'" role="status">正在准备附件</span>
       <span v-if="f.status === 'uploading'" role="status">{{ f.percent }}%</span>
       <template v-if="f.status === 'failed'">
         <span role="alert">{{ f.error }}</span>
-        <button type="button" :disabled="disabled" @click="draft.retry(f)">重试</button>
+        <button v-if="!f.terminal" type="button" :disabled="disabled" @click="draft.retry(f)">重试</button>
       </template>
       <button
+        v-if="draft.items.value.some((item) => item.key === f.key)"
         type="button"
         :disabled="disabled"
         :aria-label="'移除 ' + f.name"

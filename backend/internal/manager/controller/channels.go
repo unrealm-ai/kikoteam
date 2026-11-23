@@ -110,7 +110,7 @@ func (s *ChannelServer) wrap(op func(*http.Request) (any, error)) http.HandlerFu
 		}
 		limit := int64(1 << 20)
 		if r.Pattern == "PUT /api/internal/v1/channel-media/{id}/{ordinal}" {
-			limit = service.ProjectUploadLimit + 1
+			limit = service.ChannelMediaUploadLimit + 1
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)

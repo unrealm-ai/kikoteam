@@ -14,7 +14,7 @@ import (
 func TestHumanConfirmationMCPScopes(t *testing.T) {
 	mux := http.NewServeMux()
 	secret := strings.Repeat("e", 40)
-	if err := registerManagerMCP(mux, nil, "", strings.Repeat("a", 32), secret, nil); err != nil {
+	if err := registerManagerMCP(mux, nil, nil, strings.Repeat("a", 32), secret, nil); err != nil {
 		t.Fatal(err)
 	}
 	input := manager.NewID()

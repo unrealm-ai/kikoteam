@@ -11,7 +11,7 @@ import (
 // browser or anonymous callers before consulting the database.
 func TestDelegationRouteRejectsNonRuntimeIdentity(t *testing.T) {
 	mux := http.NewServeMux()
-	if err := registerManagerMCP(mux, nil, "", strings.Repeat("a", 32), strings.Repeat("e", 32), nil); err != nil {
+	if err := registerManagerMCP(mux, nil, nil, strings.Repeat("a", 32), strings.Repeat("e", 32), nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {

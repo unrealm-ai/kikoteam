@@ -253,18 +253,7 @@ func (s *Supervisor) Run(ctx context.Context, _ *election.Session) error {
 	mediaDone := make(chan struct{})
 	go func() {
 		defer close(mediaDone)
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if e := s.Backend.processMedia(ctx, s.Current); e != nil && ctx.Err() == nil {
-					s.warn("channel.media_retry")
-				}
-			}
-		}
+		s.runInboundMedia(ctx)
 	}()
 	defer func() { cancel(); <-mediaDone }()
 	deliveryDone := make(chan struct{})

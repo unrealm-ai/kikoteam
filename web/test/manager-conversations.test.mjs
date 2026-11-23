@@ -226,7 +226,7 @@ test('sidebar retry keeps the key and destination after a lost upload response',
 });
 
 for(const existing of [false,true]){
- test(`project tree and dropped image keep their ordered references when the sidebar closes (existing=${existing})`,async()=>{
+ test(`project tree path and dropped image ID keep their references when the sidebar closes (existing=${existing})`,async()=>{
   const prev=globalThis.XMLHttpRequest;
   const uploads=[];
   class Upload {
@@ -234,7 +234,12 @@ for(const existing of [false,true]){
     send(){uploads.push(this.key);queueMicrotask(()=>{this.upload.onprogress({lengthComputable:true,loaded:10,total:10});if(existing&&uploads.length===1){this.onerror();this.onloadend();return;}this.status=201;this.response={path:'uploads/趋势图 (2).png',name:'趋势图 (2).png',size_bytes:10};this.onload();this.onloadend();});}
   }
   globalThis.XMLHttpRequest=Upload;
-  const m=await mount({chat:existing?'chat':null,override:url=>{
+  const m=await mount({chat:existing?'chat':null,override:(url,init)=>{
+    if (url.endsWith('/attachments')) {
+      assert.deepEqual(JSON.parse(init.body), {name:'趋势图.png', size:3});
+      assert.ok(init.headers.get('Idempotency-Key'));
+      return Response.json({id:'reserved-image'});
+    }
     if(!url.includes('/files?'))return null;
     const p=new URL(url,window.location.href).searchParams.get('path');
     return Response.json({path:p,entries:p?[{kind:'file',path:'outputs/地区汇总.csv',name:'地区汇总.csv',size_bytes:42}]:[{kind:'directory',name:'outputs',path:'outputs'}]});
@@ -250,7 +255,7 @@ for(const existing of [false,true]){
     function drag(type){const e=new window.Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'dataTransfer',{value:transfer});m.host.querySelector('.chat-column').dispatchEvent(e);}
     drag('dragenter');await pause();assert.ok(m.host.querySelector('.drop-hint'));drag('drop');await pause();
     assert.equal(m.host.querySelector('.drop-hint'),null);assert.equal(uploads.length,1);
-    if(existing){assert.equal(button('发送').disabled,true);button('重试').click();await pause();assert.deepEqual(uploads,[uploads[0],uploads[0]]);}
+    if(existing){assert.equal(button('发送').disabled,false);button('重试').click();await pause();assert.deepEqual(uploads,[uploads[0],uploads[0]]);}
     tree().querySelector('[aria-label="收起项目文件"]').click();await pause();
     assert.equal(tree().style.display,'none');assert.equal(textarea.value,'核对汇总表与趋势图');
     assert.deepEqual([...m.host.querySelectorAll('.chip')].map(e=>e.title),['outputs/地区汇总.csv','uploads/趋势图 (2).png']);
@@ -259,7 +264,85 @@ for(const existing of [false,true]){
     const sends=()=>m.calls.filter(c=>c.url.endsWith(endpoint)&&c.init.method==='POST');
     assert.equal(sends().length,0);button('发送').click();await pause();
     assert.equal(sends().length,1);const body=JSON.parse(sends()[0].init.body);const input=existing?body:body.input;
-    assert.deepEqual(input.attachment_paths,['outputs/地区汇总.csv','uploads/趋势图 (2).png']);assert.equal(input.text,'核对汇总表与趋势图');
+    assert.deepEqual(input.attachment_paths,['outputs/地区汇总.csv']);
+    assert.deepEqual(input.attachment_ids,['reserved-image']);
+    assert.equal(input.text,'核对汇总表与趋势图');
   }finally{await m.cleanup();globalThis.XMLHttpRequest=prev;}
  });
 }
+
+for (const existing of [false, true]) {
+  test(`file-only send does not wait for upload and retains progress after acceptance (existing=${existing})`, async () => {
+    const previous = globalThis.XMLHttpRequest;
+    let active;
+    class Upload {
+      upload = {};
+      open(method, url) { this.url = url; }
+      setRequestHeader() {}
+      send() { active = this; }
+    }
+    globalThis.XMLHttpRequest = Upload;
+    const m = await mount({chat: existing ? 'chat' : null, override: url =>
+      url.endsWith('/attachments') ? Response.json({id:'slow-file'}) : null
+    });
+    try {
+      const picker = m.host.querySelector('.chat-column input[type=file]');
+      Object.defineProperty(picker, 'files', {value:[new File(['content'],'slow.txt')]});
+      picker.dispatchEvent(new window.Event('change', {bubbles:true}));
+      await pause();
+      assert.match(active.url, /\/attachments\/slow-file\/upload$/);
+      active.upload.onprogress({lengthComputable:true, loaded:1, total:4});
+      await pause();
+      assert.match(m.host.querySelector('.chat-column .chip').textContent, /25%/);
+      assert.equal(button('发送').disabled, false);
+      button('发送').click();
+      await pause();
+      const endpoint = existing ? '/chat/inputs' : '/sessions';
+      const sends = m.calls.filter(c => c.url.endsWith(endpoint) && c.init.method === 'POST');
+      assert.equal(sends.length, 1);
+      const body = JSON.parse(sends[0].init.body);
+      const input = existing ? body : body.input;
+      assert.equal(input.text, '');
+      assert.equal(input.attachment_paths, undefined);
+      assert.deepEqual(input.attachment_ids, ['slow-file']);
+      assert.match(m.host.querySelector('.chat-column .chip').textContent, /25%/);
+      assert.equal(m.host.querySelector('.chat-column [aria-label="移除 slow.txt"]'), null);
+      FakeSource.all[0].emit({
+        ...event(11),type:'user.message',content:[],
+        attachments:[{id:'slow-file',name:'slow.txt',size_bytes:7,status:'downloading'}]
+      });
+      await pause();
+      assert.match(m.host.querySelector('.attachment-link').textContent, /准备中/);
+      active.status = 200;
+      active.response = {path:'uploads/slow.txt', name:'slow.txt', size_bytes:7};
+      active.onload();
+      active.onloadend();
+      await pause();
+      assert.equal(m.host.querySelector('.chat-column .chip'), null);
+      assert.match(m.host.querySelector('.attachment-link').textContent, /KB/);
+      assert.equal(m.host.querySelector('.attachment-link').title, 'uploads/slow.txt');
+    } finally {
+      await m.cleanup();
+      globalThis.XMLHttpRequest = previous;
+    }
+  });
+}
+
+test('historical attachment without a path can check current status using its ID', async () => {
+  const snapshot = {...event(11),type:'user.message',content:[],
+    attachments:[{id:'saved-file',name:'report.txt',size_bytes:20,status:'downloading'}]};
+  const m=await mount({override:url=>{
+    if (url.includes('/events?')) return Response.json({items:[snapshot],next_cursor:null,resume_cursor:'H'});
+    if (url.endsWith('/attachments/saved-file')) return Response.json({id:'saved-file',name:'report.txt',size_bytes:20,status:'failed'});
+    return null;
+  }});
+  try {
+    assert.match(m.host.querySelector('.attachment-link').textContent, /准备中/);
+    m.host.querySelector('button.attachment-link').click();
+    await pause();
+    assert.equal(m.calls.filter(c=>c.url.endsWith('/attachments/saved-file')).length,1);
+    assert.equal(m.host.querySelector('button.attachment-link'),null);
+    assert.match(m.host.querySelector('.attachment-link').textContent, /附件不可用/);
+    assert.ok(!m.calls.some(c=>c.url.includes('/files/content')));
+  } finally { await m.cleanup(); }
+});

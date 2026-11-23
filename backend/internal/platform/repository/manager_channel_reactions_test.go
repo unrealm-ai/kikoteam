@@ -20,7 +20,7 @@ func TestManagerChannelReceiptReactionAfterDurableInput(t *testing.T) {
 		{"FeishuStaleGrant", "feishu", "im:message.reactions:write_only", true, false, true, false},
 		{"FeishuNonTrigger", "feishu", "im:message.reactions:write_only", true, false, false, false},
 		{"FeishuDeniedSender", "feishu", "im:message.reactions:write_only", false, false, false, false},
-		{"FeishuWaitsForMedia", "feishu", "im:message.reactions:write_only", true, true, true, true},
+		{"FeishuAcknowledgesBeforeMediaReady", "feishu", "im:message.reactions:write_only", true, true, true, true},
 		{"DingTalk", "dingtalk", "", true, false, true, true},
 		{"WeComUnchanged", "wecom", "", true, false, false, false},
 	} {
@@ -75,15 +75,11 @@ func TestManagerChannelReceiptReactionAfterDurableInput(t *testing.T) {
 			noClaim() // Callback ACK only persists Inbox.
 			must(store.ProcessChannelInbox(ctx, m))
 			if tc.media {
-				noClaim() // Media waiting must not count as durable admission.
-				j, e := store.ClaimMedia(ctx, m)
-				must(e)
-				if j == nil {
-					t.Fatal("missing media job")
+				var pending bool
+				must(db.QueryRow(`SELECT path IS NULL AND attempts=0 FROM manager_channel_media WHERE inbox_id=$1`, receipt.ID).Scan(&pending))
+				if !pending {
+					t.Fatal("the test must leave the file pending when claiming receipt")
 				}
-				must(store.FinishMedia(ctx, m, j.InboxID, j.Ordinal, j.Lease, []byte("synthetic content"), false))
-				reviewExec(t, db, `UPDATE manager_channel_inbox SET lease_until=NULL WHERE id=$1`, receipt.ID)
-				must(store.ProcessChannelInbox(ctx, m))
 			}
 			if !tc.wantClaim {
 				noClaim()

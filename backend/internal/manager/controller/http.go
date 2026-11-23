@@ -57,6 +57,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+files, s.wrap("listConversationFiles", s.listProjectFiles))
 	mux.HandleFunc("POST "+files, s.wrap("uploadConversationFile", s.uploadProjectFile))
 	mux.HandleFunc("GET "+files+"/content", s.wrap("downloadConversationFile", s.downloadProjectFile))
+	s.webAttachmentRoutes(mux, base+"/{conversation_id}/attachments")
 	s.sessionRoutes(mux)
 	s.taskRoutes(mux)
 	s.internalRoutes(mux)
@@ -71,7 +72,8 @@ func (s *Server) wrap(route string, op operation) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		timeout, bodyLimit := 20*time.Second, int64(1<<20)
-		if route == "uploadConversationFile" {
+		upload := route == "uploadConversationFile" || route == "uploadReservedAttachment"
+		if upload {
 			timeout = 2 * time.Minute
 			bodyLimit = service.ProjectUploadLimit + (1 << 20)
 		}
@@ -83,7 +85,7 @@ func (s *Server) wrap(route string, op operation) http.HandlerFunc {
 		var err error
 		status := 200
 		actor, err := s.authorize(r)
-		if err == nil && route == "uploadConversationFile" {
+		if err == nil && upload {
 			// The HTTP server's normal socket deadlines are shorter than an upload.
 			rc := http.NewResponseController(w)
 			deadline := start.Add(timeout)

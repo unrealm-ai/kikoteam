@@ -9,6 +9,7 @@ import (
 	managercontroller "github.com/unrealm-ai/kikoteam/backend/internal/manager/controller"
 	grouphistory "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/grouphistory"
 	humanconfirmation "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/humanconfirmation"
+	"github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/inputattachments"
 	delegation "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/taskdelegation"
 	taskspacehistory "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/taskspacehistory"
 	workitems "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/workitems"
@@ -166,7 +167,8 @@ func Run(stderr io.Writer, version string) int {
 	controller.WecomGroupRefreshInternalRoutes(mux, wecomGroupStore, hubToken)
 	(mpcontroller.Proxy{Calls: proxyStore, Secrets: proxySecrets, Upstream: proxyUpstream, Log: log}).Routes(mux, hubToken)
 	managerStore := &managerrepo.Store{DB: db, WorkAssets: assets, ChannelLog: log, RuntimeRoot: assetConfig.LocalRoot, TriggerSecret: []byte(secret), ConsumeWecomControl: repository.ConsumeWecomControl([]byte(secret)), SnapshotCapabilities: repository.SnapshotCapabilities}
-	channelServer := &managercontroller.ChannelServer{Store: managerStore, Manager: &manager.Service{Store: managerStore, CursorSecret: []byte(secret)}, Token: hubToken, Logger: log}
+	managerService := &manager.Service{ProjectRoot: assetConfig.LocalRoot, Store: managerStore, CursorSecret: []byte(secret)}
+	channelServer := &managercontroller.ChannelServer{Store: managerStore, Manager: managerService, Token: hubToken, Logger: log}
 	channelServer.Routes(mux)
 	channelServer.TriggerNotificationRoutes(mux)
 	engineToken, err := loadRuntimeToken()
@@ -174,7 +176,7 @@ func Run(stderr io.Writer, version string) int {
 		log.Error("KIKO_ENGINE_TOKEN must have at least 32 bytes", "event", "startup.invalid_config")
 		return 1
 	}
-	(&managercontroller.Server{TrustedProxies: proxies, Runtime: &service.RuntimeService{Packages: packages, Skills: skills, Plugins: plugins}, Service: &manager.Service{ProjectRoot: assetConfig.LocalRoot, Store: managerStore, CursorSecret: []byte(secret)}, Engines: managerStore, EngineToken: engineToken, ResolveModelKey: func(ctx context.Context, w, actor string, c manager.Configuration) (string, error) {
+	(&managercontroller.Server{TrustedProxies: proxies, Runtime: &service.RuntimeService{Packages: packages, Skills: skills, Plugins: plugins}, Service: managerService, Engines: managerStore, EngineToken: engineToken, ResolveModelKey: func(ctx context.Context, w, actor string, c manager.Configuration) (string, error) {
 		return models.RuntimeModelKey(ctx, w, actor, c.ModelProfileID, c.Protocol, c.BaseURL, c.ModelID)
 	}, ResolveOfficialModel: func(ctx context.Context, w, actor, agent string, c *manager.Configuration) (string, error) {
 		if err := models.AuthorizeOfficialRuntime(ctx, w, actor, agent); err != nil {
@@ -190,7 +192,7 @@ func Run(stderr io.Writer, version string) int {
 		account, err := auth.Me(ctx, token)
 		return account.ID, err
 	}, Origin: origin, Logger: log}).Routes(mux)
-	err = registerManagerMCP(mux, managerStore, assetConfig.LocalRoot, secret, engineToken, log)
+	err = registerManagerMCP(mux, managerStore, managerService, secret, engineToken, log)
 	if err != nil {
 		log.Error("Manager MCP contract invalid", "event", "startup.invalid_contract")
 		return 1
@@ -307,12 +309,13 @@ func resolveModelProxyOrigin(publicOrigin, configured string) (string, error) {
 	return origin, nil
 }
 
-func registerManagerMCP(mux *http.ServeMux, store *managerrepo.Store, projectRoot, secret, engineToken string, log *slog.Logger) error {
-	handler, err := delegation.Handler(&manager.Delegation{Manager: &manager.Service{ProjectRoot: projectRoot, Store: store, CursorSecret: []byte(secret)}, Store: store, Secret: engineToken}, log)
+func registerManagerMCP(mux *http.ServeMux, store *managerrepo.Store, mgr *manager.Service, secret, engineToken string, log *slog.Logger) error {
+	handler, err := delegation.Handler(&manager.Delegation{Manager: mgr, Store: store, Secret: engineToken}, log)
 	if err != nil {
 		return err
 	}
 	mux.Handle("/mcp/task-delegation", handler)
+	inputattachments.Register(mux, store, mgr, engineToken)
 	history, err := grouphistory.Handler(&manager.GroupHistoryRuntime{Store: store, Secret: engineToken}, log)
 	if err != nil {
 		return err

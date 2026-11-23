@@ -92,6 +92,18 @@ export async function readFile(path: string, guard?: StateGuard): Promise<Buffer
   return withReadable(path, readContents, guard);
 }
 
+// PDF is binary even when a parser can extract text from it. Identify the
+// header on the pinned handle, not by a user-controlled filename or a new open.
+async function rejectPDFRead(handle: FileHandle): Promise<void> {
+  const header = Buffer.alloc(8);
+  const { bytesRead } = await handle.read(header, 0, header.length, 0);
+  if (bytesRead === header.length && /^%PDF-[0-9]\.[0-9]$/.test(header.toString('latin1'))) {
+    throw new Error(
+      'The read tool cannot extract text from a PDF. Use the managed Bash tool with pdftotext on the authorized project file.',
+    );
+  }
+}
+
 // Pi accepts interactive filename aliases. Bind its read operations to the inode
 // opened from the literal argument so an attachment can never select an alias.
 function projectReadTool(cwd: string, guard?: StateGuard): ReturnType<typeof createReadTool> {
@@ -103,14 +115,16 @@ function projectReadTool(cwd: string, guard?: StateGuard): ReturnType<typeof cre
         : resolve(cwd, args.path);
       return withReadable(
         path,
-        (handle) =>
-          createReadTool(cwd, {
+        async (handle) => {
+          await rejectPDFRead(handle);
+          return createReadTool(cwd, {
             operations: {
               access: () => regular(handle),
               readFile: () => readContents(handle),
               detectImageMimeType: () => imageMime(handle),
             },
-          }).execute(id, args, signal, onUpdate),
+          }).execute(id, args, signal, onUpdate);
+        },
         guard,
       );
     },

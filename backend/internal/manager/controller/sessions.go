@@ -52,6 +52,7 @@ func (s *Server) createSession(r *http.Request, a string) (any, int, error) {
 	if len(raw.Input) > 0 {
 		var input struct {
 			AttachmentPaths []string `json:"attachment_paths"`
+			AttachmentIDs   []string `json:"attachment_ids"`
 			Text            string   `json:"text"`
 			DeliveryMode    string   `json:"delivery_mode"`
 		}
@@ -59,11 +60,11 @@ func (s *Server) createSession(r *http.Request, a string) (any, int, error) {
 			return nil, 400, service.Fail("invalid_argument", 400, "input 不能为 null")
 		}
 		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(raw.Input, &fields); err != nil || (fields["text"] == nil && fields["attachment_paths"] == nil) {
+		if err := json.Unmarshal(raw.Input, &fields); err != nil || (fields["text"] == nil && fields["attachment_paths"] == nil && fields["attachment_ids"] == nil) {
 			return nil, 400, service.Fail("invalid_argument", 400, "输入参数无效")
 		}
 		for k := range fields {
-			if k != "text" && k != "delivery_mode" && k != "attachment_paths" {
+			if k != "text" && k != "delivery_mode" && k != "attachment_paths" && k != "attachment_ids" {
 				return nil, 400, service.Fail("invalid_argument", 400, "未知输入字段")
 			}
 		}
@@ -74,6 +75,7 @@ func (s *Server) createSession(r *http.Request, a string) (any, int, error) {
 			Text string `json:"text"`
 		}{Text: input.Text}
 		req.AttachmentPaths = input.AttachmentPaths
+		req.AttachmentIDs = input.AttachmentIDs
 		req.DeliveryMode = input.DeliveryMode
 	}
 	v, replay, err := s.Service.CreateSession(r.Context(), workspace(r), a, r.Header.Get("Idempotency-Key"), req)
@@ -118,6 +120,7 @@ func (s *Server) renameSession(r *http.Request, a string) (any, int, error) {
 func (s *Server) submitInput(r *http.Request, a string) (any, int, error) {
 	var req struct {
 		AttachmentPaths []string              `json:"attachment_paths"`
+		AttachmentIDs   []string              `json:"attachment_ids"`
 		Confirmation    *service.Confirmation `json:"confirmation"`
 		Text            *string               `json:"text"`
 		DeliveryMode    string                `json:"delivery_mode"`
@@ -130,14 +133,14 @@ func (s *Server) submitInput(r *http.Request, a string) (any, int, error) {
 	var err error
 	key := r.Header.Get("Idempotency-Key")
 	switch {
-	case req.Confirmation != nil && req.Text == nil && req.AttachmentPaths == nil && req.DeliveryMode == "":
+	case req.Confirmation != nil && req.Text == nil && req.AttachmentPaths == nil && req.AttachmentIDs == nil && req.DeliveryMode == "":
 		v, replay, err = s.Service.AnswerConfirmation(r.Context(), workspace(r), a, sessionID(r), key, *req.Confirmation)
-	case req.Confirmation == nil && (req.Text != nil || len(req.AttachmentPaths) > 0):
+	case req.Confirmation == nil && (req.Text != nil || len(req.AttachmentPaths) > 0 || len(req.AttachmentIDs) > 0):
 		var text string
 		if req.Text != nil {
 			text = *req.Text
 		}
-		v, replay, err = s.Service.SubmitInputMode(r.Context(), workspace(r), a, sessionID(r), key, text, req.DeliveryMode, req.AttachmentPaths...)
+		v, replay, err = s.Service.SubmitInputModeWithAttachments(r.Context(), workspace(r), a, sessionID(r), key, text, req.DeliveryMode, req.AttachmentIDs, req.AttachmentPaths...)
 	default:
 		return nil, 400, service.Fail("invalid_argument", 400, "请选择消息或确认答复")
 	}

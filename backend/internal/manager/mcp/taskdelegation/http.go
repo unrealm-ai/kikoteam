@@ -34,7 +34,7 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 			}
 			out, err := d.Call(ctx, scope, name, args)
 			if err == nil {
-				return nil, out, nil
+				return nil, chatResult(out), nil
 			}
 			code, message := "dependency_unavailable", "委派服务暂时不可用"
 			var e *manager.Error

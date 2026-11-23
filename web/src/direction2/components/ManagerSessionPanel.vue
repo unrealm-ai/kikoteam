@@ -3,12 +3,12 @@ import { computed, nextTick, onUnmounted, ref, toRef, watch } from 'vue';
 import { NButton, NInput, NSelect, NSkeleton } from 'naive-ui';
 import { managerApi, type ManagerSession, type SessionEvent } from '../api/manager';
 import { useSessionEvents } from '../composables/useSessionEvents';
-import {downloadProjectFile,type ProjectAttachment} from '../api/project-files';
+import {downloadProjectFile,getChatAttachment,type ProjectAttachment,type SessionAttachment} from '../api/project-files';
 import SessionMarkdown from './SessionMarkdown.vue';
 import SessionToolCall from './SessionToolCall.vue';
 import SessionTaskReport from './SessionTaskReport.vue';
 import { clockTime, eventText, presentationRows, sessionStatus as status, taskReport, taskSessionID } from '../utils/session-presentation';
-const props = defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentPending?:boolean; title: string; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean }>();
+const props = defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean }>();
 const emit = defineEmits<{ changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [id: string, turn?: string] }>();
 const flow = useSessionEvents(toRef(props, 'workspace'), toRef(props, 'sessionId'), () => emit('changed'), toRef(props, 'turnId'));
 const { rows, session, loading, loadingOlder, error, connection, olderCursor } = flow;
@@ -19,18 +19,39 @@ const deliveryMode = ref<'steer' | 'queue'>('steer');
 const deliveryOptions = [{ label: '引导当前执行', value: 'steer' }, { label: '排队到下一轮', value: 'queue' }];
 const scroll = ref<HTMLElement | null>(null);
 const downloadError = ref('');
+const refreshedAttachments = ref<Record<string, SessionAttachment>>({});
+const readingAttachments = ref(new Set<string>());
 let downloads = new AbortController();
-watch(() => [props.workspace, props.sessionId], () => { downloads.abort(); downloads = new AbortController(); downloadError.value = ''; });
+watch(() => [props.workspace, props.sessionId], () => {
+  downloads.abort(); downloads = new AbortController(); downloadError.value = '';
+  refreshedAttachments.value = {}; readingAttachments.value = new Set();
+});
 onUnmounted(() => downloads.abort());
-async function downloadAttachment(file: ProjectAttachment) {
+function liveAttachment(file: SessionAttachment): SessionAttachment {
+  if (!file.id || file.status === 'failed') return file;
+  const uploaded = props.uploadedAttachments?.[file.id];
+  return uploaded ? { ...uploaded, id:file.id, status:'ready' } : refreshedAttachments.value[file.id] ?? file;
+}
+async function downloadAttachment(file: SessionAttachment) {
   const conversation = session.value?.conversation_id, signal = downloads.signal;
-  if (!conversation) return;
+  if (!conversation || file.id && readingAttachments.value.has(file.id)) return;
   downloadError.value = '';
-  try { await downloadProjectFile(props.workspace, conversation, file.path, signal); }
+  try {
+    let current = liveAttachment(file);
+    if (!current.path && file.id && props.attachmentLookup && current.status !== 'failed') {
+      readingAttachments.value.add(file.id);
+      const state = await getChatAttachment(props.workspace, conversation, file.id, signal);
+      if (signal.aborted) return;
+      refreshedAttachments.value[file.id] = state;
+      current = state;
+    }
+    if (current.path && (!current.status || current.status === 'ready')) await downloadProjectFile(props.workspace, conversation, current.path, signal);
+  }
   catch (e) { if (!signal.aborted) downloadError.value = file.name + '：' + (e instanceof Error ? e.message : '文件不可用'); }
+  finally { if (!signal.aborted && file.id) readingAttachments.value.delete(file.id); }
 }
 watch(()=>rows.value.filter(e=>e.source_kind==='task_report').at(-1)?.seq,seq=>{if(seq)emit('report');});
-let pending: { paths:string[]; text: string; key: string; mode: 'steer' | 'queue' } | null = null;
+let pending: { paths:string[]; ids:string[]; text: string; key: string; mode: 'steer' | 'queue' } | null = null;
 watch(() => props.sessionId, () => { text.value = ''; pending = null; actionError.value = ''; notice.value = ''; });
 const messages = computed(() => {
   const pending = new Set(session.value?.execution.required_actions?.map(action => action.request_id));
@@ -40,11 +61,11 @@ function linkedTask(event: SessionEvent) { const id = taskReport(event)?.session
 function isUser(event: SessionEvent) { return event.source_kind !== 'task_report' && event.source_kind !== 'work_item_amendment' && (event.type === 'user.message' || event.type === 'input.updated'); }
 function onEnter(event: KeyboardEvent) { if (event.isComposing || event.keyCode === 229) return; event.preventDefault(); void send(); }
 async function send() {
-  if (props.readOnly || submitting.value || props.attachmentPending || (!text.value.trim() && !props.attachmentPaths?.length) || !session.value?.accepts_input) return;
+  if (props.readOnly || submitting.value || props.attachmentPending || (!text.value.trim() && !props.attachmentPaths?.length && !props.attachmentIds?.length) || !session.value?.accepts_input) return;
   const w = props.workspace, id = props.sessionId;
-  if (!pending || pending.text !== text.value || pending.mode !== deliveryMode.value || JSON.stringify(pending.paths)!==JSON.stringify(props.attachmentPaths||[])) pending = { paths:[...(props.attachmentPaths||[])],text: text.value, key: crypto.randomUUID(), mode: deliveryMode.value };
+  if (!pending || pending.text !== text.value || pending.mode !== deliveryMode.value || JSON.stringify(pending.paths)!==JSON.stringify(props.attachmentPaths||[]) || JSON.stringify(pending.ids)!==JSON.stringify(props.attachmentIds||[])) pending = { paths:[...(props.attachmentPaths||[])],ids:[...(props.attachmentIds||[])],text: text.value, key: crypto.randomUUID(), mode: deliveryMode.value };
   const request = pending; submitting.value = true; emit('sending',true); actionError.value = ''; notice.value = '';
-  try { await managerApi.input(w, id, request.text, request.key, undefined, request.mode,request.paths); if (id !== props.sessionId || w !== props.workspace) return; text.value = ''; pending = null; emit('sent');notice.value = '输入已受理'; await flow.refresh(); }
+  try { await managerApi.input(w, id, request.text, request.key, undefined, request.mode,request.paths,request.ids); if (id !== props.sessionId || w !== props.workspace) return; text.value = ''; pending = null; emit('sent');notice.value = '输入已受理'; await flow.refresh(); }
   catch (e) { if (id === props.sessionId && w === props.workspace) actionError.value = e instanceof Error ? e.message : '发送失败，可原样重试'; }
   finally { submitting.value = false;emit('sending',false); }
 }
@@ -92,7 +113,10 @@ watch(rows, async () => { const el = scroll.value; const bottom = !el || el.scro
         <template v-else>
           <div class="message-meta"><strong>{{ row.source_kind === 'work_item_amendment' ? '事项要求更新' : row.source_kind === 'work_item_notice' || row.source_kind === 'work_item_assignment' || row.source_kind === 'work_item_result' ? '事项交接' : isUser(row) ? '你' : row.type === 'session.error' ? '会话提示' : title }}</strong><time v-if="row.occurred_at" :datetime="row.occurred_at">{{ clockTime(row.occurred_at) }}</time><span v-if="row.type === 'agent.thinking'">思考过程</span></div>
           <p v-if="isUser(row)" class="body">{{ eventText(row) }}</p><details v-else-if="row.type === 'agent.thinking'" class="thinking"><summary>查看思考过程</summary><SessionMarkdown :text="eventText(row)" /></details><SessionMarkdown v-else :text="eventText(row)" />
-          <button v-for="file in row.attachments" :key="file.path" class="attachment-link" :title="file.path" @click="downloadAttachment(file)">▤ {{ file.name }} · {{ (file.size_bytes/1024).toFixed(1) }} KB ↓</button>
+          <template v-for="(file, index) in row.attachments" :key="file.id || file.path || index">
+            <button v-if="liveAttachment(file).status !== 'failed' && (liveAttachment(file).path || file.id && attachmentLookup)" class="attachment-link" :title="liveAttachment(file).path" :disabled="!!file.id && readingAttachments.has(file.id)" @click="downloadAttachment(file)">▤ {{ liveAttachment(file).name }} · {{ liveAttachment(file).path || liveAttachment(file).status === 'ready' ? (file.size_bytes/1024).toFixed(1) + ' KB ↓' : '准备中，点击查看状态' }}</button>
+            <span v-else class="attachment-link" role="status">▤ {{ liveAttachment(file).name }} · {{ liveAttachment(file).status === 'failed' ? '附件不可用' : liveAttachment(file).status === 'ready' ? '已就绪' : '正在准备附件' }}</span>
+          </template>
           <small v-if="isUser(row) || row.status && row.status !== 'completed'">{{ row.status === 'queued' && row.delivery_mode === 'steer' ? '待引导' : status(row.status) }}</small>
         </template>
       </article>
@@ -107,7 +131,7 @@ watch(rows, async () => { const el = scroll.value; const bottom = !el || el.scro
       <p v-if="session && !session.accepts_input" class="warning">{{ session.lifecycle === 'archived' ? '此会话已归档，历史仍可查看，不能继续发送。' : `暂不能输入：${session.input_block_reason || session.lifecycle}` }}</p>
       <slot name="attachments" />
       <NInput v-model:value="text" type="textarea" :rows="2" :disabled="readOnly || !session?.accepts_input || submitting" :placeholder="task ? '给此任务补充要求' : '发送消息，任务执行期间仍可继续对话'" @keydown.enter.exact="onEnter" />
-      <div class="actions"><span class="composer-hint">Enter 发送 · Shift + Enter 换行</span><NSelect v-model:value="deliveryMode" aria-label="输入处理方式" :options="deliveryOptions" style="width:160px" :disabled="readOnly || !session?.accepts_input || submitting" /><NButton :loading="controlBusy" :disabled="stopUnavailable" @click="stop">{{ task ? '停止此任务' : '停止主对话' }}</NButton><NButton type="primary" :loading="submitting" :disabled="attachmentPending || (!text.trim() && !attachmentPaths?.length) || readOnly || !session?.accepts_input || submitting" @click="send">{{ actionError && pending ? '重试发送' : '发送' }}</NButton></div>
+      <div class="actions"><span class="composer-hint">Enter 发送 · Shift + Enter 换行</span><NSelect v-model:value="deliveryMode" aria-label="输入处理方式" :options="deliveryOptions" style="width:160px" :disabled="readOnly || !session?.accepts_input || submitting" /><NButton :loading="controlBusy" :disabled="stopUnavailable" @click="stop">{{ task ? '停止此任务' : '停止主对话' }}</NButton><NButton type="primary" :loading="submitting" :disabled="attachmentPending || (!text.trim() && !attachmentPaths?.length && !attachmentIds?.length) || readOnly || !session?.accepts_input || submitting" @click="send">{{ actionError && pending ? '重试发送' : '发送' }}</NButton></div>
     </footer>
   </section>
 </template>

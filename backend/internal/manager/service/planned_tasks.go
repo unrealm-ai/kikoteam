@@ -19,6 +19,7 @@ type PlannedTask struct {
 	Summary          *DelegatedTaskSummary `json:"summary,omitempty"`
 }
 type PlannedTaskRequest struct {
+	AttachmentIDs      []string                                                   `json:"attachment_ids,omitempty"`
 	AttachmentPaths    []string                                                   `json:"attachment_paths,omitempty"`
 	ResolveAttachments func(Conversation, string, []string) ([]Attachment, error) `json:"-"`
 	Action             string
@@ -38,14 +39,17 @@ func (d *Delegation) planned(ctx context.Context, scope DelegationScope, name st
 	if name == "create_todo" && (args.SessionID != "" || args.ExpectedVersion != 0) {
 		return nil, Fail("invalid_argument", 400, "新待办不能指定已有会话或版本")
 	}
-	if !validKey(args.RequestKey) || name != "create_todo" && (!ValidID(args.SessionID) || args.ExpectedVersion < 1) || (name == "create_todo" || name == "supplement_todo") && !validText(args.Instruction) || !validTitle(args.Title) {
+	if !validKey(args.RequestKey) || name != "create_todo" && (!ValidID(args.SessionID) || args.ExpectedVersion < 1) || (name == "create_todo" || name == "supplement_todo") && !validText(args.Instruction) || !validAttachmentSelection(args.AttachmentPaths, args.AttachmentIDs, true) || !validTitle(args.Title) {
 		return nil, Fail("invalid_argument", 400, "待办参数无效")
 	}
 	st, ok := d.Store.(PlannedTaskStore)
 	if !ok {
 		return nil, Fail("dependency_unavailable", 503, "待办不可用")
 	}
-	q := PlannedTaskRequest{AttachmentPaths: args.AttachmentPaths, ResolveAttachments: func(c Conversation, actor string, paths []string) ([]Attachment, error) {
+	if len(args.AttachmentIDs) > 0 && name != "create_todo" && name != "supplement_todo" {
+		return nil, Fail("invalid_argument", 400, "仅新建和补充待办可添加附件")
+	}
+	q := PlannedTaskRequest{AttachmentIDs: args.AttachmentIDs, AttachmentPaths: args.AttachmentPaths, ResolveAttachments: func(c Conversation, actor string, paths []string) ([]Attachment, error) {
 		return d.Manager.resolveInputAttachments(ctx, c, actor, paths)
 	}, Action: name, RequestKey: args.RequestKey, SessionID: args.SessionID, ExpectedVersion: args.ExpectedVersion, Instruction: args.Instruction, Title: args.Title}
 	hash, err := fingerprint(q)

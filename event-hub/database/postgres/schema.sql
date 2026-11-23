@@ -2417,6 +2417,33 @@ CREATE TABLE public.manager_turns (
 
 
 --
+-- Name: manager_web_attachments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manager_web_attachments (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    actor_id uuid NOT NULL,
+    request_key text NOT NULL,
+    name text NOT NULL,
+    size bigint NOT NULL,
+    status text DEFAULT 'downloading'::text NOT NULL,
+    path text DEFAULT ''::text NOT NULL,
+    upload_token uuid,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT manager_web_attachments_check CHECK (((status = 'ready'::text) = (path <> ''::text))),
+    CONSTRAINT manager_web_attachments_check1 CHECK (((status = 'downloading'::text) OR (upload_token IS NULL))),
+    CONSTRAINT manager_web_attachments_name_check CHECK (((length(name) >= 1) AND (length(name) <= 255))),
+    CONSTRAINT manager_web_attachments_request_key_check CHECK (((length(request_key) >= 1) AND (length(request_key) <= 128))),
+    CONSTRAINT manager_web_attachments_size_check CHECK (((size >= 0) AND (size <= 33554432))),
+    CONSTRAINT manager_web_attachments_status_check CHECK ((status = ANY (ARRAY['downloading'::text, 'ready'::text, 'failed'::text])))
+);
+
+
+--
 -- Name: manager_web_group_inbox; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4756,6 +4783,22 @@ ALTER TABLE ONLY public.manager_turns
 
 
 --
+-- Name: manager_web_attachments manager_web_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_web_attachments
+    ADD CONSTRAINT manager_web_attachments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: manager_web_attachments manager_web_attachments_workspace_id_conversation_id_actor__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_web_attachments
+    ADD CONSTRAINT manager_web_attachments_workspace_id_conversation_id_actor__key UNIQUE (workspace_id, conversation_id, actor_id, request_key);
+
+
+--
 -- Name: manager_web_group_inbox manager_web_group_inbox_input_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6007,6 +6050,13 @@ CREATE INDEX manager_trigger_notifications_pending ON public.manager_trigger_not
 --
 
 CREATE INDEX manager_trigger_schedule_due ON public.manager_triggers USING btree (next_due, id) WHERE (enabled AND (kind = 'schedule'::text));
+
+
+--
+-- Name: manager_web_attachment_pending_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_web_attachment_pending_idx ON public.manager_web_attachments USING btree (workspace_id, conversation_id, actor_id, expires_at) WHERE (status = 'downloading'::text);
 
 
 --
@@ -7659,6 +7709,30 @@ ALTER TABLE ONLY public.manager_triggers
 
 ALTER TABLE ONLY public.manager_turns
     ADD CONSTRAINT manager_turns_workspace_id_session_id_input_id_fkey FOREIGN KEY (workspace_id, session_id, input_id) REFERENCES public.manager_inputs(workspace_id, session_id, id);
+
+
+--
+-- Name: manager_web_attachments manager_web_attachments_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_web_attachments
+    ADD CONSTRAINT manager_web_attachments_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: manager_web_attachments manager_web_attachments_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_web_attachments
+    ADD CONSTRAINT manager_web_attachments_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.manager_conversations(id);
+
+
+--
+-- Name: manager_web_attachments manager_web_attachments_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_web_attachments
+    ADD CONSTRAINT manager_web_attachments_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.platform_workspaces(id);
 
 
 --

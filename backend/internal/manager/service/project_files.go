@@ -18,9 +18,11 @@ import (
 )
 
 type Attachment struct {
-	Path string `json:"path"`
-	Name string `json:"name"`
-	Size int64  `json:"size_bytes"`
+	ID     string `json:"id,omitempty"`
+	Path   string `json:"path,omitempty"`
+	Name   string `json:"name"`
+	Size   int64  `json:"size_bytes"`
+	Status string `json:"status,omitempty"`
 }
 
 type ProjectEntry struct {
@@ -109,7 +111,7 @@ func openProjectFile(root, base, p string) (*os.File, os.FileInfo, error) {
 		return nil, nil, err
 	}
 	defer closeProjectHandle(dir)
-	file, err := childFile(dir, path.Base(p), unix.O_RDONLY)
+	file, err := childFile(dir, path.Base(p), unix.O_RDONLY|unix.O_NONBLOCK)
 	if err != nil {
 		return nil, nil, err
 	}

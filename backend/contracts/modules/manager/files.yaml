@@ -73,8 +73,74 @@ content:
       default: {$ref: './sessions.yaml#/responses/Error'}
 Attachment:
   type: object
-  required: [path,name,size_bytes]
+  required: [name,size_bytes]
   properties:
-    path: {type: string}
+    id: {type: string, format: uuid}
+    status: {type: string, enum: [downloading, ready, failed]}
+    path: {type: string, description: Present for legacy project files and ready Web attachments.}
     name: {type: string}
     size_bytes: {type: integer, minimum: 0}
+
+reserve:
+  parameters: *scope
+  post:
+    operationId: reserveWebAttachment
+    description: Reserve one durable attachment in the caller's active private conversation before uploading bytes. Same key and metadata replays. A downloading reservation expires after 10 minutes. Its ID may be submitted in a message immediately.
+    parameters:
+      - {$ref: './conversations.yaml#/parameters/csrf'}
+      - {in: header, name: Idempotency-Key, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,128}$'}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [name, size]
+            properties:
+              name: {type: string, minLength: 1, maxLength: 255}
+              size: {type: integer, minimum: 0, maximum: 33554432}
+    responses:
+      '200': {$ref: '#/AttachmentResponse'}
+      '201': {$ref: '#/AttachmentResponse'}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+attachmentStatus:
+  parameters: &attachmentScope
+    - {$ref: './conversations.yaml#/parameters/workspace'}
+    - {in: path, name: conversation_id, required: true, schema: {type: string, format: uuid}}
+    - {in: path, name: attachment_id, required: true, schema: {type: string, format: uuid}}
+  get:
+    operationId: getWebAttachment
+    description: Current attachment status; only the uploading actor can look up a reservation in its private conversation.
+    responses:
+      '200': {$ref: '#/AttachmentResponse'}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+uploadReserved:
+  parameters: *attachmentScope
+  post:
+    operationId: uploadReservedAttachment
+    description: Publish the single reserved file, with its exact reserved name and byte count. Ready state replays; a failed or expired attachment is terminal and is not replaced.
+    parameters:
+      - {$ref: './conversations.yaml#/parameters/csrf'}
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [file]
+            properties:
+              file: {type: string, format: binary}
+    responses:
+      '200': {$ref: '#/AttachmentResponse'}
+      '201': {$ref: '#/AttachmentResponse'}
+      default: {$ref: './sessions.yaml#/responses/Error'}
+AttachmentResponse:
+  description: Attachment reservation in its current state.
+  content:
+    application/json:
+      schema:
+        allOf:
+          - {$ref: '#/Attachment'}
+          - {type: object, required: [id, status]}

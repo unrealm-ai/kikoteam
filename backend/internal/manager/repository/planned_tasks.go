@@ -13,6 +13,9 @@ import (
 func (s *Store) PlannedTaskCommand(ctx context.Context, scope service.DelegationScope, q service.PlannedTaskRequest) (service.PlannedTask, error) {
 	var out service.PlannedTask
 	target := service.Target{Workspace: scope.WorkspaceID, Actor: scope.ActorID, Conversation: scope.ConversationID, Session: q.SessionID, Source: &scope.Identity, DedupLock: "task_plan:" + scope.Identity.SessionID + ":" + q.RequestKey}
+	if len(q.AttachmentIDs) > 0 || q.Action == "start_todo" {
+		target.SourceInputID = scope.InputID
+	}
 	err := s.WithSession(ctx, target, func(base service.SessionTx) error {
 		out = service.PlannedTask{}
 		t := base.(*sessionTx)
@@ -39,6 +42,14 @@ func (s *Store) PlannedTaskCommand(ctx context.Context, scope service.Delegation
 		files, e := q.ResolveAttachments(t.state.Conversation, scope.ActorID, q.AttachmentPaths)
 		if e != nil {
 			return e
+		}
+		if len(q.AttachmentIDs) > 0 {
+			var refs []service.Attachment
+			refs, e = t.ResolveTaskAttachmentIDs(q.AttachmentIDs)
+			if e != nil {
+				return e
+			}
+			files = append(files, refs...)
 		}
 		if e = t.checkAttachmentSource(files); e != nil {
 			return e
@@ -118,10 +129,11 @@ func (t *sessionTx) mutatePlanned(scope service.DelegationScope, q service.Plann
 		body += "\n\n" + q.Instruction
 		seen := make(map[string]bool, len(v.Attachments))
 		for _, old := range v.Attachments {
-			seen[old.Path] = true
+			seen[plannedAttachmentKey(old)] = true
 		}
 		for _, file := range files {
-			if !seen[file.Path] {
+			if key := plannedAttachmentKey(file); !seen[key] {
+				seen[key] = true
 				v.Attachments = append(v.Attachments, file)
 			}
 		}
@@ -187,4 +199,11 @@ func (s *Store) PlannedTaskRead(ctx context.Context, scope service.DelegationSco
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Read-only transaction.
 	return readPlannedTask(ctx, tx, *v.TaskID)
+}
+
+func plannedAttachmentKey(a service.Attachment) string {
+	if a.ID != "" {
+		return "id:" + a.ID
+	}
+	return "path:" + a.Path
 }

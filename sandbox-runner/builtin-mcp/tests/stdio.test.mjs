@@ -201,6 +201,25 @@ test('text truncation and native image content survive MCP wrapping', async (t) 
   }
 });
 
+test('read gives PDF extraction guidance without returning binary bytes', async (t) => {
+  const f = await fixture(t);
+  const pdf = Buffer.concat([
+    Buffer.from('%PDF-1.7\nsynthetic-binary-marker'),
+    Buffer.from([0, 0xff]),
+  ]);
+  for (const path of ['sample.pdf', 'renamed.dat']) {
+    await writeFile(join(f.cwd, path), pdf);
+    const result = await f.call('read', { path });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /pdftotext/);
+    assert.doesNotMatch(result.content[0].text, /synthetic-binary-marker|\0/);
+  }
+  await writeFile(join(f.cwd, 'plain.pdf'), 'ordinary text with a misleading suffix');
+  const plain = await f.call('read', { path: 'plain.pdf' });
+  assert.equal(plain.isError, undefined);
+  assert.match(plain.content[0].text, /ordinary text/);
+});
+
 test('read uses the literal attachment name even when an interactive alias exists', async (t) => {
   const f = await fixture(t);
   await mkdir(join(f.cwd, 'uploads'));

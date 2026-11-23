@@ -10,3 +10,4 @@
 | 渠道接收反应 | [飞书、钉钉原消息接收反应](channel-receipt-reactions.md) | 隔离 PostgreSQL、供应商 HTTP 夹具与钉钉实测通过；飞书真实贴表情待验 |
 | 任务提示词 | [员工身份与能力包文案](task-package-prompt.md) | 隔离 PostgreSQL 与真实 Engine/Pi 端到端（测试模型） |
 | 钉钉回复 | [原会话回复与主动投递](dingtalk-session-reply.md) | 本地渠道协议夹具、隔离 PostgreSQL；真实账号待验 |
+| 入站附件 | [四入口异步准备与任务按需读取](async-inbound-attachments.md) | 隔离 PostgreSQL、Engine/Pi 端到端及 100 MiB 边界测试通过；真实渠道尚未全部通过 |

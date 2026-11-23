@@ -145,6 +145,7 @@ type CreateConversation struct {
 	Title   *string `json:"title"`
 }
 type CreateSession struct {
+	AttachmentIDs   []string `json:"attachment_ids,omitempty"`
 	AttachmentPaths []string `json:"attachment_paths,omitempty"`
 	TaskSpaceID     string   `json:"task_space_id,omitempty"`
 	AgentID         string   `json:"agent_id,omitempty"`

@@ -148,7 +148,7 @@ func persistChannelInbound(ctx context.Context, tx *sql.Tx, v service.ChannelInb
 
 type inboxWork struct {
 	confirmationOnly                                                           bool
-	MediaPaths                                                                 []string
+	Attachments                                                                []service.Attachment
 	History                                                                    []byte
 	Provider                                                                   string
 	CreatedAt                                                                  time.Time
@@ -303,7 +303,7 @@ func (s *Store) submitChannelInput(ctx context.Context, m *service.Service, w in
 	if err = json.Unmarshal(w.History, &history); err != nil {
 		return err
 	}
-	channelCtx := service.WithChannelActor(ctx, service.ChannelActor{ID: w.Principal, Generation: w.Generation, NeedsContextReceipt: w.Kind == "group" && history.Enabled, InboxID: w.ID, ConfirmationOnly: w.confirmationOnly})
+	channelCtx := service.WithChannelActor(ctx, service.ChannelActor{ID: w.Principal, Generation: w.Generation, NeedsContextReceipt: w.Kind == "group" && history.Enabled, InboxID: w.ID, ConfirmationOnly: w.confirmationOnly, Attachments: w.Attachments})
 	var session string
 	err = s.DB.QueryRowContext(ctx, `SELECT id FROM manager_sessions WHERE conversation_id=$1 AND mode='chat'`, w.Conversation).Scan(&session)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -320,7 +320,7 @@ func (s *Store) submitChannelInput(ctx context.Context, m *service.Service, w in
 	var input service.Input
 	var replayed bool
 	if err == nil {
-		input, replayed, err = m.SubmitInputMode(channelCtx, w.Workspace, w.Principal, session, "channel_"+strings.ReplaceAll(w.ID, "-", ""), w.Text, "", w.MediaPaths...)
+		input, replayed, err = m.SubmitInputMode(channelCtx, w.Workspace, w.Principal, session, "channel_"+strings.ReplaceAll(w.ID, "-", ""), w.Text, "")
 	}
 	if err != nil {
 		var e *service.Error
@@ -468,32 +468,13 @@ func (s *Store) prepareInboxContent(ctx context.Context, tx *sql.Tx, w *inboxWor
 	if !active {
 		return false, finish("conversation_archived", "此会话已归档，暂时无法接收新消息。")
 	}
-	paths, waiting, failed, e := inboxMediaPaths(ctx, tx, w.ID)
+	refs, e := inboxMediaReferences(ctx, tx, w.ID)
 	if e != nil {
 		return false, e
 	}
-	if waiting {
-		_, e = tx.ExecContext(ctx, `UPDATE manager_channel_inbox SET status='pending',lease_until=now()+interval '2 seconds' WHERE id=$1`, w.ID)
-		if e != nil {
-			return false, e
-		}
-		return false, tx.Commit()
-	}
-	w.MediaPaths = paths
-	if failed && len(paths) == 0 && !hasChannelTextWithUnavailableMedia(provider, w.MessageType, w.Text) {
-		return false, finish("media_unavailable", "附件暂时无法获取，请重新发送。")
-	}
-	if len(paths) == 0 && (!supportedChannelInput(provider, w.MessageType) || strings.TrimSpace(w.Text) == "") {
+	w.Attachments = refs
+	if len(refs) == 0 && (!supportedChannelInput(provider, w.MessageType) || strings.TrimSpace(w.Text) == "") {
 		return false, finish("unsupported_message", "目前支持文字、图片和文件，请换一种消息格式。")
 	}
 	return true, nil
-}
-
-// A Feishu attachment sent as a post can have only adapter-generated
-// placeholders. Treat it like a native file/image without a text body.
-func hasChannelTextWithUnavailableMedia(provider, kind, text string) bool {
-	if provider == "feishu" && kind == "post" {
-		text = strings.NewReplacer("[图片附件未读取]", "", `[未解析内容类型="file"]`, "").Replace(text)
-	}
-	return strings.TrimSpace(text) != ""
 }

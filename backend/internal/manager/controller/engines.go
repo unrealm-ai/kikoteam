@@ -154,12 +154,8 @@ func (s *Server) harnessConfig(r *http.Request) (any, int, error) {
 			v.CapabilityToken, err = service.SignCapability(s.EngineToken, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
 		}
 	}
-	if err == nil && v.Mode == "task" && v.ConversationID != "" && v.TriggerID == "" {
-		v.GroupHistoryToken, err = service.SignGroupHistory(s.EngineToken, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
-	}
-	if err == nil && v.Mode == "task" && v.TaskSpaceID != "" {
-		id := service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation}
-		v.TaskSpaceHistoryToken, err = service.SignTaskSpaceHistory(s.EngineToken, service.TaskSpaceHistoryIdentity{DelegationIdentity: id, InputID: v.InputID})
+	if err == nil && v.Mode == "task" {
+		err = s.signTaskContextCredentials(&v, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
 	}
 	if err == nil && v.Mode == "chat" && !v.ConfirmationOnly {
 		v.DelegationToken, err = service.SignDelegation(s.EngineToken, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
@@ -174,6 +170,20 @@ func (s *Server) harnessConfig(r *http.Request) (any, int, error) {
 		service.ApplyHarnessPrompt(&v)
 	}
 	return v, 200, err
+}
+
+func (s *Server) signTaskContextCredentials(v *service.HarnessConfig, id service.DelegationIdentity) error {
+	var err error
+	if v.ConversationID != "" {
+		v.AttachmentToken, err = service.SignInputAttachment(s.EngineToken, id)
+		if err == nil && v.TriggerID == "" {
+			v.GroupHistoryToken, err = service.SignGroupHistory(s.EngineToken, id)
+		}
+	}
+	if err == nil && v.TaskSpaceID != "" {
+		v.TaskSpaceHistoryToken, err = service.SignTaskSpaceHistory(s.EngineToken, service.TaskSpaceHistoryIdentity{DelegationIdentity: id, InputID: v.InputID})
+	}
+	return err
 }
 
 func (s *Server) signWorkCredentials(v *service.HarnessConfig, id service.DelegationIdentity) error {

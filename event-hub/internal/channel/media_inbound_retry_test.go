@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -36,6 +37,11 @@ func TestInboundMediaStoreAndDownloadReportAgainstSameLease(t *testing.T) {
 					t.Error(err)
 				}
 				if r.Method == http.MethodPut {
+					name := r.Header.Get("X-Kiko-Media-Name")
+					decoded, e := url.PathUnescape(name)
+					if e != nil || name == decoded || decoded != "对账 单.pdf" || r.Header.Get("X-Kiko-Media-Failure") != "" {
+						t.Error("invalid name or failure on upload")
+					}
 					if string(data) != "fixtures" {
 						t.Error("missing fetched bytes")
 					}
@@ -53,8 +59,12 @@ func TestInboundMediaStoreAndDownloadReportAgainstSameLease(t *testing.T) {
 					w.WriteHeader(tc.storeStatus)
 					return
 				}
-				if len(data) != 0 {
-					t.Error("failure sent bytes again")
+				wantFailure := "storage_failed"
+				if tc.downloadErr != nil {
+					wantFailure = "download_failed"
+				}
+				if len(data) != 0 || r.Header.Get("X-Kiko-Media-Name") != "" || r.Header.Get("X-Kiko-Media-Failure") != wantFailure {
+					t.Error("incorrect failure settlement")
 				}
 				w.WriteHeader(http.StatusOK)
 			}))
@@ -64,7 +74,7 @@ func TestInboundMediaStoreAndDownloadReportAgainstSameLease(t *testing.T) {
 				t.Fatal(err)
 			}
 			j := MediaJob{InboxID: "inbox", Ordinal: 1, Lease: "original"}
-			err = client.completeMedia(context.Background(), j, []byte("fixtures"), tc.downloadErr)
+			err = client.completeMedia(context.Background(), j, fetchedMedia{data: []byte("fixtures"), name: "对账 单.pdf"}, tc.downloadErr)
 			if tc.storeStatus == 503 || tc.dropResponse {
 				if err == nil {
 					t.Fatal("storage failure was not observable")

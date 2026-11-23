@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/integration"
@@ -76,5 +77,63 @@ func TestReportChatOnlyUsesSelectionEndpoint(t *testing.T) {
 	server, ok := out.MCP["task_delegation"].(map[string]any)
 	if !ok || len(out.MCP) != 1 || server["url"] != "http://manager.invalid/mcp/task-delegation?mode=report" || out.HumanToolsExtension != "" {
 		t.Fatal("report exposed other tools", out.MCP)
+	}
+}
+
+func TestAttachmentToolUsesStableAssignmentCredentialForConversationTasks(t *testing.T) {
+	w := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
+	work := repository.Work{Assignment: repository.Assignment{SessionID: "task-session"}, WorkspaceID: "w", AgentID: "a", ConversationID: "conv", TaskID: "task", Mode: "task"}
+	cfg := integration.HarnessConfig{WorkspaceID: "w", AgentID: "a", ConversationID: "conv", TaskID: "task", SessionID: work.SessionID, Mode: "task", AttachmentToken: "assignment-token"}
+	first, sig, err := w.prepareConfiguration(t.Context(), work, repository.Turn{Input: repository.Input{ID: "first"}}, cfg, integration.Endpoint{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, ok := first.MCP[attachmentMCPServer].(map[string]any)
+	if !ok || server["url"] != "http://manager.invalid/mcp/input-attachments" || server["exposure"] != "direct" {
+		t.Fatalf("unexpected attachment MCP: %#v", server)
+	}
+	headers, ok := server["headers"].(map[string]string)
+	if !ok || len(headers) != 1 || headers["Authorization"] != "Bearer assignment-token" {
+		t.Fatalf("attachment capability must not capture an Input in its static config: %#v", headers)
+	}
+	_, next, err := w.prepareConfiguration(t.Context(), work, repository.Turn{Input: repository.Input{ID: "next"}}, cfg, integration.Endpoint{})
+	if err != nil || next != sig {
+		t.Fatal("next input unnecessarily changes Pi config", err)
+	}
+
+	for _, scenario := range []string{"chat", "report", "task_space", "correction", "no_token"} {
+		t.Run(scenario, func(t *testing.T) {
+			wc, cc := work, cfg
+			input := repository.Input{ID: "test-input"}
+			switch scenario {
+			case "chat":
+				wc.Mode, cc.Mode = "chat", "chat"
+				wc.TaskID, cc.TaskID = "", ""
+			case "report":
+				cc.ReportOnly = true
+			case "task_space":
+				wc.ConversationID, cc.ConversationID = "", ""
+				wc.TaskSpaceID, cc.TaskSpaceID = "space", "space"
+			case "correction":
+				input.CorrectionOnly = true
+			case "no_token":
+				cc.AttachmentToken = ""
+			}
+			out, _, e := w.prepareConfiguration(t.Context(), wc, repository.Turn{Input: input}, cc, integration.Endpoint{})
+			if _, visible := out.MCP[attachmentMCPServer]; e != nil || visible {
+				t.Fatal("attachment tool exposed outside regular conversation task", e)
+			}
+		})
+	}
+}
+
+func TestChatPassesAttachmentReferencesToTaskWithoutExposingReader(t *testing.T) {
+	w := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
+	chat := repository.Work{Assignment: repository.Assignment{SessionID: "chat"}, WorkspaceID: "w", AgentID: "a", ConversationID: "conv", Mode: "chat"}
+	cfg := integration.HarnessConfig{WorkspaceID: "w", AgentID: "a", SessionID: "chat", ConversationID: "conv", Mode: "chat", DelegationToken: "delegation"}
+	out, _, err := w.prepareConfiguration(t.Context(), chat, repository.Turn{}, cfg, integration.Endpoint{})
+	if err != nil || len(out.MCP) != 1 || out.MCP["task_delegation"] == nil || out.MCP[attachmentMCPServer] != nil ||
+		!strings.Contains(out.Instruction, "attachment_ids") || !strings.Contains(out.Instruction, "attachment_paths") {
+		t.Fatal("chat should delegate references without being granted an attachment reader", err)
 	}
 }

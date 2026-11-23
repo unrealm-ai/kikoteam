@@ -227,6 +227,12 @@ paths:
     $ref: ./modules/manager/sessions.yaml#/archive
   /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/files:
     $ref: ./modules/manager/files.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/attachments:
+    $ref: ./modules/manager/files.yaml#/reserve
+  /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/attachments/{attachment_id}:
+    $ref: ./modules/manager/files.yaml#/attachmentStatus
+  /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/attachments/{attachment_id}/upload:
+    $ref: ./modules/manager/files.yaml#/uploadReserved
   /api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/files/content:
     $ref: ./modules/manager/files.yaml#/content
   /api/v1/workspaces/{workspace_id}/conversations/web-direct:

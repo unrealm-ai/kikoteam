@@ -19,6 +19,7 @@ type Assignment struct {
 	Generation   int64  `json:"generation,string"`
 }
 type HarnessConfig struct {
+	AttachmentToken       string                    `json:"attachment_token,omitempty"`
 	ReportOnly            bool                      `json:"report_only,omitempty"`
 	WebhookFile           *WebhookFile              `json:"webhook_file,omitempty"`
 	Employee              EmployeePrompt            `json:"-"`

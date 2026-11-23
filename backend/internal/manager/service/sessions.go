@@ -14,8 +14,8 @@ import (
 func validText(v string) bool {
 	return strings.TrimSpace(v) != "" && utf8.RuneCountInString(v) <= 65536 && !strings.ContainsRune(v, '\x00')
 }
-func validMessageText(text string, paths []string) bool {
-	return validText(text) || text == "" && len(paths) > 0
+func validMessageText(text string, paths, ids []string) bool {
+	return validText(text) || text == "" && len(paths)+len(ids) > 0
 }
 func validKey(v string) bool {
 	if len(v) < 1 || len(v) > 128 {
@@ -72,7 +72,7 @@ func (s *Service) createSession(ctx context.Context, w, actor, key string, r Cre
 		target.Source = &source.Identity
 		target.SourceInputID = source.InputID
 	}
-	if !validSessionOwner(r, target.Source) || (r.Mode != "chat" && r.Mode != "task") || !validTitle(r.Title) || r.Input != nil && !validMessageText(r.Input.Text, r.AttachmentPaths) {
+	if !validSessionOwner(r, target.Source) || (r.Mode != "chat" && r.Mode != "task") || !validAttachmentSelection(r.AttachmentPaths, r.AttachmentIDs, source != nil) || !validTitle(r.Title) || r.Input != nil && !validMessageText(r.Input.Text, r.AttachmentPaths, r.AttachmentIDs) {
 		return Session{}, false, Fail("invalid_argument", 400, "会话参数无效")
 	}
 	d := Dedup{Kind: "initial_input", Target: "sessions", Key: key}
@@ -135,7 +135,7 @@ func (s *Service) createSession(ctx context.Context, w, actor, key string, r Cre
 			return err
 		}
 		if r.Input != nil {
-			i, err := s.appendInputMode(ctx, tx, actor, r.Input.Text, mode, r.AttachmentPaths)
+			i, err := s.appendInputMode(ctx, tx, actor, r.Input.Text, mode, r.AttachmentPaths, r.AttachmentIDs, nil)
 			if err != nil {
 				return err
 			}
@@ -157,14 +157,28 @@ func (s *Service) createSession(ctx context.Context, w, actor, key string, r Cre
 	return PublicSession(v), replayed, err
 }
 
-func (s *Service) appendInputMode(ctx context.Context, tx SessionTx, actor, text, mode string, paths []string) (Input, error) {
+func (s *Service) appendInputMode(ctx context.Context, tx SessionTx, actor, text, mode string, paths, ids []string, trusted []Attachment) (Input, error) {
 	st := tx.State()
 	if st.Session.Execution.QueuedInputCount >= 100 {
 		return Input{}, Fail("session_queue_full", 429, "待执行输入已达到上限")
 	}
 	attachments, err := s.resolveInputAttachments(ctx, st.Conversation, actor, paths)
+	if err == nil && len(ids) > 0 {
+		var refs []Attachment
+		refs, err = resolveTaskAttachmentIDs(tx, ids)
+		attachments = append(attachments, refs...)
+	}
 	if err != nil {
 		return Input{}, err
+	}
+	if len(trusted) > 0 && st.Session.Mode != "chat" {
+		return Input{}, Fail("permission_denied", 403, "渠道文件只可随原消息入队")
+	}
+	attachments = append(attachments, trusted...)
+	for n := range attachments {
+		if attachments[n].ID != "" {
+			attachments[n].Path = ""
+		}
 	}
 	i, err := tx.InsertInput(Input{Attachments: attachments, ID: NewID(), SessionID: st.Session.ID, SubmittedBy: actor, Text: text, DeliveryMode: mode, SourceKind: "user", Status: "queued", CreatedAt: time.Now().UTC()})
 	if err != nil {
@@ -217,7 +231,10 @@ func (s *Service) SubmitInput(ctx context.Context, w, actor, id, key, text strin
 	return s.SubmitInputMode(ctx, w, actor, id, key, text, "")
 }
 func (s *Service) SubmitInputMode(ctx context.Context, w, actor, id, key, text, mode string, paths ...string) (Input, bool, error) {
-	return s.submitInputVersion(ctx, w, actor, id, key, text, mode, nil, nil, paths...)
+	return s.submitInputVersion(ctx, w, actor, id, key, text, mode, nil, nil, nil, paths...)
+}
+func (s *Service) SubmitInputModeWithAttachments(ctx context.Context, w, actor, id, key, text, mode string, ids []string, paths ...string) (Input, bool, error) {
+	return s.submitInputVersion(ctx, w, actor, id, key, text, mode, nil, nil, ids, paths...)
 }
 func DeliveryMode(mode string) (string, error) {
 	if mode == "" {
@@ -228,12 +245,16 @@ func DeliveryMode(mode string) (string, error) {
 	}
 	return mode, nil
 }
-func (s *Service) submitInputVersion(ctx context.Context, w, actor, id, key, text, requestedMode string, source *DelegationScope, expected *int64, paths ...string) (Input, bool, error) {
+func (s *Service) submitInputVersion(ctx context.Context, w, actor, id, key, text, requestedMode string, source *DelegationScope, expected *int64, ids []string, paths ...string) (Input, bool, error) {
 	mode, modeErr := DeliveryMode(requestedMode)
 	if modeErr != nil {
 		return Input{}, false, modeErr
 	}
-	if !validMessageText(text, paths) {
+	var trusted []Attachment
+	if ch, ok := ChannelActorFrom(ctx); ok && source == nil && ch.ID == actor && ValidID(ch.InboxID) && key == "channel_"+strings.ReplaceAll(ch.InboxID, "-", "") && !ch.ConfirmationOnly {
+		trusted = ch.Attachments
+	}
+	if (!validMessageText(text, paths, ids) && (text != "" || len(trusted) == 0)) || !validAttachmentSelection(paths, ids, source != nil) {
 		return Input{}, false, Fail("invalid_argument", 400, "输入文本无效")
 	}
 	if !validKey(key) {
@@ -244,8 +265,12 @@ func (s *Service) submitInputVersion(ctx context.Context, w, actor, id, key, tex
 		return Input{}, false, err
 	}
 	d := Dedup{Kind: "session_input", Target: id, Key: key, Fingerprint: fp}
-	if len(paths) > 0 {
-		fp, err = fingerprint([]any{text, mode, nil, paths})
+	if len(ids) > 0 || len(paths) > 0 {
+		payload := []any{text, mode, nil, paths}
+		if len(ids) > 0 {
+			payload = append(payload, ids)
+		}
+		fp, err = fingerprint(payload)
 		if err != nil {
 			return Input{}, false, err
 		}
@@ -270,7 +295,7 @@ func (s *Service) submitInputVersion(ctx context.Context, w, actor, id, key, tex
 			if e != nil {
 				return e
 			}
-			if found.Fingerprint != fp && (len(paths) > 0 || expected != nil || requestedMode != "" || found.Fingerprint != legacy) {
+			if found.Fingerprint != fp && (len(paths) > 0 || len(ids) > 0 || expected != nil || requestedMode != "" || found.Fingerprint != legacy) {
 				return Fail("idempotency_conflict", 409, "去重键已用于其他内容")
 			}
 			out, err = tx.Input(found.InputID)
@@ -283,7 +308,7 @@ func (s *Service) submitInputVersion(ctx context.Context, w, actor, id, key, tex
 		if err = admitted(tx.State()); err != nil {
 			return err
 		}
-		out, err = s.appendInputMode(ctx, tx, actor, text, mode, paths)
+		out, err = s.appendInputMode(ctx, tx, actor, text, mode, paths, ids, trusted)
 		if err != nil {
 			return err
 		}

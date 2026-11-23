@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -309,7 +310,7 @@ func (s *Store) Complete(ctx context.Context, w Work, t Turn, status, code, summ
 			}
 			failure = data
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE manager_turns SET status=$2,error=$3,result_summary=NULLIF($4,''),finished_at=now(),has_unknown_tool_results=has_unknown_tool_results OR EXISTS(SELECT 1 FROM manager_capability_calls WHERE turn_id=$1 AND status='authorized') WHERE id=$1`, t.ID, status, failure, summary); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE manager_turns SET status=$2,error=$3,result_summary=NULLIF($4,''),finished_at=now(),has_unknown_tool_results=has_unknown_tool_results OR EXISTS(SELECT 1 FROM manager_capability_calls WHERE turn_id=$1 AND status='authorized') WHERE id=$1`, t.ID, status, failure, strings.ReplaceAll(summary, "\x00", "\uFFFD")); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE manager_inputs SET status='processed',finished_at=now() WHERE turn_id=$1 AND status='started'`, t.ID); err != nil {
@@ -390,6 +391,7 @@ func emit(ctx context.Context, tx *sql.Tx, w Work, kind string, input, turn *str
 	if err != nil {
 		return err
 	}
+	replaceJSONNUL(data)
 	_, err = tx.ExecContext(ctx, `INSERT INTO manager_session_events(workspace_id,session_id,seq,event) VALUES($1,$2,$3,$4)`, w.WorkspaceID, w.SessionID, seq, data)
 	return err
 }

@@ -15,17 +15,16 @@ import (
 	manager "github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 )
 
-func TestChannelMediaSharedRetryBudgetAndInboxFallback(t *testing.T) {
+func TestChannelMediaSharedRetryBudgetAndNonblockingInbox(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		text     string
-		expected string
-		partial  bool
+		name    string
+		text    string
+		partial bool
 	}{
-		{"preserve text", "Analyze the file", "accepted", false},
-		{"explain unavailable attachment", "", "rejected", false},
-		{"do not pass a placeholder as an attachment-only post", "[图片附件未读取]", "rejected", false},
-		{"keep successful attachment without text", "", "accepted", true},
+		{"preserve text", "Analyze the file", false},
+		{"submit attachment-only before failure", "", false},
+		{"submit attachment post before failure", "[图片附件未读取]", false},
+		{"preserve both references with mixed outcomes", "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, m, store, _, _, _, binding := channelManagerFixture(t)
@@ -48,6 +47,15 @@ func TestChannelMediaSharedRetryBudgetAndInboxFallback(t *testing.T) {
 			box, err := store.ReceiveChannel(ctx, v)
 			must(err)
 			must(store.ProcessChannelInbox(ctx, m))
+			// A later ordinary message must be admitted before any download is attempted.
+			later, err := store.ReceiveChannel(ctx, inboundFixture(binding, "later-text", "alice"))
+			must(err)
+			must(store.ProcessChannelInbox(ctx, m))
+			var laterInput sql.NullString
+			must(db.QueryRow(`SELECT input_id FROM manager_channel_inbox WHERE id=$1`, later.ID).Scan(&laterInput))
+			if !laterInput.Valid {
+				t.Fatal("later text is blocked by pending attachment")
+			}
 			const token = "test-channel-media-retry-secret-0000"
 			mux := http.NewServeMux()
 			(&managercontroller.ChannelServer{Store: store, Manager: m, Token: token}).Routes(mux)
@@ -124,28 +132,26 @@ func TestChannelMediaSharedRetryBudgetAndInboxFallback(t *testing.T) {
 			var state string
 			var input, text, inboxError sql.NullString
 			must(db.QueryRow(`SELECT n.status,n.input_id,i.text,n.error_code FROM manager_channel_inbox n LEFT JOIN manager_inputs i ON i.id=n.input_id WHERE n.id=$1`, box.ID).Scan(&state, &input, &text, &inboxError))
-			if state != tc.expected {
-				t.Fatal(state, tc.expected)
+			if state != "accepted" || !input.Valid || text.String != tc.text || inboxError.Valid {
+				t.Fatal("original message was not admitted independently of the attachment", state, input, text, inboxError)
 			}
-			if tc.expected == "rejected" {
-				if input.Valid || inboxError.String != "media_unavailable" {
-					t.Fatal("attachment-only did not produce an explicit failed receipt", input, inboxError)
-				}
-				var ready int
-				must(db.QueryRow(`SELECT count(*) FROM manager_channel_deliveries WHERE text LIKE '%附件暂时无法获取%'`).Scan(&ready))
-				if ready != 1 {
-					t.Fatal("expected explicit reply for attachment-only", ready)
-				}
-			} else if !input.Valid || text.String != tc.text {
-				t.Fatal("original text was not accepted", input, text)
-			}
+			var metadata string
+			must(db.QueryRow(`SELECT attachments::text FROM manager_inputs WHERE id=$1`, input.String).Scan(&metadata))
+			var refs []manager.Attachment
+			must(json.Unmarshal([]byte(metadata), &refs))
+			want := 1
 			if tc.partial {
-				var path string
-				must(db.QueryRow(`SELECT attachments->0->>'path' FROM manager_inputs WHERE id=$1 AND jsonb_array_length(attachments)=1`, input.String).Scan(&path))
-				if path != "uploads/other.csv" {
-					t.Fatal("successful attachment lost in mixed outcomes", path)
+				want++
+			}
+			if len(refs) != want {
+				t.Fatalf("expected %d attachment references: %+v", want, refs)
+			}
+			for i, a := range refs {
+				if a.ID != fmt.Sprintf("%s:%d", box.ID, i) || a.Status != "downloading" || a.Path != "" {
+					t.Fatalf("invalid immutable input reference: %+v", a)
 				}
 			}
+
 		})
 	}
 }

@@ -77,6 +77,17 @@
           "maxLength": 200,
           "description": "Summarize the user's goal in one short phrase. Put the full requirements in instruction."
         },
+        "attachment_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 56
+          },
+          "description": "Forward only exact attachment IDs from the current user's messages in this chat. Do not use filenames, paths, guessed IDs or IDs from other senders."
+        },
         "attachment_paths": {
           "type": "array",
           "uniqueItems": true,
@@ -192,6 +203,17 @@
           "maxLength": 65536,
           "description": "Only new or revised requirements and necessary context. Preserve earlier boundaries unless the user explicitly changes them."
         },
+        "attachment_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 56
+          },
+          "description": "Forward only exact attachment IDs from the current user's messages in this chat. Do not use filenames, paths, guessed IDs or IDs from other senders."
+        },
         "attachment_paths": {
           "type": "array",
           "uniqueItems": true,
@@ -217,10 +239,31 @@
         },
         {
           "required": [
+            "attachment_ids"
+          ],
+          "properties": {
+            "attachment_ids": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
             "attachment_paths"
           ],
           "properties": {
-            "attachment_paths": {
+            "attachment_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 56
+          },
+          "description": "Forward only exact attachment IDs from the current user's messages in this chat. Do not use filenames, paths, guessed IDs or IDs from other senders."
+        },
+        "attachment_paths": {
               "minItems": 1
             }
           }
@@ -266,6 +309,17 @@
         "request_key": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{1,128}$"
+        },
+        "attachment_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 56
+          },
+          "description": "Forward only exact attachment IDs from the current user's messages in this chat. Do not use filenames, paths, guessed IDs or IDs from other senders."
         },
         "attachment_paths": {
           "type": "array",
@@ -364,6 +418,17 @@
         "request_key": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{1,128}$"
+        },
+        "attachment_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 56
+          },
+          "description": "Forward only exact attachment IDs from the current user's messages in this chat. Do not use filenames, paths, guessed IDs or IDs from other senders."
         },
         "attachment_paths": {
           "type": "array",

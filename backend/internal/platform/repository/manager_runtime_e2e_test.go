@@ -21,6 +21,7 @@ import (
 
 	managercontroller "github.com/unrealm-ai/kikoteam/backend/internal/manager/controller"
 	humanconfirmation "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/humanconfirmation"
+	"github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/inputattachments"
 	delegation "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/taskdelegation"
 	taskspacehistory "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/taskspacehistory"
 	workitems "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/workitems"
@@ -98,7 +99,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 		if mode == "events" && eventModelReply(t, w, body, eventRepo.after) {
 			return
 		}
-		if mode == "files" && projectModelReply(t, w, body) {
+		if mode == "files" && (asyncAttachmentModelReply(t, w, body) || projectModelReply(t, w, body)) {
 			return
 		}
 		if mode == "crash" && len(body.Messages) > 0 && strings.Contains(fmt.Sprint(body.Messages[len(body.Messages)-1].Content), "crash-during-prompt") {
@@ -328,6 +329,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 		t.Fatal(err)
 	}
 	mux.Handle("/mcp/task-delegation", delegationHandler)
+	inputattachments.Register(mux, store, svc, engineToken)
 	if err := humanconfirmation.Register(mux, store, engineToken); err != nil {
 		t.Fatal(err)
 	}
@@ -556,6 +558,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	}
 	if mode == "files" {
 		testRuntimeProjectFiles(t, ctx, db, base, workspace, agent.ID, svc.ProjectRoot, backend.URL, token, call, wait)
+		testRuntimeAsyncAttachment(t, ctx, db, base, agent.ID, backend.URL, token, call, wait)
 		return
 	}
 	if mode == "work" {

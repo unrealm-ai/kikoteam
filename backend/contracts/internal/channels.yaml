@@ -1311,7 +1311,7 @@
   "mediaFinish": {
     "put": {
       "operationId": "finishInboundChannelMedia",
-      "description": "Publish verified bytes to the original conversation project under the current lease. The upload journal prevents duplicate publication for the same attachment.",
+      "description": "Publish up to 100 MiB of verified bytes to the original conversation project under the current lease. The upload journal prevents duplicate publication for the same attachment.",
       "security": [
         {
           "hubBearer": []
@@ -1345,6 +1345,9 @@
         },
         "409": {
           "description": "Lease lost, authorization revoked, or conflicting state."
+        },
+        "413": {
+          "description": "Attachment exceeds 100 MiB."
         },
         "503": {
           "description": "Transient dependency failure; never acknowledge as durable."

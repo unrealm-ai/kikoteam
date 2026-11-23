@@ -80,7 +80,7 @@ func (b *Backend) request(ctx context.Context, method, path string, in, out any)
 }
 func responseLimit(path string) int64 {
 	if strings.HasPrefix(path, "/api/internal/v1/channel-deliveries/") && strings.HasSuffix(path, "/content") {
-		return (mediaLimit * 4 / 3) + 65536
+		return (outboundMediaLimit * 4 / 3) + 65536
 	}
 	return 8 << 20
 }

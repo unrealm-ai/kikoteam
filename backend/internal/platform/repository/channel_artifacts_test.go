@@ -3,6 +3,7 @@ package repository
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -111,25 +112,29 @@ func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
 		id, ct := start(x.chat, x.input)
 		scope, e := store.DelegationSource(ctx, id)
 		must(e)
-		res, e := d.Call(ctx, scope, "create_session", manager.DelegationArgs{Instruction: "produce " + p})
+		args := manager.DelegationArgs{Instruction: "produce " + p}
+		if appendFiles {
+			args.AttachmentIDs = []string{x.box + ":0"}
+		}
+		res, e := d.Call(ctx, scope, "create_session", args)
 		must(e)
 		task := res.(map[string]any)["session_id"].(string)
 		var input string
 		must(db.QueryRow(`SELECT initial_input_id FROM manager_sessions WHERE id=$1`, task).Scan(&input))
 		if appendFiles {
-			paths := []string{"uploads/second.csv", "uploads/first.csv"}
-			args := map[string]any{"session_id": task, "attachment_paths": paths}
+			ids := []string{x.box + ":1", x.box + ":0"}
+			args := map[string]any{"session_id": task, "attachment_ids": ids}
 			first := call(id, args)
 			args["text"] = ""
 			second := call(id, args)
-			if first.ID != second.ID || first.Text != "" || len(first.Attachments) != 2 || first.Attachments[0].Path != paths[0] || second.Receipt == nil || !second.Receipt.Duplicate {
+			if first.ID != second.ID || first.Text != "" || len(first.Attachments) != 2 || first.Attachments[0].ID != ids[0] || first.Attachments[0].Path != "" || second.Receipt == nil || !second.Receipt.Duplicate {
 				t.Fatal("attachment-only append", first, second)
 			}
 		}
 		if appendFiles {
 			next := receive("alice", "repeat-request-new-message", false)
 			reviewExec(t, db, `UPDATE manager_inputs SET status='started',turn_id=$2,context_state='committed' WHERE id=$1`, next.input, ct)
-			fresh := call(id, map[string]any{"session_id": task, "attachment_paths": []string{"uploads/second.csv", "uploads/first.csv"}})
+			fresh := call(id, map[string]any{"session_id": task, "attachment_ids": []string{x.box + ":1", x.box + ":0"}})
 			if fresh.Receipt == nil || fresh.Receipt.Duplicate {
 				t.Fatal("new authorized input incorrectly deduplicated", fresh)
 			}
@@ -137,6 +142,23 @@ func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
 		}
 		finish(x.chat, x.input, ct)
 		tid, tt := start(task, input)
+		if appendFiles {
+			attachment, conv, err := store.ReadInputAttachment(ctx, tid, x.box+":0")
+			must(err)
+			if attachment.Status != "ready" || attachment.Path != "uploads/first.csv" {
+				t.Fatal(attachment)
+			}
+			file, _, err := m.OpenProjectFile(conv, attachment.Path)
+			must(err)
+			body, err := io.ReadAll(file)
+			must(file.Close())
+			must(err)
+			if string(body) != "first.csv" {
+				t.Fatal("incorrect channel attachment bytes")
+			}
+			_, _, err = store.ReadInputAttachment(ctx, tid, x.box+":1")
+			assertChannelError(t, err, "attachment_forbidden") // A queued supplement has not yet granted it.
+		}
 		scopeP := manager.WorkScope{Identity: tid, InputID: input}
 		dir := filepath.Join(m.ProjectRoot, "state/sandboxes/workspaces", w, "employees", agent, "conversations", x.conv, "project")
 		must(os.MkdirAll(dir, 0700))
@@ -270,18 +292,24 @@ func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
 }
 
 func TestProviderNativeAttachmentsReachProjectInput(t *testing.T) {
-	for _, provider := range []string{"dingtalk", "wecom"} {
+	for _, provider := range []string{"feishu", "dingtalk", "wecom"} {
 		t.Run(provider, func(t *testing.T) {
 			db, m, store, _, _, _, binding := channelManagerFixture(t)
 			ctx := t.Context()
 			m.ProjectRoot = t.TempDir()
-			reviewExec(t, db, `UPDATE platform_channel_bindings SET provider=$2,app_id='bot',external_tenant_id='',bot_open_id='' WHERE id=$1`, binding, provider)
+			if provider != "feishu" {
+				reviewExec(t, db, `UPDATE platform_channel_bindings SET provider=$2,app_id='bot',external_tenant_id='',bot_open_id='' WHERE id=$1`, binding, provider)
+			}
 			for _, kind := range []string{"image", "file"} {
 				v := inboundFixture(binding, kind, "staff")
 				v.Text = ""
 				v.BotID = "bot"
 				v.SenderIDType = "user_id"
 				v.SenderTenant = v.ExternalTenantID
+				if provider == "feishu" {
+					v.BotID = ""
+					v.SenderIDType = ""
+				}
 				v.MessageType = kind
 				if provider == "dingtalk" && kind == "image" {
 					v.MessageType = "picture"
@@ -315,9 +343,12 @@ func TestProviderNativeAttachmentsReachProjectInput(t *testing.T) {
 				if e = store.ProcessChannelInbox(ctx, m); e != nil {
 					t.Fatal(e)
 				}
-				var path string
-				if e = db.QueryRow(`SELECT i.attachments->0->>'path' FROM manager_channel_inbox n JOIN manager_inputs i ON i.id=n.input_id WHERE n.id=$1`, box.ID).Scan(&path); e != nil || path != "uploads/"+kind+".bin" {
-					t.Fatal("project attachment", path, e)
+				var actualPath, id string
+				var outputPath *string
+				e = db.QueryRow(`SELECT mm.path,i.attachments->0->>'id',i.attachments->0->>'path' FROM manager_channel_inbox n
+ JOIN manager_inputs i ON i.id=n.input_id JOIN manager_channel_media mm ON mm.inbox_id=n.id WHERE n.id=$1`, box.ID).Scan(&actualPath, &id, &outputPath)
+				if e != nil || actualPath != "uploads/"+kind+".bin" || id != box.ID+":0" || outputPath != nil {
+					t.Fatal("project attachment", actualPath, id, outputPath, e)
 				}
 			}
 		})

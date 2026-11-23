@@ -19,6 +19,8 @@ import (
 	im "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
+const outboundMediaLimit = 32 << 20
+
 type deliveryMedia struct {
 	ID        string `json:"artifact_id"`
 	Name      string `json:"name"`
@@ -38,7 +40,7 @@ func (b *Backend) deliveryMedia(ctx context.Context, path string, d Delivery) (*
 	}
 	a := &result.Artifact
 	digest := sha256.Sum256(result.Data)
-	if a.ID != d.ArtifactID || a.Name == "" || int64(len(result.Data)) != a.Size || a.Size > mediaLimit || a.Version != hex.EncodeToString(digest[:]) {
+	if a.ID != d.ArtifactID || a.Name == "" || int64(len(result.Data)) != a.Size || a.Size > outboundMediaLimit || a.Version != hex.EncodeToString(digest[:]) {
 		return nil, errors.New("invalid artifact version")
 	}
 	a.Data = result.Data

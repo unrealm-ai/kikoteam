@@ -20,6 +20,7 @@ import (
 )
 
 const ProjectUploadLimit = 32 << 20
+const ChannelMediaUploadLimit = 100 << 20
 const uploadLedgerBase = "state/project-uploads-v2"
 
 func uploadKeyDirectory(key string) string {
@@ -145,17 +146,23 @@ func publishUpload(root string, c Conversation, directory, name string, journal 
 }
 
 func (s *Service) UploadProject(ctx context.Context, c Conversation, actor, key, directory, name string, stream io.ReadSeeker) (UploadedFile, bool, error) {
-	return s.uploadProject(ctx, c, actor, key, directory, name, stream, nil)
+	return s.uploadProject(ctx, c, actor, key, directory, name, stream, projectUploadGuards{})
 }
 
 // UploadChannelMedia shares the normal upload journal and verifies the lease
 // while holding the same lock used by recovery, before publishing any bytes.
 func (s *Service) UploadChannelMedia(ctx context.Context, c Conversation, actor, key, name string, stream io.ReadSeeker, check func() error) (UploadedFile, error) {
-	file, _, err := s.uploadProject(ctx, c, actor, key, "uploads", name, stream, check)
+	file, _, err := s.uploadProject(ctx, c, actor, key, "uploads", name, stream, projectUploadGuards{preflight: check, sizeLimit: ChannelMediaUploadLimit})
 	return file, err
 }
 
-func (s *Service) uploadProject(ctx context.Context, c Conversation, actor, key, directory, name string, stream io.ReadSeeker, check func() error) (UploadedFile, bool, error) {
+type projectUploadGuards struct {
+	sizeLimit int64
+	preflight func() error
+	publish   func(func() (UploadedFile, error)) (UploadedFile, error)
+}
+
+func (s *Service) uploadProject(ctx context.Context, c Conversation, actor, key, directory, name string, stream io.ReadSeeker, guards projectUploadGuards) (UploadedFile, bool, error) {
 	var empty UploadedFile
 	if !validKey(key) {
 		return empty, false, Fail("idempotency_key_required", 400, "需要有效的上传去重键")
@@ -169,25 +176,29 @@ func (s *Service) uploadProject(ctx context.Context, c Conversation, actor, key,
 	if c.Lifecycle != "active" {
 		return empty, false, Fail("conversation_archived", 409, "会话已归档")
 	}
+	limit := guards.sizeLimit
+	if limit == 0 {
+		limit = ProjectUploadLimit
+	}
 	digest := sha256.New()
-	size, err := io.Copy(digest, io.LimitReader(stream, ProjectUploadLimit+1))
+	size, err := io.Copy(digest, io.LimitReader(stream, limit+1))
 	if err != nil {
 		return empty, false, err
 	}
-	if size > ProjectUploadLimit {
-		return empty, false, Fail("file_too_large", 413, "文件超过 32 MiB")
+	if size > limit {
+		return empty, false, Fail("file_too_large", 413, fmt.Sprintf("文件超过 %d MiB", limit>>20))
 	}
 	fp, err := fingerprint([]string{directory, name, hex.EncodeToString(digest.Sum(nil))})
 	if err != nil {
 		return empty, false, err
 	}
-	ledger, err := s.lockUploadLedger(ctx, c, actor, key, check != nil)
+	ledger, err := s.lockUploadLedger(ctx, c, actor, key, guards.preflight != nil || guards.publish != nil)
 	if err != nil {
 		return empty, false, err
 	}
 	defer closeProjectHandle(ledger)
-	if check != nil {
-		if err := check(); err != nil {
+	if guards.preflight != nil {
+		if err := guards.preflight(); err != nil {
 			return empty, false, err
 		}
 	}
@@ -202,9 +213,16 @@ func (s *Service) uploadProject(ctx context.Context, c Conversation, actor, key,
 		var payload unix.Stat_t
 		err = unix.Fstatat(int(ledger.Fd()), "payload", &payload, unix.AT_SYMLINK_NOFOLLOW)
 		if errors.Is(err, fs.ErrNotExist) {
-			if check != nil {
-				err = syncRecoveredUpload(s.ProjectRoot, c, directory, ledger)
-				return record.File, err == nil, err
+			sync := func() (UploadedFile, error) {
+				return record.File, syncRecoveredUpload(s.ProjectRoot, c, directory, ledger)
+			}
+			if guards.publish != nil {
+				result, err := guards.publish(sync)
+				return result, err == nil, err
+			}
+			if guards.preflight != nil {
+				result, err := sync()
+				return result, err == nil, err
 			}
 			return record.File, true, nil
 		}
@@ -241,23 +259,34 @@ func (s *Service) uploadProject(ctx context.Context, c Conversation, actor, key,
 		}
 		record = uploadJournal{Fingerprint: fp, File: UploadedFile{Attachment: Attachment{Size: size}, MediaType: mt}}
 	}
-	var result UploadedFile
-	// Publish only while this private conversation is active. The journal makes
-	// publication idempotent even if the transaction result is lost.
-	err = s.Store.WithProjectPublication(ctx, Target{Workspace: c.WorkspaceID, Actor: actor, Conversation: c.ID}, func(state SessionState) error {
-		if e := admitted(state); e != nil {
-			return e
-		}
-		var e error
-		result, e = publishUpload(s.ProjectRoot, c, directory, name, ledger, record)
-		return e
-	})
+	publish := func() (UploadedFile, error) {
+		return publishUpload(s.ProjectRoot, c, directory, name, ledger, record)
+	}
+	result, err := s.publishProjectUpload(ctx, Target{Workspace: c.WorkspaceID, Actor: actor, Conversation: c.ID}, guards.publish, publish)
 	if err != nil {
 		if saved, readErr := readJournal(ledger); readErr == nil && saved.Fingerprint == "" {
 			err = errors.Join(err, unlinkTemporary(ledger, "payload"))
 		}
 	}
 	return result, false, err
+}
+
+// Publish only while the project is active; the journal makes filesystem
+// publication idempotent even if the transaction result is lost.
+func (s *Service) publishProjectUpload(ctx context.Context, target Target, override func(func() (UploadedFile, error)) (UploadedFile, error), publish func() (UploadedFile, error)) (UploadedFile, error) {
+	if override != nil {
+		return override(publish)
+	}
+	var result UploadedFile
+	err := s.Store.WithProjectPublication(ctx, target, func(state SessionState) error {
+		if err := admitted(state); err != nil {
+			return err
+		}
+		var err error
+		result, err = publish()
+		return err
+	})
+	return result, err
 }
 
 func (s *Service) lockUploadLedger(ctx context.Context, c Conversation, actor, key string, cancelable bool) (*os.File, error) {

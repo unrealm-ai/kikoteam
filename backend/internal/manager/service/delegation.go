@@ -77,6 +77,7 @@ type DelegationArgs struct {
 	WorkItemID          string   `json:"work_item_id,omitempty"`
 	Content             string   `json:"content,omitempty"`
 	RequirementsVersion int64    `json:"expected_requirements_version,string,omitempty"`
+	AttachmentIDs       []string `json:"attachment_ids,omitempty"`
 	AttachmentPaths     []string `json:"attachment_paths,omitempty"`
 	PlanningState       string   `json:"planning_state,omitempty"`
 	ExecutionState      string   `json:"execution_state,omitempty"`
@@ -116,7 +117,7 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 	if current.ActorID != scope.ActorID {
 		return nil, Fail("access_revoked", 403, "当前输入主体已改变")
 	}
-	if (name == "create_session" || name == "send_message" || name == "artifact_select") && current.InputID != scope.InputID {
+	if current.InputID != scope.InputID && pinsDelegationInput(name, args) {
 		return nil, Fail("delegation_input_changed", 409, "本次委派的来源输入已改变")
 	}
 	scope = current
@@ -167,34 +168,47 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 		}
 		return d.result(ctx, scope, v, args)
 	case "send_message":
-		if v.PlanningState == "planned" || v.PlanningState == "canceled" {
-			return nil, Fail("task_not_started", 409, "未启动的待办请使用 supplement_todo")
-		}
-		if len(args.AttachmentPaths) == 0 {
-			args.AttachmentPaths = nil
-		} else if strings.TrimSpace(args.Text) == "" {
-			args.Text = ""
-		}
-		key, e := fingerprint([]any{"delegated_append", scope.Identity.SessionID, scope.InputID, v.ID, args.Text, args.AttachmentPaths})
-		if e != nil {
-			return nil, e
-		}
-		input, duplicate, e := d.Manager.submitInputVersion(ctx, scope.WorkspaceID, scope.ActorID, v.ID, key, args.Text, "", &scope, &v.InputRevision, args.AttachmentPaths...)
-		if e != nil {
-			return nil, e
-		}
-		if r, ok := d.Store.(DelegationReceiptStore); ok {
-			input, e = r.DelegatedInputReceipt(ctx, scope, v.ID, input.ID)
-			if input.Receipt != nil {
-				input.Receipt.Duplicate = duplicate
-			}
-		}
-		return input, e
+		return d.sendTaskMessage(ctx, scope, v, args)
 	case "stop_session":
 		return d.Manager.controlSession(ctx, scope.WorkspaceID, scope.ActorID, v.ID, false, &scope.Identity)
 	default:
 		return nil, Fail("invalid_argument", 400, "未知委派操作")
 	}
+}
+
+func pinsDelegationInput(name string, args DelegationArgs) bool {
+	return len(args.AttachmentIDs) > 0 || name == "create_session" || name == "send_message" || name == "artifact_select"
+}
+
+func (d *Delegation) sendTaskMessage(ctx context.Context, scope DelegationScope, v Session, args DelegationArgs) (any, error) {
+	if v.PlanningState == "planned" || v.PlanningState == "canceled" {
+		return nil, Fail("task_not_started", 409, "未启动的待办请使用 supplement_todo")
+	}
+	if len(args.AttachmentPaths) == 0 {
+		args.AttachmentPaths = nil
+	}
+	if (len(args.AttachmentPaths) > 0 || len(args.AttachmentIDs) > 0) && strings.TrimSpace(args.Text) == "" {
+		args.Text = ""
+	}
+	payload := []any{"delegated_append", scope.Identity.SessionID, scope.InputID, v.ID, args.Text, args.AttachmentPaths}
+	if len(args.AttachmentIDs) > 0 {
+		payload = append(payload, args.AttachmentIDs)
+	}
+	key, e := fingerprint(payload)
+	if e != nil {
+		return nil, e
+	}
+	input, duplicate, e := d.Manager.submitInputVersion(ctx, scope.WorkspaceID, scope.ActorID, v.ID, key, args.Text, "", &scope, &v.InputRevision, args.AttachmentIDs, args.AttachmentPaths...)
+	if e != nil {
+		return nil, e
+	}
+	if r, ok := d.Store.(DelegationReceiptStore); ok {
+		input, e = r.DelegatedInputReceipt(ctx, scope, v.ID, input.ID)
+		if input.Receipt != nil {
+			input.Receipt.Duplicate = duplicate
+		}
+	}
+	return input, e
 }
 
 func (d *Delegation) callWorkItem(ctx context.Context, scope DelegationScope, name string, args DelegationArgs) (any, error) {
@@ -218,7 +232,7 @@ func (d *Delegation) createTask(ctx context.Context, scope DelegationScope, args
 	if !ValidID(scope.InputID) {
 		return nil, Fail("delegation_input_changed", 409, "无法核实本次委派的来源输入")
 	}
-	req := CreateSession{AttachmentPaths: args.AttachmentPaths, ConversationID: scope.ConversationID, Mode: "task", Title: args.Title}
+	req := CreateSession{AttachmentIDs: args.AttachmentIDs, AttachmentPaths: args.AttachmentPaths, ConversationID: scope.ConversationID, Mode: "task", Title: args.Title}
 	req.Input = &struct {
 		Text string `json:"text"`
 	}{Text: args.Instruction}

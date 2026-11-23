@@ -10,7 +10,7 @@ import (
 // prepareBatch is called while holding the session lock. The trigger owns the
 // execution authority; preceding context rows retain their own durable identity.
 func prepareBatch(ctx context.Context, tx *sql.Tx, w Work, input *Input, turn string) error {
-	rows, err := tx.QueryContext(ctx, `SELECT id,text,source_kind,(SELECT jsonb_agg(a->'path' ORDER BY n)::text FROM jsonb_array_elements(attachments) WITH ORDINALITY AS f(a,n)) FROM manager_inputs WHERE session_id=$1 AND status='queued' AND seq<=$2
+	rows, err := tx.QueryContext(ctx, `SELECT id,text,source_kind,attachments FROM manager_inputs WHERE session_id=$1 AND status='queued' AND seq<=$2
  AND (NOT EXISTS(SELECT 1 FROM manager_human_dm_context h WHERE h.input_id=manager_inputs.id)
  OR (channel_principal_id=(SELECT channel_principal_id FROM manager_inputs root WHERE root.id=$6)
  AND admission_epoch=(SELECT admission_epoch FROM manager_inputs root WHERE root.id=$6)
@@ -23,16 +23,17 @@ func prepareBatch(ctx context.Context, tx *sql.Tx, w Work, input *Input, turn st
 	var ids, texts []string
 	for rows.Next() {
 		var id, text, kind string
-		var paths *string
-		if err = rows.Scan(&id, &text, &kind, &paths); err != nil {
+		var attachments []byte
+		if err = rows.Scan(&id, &text, &kind, &attachments); err != nil {
 			return err
 		}
 		ids = append(ids, id)
 		if kind != "user" && !strings.HasPrefix(text, "[系统消息]") {
 			text = "[系统消息]" + text
 		}
-		if paths != nil {
-			text += "\n\n本条消息引用的项目文件（相对路径，按顺序）：\n" + *paths
+		text, err = renderInputAttachments(text, attachments)
+		if err != nil {
+			return err
 		}
 		texts = append(texts, text)
 	}

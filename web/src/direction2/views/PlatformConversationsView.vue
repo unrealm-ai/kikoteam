@@ -17,7 +17,7 @@ const conversation = ref<Conversation | null>(null), chatID = ref(''), taskID = 
 const error = ref(''), tasksError = ref(''), firstText = ref(''), sending = ref(false), opening = ref(false);
 const showFiles=ref(false),treeMounted=ref(false),tree=ref<InstanceType<typeof ProjectFileTree>>(),dragDepth=ref(0),chatSending=ref(false);
 const filesAvailable=computed(()=>!!conversation.value&&(!!conversation.value.web_user_id||!props.selectedConversationId));
-const draft=useProjectDraft(()=>({workspace:activeWorkspaceId.value,conversation:conversation.value?.id||''}),()=>{void tree.value?.refresh();});
+const draft=useProjectDraft(()=>({workspace:activeWorkspaceId.value,conversation:conversation.value?.id||''}),()=>{void tree.value?.refresh();},true);
 const locked=computed(()=>sending.value||chatSending.value||conversation.value?.lifecycle!=='active'||!employee.value?.enabled);
 function toggleFiles(){treeMounted.value=true;showFiles.value=!showFiles.value;if(showFiles.value)showTasks.value=false;}
 function dragFiles(e:DragEvent){return !!e.dataTransfer?.types.includes('Files')&&filesAvailable.value&&!locked.value;}
@@ -28,7 +28,7 @@ const detailTaskID = ref(''), detailTurnID = ref('');
 let lastTaskRefresh = 0, tasksLoaded = false;
 let taskOpenGeneration = 0;
 let generation = 0, controller = new AbortController(), listController = new AbortController(), timer: ReturnType<typeof setInterval> | null = null, taskBusy = false;
-let firstRequest: { paths:string[]; text: string; key: string; inputKey: string } | null = null;
+let firstRequest: { paths:string[]; ids:string[]; text: string; key: string; inputKey: string } | null = null;
 const employee = computed(() => agents.value.find(a => a.id === selected.value));
 const filtered = computed(() => agents.value.filter(a => `${a.name} ${a.role}`.toLowerCase().includes(search.value.toLowerCase())));
 async function loadAgents() {
@@ -78,22 +78,22 @@ async function open() {
 }
 function onFirstEnter(event: KeyboardEvent) { if (event.isComposing || event.keyCode === 229) return; event.preventDefault(); void firstSend(); }
 async function firstSend() {
-  if (!conversation.value || conversation.value.lifecycle !== 'active' || sending.value || draft.pending.value || (!firstText.value.trim()&&!draft.paths.value.length)) return;
+  if (!conversation.value || conversation.value.lifecycle !== 'active' || sending.value || draft.unreserved.value || (!firstText.value.trim()&&!draft.paths.value.length&&!draft.attachmentIds.value.length)) return;
   const g = generation, w = activeWorkspaceId.value, cid = conversation.value.id, signal = controller.signal;
-  if (!firstRequest || firstRequest.text !== firstText.value || JSON.stringify(firstRequest.paths)!==JSON.stringify(draft.paths.value)) firstRequest = { paths:[...draft.paths.value], text: firstText.value, key: crypto.randomUUID(), inputKey: crypto.randomUUID() };
+  if (!firstRequest || firstRequest.text !== firstText.value || JSON.stringify(firstRequest.paths)!==JSON.stringify(draft.paths.value) || JSON.stringify(firstRequest.ids)!==JSON.stringify(draft.attachmentIds.value)) firstRequest = { paths:[...draft.paths.value], ids:[...draft.attachmentIds.value], text: firstText.value, key: crypto.randomUUID(), inputKey: crypto.randomUUID() };
   const request = firstRequest; sending.value = true; error.value = '';
   try {
     let session: ManagerSession;
-    try { session = await managerApi.createChat(w, cid, request.text, request.key, signal, request.paths); }
+    try { session = await managerApi.createChat(w, cid, request.text, request.key, signal, request.paths, request.ids); }
     catch (e) {
       if (g !== generation) return;
       if (!(e instanceof D2ApiError) || e.code !== 'chat_session_exists') throw e;
       const c = await managerApi.conversation(w, cid, signal); if (g !== generation) return; if (!c.chat_session_id) throw new Error('主对话尚不可读取，请重试');
-      await managerApi.input(w, c.chat_session_id, request.text, request.inputKey, signal,'steer',request.paths);
+      await managerApi.input(w, c.chat_session_id, request.text, request.inputKey, signal,'steer',request.paths,request.ids);
       if (g !== generation) return;
       session = await managerApi.session(w, c.chat_session_id, signal);
     }
-    if (g !== generation) return; chatID.value = session.id; firstText.value = ''; draft.reset(); firstRequest = null;
+    if (g !== generation) return; chatID.value = session.id; firstText.value = ''; draft.clearSent(); firstRequest = null;
   } catch (e) { if (g === generation) error.value = e instanceof Error ? e.message : '发送结果未知，请原样重试'; }
   finally { if (g === generation) sending.value = false; }
 }
@@ -123,8 +123,8 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
       <p v-if="error" class="error" role="alert">{{ error }} <NButton v-if="!conversation" @click="open">重新加载</NButton></p><NSkeleton v-if="opening" text :repeat="4" />
       <div v-else-if="conversation" class="panels">
         <div class="chat-column" @dragenter="dragEnter" @dragover="dragFiles($event)&&$event.preventDefault()" @dragleave="dragDepth=Math.max(0,dragDepth-1)" @drop="dropFiles">
-        <ManagerSessionPanel v-if="chatID" :attachment-paths="draft.paths.value" :attachment-pending="draft.pending.value" @sending="chatSending=$event" @sent="draft.reset" @report="tree?.refresh()" :key="chatID" :workspace="activeWorkspaceId" :session-id="chatID" :read-only="conversation.lifecycle !== 'active'" :title="employee?.name || '主对话'" :tasks="tasks" @changed="refreshTasks()" @open-task="openTask"><template #attachments><ProjectDraftFiles v-if="filesAvailable" :draft="draft" :disabled="locked"/></template></ManagerSessionPanel>
-        <section v-else-if="conversation.lifecycle === 'active'" class="new-chat"><p>暂无历史消息，请向「{{ employee?.name }}」发送工作需求。</p><ProjectDraftFiles v-if="filesAvailable" :draft="draft" :disabled="locked"/><NInput v-model:value="firstText" type="textarea" :disabled="sending || !employee?.enabled" placeholder="输入消息" @keydown.enter.exact="onFirstEnter" /><NButton type="primary" :loading="sending" :disabled="draft.pending.value || (!firstText.trim() && !draft.paths.value.length) || sending || !employee?.enabled" @click="firstSend">{{ error ? '重试发送' : '发送' }}</NButton></section>
+        <ManagerSessionPanel v-if="chatID" :attachment-paths="draft.paths.value" :attachment-ids="draft.attachmentIds.value" :attachment-pending="draft.unreserved.value" :attachment-lookup="filesAvailable" :uploaded-attachments="draft.uploadedAttachments.value" @sending="chatSending=$event" @sent="draft.clearSent" @report="tree?.refresh()" :key="chatID" :workspace="activeWorkspaceId" :session-id="chatID" :read-only="conversation.lifecycle !== 'active'" :title="employee?.name || '主对话'" :tasks="tasks" @changed="refreshTasks()" @open-task="openTask"><template #attachments><ProjectDraftFiles v-if="filesAvailable" :draft="draft" :disabled="locked"/></template></ManagerSessionPanel>
+        <section v-else-if="conversation.lifecycle === 'active'" class="new-chat"><p>暂无历史消息，请向「{{ employee?.name }}」发送工作需求。</p><ProjectDraftFiles v-if="filesAvailable" :draft="draft" :disabled="locked"/><NInput v-model:value="firstText" type="textarea" :disabled="sending || !employee?.enabled" placeholder="输入消息" @keydown.enter.exact="onFirstEnter" /><NButton type="primary" :loading="sending" :disabled="draft.unreserved.value || (!firstText.trim() && !draft.paths.value.length && !draft.attachmentIds.value.length) || sending || !employee?.enabled" @click="firstSend">{{ error ? '重试发送' : '发送' }}</NButton></section>
         <div v-if="dragDepth>0" class="drop-hint" role="status"><span>↑</span><strong>松开以添加附件</strong><small>支持文件和图片</small></div></div>
         <ProjectFileTree v-if="treeMounted&&filesAvailable" v-show="showFiles" ref="tree" :key="conversation.id" :workspace="activeWorkspaceId" :conversation="conversation.id" :read-only="locked" @close="showFiles=false" @reference="draft.reference"/>
         <aside v-if="showTasks" class="tasks" :class="{ 'has-detail': taskID }"><div class="task-list-heading"><h3>本会话任务 <span>{{ tasks.length }}</span></h3><p class="muted">任务可并行运行，本轮结束后仍可继续。</p><p v-if="tasksError" class="error">{{ tasksError }}</p></div><div class="task-list"><button v-for="task in tasks" :key="task.id" :class="['task', { selected: taskID === task.id }]" @click="openTask(task.id)"><strong>{{ task.title || '任务' }}</strong><small>{{ workItemProgress(task.execution) || (task.execution.required_actions?.length ? '待确认' : sessionStatus(task.execution.state)) }} · {{ sessionStatus(task.lifecycle) }}</small></button><p v-if="!tasks.length" class="muted">尚未触发任务</p><NButton v-if="taskCursor" size="small" @click="refreshTasks(true)">加载更多任务</NButton></div><div v-if="taskID && detailTaskID" class="task-detail"><TaskDetailPanel :key="detailTaskID" :workspace-id="activeWorkspaceId" :task-id="detailTaskID" :initial-turn-id="detailTurnID" presentation="sidebar" @task-changed="refreshTasks()" @close="taskID = ''" @open-source-conversation="taskID = ''; showTasks = false" /></div></aside>

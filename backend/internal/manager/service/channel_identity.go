@@ -5,6 +5,7 @@ import "context"
 // ChannelActor is server-created evidence, never decoded from a public Web
 // request. It is reconstructed from durable inbox/active Input authorization.
 type ChannelActor struct {
+	Attachments         []Attachment
 	InboxID             string
 	ConfirmationOnly    bool
 	NeedsContextReceipt bool

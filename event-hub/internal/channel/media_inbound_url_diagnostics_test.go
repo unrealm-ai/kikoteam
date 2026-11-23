@@ -23,7 +23,7 @@ func TestDingMediaURLRejectionIsSafeAndClassified(t *testing.T) {
 		{"https://127.0.0.1/private/path?q=token", "invalid_dns_hostname", ""},
 		{"https://" + strings.Repeat("a", 64) + ".example/private/path?q=token", "invalid_dns_hostname", ""},
 	} {
-		_, err := fetchMediaURL(t.Context(), "dingtalk", tc.address, "")
+		_, err := fetchMediaURL(t.Context(), "dingtalk", tc.address, "", false)
 		var got *mediaURLRejection
 		if !errors.Is(err, mediaDownloadURLInvalid) || !errors.As(err, &got) || got.stage != "initial" ||
 			got.reason != tc.reason || got.hostname != tc.hostname || got.redirectHop != 0 ||
@@ -31,7 +31,7 @@ func TestDingMediaURLRejectionIsSafeAndClassified(t *testing.T) {
 			t.Errorf("incorrect safe rejection for %s: %+v %v", tc.reason, got, err)
 		}
 	}
-	_, err := fetchMediaURL(t.Context(), "wecom", "https://outside.example/private?q=token", "")
+	_, err := fetchMediaURL(t.Context(), "wecom", "http://outside.example/private?q=token", "", false)
 	var got *mediaURLRejection
 	if !errors.Is(err, mediaDownloadURLInvalid) || errors.As(err, &got) {
 		t.Fatal("unapproved provider acquired extra diagnostics")
@@ -44,7 +44,7 @@ func TestDingMediaRedirectRejectionAndTrace(t *testing.T) {
 		dest, reason, host string
 	}{
 		{2, "https://privateUser:privatePass@unsafe.example/privatePath?privateQuery=privateToken", "userinfo_present", "unsafe.example"},
-		{4, "https://files.dingtalk.com/privatePath?privateQuery=privateToken", "redirect_limit", "files.dingtalk.com"},
+		{6, "https://files.dingtalk.com/privatePath?privateQuery=privateToken", "redirect_limit", "files.dingtalk.com"},
 	} {
 		hops := 0
 		client := http.Client{

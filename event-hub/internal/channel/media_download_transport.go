@@ -12,17 +12,20 @@ import (
 type mediaIPLookup func(context.Context, string, string) ([]netip.Addr, error)
 type mediaSocketDial func(context.Context, string, string) (net.Conn, error)
 
-var mediaDownloadTransport = newMediaDownloadTransport(
+var (
 	// The Go resolver preserves A records as IPv4 and AAAA records as IPv6
-	// instead of treating them interchangeably; the policy rejects mapped AAAA.
-	(&net.Resolver{PreferGo: true, StrictErrors: true}).LookupNetIP,
-	(&net.Dialer{KeepAlive: 30 * time.Second}).DialContext,
+	// instead of treating them interchangeably. The public policy rejects mapped AAAA.
+	mediaDownloadLookup = (&net.Resolver{PreferGo: true, StrictErrors: true}).LookupNetIP
+	mediaDownloadDial   = (&net.Dialer{KeepAlive: 30 * time.Second}).DialContext
+	// Separate pools keep public-policy requests from reusing private connections.
+	mediaDownloadTransport        = newMediaDownloadTransport(mediaDownloadLookup, mediaDownloadDial, true)
+	mediaPrivateDownloadTransport = newMediaDownloadTransport(mediaDownloadLookup, mediaDownloadDial, false)
 )
 
-func newMediaDownloadTransport(lookup mediaIPLookup, dial mediaSocketDial) *http.Transport {
+func newMediaDownloadTransport(lookup mediaIPLookup, dial mediaSocketDial, validatePublicIP bool) *http.Transport {
 	return &http.Transport{
 		// No environment proxy: it would resolve and connect outside this policy.
-		DialContext:           mediaDownloadDialer(lookup, dial),
+		DialContext:           mediaDownloadDialer(lookup, dial, validatePublicIP),
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
@@ -31,7 +34,7 @@ func newMediaDownloadTransport(lookup mediaIPLookup, dial mediaSocketDial) *http
 	}
 }
 
-func mediaDownloadDialer(lookup mediaIPLookup, dial mediaSocketDial) mediaSocketDial {
+func mediaDownloadDialer(lookup mediaIPLookup, dial mediaSocketDial, validatePublicIP bool) mediaSocketDial {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
 		if err != nil || host == "" || (port != "443" && port != "80") {
@@ -47,14 +50,16 @@ func mediaDownloadDialer(lookup mediaIPLookup, dial mediaSocketDial) mediaSocket
 		if len(ips) == 0 {
 			return nil, mediaDownloadFailed
 		}
-		for _, ip := range ips {
-			if !publicMediaIP(ip) {
-				return nil, mediaDownloadURLInvalid // Reject mixed public/non-public answers before dialing any of them.
+		if validatePublicIP {
+			for _, ip := range ips {
+				if !publicMediaIP(ip) {
+					return nil, mediaDownloadURLInvalid // Reject mixed public/non-public answers before dialing any of them.
+				}
 			}
 		}
 		failure := mediaDownloadFailed
 		for _, ip := range ips {
-			// Dial only the vetted literal. The HTTP transport still uses the
+			// Dial the resolved literal. The HTTP transport still uses the
 			// original URL hostname for TLS SNI/verification and the Host header.
 			conn, err := dial(ctx, network, net.JoinHostPort(ip.String(), port))
 			if err == nil {

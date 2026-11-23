@@ -1280,6 +1280,11 @@
                           },
                           "message_id": {
                             "type": "string"
+                          },
+                          "allow_non_public_ip": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Platform setting at claim time. True permits DNS results outside the public IP policy for DingTalk or WeCom attachment downloads."
                           }
                         }
                       },

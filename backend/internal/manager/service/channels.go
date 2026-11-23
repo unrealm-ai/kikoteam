@@ -26,13 +26,14 @@ type MediaReference struct {
 }
 type MediaJob struct {
 	MediaReference
-	InboxID    string `json:"inbox_id"`
-	Ordinal    int    `json:"ordinal"`
-	Lease      string `json:"lease_token"`
-	BindingID  string `json:"binding_id"`
-	Generation int64  `json:"connection_generation"`
-	Provider   string `json:"provider"`
-	MessageID  string `json:"message_id"`
+	AllowNonPublicIP bool   `json:"allow_non_public_ip,omitempty"`
+	InboxID          string `json:"inbox_id"`
+	Ordinal          int    `json:"ordinal"`
+	Lease            string `json:"lease_token"`
+	BindingID        string `json:"binding_id"`
+	Generation       int64  `json:"connection_generation"`
+	Provider         string `json:"provider"`
+	MessageID        string `json:"message_id"`
 }
 type ChannelInbound struct {
 	Media                []MediaReference `json:"media,omitempty"`

@@ -34,8 +34,15 @@ export interface GithubOAuthWrite {
   clear_client_secret?: boolean;
 }
 
+export interface ChannelDownloadSettings {
+  version: number;
+  validate_public_ip: boolean;
+}
+type ChannelDownloadSettingsWrite = Omit<ChannelDownloadSettings, 'version'> & { expected_version: number };
+
 const mailPath = '/platform/mail-settings';
 const githubPath = '/platform/oauth-apps/github';
+const channelDownloadPath = '/platform/channel-download-settings';
 const bounded = (signal: AbortSignal) => AbortSignal.any([signal, AbortSignal.timeout(20_000)]);
 const update = <T>(path: string, data: unknown, signal: AbortSignal) =>
   platformRequest<T>(path, { method: 'PATCH', body: JSON.stringify(data), signal: bounded(signal) });
@@ -47,4 +54,7 @@ export const platformSettings = {
     platformRequest<{ok: true; test_receipt: string}>(mailPath + '/test', { ...post(data), signal: bounded(signal) }),
   github: (signal: AbortSignal) => platformRequest<GithubOAuthApp>(githubPath, { signal: bounded(signal) }),
   saveGithub: (data: GithubOAuthWrite, signal: AbortSignal) => update<GithubOAuthApp>(githubPath, data, signal),
+  channelDownloads: (signal: AbortSignal) => platformRequest<ChannelDownloadSettings>(channelDownloadPath, { signal: bounded(signal) }),
+  saveChannelDownloads: (data: ChannelDownloadSettingsWrite, signal: AbortSignal) =>
+    update<ChannelDownloadSettings>(channelDownloadPath, data, signal),
 };

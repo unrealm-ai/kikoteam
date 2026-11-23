@@ -27,7 +27,10 @@ import (
 	"github.com/unrealm-ai/kikoteam/event-hub/internal/feishucontent"
 )
 
-const inboundMediaLimit = 100 << 20
+const (
+	inboundMediaLimit        = 100 << 20
+	inboundMediaMaxRedirects = 5
+)
 
 type mediaLocator struct {
 	Key    string `json:"key"`
@@ -278,13 +281,10 @@ func (p mediaURLPolicy) rejectReason(raw string) (reason, hostname string) {
 	if u.Port() != "" && u.Port() != "443" {
 		return "unexpected_port", host
 	}
-	// WeCom still restricts its callback URLs and their redirects by suffix.
-	for _, domain := range []string{"qq.com", "myqcloud.com", "weixin.qq.com", "wxwork.cn"} {
-		if p == "wecom" && (host == domain || strings.HasSuffix(host, "."+domain)) {
-			return "", host
-		}
+	if p != "wecom" || safeMediaHostname(host) == "" {
+		return "hostname_not_allowed", host
 	}
-	return "hostname_not_allowed", host
+	return "", host
 }
 
 // Only syntactically valid DNS names reach the guarded public-IP transport.
@@ -360,9 +360,9 @@ func fetchMedia(ctx context.Context, b Binding, j MediaJob, l mediaLocator) (fet
 		}
 		// Only the official authenticated resolver supplies this URL. Never
 		// treat the callback's downloadCode itself as a download address.
-		return fetchMediaURL(ctx, b.Provider, address, l.AESKey)
+		return fetchMediaURL(ctx, b.Provider, address, l.AESKey, j.AllowNonPublicIP)
 	}
-	return fetchMediaURL(ctx, b.Provider, l.Key, l.AESKey)
+	return fetchMediaURL(ctx, b.Provider, l.Key, l.AESKey, j.AllowNonPublicIP)
 }
 
 func fetchFeishuMedia(ctx context.Context, b Binding, j MediaJob, l mediaLocator) (fetchedMedia, error) {
@@ -403,17 +403,18 @@ func resolveDingMedia(ctx context.Context, b Binding, l mediaLocator) (string, e
 	return result.URL, nil
 }
 
-func fetchMediaURL(ctx context.Context, provider, address, aesKey string) (fetchedMedia, error) {
-	return fetchMediaURLWithTransport(ctx, mediaURLPolicy(provider), address, aesKey, nil)
+func fetchMediaURL(ctx context.Context, provider, address, aesKey string, allowNonPublicIP bool) (fetchedMedia, error) {
+	transport := mediaDownloadTransport
+	if allowNonPublicIP && (provider == "dingtalk" || provider == "wecom") {
+		transport = mediaPrivateDownloadTransport
+	}
+	return fetchMediaURLWithTransport(ctx, mediaURLPolicy(provider), address, aesKey, transport)
 }
 
 func fetchMediaURLWithTransport(ctx context.Context, policy mediaURLPolicy, address, aesKey string, transport http.RoundTripper) (fetchedMedia, error) {
 	provider := string(policy)
 	if reason, host := policy.rejectReason(address); reason != "" {
 		return fetchedMedia{}, mediaURLRejectionError(provider, "initial", reason, host, 0)
-	}
-	if transport == nil && (provider == "dingtalk" || provider == "wecom") {
-		transport = mediaDownloadTransport
 	}
 	client := http.Client{Timeout: 45 * time.Second, CheckRedirect: policy.checkRedirect, Transport: transport}
 	req, e := http.NewRequestWithContext(ctx, "GET", address, nil)
@@ -433,14 +434,11 @@ func fetchMediaURLWithTransport(ctx context.Context, policy mediaURLPolicy, addr
 }
 
 func (p mediaURLPolicy) checkRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) > 3 {
+	if len(via) > inboundMediaMaxRedirects {
 		return mediaURLRejectionError(string(p), "redirect", "redirect_limit", req.URL.Hostname(), len(via))
 	}
 	if reason, host := p.rejectReason(req.URL.String()); reason != "" {
 		return mediaURLRejectionError(string(p), "redirect", reason, host, len(via))
-	}
-	if len(via) != 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme == "http" {
-		return mediaURLRejectionError(string(p), "redirect", "https_downgrade", req.URL.Hostname(), len(via))
 	}
 	// net/http builds Referer from the previous URL, including its query.
 	req.Header.Del("Referer")

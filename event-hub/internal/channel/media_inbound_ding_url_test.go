@@ -73,22 +73,14 @@ func TestDingMediaRejectsMalformedOrUnsupportedAuthoritativeURL(t *testing.T) {
 			}
 		})
 	}
-	for _, raw := range []string{"http://files.qq.com/file", "https://public-attachments.example/file"} {
-		if _, err := fetchMediaURL(t.Context(), "wecom", raw, ""); !errors.Is(err, mediaDownloadURLInvalid) {
-			t.Fatal("DingTalk policy weakened WeCom's HTTPS/hostname restrictions")
-		}
-	}
 }
 
 func TestDingMediaRedirectSchemesAndSignedRefererProtection(t *testing.T) {
-	for _, tc := range []struct {
-		initial, location string
-		downgrade         bool
-	}{
+	for _, tc := range []struct{ initial, location string }{
 		{initial: "http", location: "http"},
 		{initial: "http", location: "https"},
 		{initial: "https", location: "https"},
-		{initial: "https", location: "http", downgrade: true},
+		{initial: "https", location: "http"},
 	} {
 		t.Run(tc.initial+"-"+tc.location, func(t *testing.T) {
 			const file = "/privatePath?privateQuery=privateToken"
@@ -109,13 +101,6 @@ func TestDingMediaRedirectSchemesAndSignedRefererProtection(t *testing.T) {
 					}
 					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("data"))}, nil
 				}))
-			if tc.downgrade {
-				if !errors.Is(err, mediaDownloadURLInvalid) || calls != 1 {
-					t.Fatalf("HTTPS downgrade was not rejected: calls=%d error=%v", calls, err)
-				}
-				recordDingMediaURLRejection(t, err, "https_downgrade", host, 1)
-				return
-			}
 			if err != nil || calls != 2 || string(item.data) != "data" {
 				t.Fatalf("guarded download redirect failed: calls=%d error=%v", calls, err)
 			}

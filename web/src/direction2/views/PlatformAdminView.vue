@@ -8,21 +8,25 @@ import OfficialModelsView from './OfficialModelsView.vue';
 import MyCreditsView from './MyCreditsView.vue';
 import PlatformMailSettings from './PlatformMailSettings.vue';
 import PlatformGithubOAuthSettings from './PlatformGithubOAuthSettings.vue';
+import PlatformChannelDownloadSettings from './PlatformChannelDownloadSettings.vue';
 
 interface Account { id:string; name:string; email:string; is_platform_admin:boolean; platform_admin_version:number; credit_balance:string }
-type AdminSection = 'accounts' | 'models' | 'mail' | 'integrations';
+type AdminSection = 'accounts' | 'models' | 'mail' | 'integrations' | 'downloads';
 const tab = ref<AdminSection>('accounts');
 const mailOpened = ref(false), integrationsOpened = ref(false);
+const downloadsOpened = ref(false);
 const mailEditor = ref<InstanceType<typeof PlatformMailSettings>>();
 const githubEditor = ref<InstanceType<typeof PlatformGithubOAuthSettings>>();
+const downloadsEditor = ref<InstanceType<typeof PlatformChannelDownloadSettings>>();
 function selectSection(section: AdminSection) {
   if (section === 'mail') mailOpened.value = true;
   if (section === 'integrations') integrationsOpened.value = true;
+  if (section === 'downloads') downloadsOpened.value = true;
   tab.value = section;
 }
-const hasUnsaved = () => mailEditor.value?.dirty === true || githubEditor.value?.dirty === true;
+const hasUnsaved = () => mailEditor.value?.dirty === true || githubEditor.value?.dirty === true || downloadsEditor.value?.dirty === true;
 async function save() {
-  for (const editor of [mailEditor.value, githubEditor.value]) {
+  for (const editor of [mailEditor.value, githubEditor.value, downloadsEditor.value]) {
     if (editor?.dirty && !await editor.save()) return false;
   }
   return true;
@@ -30,6 +34,7 @@ async function save() {
 function discard() {
   mailEditor.value?.discard();
   githubEditor.value?.discard();
+  downloadsEditor.value?.discard();
 }
 defineExpose({ hasUnsaved, save, discard });
 const items = ref<Account[]>([]), page = ref(1), total = ref(0), q = ref('');
@@ -107,10 +112,12 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
       <NButton :type="tab==='models'?'primary':'default'" @click="selectSection('models')">官方模型</NButton>
       <NButton :type="tab==='mail'?'primary':'default'" @click="selectSection('mail')">邮件与注册</NButton>
       <NButton :type="tab==='integrations'?'primary':'default'" @click="selectSection('integrations')">集成设置</NButton>
+      <NButton :type="tab==='downloads'?'primary':'default'" @click="selectSection('downloads')">附件下载</NButton>
     </nav>
     <OfficialModelsView v-if="tab==='models'"/>
     <PlatformMailSettings v-if="mailOpened" v-show="tab==='mail'" ref="mailEditor" />
     <PlatformGithubOAuthSettings v-if="integrationsOpened" v-show="tab==='integrations'" ref="githubEditor" />
+    <PlatformChannelDownloadSettings v-if="downloadsOpened" v-show="tab==='downloads'" ref="downloadsEditor" />
     <section v-if="tab==='accounts'">
       <form v-if="settings" class="settings" @submit.prevent="saveSettings">
         <label for="signup-bonus">新用户注册赠送积分</label>

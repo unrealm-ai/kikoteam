@@ -36,6 +36,7 @@ type Server struct {
 	Admin            *service.AdminService
 	MailSettings     *service.MailSettingsService
 	OAuthApps        *service.OAuthAppService
+	ChannelDownloads *service.ChannelDownloadSettingsService
 	Channels         *service.ChannelService
 	Skills           *service.SkillService
 	Plugins          *service.PluginService
@@ -62,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	s.adminRoutes(m)
 	s.mailSettingsRoutes(m)
 	s.oauthAppRoutes(m)
+	s.channelDownloadSettingsRoutes(m)
 	s.channelRoutes(m)
 	s.wecomContactRoutes(m)
 	s.feishuSetupRoutes(m)

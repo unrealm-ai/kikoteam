@@ -49,6 +49,7 @@ func TestMediaDialRejectsMixedDNSBeforeAnyConnection(t *testing.T) {
 				t.Fatal("mixed DNS answer permitted a dial")
 				return nil, nil
 			},
+			true,
 		)
 		if _, err := dial(t.Context(), "tcp", "files.dingtalk.com:443"); !errors.Is(err, mediaDownloadURLInvalid) || lookups != 1 {
 			t.Fatalf("mixed answer not safely denied: %v, lookups=%d", err, lookups)
@@ -69,6 +70,7 @@ func TestMediaDialPinsEachVettedLiteral(t *testing.T) {
 			attempted = append(attempted, target)
 			return nil, errors.New("fixture unavailable")
 		},
+		true,
 	)
 	if _, err := dial(t.Context(), "tcp", "files.dingtalk.com:443"); !errors.Is(err, mediaDownloadFailed) || lookups != 1 ||
 		!slices.Equal(attempted, want) {
@@ -83,7 +85,7 @@ func TestMediaTransportDirectTLSAndChecksRedirectDial(t *testing.T) {
 		if req.Host != "files.example.com" || req.TLS == nil || req.TLS.ServerName != "files.example.com" {
 			t.Error("literal dial lost original Host or TLS ServerName")
 		}
-		http.Redirect(w, req, "https://files.qq.com/fixture", http.StatusFound)
+		http.Redirect(w, req, "https://other-cdn.example.org/fixture", http.StatusFound)
 	}))
 	server.StartTLS()
 	defer server.Close()
@@ -93,7 +95,7 @@ func TestMediaTransportDirectTLSAndChecksRedirectDial(t *testing.T) {
 		func(_ context.Context, _, host string) ([]netip.Addr, error) {
 			lookups <- host
 			ips := []netip.Addr{netip.MustParseAddr("8.8.8.8")}
-			if host == "files.qq.com." {
+			if host == "other-cdn.example.org." {
 				ips = append(ips, netip.MustParseAddr("192.168.1.1"))
 			}
 			return ips, nil
@@ -102,24 +104,22 @@ func TestMediaTransportDirectTLSAndChecksRedirectDial(t *testing.T) {
 			dials <- target
 			return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
 		},
+		true,
 	)
 	defer transport.CloseIdleConnections()
 	transport.TLSClientConfig = &tls.Config{RootCAs: server.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs, MinVersion: tls.VersionTLS12}
 	if transport.Proxy != nil {
 		t.Fatal("media transport enabled a proxy")
 	}
-	client := &http.Client{Transport: transport, CheckRedirect: mediaURLPolicy("wecom").checkRedirect}
-	resp, err := client.Get("https://files.example.com/fixture")
-	if resp != nil {
-		_ = resp.Body.Close()
-	}
+	_, err := fetchMediaURLWithTransport(t.Context(), "wecom", "https://files.example.com/fixture", "", transport)
 	if !errors.Is(err, mediaDownloadURLInvalid) || len(lookups) != 2 || len(dials) != 1 {
 		t.Fatalf("expected private redirect dial denied; lookups=%d dials=%d error=%v", len(lookups), len(dials), err)
 	}
-	if <-lookups != "files.example.com." || <-lookups != "files.qq.com." || <-dials != "8.8.8.8:443" {
+	if <-lookups != "files.example.com." || <-lookups != "other-cdn.example.org." || <-dials != "8.8.8.8:443" {
 		t.Fatal("transport did not vet each hop and pin the safe literal")
 	}
-	resp, err = client.Get("https://wrong-host.dingtalk.com/fixture")
+	client := &http.Client{Transport: transport}
+	resp, err := client.Get("https://wrong-host.dingtalk.com/fixture")
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
@@ -131,7 +131,7 @@ func TestMediaTransportDirectTLSAndChecksRedirectDial(t *testing.T) {
 
 func TestDingMediaResolvedGuardedTransportRejectsPrivateAndMixedDNS(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "https://mixed-destination.example.com/file?new=fixture", http.StatusFound)
+		http.Redirect(w, r, "http://mixed-destination.example.com/file?new=fixture", http.StatusFound)
 	}))
 	defer server.Close()
 	lookups := make(chan string, 4)
@@ -152,6 +152,7 @@ func TestDingMediaResolvedGuardedTransportRejectsPrivateAndMixedDNS(t *testing.T
 			dials <- target
 			return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
 		},
+		true,
 	)
 	defer transport.CloseIdleConnections()
 	transport.TLSClientConfig = &tls.Config{RootCAs: server.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs, MinVersion: tls.VersionTLS12}
@@ -197,6 +198,7 @@ func TestDingMediaResolverHTTPUsesGuardedPort80WithoutCredentials(t *testing.T) 
 			dialed <- address
 			return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
 		},
+		true,
 	)
 	defer transport.CloseIdleConnections()
 	_, err := fetchMediaURLWithTransport(t.Context(), resolvedDingMediaPolicy, "http://"+host+target, "", transport)
@@ -205,5 +207,41 @@ func TestDingMediaResolverHTTPUsesGuardedPort80WithoutCredentials(t *testing.T) 
 	}
 	if <-lookedUp != host+"." || <-dialed != "8.8.8.8:80" {
 		t.Fatal("HTTP downloader did not use a vetted public literal on port 80")
+	}
+}
+
+func TestMediaDownloadPrivateDNSRequiresOptOut(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != "gateway.example" {
+			t.Error("attachment download lost the original hostname")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	dialed := make(chan string, 1)
+	lookup := func(_ context.Context, _, host string) ([]netip.Addr, error) {
+		if host != "gateway.example." {
+			t.Error("attachment download did not resolve the original hostname")
+		}
+		return []netip.Addr{netip.MustParseAddr("10.0.0.8")}, nil
+	}
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		dialed <- address
+		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+	}
+	const target = "http://gateway.example/attachment"
+	strict := newMediaDownloadTransport(lookup, dial, true)
+	defer strict.CloseIdleConnections()
+	if _, err := fetchMediaURLWithTransport(t.Context(), resolvedDingMediaPolicy, target, "", strict); !errors.Is(err, mediaDownloadURLInvalid) || len(dialed) != 0 {
+		t.Fatalf("public IP policy reached or accepted a private destination: %v", err)
+	}
+	private := newMediaDownloadTransport(lookup, dial, false)
+	defer private.CloseIdleConnections()
+	if _, err := fetchMediaURLWithTransport(t.Context(), resolvedDingMediaPolicy, target, "", private); err != nil || len(dialed) != 1 {
+		t.Fatalf("private download did not complete: %v", err)
+	}
+	if got := <-dialed; got != "10.0.0.8:80" {
+		t.Fatalf("expected a connection to the resolved IP, got %s", got)
 	}
 }

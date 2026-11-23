@@ -1,0 +1,55 @@
+settings:
+  get:
+    operationId: getPlatformChannelDownloadSettings
+    summary: Read attachment download settings as a platform administrator
+    security:
+    - sessionCookie: []
+    responses:
+      '200':
+        $ref: '#/settingsResponse'
+      default:
+        $ref: '#/error'
+  patch:
+    operationId: updatePlatformChannelDownloadSettings
+    summary: Save attachment download settings as a platform administrator
+    description: Applies to DingTalk and WeCom attachment attempts claimed after saving. A stale expected version returns 409.
+    security:
+    - sessionCookie: []
+    parameters:
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema: { type: string, const: '1' }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [expected_version, validate_public_ip]
+            properties:
+              expected_version: { type: integer, minimum: 0 }
+              validate_public_ip: { type: boolean }
+    responses:
+      '200':
+        $ref: '#/settingsResponse'
+      default:
+        $ref: '#/error'
+settingsResponse:
+  description: Effective instance settings. Version zero means the default is in effect.
+  content:
+    application/json:
+      schema:
+        type: object
+        additionalProperties: false
+        required: [version, validate_public_ip]
+        properties:
+          version: { type: integer, minimum: 0 }
+          validate_public_ip: { type: boolean, default: true }
+error:
+  description: Structured error
+  content:
+    application/json:
+      schema:
+        $ref: ../../openapi.yaml#/components/schemas/Error

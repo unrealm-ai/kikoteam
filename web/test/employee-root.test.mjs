@@ -146,7 +146,11 @@ test('Platform administration is the third settings tab for real platform admini
     if(scenario.link==='view=settings'&&!scenario.failWorkspace){
      const button=(root,label)=>[...root.querySelectorAll('button')].find(node=>node.textContent.trim()===label);
      button(host,'邮件与注册').click();await pause();
+     const customSMTP=[...host.querySelectorAll('.n-radio')].find(node=>node.textContent.trim()==='自定义 SMTP');
+     assert.ok(customSMTP);
+     customSMTP.click();await pause();
      const field=host.querySelector('#platform-smtp-address');
+     assert.ok(field);
      field.value='smtp.example.test:587';field.dispatchEvent(new window.Event('input',{bubbles:true}));await pause();
      tabs[0].click();await pause();
      assert.match(document.body.textContent,/平台配置尚未保存/);

@@ -2,7 +2,7 @@
 
 ## 入口与权限
 
-「设置 → 平台管理」只向平台管理员显示，不依赖额外环境开关。工作区 owner/admin 角色不能获得平台权限。新增「邮件与注册」和「集成设置」，官方模型、积分和账号权限仍使用原入口与数据。服务端分别校验每个设置接口；带副作用的请求沿用会话、CSRF 和 Origin 检查。
+「设置 → 平台管理」只向平台管理员显示，不依赖额外环境开关。工作区 owner/admin 角色不能获得平台权限。页面提供「邮件与注册」「集成设置」和「附件下载」，官方模型、积分和账号权限仍使用原入口与数据。服务端分别校验每个设置接口；带副作用的请求沿用会话、CSRF 和 Origin 检查。
 
 启动配置继续由部署提供，见[部署指南](../deployment.md)。实例服务设置在 PostgreSQL 生效，无单独服务进程或重启步骤。还没有对应数据库记录时才读取兼容旧配置，接口将此视为版本 0。明确保存停用即覆盖旧值。符合当前配置要求的旧部署值可由管理员显式迁入；启动和 GET 不写表。移除遗留变量时需整组移除，避免旧启动配置校验失败；若使用旧 JSON，也要成对清理旧邮件和邮箱验证策略，而不是只移除 SMTP 密码。
 
@@ -35,6 +35,14 @@
 - 授权尝试绑定配置版本与应用凭据标识；应用切换不会用另一套凭据继续原回调。环境值原样迁入后仍可移除旧 env。同应用兼容的既有授权可续期；轮换后需要新应用凭据的旧授权须重新连接。停用或轮换阻止新授权和不相容的续期，并不立即撤销已签发、仍在有效期内的访问令牌；要立即停止旧连接，请单独撤销连接，并按需在供应商端撤销授权。
 
 接口：[GitHub 插件 OAuth 应用](../../backend/contracts/modules/platform/github-oauth-app.yaml)；验证：[服务/API 与隔离 PostgreSQL](../../backend/internal/platform/repository/oauth_app_config_test.go)。
+
+## 附件下载
+
+「设置 → 平台管理 → 附件下载」的「校验公网 IP」控制钉钉和企微入站附件下载。全新实例和升级后尚未保存此设置的实例均默认开启，读取返回版本 0。由平台管理员保存到 PostgreSQL 单例 `platform_channel_download_settings`。版本冲突需刷新核对后重新保存。
+
+关闭时，下载可以连接附件域名解析得到的内网 IP。Event Hub 在每次领取附件下载尝试时取得设置，当前已领取的尝试使用领取时的值。钉钉和企微各自的协议、端口、重定向次数和其他附件规则见[入站附件规范](async-inbound-attachments.md)。接口见[附件下载设置](../../backend/contracts/modules/platform/channel-download-settings.yaml)。
+
+回归入口包括[管理 HTTP、权限及真实 PostgreSQL 的任务领取](../../backend/internal/platform/repository/channel_download_settings_test.go)、[Event Hub 的内网 DNS 下载](../../event-hub/internal/channel/media_download_transport_test.go)和[Web 设置页](../../web/test/platform-admin-settings.test.mjs)。
 
 ## 跨模块验收
 

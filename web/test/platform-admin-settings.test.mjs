@@ -32,6 +32,7 @@ const wait = async () => { await nextTick(); await new Promise(r => setTimeout(r
 const root = '/api/v1/platform';
 const mail = root+'/mail-settings';
 const github = root+'/oauth-apps/github';
+const channelDownloads = root+'/channel-download-settings';
 const baseMail = {
   version:4,source:'database',enabled:true,registration_verification_required:false,address:'smtp.example.test:587',
   host:'smtp.example.test',username:'notify@example.test',from:'notify@example.test',implicit_tls:false,password_configured:true,
@@ -198,6 +199,35 @@ test('GitHub plugin screen preserves a blank secret, never claims website login,
     assert.deepEqual(writes()[2].body,{expected_version:4,enabled:false,clear_client_secret:true});
     assert.equal(m.input('platform-github-oauth-secret').value,'');
     assert.deepEqual(m.errors,[]);
+  } finally { await m.close(); }
+});
+
+test('Channel attachment IP validation starts enabled and applies changes only after saving', async () => {
+  let settings = {version:0, validate_public_ip:true};
+  const m = await mount(r => {
+    if (r.url === channelDownloads && r.method === 'GET') return Response.json(settings);
+    if (r.url === channelDownloads && r.method === 'PATCH') {
+      settings = {version:settings.version+1, validate_public_ip:r.body.validate_public_ip};
+      return Response.json(settings);
+    }
+    throw new Error('Unexpected endpoint');
+  });
+  try {
+    assert.ok(!m.requests.some(r => r.url === channelDownloads));
+    m.button('附件下载').click(); await wait();
+    const checkbox = () => m.host.querySelector('[aria-label="附件下载设置"] [role="checkbox"]');
+    assert.equal(checkbox()?.getAttribute('aria-checked'), 'true');
+    assert.ok(m.button('保存附件下载设置').disabled);
+    checkbox().click(); await wait();
+    assert.equal(checkbox()?.getAttribute('aria-checked'), 'false');
+    assert.ok(!m.requests.some(r => r.method === 'PATCH'));
+    assert.equal(await m.saveSection(), true); await wait();
+    assert.deepEqual(m.requests.filter(r => r.method === 'PATCH').map(r => r.body), [
+      {expected_version:0, validate_public_ip:false},
+    ]);
+    assert.ok(m.button('保存附件下载设置').disabled);
+    assert.match(m.host.textContent, /已保存并生效/);
+    assert.deepEqual(m.errors, []);
   } finally { await m.close(); }
 });
 

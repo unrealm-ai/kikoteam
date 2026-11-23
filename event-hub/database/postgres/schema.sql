@@ -3064,6 +3064,21 @@ CREATE TABLE public.platform_channel_directory_users (
 
 
 --
+-- Name: platform_channel_download_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_channel_download_settings (
+    singleton boolean NOT NULL,
+    version bigint NOT NULL,
+    validate_public_ip boolean DEFAULT true NOT NULL,
+    updated_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_channel_download_settings_singleton_check CHECK (singleton),
+    CONSTRAINT platform_channel_download_settings_version_check CHECK ((version > 0))
+);
+
+
+--
 -- Name: platform_channel_group_candidates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5220,6 +5235,14 @@ ALTER TABLE ONLY public.platform_channel_directory_state
 
 ALTER TABLE ONLY public.platform_channel_directory_users
     ADD CONSTRAINT platform_channel_directory_users_pkey PRIMARY KEY (binding_id, user_id);
+
+
+--
+-- Name: platform_channel_download_settings platform_channel_download_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_channel_download_settings
+    ADD CONSTRAINT platform_channel_download_settings_pkey PRIMARY KEY (singleton);
 
 
 --
@@ -8453,6 +8476,14 @@ ALTER TABLE ONLY public.platform_channel_directory_state
 
 ALTER TABLE ONLY public.platform_channel_directory_users
     ADD CONSTRAINT platform_channel_directory_users_binding_id_fkey FOREIGN KEY (binding_id) REFERENCES public.platform_channel_directory_state(binding_id);
+
+
+--
+-- Name: platform_channel_download_settings platform_channel_download_settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_channel_download_settings
+    ADD CONSTRAINT platform_channel_download_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.platform_accounts(id) ON DELETE SET NULL;
 
 
 --

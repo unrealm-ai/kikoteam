@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
+
 	proxy "github.com/unrealm-ai/kikoteam/backend/internal/platform/modelproxy"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
@@ -20,6 +22,19 @@ func lockAdminInitialization(ctx context.Context, tx *sql.Tx) error {
 }
 
 type AdminStore struct{ DB *sql.DB }
+
+func requireSettingsAdmin(ctx context.Context, tx *sql.Tx, actor string, write bool) error {
+	query := `SELECT is_platform_admin FROM platform_accounts WHERE id=$1`
+	if write {
+		query += ` FOR SHARE`
+	}
+	var allowed bool
+	err := tx.QueryRowContext(ctx, query, actor).Scan(&allowed)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && !allowed {
+		return service.Fail("platform_admin_required", 403, "需要平台管理员权限")
+	}
+	return err
+}
 
 func (s *AdminStore) List(ctx context.Context, actor, q, filter string, p, n int) (service.AccountPage, error) {
 	out := service.AccountPage{Items: []service.Account{}, Page: p, PageSize: n}

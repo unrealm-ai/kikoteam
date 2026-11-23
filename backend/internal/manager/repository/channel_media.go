@@ -58,7 +58,9 @@ func (s *Store) ClaimMedia(ctx context.Context, mgr *service.Service) (*service.
  AND m.path IS NULL AND m.error_code IS NULL AND m.attempts<$1 AND (m.lease_until IS NULL OR m.lease_until<=now()) ORDER BY n.created_at,m.ordinal FOR UPDATE OF m SKIP LOCKED LIMIT 1)
  UPDATE manager_channel_media m SET lease_token=gen_random_uuid(),lease_until=now()+interval '2 minutes',attempts=attempts+1
  FROM candidate c,manager_channel_inbox n,platform_channel_bindings b WHERE (m.inbox_id,m.ordinal)=(c.inbox_id,c.ordinal) AND n.id=m.inbox_id AND b.id=n.binding_id
- RETURNING m.inbox_id,m.ordinal,m.lease_token,m.locator,b.id,b.provider,n.connection_generation,n.provider_message_id`, mediaMaxAttempts).Scan(&j.InboxID, &j.Ordinal, &j.Lease, &raw, &j.BindingID, &j.Provider, &j.Generation, &j.MessageID)
+ RETURNING m.inbox_id,m.ordinal,m.lease_token,m.locator,b.id,b.provider,n.connection_generation,n.provider_message_id,
+ b.provider IN ('dingtalk','wecom') AND NOT COALESCE((SELECT validate_public_ip FROM platform_channel_download_settings WHERE singleton),true)`, mediaMaxAttempts).
+		Scan(&j.InboxID, &j.Ordinal, &j.Lease, &raw, &j.BindingID, &j.Provider, &j.Generation, &j.MessageID, &j.AllowNonPublicIP)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

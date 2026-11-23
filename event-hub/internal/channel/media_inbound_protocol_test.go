@@ -23,7 +23,7 @@ func TestWeComInboundFileUsesDownloadContentDisposition(t *testing.T) {
 	encoded := base64.RawStdEncoding.EncodeToString(key)
 	raw, err := json.Marshal(map[string]any{
 		"msgtype": "file",
-		"file":    map[string]string{"url": "https://example.qq.com/synthetic", "aeskey": encoded},
+		"file":    map[string]string{"url": "https://attachments.example/synthetic", "aeskey": encoded},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -44,12 +44,25 @@ func TestWeComInboundFileUsesDownloadContentDisposition(t *testing.T) {
 		t.Fatal(err)
 	}
 	cipher.NewCBCEncrypter(block, key[:16]).CryptBlocks(encrypted, encrypted)
-	got, err := decodeMediaDownload(&http.Response{
-		StatusCode: 200,
-		Header:     http.Header{"Content-Disposition": {`attachment; filename="dummy.docx"; filename*=UTF-8''%E5%AF%B9%E8%B4%A6%20%E5%8D%95.pdf`}},
-		Body:       io.NopCloser(bytes.NewReader(encrypted)),
-	}, "wecom", loc.AESKey)
-	if err != nil || !bytes.Equal(got.data, plain) || got.name != "对账 单.pdf" {
+	const destination = "https://download.example/synthetic"
+	calls := 0
+	got, err := fetchMediaURLWithTransport(t.Context(), "wecom", loc.Key, loc.AESKey, mediaTestTransport(func(req *http.Request) (*http.Response, error) {
+		calls++
+		switch req.URL.String() {
+		case loc.Key:
+			return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": {destination}}, Body: http.NoBody}, nil
+		case destination:
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Disposition": {`attachment; filename="dummy.docx"; filename*=UTF-8''%E5%AF%B9%E8%B4%A6%20%E5%8D%95.pdf`}},
+				Body:       io.NopCloser(bytes.NewReader(encrypted)),
+			}, nil
+		default:
+			t.Fatal("unexpected attachment URL", req.URL)
+			return nil, nil
+		}
+	}))
+	if err != nil || calls != 2 || !bytes.Equal(got.data, plain) || got.name != "对账 单.pdf" {
 		t.Fatal("incorrect decrypted attachment or recovered name", got.name, err)
 	}
 }
@@ -82,7 +95,7 @@ func TestInboundMediaFilenameSafetyAndFailureStages(t *testing.T) {
 			t.Fatalf("incorrect normalized failure stage %v, want %v", err, tc.expected)
 		}
 	}
-	if _, err := fetchMediaURL(t.Context(), "wecom", "http://example.qq.com", ""); !errors.Is(err, mediaDownloadURLInvalid) {
+	if _, err := fetchMediaURL(t.Context(), "wecom", "http://example.qq.com", "", true); !errors.Is(err, mediaDownloadURLInvalid) {
 		t.Fatal("HTTPS gate failed", err)
 	}
 	if got := mediaFailureCode(context.DeadlineExceeded, mediaDownloadFailed); got != mediaDownloadTimeout {
@@ -234,10 +247,18 @@ func (m mediaTestTransport) RoundTrip(req *http.Request) (*http.Response, error)
 }
 
 func TestInboundMediaRedirectDoesNotForwardSignedReferer(t *testing.T) {
-	for _, final := range []string{"https://files.alicdn.com/final", "https://unapproved.example:8080/final"} {
+	for _, tc := range []struct {
+		policy  mediaURLPolicy
+		final   string
+		blocked bool
+	}{
+		{resolvedDingMediaPolicy, "https://files.alicdn.com/final", false},
+		{resolvedDingMediaPolicy, "https://cdn.example:8080/final", true},
+		{"wecom", "http://cdn.example/final", true},
+	} {
 		hops := 0
 		client := http.Client{
-			CheckRedirect: resolvedDingMediaPolicy.checkRedirect,
+			CheckRedirect: tc.policy.checkRedirect,
 			Transport: mediaTestTransport(func(req *http.Request) (*http.Response, error) {
 				hops++
 				if req.Referer() != "" {
@@ -250,13 +271,13 @@ func TestInboundMediaRedirectDoesNotForwardSignedReferer(t *testing.T) {
 					resp.Header.Set("Location", "https://files.dingtalk.com/next?signed=second")
 				case 2:
 					resp.StatusCode = http.StatusFound
-					resp.Header.Set("Location", final)
+					resp.Header.Set("Location", tc.final)
 				}
 				return resp, nil
 			}),
 		}
 		resp, err := client.Get("https://files.dingtalk.com/start?signed=first")
-		if strings.Contains(final, "unapproved") {
+		if tc.blocked {
 			if !errors.Is(err, mediaDownloadURLInvalid) || hops != 2 {
 				t.Fatal("invalid redirect reached transport", hops, err)
 			}
@@ -267,6 +288,42 @@ func TestInboundMediaRedirectDoesNotForwardSignedReferer(t *testing.T) {
 			if err := resp.Body.Close(); err != nil {
 				t.Fatal(err)
 			}
+		}
+	}
+}
+
+func TestInboundMediaRedirectLimit(t *testing.T) {
+	for _, policy := range []mediaURLPolicy{resolvedDingMediaPolicy, "wecom"} {
+		for _, redirects := range []int{5, 6} {
+			t.Run(string(policy)+"/"+strconv.Itoa(redirects), func(t *testing.T) {
+				requests := 0
+				client := http.Client{
+					CheckRedirect: policy.checkRedirect,
+					Transport: mediaTestTransport(func(*http.Request) (*http.Response, error) {
+						requests++
+						if requests <= redirects {
+							return &http.Response{
+								StatusCode: http.StatusFound,
+								Header:     http.Header{"Location": {"/hop/" + strconv.Itoa(requests)}},
+								Body:       http.NoBody,
+							}, nil
+						}
+						return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+					}),
+				}
+				resp, err := client.Get("https://attachments.example/start")
+				if resp != nil {
+					if closeErr := resp.Body.Close(); closeErr != nil {
+						t.Fatal(closeErr)
+					}
+				}
+				if redirects == 5 && (err != nil || requests != 6) {
+					t.Fatalf("fifth redirect did not complete: requests=%d error=%v", requests, err)
+				}
+				if redirects == 6 && (!errors.Is(err, mediaDownloadURLInvalid) || requests != 6) {
+					t.Fatalf("sixth redirect was not blocked before sending: requests=%d error=%v", requests, err)
+				}
+			})
 		}
 	}
 }

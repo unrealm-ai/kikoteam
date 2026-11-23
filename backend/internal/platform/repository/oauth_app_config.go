@@ -28,19 +28,6 @@ func (t *pluginTx) GitHubOAuthApp(ctx context.Context) (service.OAuthAppConfig, 
 	return readGitHubOAuthApp(ctx, t.model.tx)
 }
 
-func oauthAppAdmin(ctx context.Context, tx *sql.Tx, actor string, write bool) error {
-	query := `SELECT is_platform_admin FROM platform_accounts WHERE id=$1`
-	if write {
-		query += ` FOR SHARE`
-	}
-	var allowed bool
-	err := tx.QueryRowContext(ctx, query, actor).Scan(&allowed)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && !allowed {
-		return service.Fail("platform_admin_required", 403, "需要平台管理员权限")
-	}
-	return err
-}
-
 func (s *OAuthAppStore) ReadGitHubAdmin(ctx context.Context, actor string) (service.OAuthAppConfig, error) {
 	var c service.OAuthAppConfig
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
@@ -48,7 +35,7 @@ func (s *OAuthAppStore) ReadGitHubAdmin(ctx context.Context, actor string) (serv
 		return c, err
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
-	if err = oauthAppAdmin(ctx, tx, actor, false); err != nil {
+	if err = requireSettingsAdmin(ctx, tx, actor, false); err != nil {
 		return c, err
 	}
 	c, err = readGitHubOAuthApp(ctx, tx)
@@ -65,7 +52,7 @@ func (s *OAuthAppStore) UpdateGitHubAdmin(ctx context.Context, actor string, app
 		return c, err
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
-	if err = oauthAppAdmin(ctx, tx, actor, true); err != nil {
+	if err = requireSettingsAdmin(ctx, tx, actor, true); err != nil {
 		return c, err
 	}
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(`+githubOAuthKey+`)`); err != nil {

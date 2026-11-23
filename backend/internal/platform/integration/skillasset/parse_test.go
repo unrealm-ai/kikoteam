@@ -75,10 +75,10 @@ func TestLocalImmutableStore(t *testing.T) {
 	if e = s.Write(ctx, "tmp/import", b); e != nil {
 		t.Fatal(e)
 	}
-	if e = s.Copy(ctx, "tmp/import", "workspaces/ws/shared/resources/skills/s/versions/v", b.Manifest); e != nil {
+	if e = s.Copy(ctx, "tmp/import", "workspaces/ws/skills/s/versions/v", b.Manifest); e != nil {
 		t.Fatal(e)
 	}
-	data, e := s.Read(ctx, "workspaces/ws/shared/resources/skills/s/versions/v", b.Manifest.Files[0])
+	data, e := s.Read(ctx, "workspaces/ws/skills/s/versions/v", b.Manifest.Files[0])
 	if e != nil || string(data) != goodMD {
 		t.Fatalf("read=%q %v", data, e)
 	}
@@ -142,7 +142,7 @@ func TestCleanupRemovesCrashedPendingFileOnlyInReceipt(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	p := "tmp/skill-imports/ws/id"
+	p := "temp/uploads/skill-imports/ws/id"
 	if e = s.Write(ctx, p, b); e != nil {
 		t.Fatal(e)
 	}
@@ -155,7 +155,7 @@ func TestCleanupRemovesCrashedPendingFileOnlyInReceipt(t *testing.T) {
 	if _, e = os.Stat(root + "/" + p); !os.IsNotExist(e) {
 		t.Fatal("receipt directory retained")
 	}
-	if e = s.Cleanup(ctx, "tmp/skill-imports/ws", b.Manifest); e == nil {
+	if e = s.Cleanup(ctx, "temp/uploads/skill-imports/ws", b.Manifest); e == nil {
 		t.Fatal("accepted workspace-wide cleanup")
 	}
 }

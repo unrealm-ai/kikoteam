@@ -194,35 +194,6 @@ paths:
     $ref: ./channels.yaml#/historyAuthorize
   /api/internal/v1/channel-history/{id}/complete:
     $ref: ./channels.yaml#/historyComplete
-  /api/internal/v1/sessions/{session_id}/skill-files:
-    parameters:
-      - $ref: '#/components/parameters/session'
-    get:
-      operationId: readExecutionSkillFile
-      description: Engine credential plus current started Input and assignment required. Reads only the fixed Skill version in the Session/current-package intersection. Membership and grant are checked again after asset I/O. No arbitrary storage keys or paths outside the manifest.
-      parameters:
-        - {name: engine_id, in: query, required: true, schema: {type: string, format: uuid}}
-        - {name: assignment_id, in: query, required: true, schema: {type: string, format: uuid}}
-        - {name: generation, in: query, required: true, schema: {type: string, pattern: '^[1-9][0-9]*$'}}
-        - {name: input_id, in: query, required: true, schema: {type: string, format: uuid}}
-        - {name: skill_id, in: query, required: true, schema: {type: string, format: uuid}}
-        - {name: version_id, in: query, required: true, schema: {type: string, format: uuid}}
-        - {name: path, in: query, required: true, schema: {type: string}}
-      responses:
-        '200':
-          description: Verified immutable asset, up to 20 MiB before base64 encoding.
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [path, size, sha256, content_base64]
-                properties:
-                  path: {type: string}
-                  size: {type: integer, minimum: 0, maximum: 20971520}
-                  sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
-                  content_base64: {type: string, contentEncoding: base64}
-        default: {$ref: '#/components/responses/Error'}
   /api/internal/v1/sessions/{session_id}/capability-calls:
     parameters:
       - $ref: '#/components/parameters/session'

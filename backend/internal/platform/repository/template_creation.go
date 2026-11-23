@@ -112,7 +112,7 @@ func (s *TemplateStore) Stage(ctx context.Context, w, a string, assets []service
 			if x.Imported || x.ImportID == "" {
 				continue
 			}
-			imp := service.SkillImport{ID: x.ImportID, ActorID: a, TechnicalName: x.Skill.TechnicalName, Description: x.Skill.Description, Manifest: x.Skill.Manifest, Source: service.SkillSource{Type: "agent_template", ResourceKey: x.Resource.Key, CandidateID: x.TargetID, CandidateVersionID: x.TargetVersionID, CandidatePrefix: x.TargetPrefix}, StorageIdentity: x.Skill.StorageIdentity, KeyPrefix: "tmp/skill-imports/" + w + "/" + x.ImportID, ExpiresAt: time.Now().Add(time.Hour)}
+			imp := service.SkillImport{ID: x.ImportID, ActorID: a, TechnicalName: x.Skill.TechnicalName, Description: x.Skill.Description, Manifest: x.Skill.Manifest, Source: service.SkillSource{Type: "agent_template", ResourceKey: x.Resource.Key, CandidateID: x.TargetID, CandidateVersionID: x.TargetVersionID, CandidatePrefix: x.TargetPrefix}, StorageIdentity: x.Skill.StorageIdentity, KeyPrefix: "temp/uploads/skill-imports/" + w + "/" + x.ImportID, ExpiresAt: time.Now().Add(time.Hour)}
 			if e := (&skillTx{model: m}).SaveImport(ctx, imp); e != nil {
 				return e
 			}

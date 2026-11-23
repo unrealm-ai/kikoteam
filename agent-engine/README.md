@@ -10,7 +10,7 @@
 
 > **2026-11-16 关系与生命周期已确认**：一 Task 一 task Session，共享环境归 Conversation；创建、停止、归档、首版放置及三层回收按[业务会话与共享环境生命周期](../docs/architecture/conversation-lifecycle.md)。下文保留完整目标范围；当前最小实现与限制见仓库运行说明和实施计划。
 
-**存储配置**　当前 Engine 经 Backend 读取获准的 Skill 文件并生成 Session 执行副本。本地磁盘目录重构后，Mac 原生根默认 `~/.kiko`，容器内根默认 `/mnt/kikoteam`。Pi 历史按平台 `sid` 保留，已选 Skill 由节点本地的 Session 入口链接到正式版本。现行镜像的部署参数见[统一存储配置](../docs/architecture/storage-configuration.md)，目标布局见[文件路径设计](../docs/architecture/storage-paths.md)。
+**存储配置**　Backend 返回获准的 Skill 版本及归属。Mac 原生根默认 `~/.kiko`，容器内根默认 `/mnt/kikoteam`。Pi 历史按平台 `sid` 保留，已选 Skill 由节点本地的 Session 入口链接到正式版本。现行镜像的部署参数见[统一存储配置](../docs/architecture/storage-configuration.md)，目录布局见[文件路径设计](../docs/architecture/storage-paths.md)。
 
 Go 实现，可多实例部署，主动向 backend 注册、心跳和对账。backend 分配 Session；Engine 为每个归属自己的活跃 Session 启动一个专属 Pi RPC 进程，运行在 Engine 侧，与 Sandbox 分开。跨轮复用，无后台进程等活动时可释放；后续 Input 通过 Pi 原生 `--session` 加载并继续同一会话。
 
@@ -46,7 +46,7 @@ chat 的后台压缩与仅追加 assistant 而不触发回复属于待评估设�
 
 本地 `./start.sh` 会用仓库中的 Dockerfile 构建 Engine，挂载与 Backend 相同的持久目录，并通过 Compose 内部网络注册。Engine 的 `/healthz` 反映进程存活，`/readyz` 在 Backend 确认注册并接收心跳后返回 204。启动器等待后者就绪，再报告完整服务已启动。
 
-发布镜像 `ghcr.io/unrealm-ai/kikoteam/agent-engine` 同时打包 Pi、Go Runner、builtin MCP 及其原生依赖。容器以 UID 1000 运行，按会话在容器内启动子进程。提供 `DATABASE_URL`、容器可访问的 `KIKO_BACKEND_URL` 和与 Backend 相同的 `KIKO_ENGINE_TOKEN`。为每个实例设置稳定且唯一的 `KIKO_ENGINE_HOST_ID`，将该实例可写的持久卷挂到 `/var/lib/kiko`，以便重建容器后继续使用原生历史和工作目录。构建上下文为仓库根目录，本地使用 `docker build -f agent-engine/Dockerfile -t kiko-agent-engine .`。镜像标签和发布入口见[仓库镜像说明](../README.md#容器镜像)。
+发布镜像 `ghcr.io/unrealm-ai/kikoteam/agent-engine` 同时打包 Pi、Go Runner、builtin MCP 及其原生依赖。容器以 UID 1000 运行，按会话在容器内启动子进程。提供 `DATABASE_URL`、容器可访问的 `KIKO_BACKEND_URL` 和与 Backend 相同的 `KIKO_ENGINE_TOKEN`。为每个实例设置稳定且唯一的 `KIKO_ENGINE_HOST_ID`，将该实例可写的持久卷挂到 `/mnt/kikoteam`，以便重建容器后继续使用原生历史和工作目录。构建上下文为仓库根目录，本地使用 `docker build -f agent-engine/Dockerfile -t kiko-agent-engine .`。镜像标签和发布入口见[仓库镜像说明](../README.md#容器镜像)。
 
 发布固定 Pi RPC 版本与工件摘要，核验原生会话创建/加载、prompt/abort 和 MCP 配置兼容性。每次 Engine 进程重启使用新 engine_id，完成对账后接单；注册的是单实例地址，不是负载均衡服务地址。
 

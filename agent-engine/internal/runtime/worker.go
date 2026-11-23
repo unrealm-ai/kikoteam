@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/integration"
@@ -201,10 +202,27 @@ func (w *Worker) cleanupSession(ctx context.Context, current repository.Work, cl
 			return
 		}
 	}
-	if latest, err := w.Store.Refresh(cleanup, current.Assignment); err == nil && latest.StopRevision > latest.AppliedStopRevision {
+	latest, err := w.Store.Refresh(cleanup, current.Assignment)
+	if err != nil {
+		return
+	}
+	if latest.StopRevision > latest.AppliedStopRevision {
 		if err = w.Store.AppliedStop(cleanup, latest, latest.StopRevision); err != nil {
 			w.Log.Warn("Stop confirmation pending", "event", "session.stop_pending", "session_id", current.SessionID)
 			return
+		}
+	}
+	paths := []string{"temp"}
+	if current.Mode == "task" {
+		paths = append(paths, "context")
+	}
+	for _, kind := range paths {
+		dir, err := sessionNodePath(kind, current.SessionID)
+		if err == nil {
+			err = os.RemoveAll(dir)
+		}
+		if err != nil {
+			w.Log.Warn("Session directory cleanup failed", "kind", kind, "session_id", current.SessionID, "error", err)
 		}
 	}
 	if err := w.Backend.Release(cleanup, current); err != nil {

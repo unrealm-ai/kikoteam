@@ -29,7 +29,11 @@ import (
 
 func runtimeCapabilityServices(t *testing.T, db *sql.DB) *service.RuntimeService {
 	t.Helper()
-	assets, err := skillasset.NewStore(context.Background(), skillasset.Config{LocalRoot: t.TempDir()})
+	return runtimeCapabilityServicesAt(t, db, t.TempDir())
+}
+func runtimeCapabilityServicesAt(t *testing.T, db *sql.DB, root string) *service.RuntimeService {
+	t.Helper()
+	assets, err := skillasset.NewStore(t.Context(), skillasset.Config{LocalRoot: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +211,7 @@ func runtimeCapabilityAcceptance(t *testing.T, ctx context.Context, db *sql.DB, 
 	call("POST", base+"/agents/"+agent+"/capability-upgrades", map[string]string{"kind": "skill", "resource_id": v1.ID, "from_version_id": v1.CurrentVersionID, "to_version_id": v2.CurrentVersionID}, "")
 	finishUpgrade()
 	await(id, 1)
-	project := filepath.Join(temp, "state/state/sandboxes/workspaces", w, "employees", agent, "conversations", c, "project")
+	project := filepath.Join(temp, "state", "workspaces", w, "projects", "conv-"+c)
 	checkFile := func(want string) {
 		t.Helper()
 		data, e := os.ReadFile(filepath.Join(project, "skill-result.txt"))

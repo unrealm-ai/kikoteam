@@ -49,18 +49,17 @@ task 的创建请求将 mode 改为 task，保持同一个 Conversation。通常
 
 ## 进程、目录与凭据
 
-下列目录用于诊断现行二进制。重构后共享挂载盘的 `temp/` 保存上传回执和实例锁，Runner 启动配置及 socket 位于根外的进程私有临时目录。各模式的完整路径和旧开发会话切换步骤见[存储目录设计](../architecture/storage-paths.md)。
+下列目录用于诊断现行二进制。共享挂载盘的 `temp/` 保存上传回执和实例锁，Runner 启动配置及 socket 位于根外的进程私有临时目录。各模式的完整路径和旧开发会话切换步骤见[存储目录设计](../architecture/storage-paths.md)。
 
 ```text
-<root>/state/engines/workspaces/W/employees/A/conversations/C/
-  executions/S/context/native/     # 每 Session 独立的 Pi 映射和历史
-<root>/state/sandboxes/workspaces/W/employees/A/conversations/C/
-  project/                         # 同 Conversation 的 task 共享
-  runner-state/S/
-    token                          # 固定 MCP Token，0600，重启沿用
-    launch.json                    # 私有 builtin 启动配置
-    processes/                     # 持久 SQLite 账本、初始化证据
-/tmp/kr-*/                         # Runner 私有临时 socket，避免长路径限制
+<root>/workspaces/W/
+  projects/conv-C/                 # 会话任务共享项目
+  projects/task-T/                 # TaskSpace 独立项目
+  sessions/S/pi/                   # Pi 身份、JSONL 和输入回执
+  sessions/S/runner/token          # 固定 MCP Token
+  sessions/S/runner/processes/     # SQLite 账本和初始化标记
+<root>/temp/uploads/               # 项目上传回执和 Skill 导入暂存
+<root>/temp/runtime/               # Engine 生命周期锁
 ```
 
 Runner 的 Backend 配置领取 token 只允许读取指定环境/管理 Engine 的配置；Engine→Runner 管理随机 token 与 MCP token 各自独立。builtin 仅监听 loopback 动态端口；每 Session 使用独立进程和 Token，可信执行窗口带 assignment/generation/Harness/Turn。工具参数不能覆盖这些身份。管理路径见 [Runner 契约](../../sandbox-runner/contracts/openapi.yaml)，Backend 内部注册/分配/环境配置见[内部契约](../../backend/contracts/internal/openapi.yaml)。

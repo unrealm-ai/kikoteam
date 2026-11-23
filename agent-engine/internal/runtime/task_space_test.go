@@ -3,7 +3,7 @@ package runtime
 import (
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/integration"
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
-	"strings"
+	"path/filepath"
 	"testing"
 )
 
@@ -11,7 +11,7 @@ func TestTaskSpaceNativeAndSandboxIsolation(t *testing.T) {
 	w := repository.Work{WorkspaceID: NewID(), AgentID: NewID(), TaskSpaceID: NewID(), TaskID: NewID(), Assignment: repository.Assignment{SessionID: NewID()}}
 	worker := Worker{Root: t.TempDir()}
 	first := worker.nativeDirectory(w)
-	if !strings.Contains(first, "/taskspaces/"+w.TaskSpaceID+"/tasks/"+w.TaskID+"/") {
+	if first != filepath.Join(worker.Root, "workspaces", w.WorkspaceID, "sessions", w.SessionID, "pi") {
 		t.Fatal(first)
 	}
 	v := integration.Sandbox{WorkspaceID: w.WorkspaceID, AgentID: w.AgentID, TaskSpaceID: w.TaskSpaceID, TaskID: w.TaskID}
@@ -19,6 +19,7 @@ func TestTaskSpaceNativeAndSandboxIsolation(t *testing.T) {
 		t.Fatal("own task sandbox rejected")
 	}
 	w.TaskID = NewID()
+	w.SessionID = NewID()
 	if sandboxMatches(v, w) || first == worker.nativeDirectory(w) {
 		t.Fatal("two tasks share environment")
 	}
@@ -36,7 +37,7 @@ func TestTaskSpaceNativeAndSandboxIsolation(t *testing.T) {
 	v.TaskSpaceID = ""
 	v.TaskID = ""
 	v.ConversationID = w.ConversationID
-	if !sandboxMatches(v, w) || !strings.Contains(worker.nativeDirectory(w), "/conversations/"+w.ConversationID+"/") {
+	if !sandboxMatches(v, w) || worker.nativeDirectory(w) != filepath.Join(worker.Root, "workspaces", w.WorkspaceID, "sessions", w.SessionID, "pi") {
 		t.Fatal("conversation layout changed")
 	}
 	w.ConversationID = ""

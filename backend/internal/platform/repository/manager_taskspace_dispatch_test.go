@@ -149,7 +149,7 @@ func TestDispatchWaitsForRuntimeExitAndTransfersOnce(t *testing.T) {
 	if err = store.Dispatch(ctx); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(store.RuntimeRoot, "state", "engines", "instances")
+	dir := filepath.Join(store.RuntimeRoot, "temp", "runtime")
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

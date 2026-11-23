@@ -81,7 +81,7 @@ func upstreamConfig(t *testing.T, baseURL string) Config {
 		t.Fatal("run npm ci in agent-engine")
 	}
 	dir := t.TempDir()
-	return Config{Directory: filepath.Join(dir, "native"), WorkDirectory: filepath.Join(dir, "work"), PiCommand: filepath.Join(root, "node_modules/.bin/pi"), Launcher: filepath.Join(root, "scripts/pi.sh"), Chat: true, Model: Model{Protocol: "chat_completions", BaseURL: baseURL, ID: "fixture", Key: "fixture"}}
+	return Config{Directory: filepath.Join(dir, "native"), RuntimeDirectory: filepath.Join(dir, "work"), PiCommand: filepath.Join(root, "node_modules/.bin/pi"), Launcher: filepath.Join(root, "scripts/pi.sh"), Chat: true, Model: Model{Protocol: "chat_completions", BaseURL: baseURL, ID: "fixture", Key: "fixture"}}
 }
 
 func TestUpstreamSteerBeforeFollowUp(t *testing.T) {
@@ -229,7 +229,7 @@ func TestNativeHistoryValidation(t *testing.T) {
 	}
 }
 
-func TestUpstreamEmptyAndLegacySessionRestore(t *testing.T) {
+func TestUpstreamEmptySessionRestore(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cfg := upstreamConfig(t, "http://127.0.0.1:1/v1")
@@ -249,28 +249,17 @@ func TestUpstreamEmptyAndLegacySessionRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := filepath.Join(cfg.Directory, "home/.pi/pi-acp/session-map.json")
-	if err = os.MkdirAll(filepath.Dir(legacy), 0700); err != nil {
-		t.Fatal(err)
-	}
-	data := fixtureJSON(t, map[string]any{"sessions": map[string]any{"old-acp-id": map[string]string{"sessionFile": record.File}}})
-	if err = os.WriteFile(legacy, data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err = os.Remove(filepath.Join(cfg.Directory, "session.json")); err != nil {
-		t.Fatal(err)
-	}
-	c, err = Start(ctx, cfg, "old-acp-id")
+	c, err = Start(ctx, cfg, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.SessionID() != "old-acp-id" {
-		t.Fatal("lost legacy identity")
+	if c.SessionID() != id {
+		t.Fatal("lost native identity")
 	}
 	if err = c.Close(); err != nil {
 		t.Fatal(err)
 	}
-	restored, err := loadSession(cfg.Directory, "old-acp-id")
+	restored, err := loadSession(cfg.Directory, id)
 	if err != nil || restored.NativeID != id {
 		t.Fatalf("%+v %v", restored, err)
 	}
@@ -281,7 +270,7 @@ func TestUpstreamEmptyAndLegacySessionRestore(t *testing.T) {
 	if err = os.Remove(record.File); err != nil {
 		t.Fatal(err)
 	}
-	if c, err = Start(ctx, cfg, "old-acp-id"); err == nil {
+	if c, err = Start(ctx, cfg, id); err == nil {
 		_ = c.Close()
 		t.Fatal("missing history replaced with blank session")
 	}

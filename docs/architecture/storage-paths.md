@@ -1,6 +1,6 @@
 # 文件路径、业务会话与隔离约束
 
-**已确认的目录重构设计（2026-11-24），待实现。** 本轮在本地磁盘上统一文件路径。Pi 继续写原生 JSONL，Runner 继续使用 SQLite，项目上传保留文件回执和同卷原子发布。现行二进制的配置见[统一存储配置](storage-configuration.md)。
+**本地磁盘布局（2026-11-24）** 本轮在本地磁盘上统一文件路径。Pi 继续写原生 JSONL，Runner 继续使用 SQLite，项目上传保留文件回执和同卷原子发布。现行二进制的配置见[统一存储配置](storage-configuration.md)。
 
 ## 1. 关系与术语
 
@@ -27,7 +27,7 @@ Workspace
 
 ## 2. 统一逻辑 key 与物理根
 
-`<root>` 表示进程看到的 `KIKO_STORAGE_LOCAL_ROOT`，`W` 是工作区 ID，`P` 是项目标识，`sid` 是平台执行 Session ID。以下是重构后的默认值。
+`<root>` 表示进程看到的 `KIKO_STORAGE_LOCAL_ROOT`，`W` 是工作区 ID，`P` 是项目标识，`sid` 是平台执行 Session ID。各启动方式的默认值如下。
 
 | 启动方式 | 持久化根 `<root>` | Session Skill 入口 | 进程私有临时目录 |
 | --- | --- | --- | --- |
@@ -35,7 +35,7 @@ Workspace
 | Mac 通过 `./start.sh` 跑容器 | 容器内 `/mnt/kikoteam`，宿主机默认绑定 `~/.kiko` | `/mnt/context/<sid>/skills/` | `/var/tmp/kikoteam/temp/` |
 | Linux 容器部署 | `/mnt/kikoteam`，绑定宿主机本地磁盘 | `/mnt/context/<sid>/skills/` | `/var/tmp/kikoteam/temp/` |
 
-Mac 原生进程使用展开的绝对路径。Backend、Engine 和 Runner 按同一个持久化根解析其负责的文件。容器的 `/mnt/kikoteam/temp/` 位于挂载盘，存有跨进程使用的上传回执和实例锁。每次启动生成的 `launch.json`、控制 socket 则位于进程私有临时目录。
+Mac 原生进程使用展开的绝对路径。Backend、Engine 和 Runner 按同一个持久化根解析其负责的文件。容器的 `/mnt/kikoteam/temp/` 位于挂载盘，存有跨进程使用的上传回执和实例锁。`launch.json`、控制 socket、Pi 运行配置和执行凭据写入节点临时盘。Pi 将 cwd 写进历史，因此每次恢复都在节点临时盘上重建相同的 Session 工作目录。镜像通过 `KIKO_CONTEXT_ROOT` 和 `KIKO_RUNTIME_TEMP_ROOT` 指定表中两处节点路径。
 
 ```text
 <root>/
@@ -82,7 +82,7 @@ Engine 沿用现有 Skill 选择与授权结果，在节点本地建立每个 Se
 | `/mnt/kikoteam/official/skills/` | `/mnt/kikoteam/official/skills/` |
 | `/mnt/kikoteam/workspaces/<W>/skills/` | `/mnt/kikoteam/workspaces/<W>/skills/` |
 
-其中 `W` 限定为当前工作区。Session 本地入口也要在 Pi 和沙箱内同路径可见，例如 `/mnt/context/<sid>/skills/sales-report` 指向 `/mnt/kikoteam/workspaces/<W>/skills/<id>/versions/<version>/files/`。共享沙箱须能解析后加入任务的入口。Mac 原生模式使用展开后的对应路径。Session 链接可按固定版本引用重建，在 Pi 和仍引用它的后台进程退出后回收。此布局移除当前的 `context/native/skills/` 下载副本，也无需 `cache/skills/`。筛选、同名取舍、升级与撤权留给 Skill 使用专项。
+其中 `W` 限定为当前工作区。Session 本地入口也要在 Pi 和沙箱内同路径可见，例如 `/mnt/context/<sid>/skills/sales-report` 指向 `/mnt/kikoteam/workspaces/<W>/skills/<id>/versions/<version>/files/`。共享沙箱须能解析后加入任务的入口。Mac 原生模式使用展开后的对应路径。Session 链接可按固定版本引用重建，在 Pi 和仍引用它的后台进程退出后回收。筛选、同名取舍、升级与撤权留给 Skill 使用专项。
 
 ## 3. 会话记忆的共享方式
 
@@ -112,9 +112,9 @@ Hook/定时任务由业务配置定义 **business key 的提取或生成规则**
 
 ### 上传、发布和回执
 
-1. Backend 在 `<root>/temp/uploads/` 保存项目上传的 `payload` 和文件回执。接收完整并核验准入后，在同一文件系统上排他原子重命名到项目的 `uploads/` 或用户指定的子目录。同名文件按现有规则选新名称。
+1. Backend 在 `<root>/temp/uploads/projects/` 保存项目上传的 `payload` 和文件回执。接收完整并核验准入后，在同一文件系统上排他原子重命名到项目的 `uploads/` 或用户指定的子目录。同名文件按现有规则选新名称。
 2. 回执继续记录请求指纹和候选相对路径。发布完成后保留回执，重启或响应丢失时以原键重试返回首次结果，同键不同内容报冲突。Web 和渠道的附件预留、授权及投递状态沿用现有业务流程。[异步附件规范](../spec/async-inbound-attachments.md)
-3. Skill 导入预览材料也使用 `temp/uploads/`，与项目上传按用途和导入 ID 区分。仅回收对应导入的材料，发布或导入有效期届满后清理，当前有效期为一小时。
+3. Skill 导入预览材料使用 `temp/uploads/skill-imports/<W>/<import_id>/`，与项目上传按用途和导入 ID 区分。仅回收对应导入的材料，发布或导入有效期届满后清理，当前有效期为一小时。
 
 Backend 管理 Sandbox 登记、管理 Engine 及获准参与的 Session。环境代次与每个 Session 的分配代次分别核验，重复准备复用已登记的环境。裸沙箱的工具仍按宿主账号权限执行。各 Session 独立核验工具 Token、执行窗口与授权，项目共享不会扩大可调用的工具范围。
 
@@ -137,7 +137,7 @@ Backend 管理 Sandbox 登记、管理 Engine 及获准参与的 Session。环�
 此次开发环境切换从新文件布局启动，保留 PostgreSQL 中的用户、工作区、员工、业务会话、任务和平台 `sid`。旧上下文、附件、命令输出允许丢失。无需扫描、搬运或双读旧目录。
 
 1. 停稳旧 Engine、Pi、Runner 和后台命令，释放受影响的旧执行分配，将未完成的 Turn 标记为中断。已停止或归档的业务对象保留原状态。
-2. 仅对切换前受影响的旧 Session，一次性解除旧 Pi 原生身份和失效的运行绑定。按正常启动流程同步官方资源，缺失的自定义 Skill 显示为不可用。缺少旧附件只影响该附件。
+2. 仅对切换前受影响的旧 Session，一次性解除旧 Pi 原生身份和失效的运行绑定。按正常启动流程同步官方资源。本地存储身份包含进程所见根路径的摘要。若升级同时改变这个绝对路径，待 `sync-catalog` 校验安装包中的文件后，在停写窗口一次性更新这些内置 Skill 版本的 `storage_identity`。按本次目录清单的 Skill ID、版本 ID、原存储身份和 manifest 核对更新范围。缺失的自定义 Skill 显示为不可用。缺少旧附件只影响该附件。
 3. 用户打开原会话发送新消息时，沿用平台 `sid` 初始化新的 Pi 原生会话、项目和按需使用的 Runner。切换后产生的历史和账本走正常恢复流程，后续重启不重复重置。
 4. 用切换前创建的会话验证发消息、上传附件、派任务从共享项目读取、加载获准 Skill。同键重试应返回首次上传的路径。重启服务后，验证切换后产生的历史可续聊、文件可读取。
 

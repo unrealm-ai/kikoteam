@@ -17,7 +17,7 @@ flowchart LR
         Hub <-->|"内部控制与回调"| Backend
         Engine["agent-engine (含 Pi / Runner / builtin-mcp，可多实例)"] <--> PG
         Engine <-->|"注册心跳 / 领取配置 / 内部 MCP"| Backend
-        Backend --- SharedFS[("持久共享目录 /var/lib/kiko (+ 可选 S3)")]
+        Backend --- SharedFS[("持久共享目录 /mnt/kikoteam (+ 可选 S3)")]
         Engine --- SharedFS
     end
 ```
@@ -129,11 +129,11 @@ server {
 
 ### 3.3 存储配置变量（Backend & Agent Engine）
 
-本页拓扑和参数表适用于现行镜像，容器持久化根为 `/var/lib/kiko`。已确认的目录重构以本地磁盘挂载整个 `KIKO_STORAGE_LOCAL_ROOT`，Mac 原生默认 `~/.kiko`，容器内默认 `/mnt/kikoteam`。开发环境一次性切换及验收见[存储目录方案](architecture/storage-paths.md)。
+容器以本地磁盘挂载整个 `KIKO_STORAGE_LOCAL_ROOT`，Mac 原生默认 `~/.kiko`，容器内默认 `/mnt/kikoteam`。开发环境一次性切换及验收见[存储目录方案](architecture/storage-paths.md)。
 
 | 变量名 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `KIKO_STORAGE_LOCAL_ROOT` | 否 | `~/.kiko/`（容器内 `/var/lib/kiko`） | 持久状态根目录，保存项目文件、Pi 历史、Runner 账本与上传回执。本地资产模式还保存 Skill 和固定交付文件 |
+| `KIKO_STORAGE_LOCAL_ROOT` | 否 | `~/.kiko/`（容器内 `/mnt/kikoteam`） | 持久状态根目录，保存项目文件、Pi 历史、Runner 账本与上传回执。本地资产模式还保存 Skill 和固定交付文件 |
 | `KIKO_STORAGE_S3_ENDPOINT` | 否 | 空 | S3 兼容对象存储 Endpoint（**任一 `KIKO_STORAGE_S3_*` 非空即启用 S3 模式保存 Skill 资产和已交付的固定文件版本，配置不完整直接报错拒绝启动，不静默回退本地**） |
 | `KIKO_STORAGE_S3_BUCKET` | S3 模式必填 | 空 | S3 Bucket 名称 |
 | `KIKO_STORAGE_S3_REGION` | S3 模式必填 | 空 | S3 Region |
@@ -144,7 +144,7 @@ server {
 | `KIKO_STORAGE_S3_FORCE_PATH_STYLE` | 否 | `false` | MinIO 等要求 Path-Style 访问的对象存储设为 `true` |
 
 > [!IMPORTANT]
-> 即使启用了 S3 存储不可变 Skill 资产，沙箱的工作目录（`state/sandboxes/.../project/`）和 Pi 原生会话历史依然使用 POSIX 文件系统（`KIKO_STORAGE_LOCAL_ROOT`）。在生产环境部署时，`backend` 与 `agent-engine` 需挂载同一份支持文件锁的持久存储到 `/var/lib/kiko`，并以相同的 UID/GID 运行。
+> 即使启用了 S3 存储不可变 Skill 资产，沙箱的工作目录（`workspaces/<W>/projects/<P>/`）和 Pi 原生会话历史依然使用 POSIX 文件系统（`KIKO_STORAGE_LOCAL_ROOT`）。在生产环境部署时，`backend` 与 `agent-engine` 需挂载同一份支持文件锁的持久存储到 `/mnt/kikoteam`，并以相同的 UID/GID 运行。
 
 ### 3.4 Event Hub 环境变量
 
@@ -171,7 +171,7 @@ server {
 | `KIKO_ENGINE_ADDRESS` | 否 | `127.0.0.1:8083` | Engine 探针（`/readyz`）监听地址 |
 | `KIKO_ENGINE_CAPACITY` | 否 | `8` | 单实例允许同时承载的最大活跃执行 Session 数量 |
 | `KIKO_ENGINE_IDLE_TIMEOUT` | 否 | `1m` | 无后台进程活动时释放空闲 Pi RPC 进程的等待时间 |
-| `KIKO_STORAGE_LOCAL_ROOT` | 否 | `~/.kiko`（容器内 `/var/lib/kiko`） | 持久沙箱与原生会话根目录 |
+| `KIKO_STORAGE_LOCAL_ROOT` | 否 | `~/.kiko`（容器内 `/mnt/kikoteam`） | 持久沙箱与原生会话根目录 |
 
 ## 4. 数据库迁移与平滑升级流程
 

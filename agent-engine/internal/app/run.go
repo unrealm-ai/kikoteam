@@ -129,6 +129,9 @@ func Run(ctx context.Context, c Config, log *slog.Logger) error {
 		return fmt.Errorf("lock Engine lifetime: %w", err)
 	}
 	defer func() { _ = lifetime.Close() }() //nolint:errcheck // The kernel releases this descriptor on exit.
+	if err := runtime.ValidateNodeRoots(c.Root); err != nil {
+		return err
+	}
 	backend := &integration.Backend{URL: c.BackendURL, Token: c.Token, EngineID: id, HTTP: &http.Client{Timeout: 15 * time.Second}}
 	sandboxes := &runtime.Sandboxes{Backend: backend, Lifetime: lifetime, Root: c.Root, Binary: filepath.Join(c.RepoRoot, "sandbox-runner/bin/sandbox-runner"), Builtin: filepath.Join(c.RepoRoot, "sandbox-runner/builtin-mcp/dist/http-main.js"), Log: log}
 	worker := &runtime.Worker{Store: &repository.Store{DB: db, EngineID: id}, Backend: backend, Sandboxes: sandboxes, Root: c.Root, Pi: filepath.Join(c.RepoRoot, "agent-engine/node_modules/.bin/pi"), Launcher: filepath.Join(c.RepoRoot, "agent-engine/scripts/pi.sh"), Idle: c.Idle, Log: log}

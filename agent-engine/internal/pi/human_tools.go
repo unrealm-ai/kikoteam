@@ -29,7 +29,7 @@ func (h HumanToolsConfig) validForPlan(enabled bool) bool {
 }
 
 func (c Config) humanToolsPath() string {
-	return filepath.Join(c.Directory, "human-tools.json")
+	return filepath.Join(c.RuntimeDirectory, "human-tools.json")
 }
 
 // Turn-bound credentials are excluded from the Pi configuration signature.
@@ -42,10 +42,10 @@ func (c Config) PrepareHumanTools() error {
 	if err != nil {
 		return err
 	}
-	if err = os.MkdirAll(c.Directory, 0700); err != nil {
+	if err = os.MkdirAll(c.RuntimeDirectory, 0700); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(c.Directory, ".human-tools-*")
+	file, err := os.CreateTemp(c.RuntimeDirectory, ".human-tools-*")
 	if err != nil {
 		return err
 	}

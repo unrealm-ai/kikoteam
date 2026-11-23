@@ -172,7 +172,7 @@ func (s *ResourceCatalog) Publish(ctx context.Context, a, kind, dest, id string,
 			}
 			v.KeyPrefix = fmt.Sprintf("official/skills/%s/versions/%s", id, versionID)
 			if dest != "" {
-				v.KeyPrefix = fmt.Sprintf("workspaces/%s/shared/resources/skills/%s/versions/%s", dest, id, versionID)
+				v.KeyPrefix = fmt.Sprintf("workspaces/%s/skills/%s/versions/%s", dest, id, versionID)
 			}
 			if e := s.Assets.Copy(ctx, src.pin.KeyPrefix, v.KeyPrefix, src.pin.Manifest); e != nil {
 				return service.Fail("skill_storage_unavailable", 503, "无法复制并校验技能资产")

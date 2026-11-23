@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -57,7 +58,7 @@ func Start(ctx context.Context, cfg Config, session string) (*Client, error) {
 	if cfg.Lifetime != nil {
 		cmd.ExtraFiles = []*os.File{cfg.Lifetime}
 	}
-	cmd.Dir, cmd.Env = cfg.WorkDirectory, env
+	cmd.Dir, cmd.Env = filepath.Join(cfg.RuntimeDirectory, "work"), env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if e := syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM); errors.Is(e, syscall.ESRCH) {

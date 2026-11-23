@@ -39,8 +39,10 @@ RUN python3 -m venv --system-site-packages /opt/office && \
 ENV PATH=/opt/office/bin:$PATH \
     NODE_PATH=/opt/kikoteam/agent-engine/node_modules \
     KIKO_REPO_ROOT=/opt/kikoteam \
-    KIKO_STORAGE_LOCAL_ROOT=/var/lib/kiko
-RUN install -d -o node -g node /var/lib/kiko
+    KIKO_STORAGE_LOCAL_ROOT=/mnt/kikoteam \
+    KIKO_CONTEXT_ROOT=/mnt/context \
+    KIKO_RUNTIME_TEMP_ROOT=/var/tmp/kikoteam/temp
+RUN install -d -o node -g node /mnt/kikoteam && install -d -m 1777 /mnt/context /var/tmp/kikoteam/temp
 WORKDIR /opt/kikoteam
 COPY --from=go-build /out/agent-engine ./agent-engine/bin/agent-engine
 COPY --from=go-build /out/sandbox-runner ./sandbox-runner/bin/sandbox-runner

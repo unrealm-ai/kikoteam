@@ -20,11 +20,11 @@ func (s scope) directory(root string) (string, error) {
 	if !filepath.IsAbs(root) || !validID(s.WorkspaceID) || !validID(s.AgentID) || !s.validOwner() {
 		return "", errors.New("invalid sandbox directory owner")
 	}
-	base := filepath.Join(root, "state/sandboxes/workspaces", s.WorkspaceID, "employees", s.AgentID)
+	base := filepath.Join(root, "workspaces", s.WorkspaceID, "projects")
 	if s.TaskSpaceID != "" {
-		return filepath.Join(base, "taskspaces", s.TaskSpaceID, "tasks", s.TaskID), nil
+		return filepath.Join(base, "task-"+s.TaskID), nil
 	}
-	return filepath.Join(base, "conversations", s.ConversationID), nil
+	return filepath.Join(base, "conv-"+s.ConversationID), nil
 }
 func (s scope) validateSessions() error {
 	seen := map[string]bool{}

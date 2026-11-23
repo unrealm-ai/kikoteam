@@ -1,108 +1,101 @@
 package runtime
 
 import (
-	"context"
-	"encoding/base64"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sort"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/integration"
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
 )
 
-func TestSkillDirectoryIntegrityAndCacheRepair(t *testing.T) {
-	files := map[string]string{"SKILL.md": "fixture body", "references/data.txt": "reference bytes"}
-	skill := integration.Skill{SkillID: NewID(), VersionID: NewID(), Name: "fixture"}
-	skill.Manifest.FormatVersion = 1
-	paths := []string{}
-	for path := range files {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		data := []byte(files[path])
-		skill.Manifest.Files = append(skill.Manifest.Files, integration.SkillFile{Path: path, Size: int64(len(data)), SHA256: digest(data)})
-	}
-	raw, err := json.Marshal(skill.Manifest.Files)
-	if err != nil {
+func TestRejectOverlappingNodeRoots(t *testing.T) {
+	root := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
 		t.Fatal(err)
 	}
-	skill.Manifest.Digest = digest(raw)
-	var reads atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reads.Add(1)
-		if r.Header.Get("Authorization") != "Bearer engine" || r.URL.Query().Get("version_id") != skill.VersionID {
-			t.Error("asset request lost execution/version identity")
-			w.WriteHeader(403)
-			return
+	t.Setenv("KIKO_CONTEXT_ROOT", t.TempDir())
+	for _, temp := range []string{root, filepath.Join(alias, "workspaces"), os.Getenv("KIKO_CONTEXT_ROOT")} {
+		t.Setenv("KIKO_RUNTIME_TEMP_ROOT", temp)
+		if err := ValidateNodeRoots(root); err == nil {
+			t.Fatal("accepted overlapping root", temp)
 		}
-		if err := json.NewEncoder(w).Encode(map[string]string{"content_base64": base64.StdEncoding.EncodeToString([]byte(files[r.URL.Query().Get("path")]))}); err != nil {
-			t.Error(err)
+	}
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
+	if err := ValidateNodeRoots(root); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSessionSkillLinks(t *testing.T) {
+	t.Setenv("KIKO_CONTEXT_ROOT", t.TempDir())
+	w := Worker{Root: t.TempDir()}
+	work := repository.Work{WorkspaceID: NewID(), Assignment: repository.Assignment{SessionID: NewID()}}
+	skills := []integration.Skill{
+		{Scope: "official", Name: "first", SkillID: NewID(), VersionID: NewID()},
+		{Scope: "workspace", Name: "second", SkillID: NewID(), VersionID: NewID()},
+	}
+	publish := func(s integration.Skill) string {
+		t.Helper()
+		base := filepath.Join(w.Root, "official")
+		if s.Scope == "workspace" {
+			base = filepath.Join(w.Root, "workspaces", work.WorkspaceID)
 		}
-	}))
-	defer server.Close()
-	worker := &Worker{Backend: &integration.Backend{URL: server.URL, Token: "engine", EngineID: NewID(), HTTP: &http.Client{Timeout: time.Second}}}
-	work := repository.Work{Assignment: repository.Assignment{SessionID: NewID(), AssignmentID: NewID(), Generation: 1}}
-	native := t.TempDir()
-	dir, err := worker.materializeSkill(context.Background(), work, NewID(), native, skill)
-	if err != nil {
+		files := filepath.Join(base, "skills", s.SkillID, "versions", s.VersionID, "files")
+		if err := os.MkdirAll(files, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(files, "SKILL.md"), []byte(s.VersionID), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return files
+	}
+	targets := []string{publish(skills[0]), publish(skills[1])}
+	dir, problems, err := w.linkSkills(t.Context(), work, skills)
+	if err != nil || len(problems) != 0 || dir != filepath.Join(os.Getenv("KIKO_CONTEXT_ROOT"), work.SessionID, "skills") {
+		t.Fatal(dir, problems, err)
+	}
+	for i, s := range skills {
+		if target, err := os.Readlink(filepath.Join(dir, s.Name)); err != nil || target != targets[i] {
+			t.Fatal(target, err)
+		}
+	}
+	skills[0].VersionID = NewID()
+	next := publish(skills[0])
+	skills[1].VersionID = NewID() // The pinned workspace asset is missing.
+	_, problems, err = w.linkSkills(t.Context(), work, skills)
+	if err != nil || len(problems) != 1 || problems[0] != "skill_unavailable:"+skills[1].SkillID {
+		t.Fatal(problems, err)
+	}
+	if target, err := os.Readlink(filepath.Join(dir, "first")); err != nil || target != next {
+		t.Fatal(target, err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "second")); !os.IsNotExist(err) {
+		t.Fatal("stale Skill", err)
+	}
+	for _, s := range []integration.Skill{{Scope: "workspace", SkillID: "../other", Name: "x", VersionID: NewID()}, {Scope: "official", SkillID: NewID(), Name: "../other", VersionID: NewID()}} {
+		if _, _, err := w.linkSkills(t.Context(), work, []integration.Skill{s}); err == nil {
+			t.Fatal("accepted path escape")
+		}
+	}
+	file := filepath.Join(next, "SKILL.md")
+	if err := os.Remove(file); err != nil {
 		t.Fatal(err)
 	}
-	if reads.Load() != 2 {
-		t.Fatal("incomplete directory download")
-	}
-	if _, err = worker.materializeSkill(context.Background(), work, NewID(), native, skill); err != nil || reads.Load() != 2 {
-		t.Fatal("valid fixed cache was not reused", err)
-	}
-	path := filepath.Join(dir, "references/data.txt")
-	if err = os.Chmod(path, 0600); err != nil {
+	if err := os.Symlink(filepath.Join(targets[1], "SKILL.md"), file); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(path, []byte("corrupted"), 0600); err != nil {
+	if _, _, err := w.linkSkills(t.Context(), work, skills); err == nil {
+		t.Fatal("followed a foreign Skill entry")
+	}
+	if _, _, err := w.linkSkills(t.Context(), work, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = worker.materializeSkill(context.Background(), work, NewID(), native, skill); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatal("revoked context survived", err)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil || string(data) != "reference bytes" || reads.Load() != 4 {
-		t.Fatal("modified cache was trusted", err)
-	}
-	outside := t.TempDir()
-	sentinel := filepath.Join(outside, "sentinel")
-	if err = os.WriteFile(sentinel, []byte("outside"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err = os.Remove(path); err != nil {
-		t.Fatal(err)
-	}
-	if err = os.Symlink(sentinel, path); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = worker.materializeSkill(context.Background(), work, NewID(), native, skill); err != nil {
-		t.Fatal(err)
-	}
-	data, err = os.ReadFile(sentinel)
-	if err != nil || string(data) != "outside" {
-		t.Fatal("cache repair followed a file symlink", err)
-	}
-	otherNative := t.TempDir()
-	if err = os.Symlink(outside, filepath.Join(otherNative, "skills")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = worker.materializeSkill(context.Background(), work, NewID(), otherNative, skill); err == nil {
-		t.Fatal("cache parent escaped its root")
-	}
-	bad := skill
-	bad.Manifest.Digest = "bad"
-	if _, err = worker.materializeSkill(context.Background(), work, NewID(), native, bad); err == nil {
-		t.Fatal("unverified manifest accepted")
+	if _, err := os.Stat(targets[1]); err != nil {
+		t.Fatal("removed published asset", err)
 	}
 }

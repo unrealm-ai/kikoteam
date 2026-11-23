@@ -1,6 +1,6 @@
 # sandbox-runner · Sandbox 常驻管理进程
 
-**当前实现（2026-11-17）**：Go cmd/sandbox-runner 已接通裸环境配置领取、每 task Session 独立 builtin、固定 Token、共享 project、窗口控制、完整活动采样、定向停止与退出。Skill 的固定目录由本机 Engine 下载并校验，builtin 复用同一绝对路径读取资料、执行脚本；远程 MCP 由 Pi 直连。stdio 插件与 Gateway 仍未实现。`make build` 构建，`make check` 检查 Go 与契约，实际联调见[运行说明](../docs/operations/minimal-agent-runtime.md)。
+**当前实现（2026-11-17）**：Go cmd/sandbox-runner 已接通裸环境配置领取、每 task Session 独立 builtin、固定 Token、共享 project、窗口控制、完整活动采样、定向停止与退出。Skill 的固定版本由本机 Engine 链接到 Session 入口，builtin 复用同一绝对路径读取资料、执行脚本；远程 MCP 由 Pi 直连。stdio 插件与 Gateway 仍未实现。`make build` 构建，`make check` 检查 Go 与契约，实际联调见[运行说明](../docs/operations/minimal-agent-runtime.md)。
 
 > **2026-11-16 关系与生命周期已确认**：一 Task 一 task Session，共享环境归 Conversation；创建、停止、归档、首版放置及三层回收按[业务会话与共享环境生命周期](../docs/architecture/conversation-lifecycle.md)。下文保留完整目标范围；当前最小实现与限制见仓库运行说明和实施计划。
 
@@ -35,9 +35,9 @@ Session stop/archive 只关闭其执行窗口并收尾所属进程，不影响�
 
 **内置工具**　六个文件工具 read、write、edit、grep、find、ls 从固定版本 Pi 源码移植；bash_start、bash_poll、bash_write、bash_terminate、bash_list 及进程管理复用用户提供的 TS 归档。新增薄 HTTP 入口，适配可信上下文、UUID 和实际工作路径；保留文件保护、私有 SQLite 及完整活动核对，不修改 Pi。
 
-**实现入口**　Go 管理在 cmd/sandbox-runner 与 internal/runner；[builtin-mcp](builtin-mcp/README.md) 提供独立构建和检查。管理契约见 [contracts/openapi.yaml](contracts/openapi.yaml)。Token 保存在 runner-state/S/token，进程重建沿用；临时控制 socket 使用短路径，持久账本不变。第三方 stdio Gateway 后续实现。
+**实现入口**　Go 管理在 cmd/sandbox-runner 与 internal/runner；[builtin-mcp](builtin-mcp/README.md) 提供独立构建和检查。管理契约见 [contracts/openapi.yaml](contracts/openapi.yaml)。Token 保存在 `workspaces/<W>/sessions/<sid>/runner/token`，进程重建沿用；临时控制 socket 使用短路径，持久账本不变。第三方 stdio Gateway 后续实现。
 
-**文件归属**　Runner 在项目内操作工作文件，Manager 将显式发布的文件保存为固定交付版本。目录重构后，Runner 的 Token 和 SQLite 位于 `workspaces/<W>/sessions/<sid>/runner/`，启动配置和 socket 位于进程私有临时目录。单个 Session 释放时收尾其 builtin 进程，保留账本和共享 Runner。[目录与生命周期](../docs/architecture/storage-paths.md)
+**文件归属**　Runner 在项目内操作工作文件，Manager 将显式发布的文件保存为固定交付版本。Runner 的 Token 和 SQLite 位于 `workspaces/<W>/sessions/<sid>/runner/`，启动配置和 socket 位于进程私有临时目录。单个 Session 释放时收尾其 builtin 进程，保留账本和共享 Runner。[目录与生命周期](../docs/architecture/storage-paths.md)
 
 ## 健康检查与退出
 

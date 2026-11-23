@@ -85,10 +85,22 @@ func (s *Sandboxes) For(ctx context.Context, work repository.Work) (*integration
 	return nil, errors.New("sandbox not registered for this Engine")
 }
 func (s *Sandboxes) start(ctx context.Context, v integration.Sandbox) (*sandboxProcess, error) {
-	dir, err := os.MkdirTemp("/tmp", "ke-")
+	temp, err := nodeDirectory("temp")
 	if err != nil {
 		return nil, err
 	}
+	dir, err := os.MkdirTemp(temp, "e-")
+	if err != nil {
+		return nil, err
+	}
+	started := false
+	defer func() {
+		if !started {
+			if err := os.RemoveAll(dir); err != nil {
+				s.Log.Warn("Runner launch cleanup failed", "error", err)
+			}
+		}
+	}()
 	token, err := randomToken()
 	if err != nil {
 		return nil, err
@@ -121,6 +133,7 @@ func (s *Sandboxes) start(ctx context.Context, v integration.Sandbox) (*sandboxP
 	if err = cmd.Start(); err != nil {
 		return nil, err
 	}
+	started = true
 	p := &sandboxProcess{cmd: cmd, done: make(chan struct{}), dir: dir}
 	s.processes[v.ID] = p // Retain startup failures; never race a second Runner.
 	ready := make(chan string, 1)

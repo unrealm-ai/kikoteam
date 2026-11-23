@@ -1,17 +1,17 @@
 package runtime
 
 import (
-	"context"
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/integration"
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
 	"testing"
 )
 
 func TestGroupHistoryMCPOnlyConversationTask(t *testing.T) {
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
 	w := repository.Work{WorkspaceID: NewID(), AgentID: NewID(), ConversationID: NewID(), TaskID: NewID(), Mode: "task", Assignment: repository.Assignment{SessionID: NewID()}}
 	cfg := integration.HarnessConfig{WorkspaceID: w.WorkspaceID, AgentID: w.AgentID, ConversationID: w.ConversationID, TaskID: w.TaskID, SessionID: w.SessionID, Mode: "task", GroupHistoryToken: "purpose-token"}
 	worker := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://localhost:8080"}}
-	out, _, e := worker.prepareConfiguration(context.Background(), w, repository.Turn{}, cfg, integration.Endpoint{})
+	out, _, e := worker.prepareConfiguration(t.Context(), w, repository.Turn{}, cfg, integration.Endpoint{})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -20,7 +20,7 @@ func TestGroupHistoryMCPOnlyConversationTask(t *testing.T) {
 	}
 	w.Mode = "chat"
 	cfg.Mode = "chat"
-	out, _, e = worker.prepareConfiguration(context.Background(), w, repository.Turn{}, cfg, integration.Endpoint{})
+	out, _, e = worker.prepareConfiguration(t.Context(), w, repository.Turn{}, cfg, integration.Endpoint{})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -33,7 +33,7 @@ func TestGroupHistoryMCPOnlyConversationTask(t *testing.T) {
 	cfg.TaskSpaceID = w.TaskSpaceID
 	w.ConversationID = ""
 	cfg.ConversationID = ""
-	out, _, e = worker.prepareConfiguration(context.Background(), w, repository.Turn{}, cfg, integration.Endpoint{})
+	out, _, e = worker.prepareConfiguration(t.Context(), w, repository.Turn{}, cfg, integration.Endpoint{})
 	if e != nil {
 		t.Fatal(e)
 	}

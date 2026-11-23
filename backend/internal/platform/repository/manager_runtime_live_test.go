@@ -195,7 +195,7 @@ func TestManagerRuntimeLiveDeepSeek(t *testing.T) {
 	if err != nil || !bytes.Contains(encoded, []byte(nonce)) {
 		t.Fatal("real model did not retain native context across Engine restart")
 	}
-	project := filepath.Join(temp, "state/sandboxes/workspaces", workspace, "employees", agent.ID, "conversations", conversation, "project")
+	project := filepath.Join(temp, "workspaces", workspace, "projects", "conv-"+conversation)
 	task := call("POST", base+"/sessions", map[string]any{"conversation_id": conversation, "mode": "task", "input": map[string]string{"text": "必须实际调用 write 工具创建项目根目录 live-proof.txt，内容为 " + nonce + "。再用 bash_start 执行 python3 读取该文件，验证 strip() 后内容等于上述口令。不访问网络、不安装依赖，成功后只回复 LIVE_TASK_OK。"}}, "live-task")["id"].(string)
 	await(base+"/sessions/"+task, 1)
 	proof, err := os.ReadFile(filepath.Join(project, "live-proof.txt"))

@@ -6,7 +6,7 @@
 
 状态：2026-11-17 最小 chat/task、固定 MCP Token、后台驻留、原生历史继续与查询式委派已实现并完成本地实际进程及 DeepSeek 验收。下文保留完整目标；实际机器契约、目录和未实现范围见[运行说明](../../docs/operations/minimal-agent-runtime.md)，公开接口见[会话接口](../../backend/docs/session-api.md)。
 
-后续已实现能力包、Skill 与静态认证远程 MCP 执行：本机目录经 Backend 授权读取和摘要校验，Pi 使用原生 Skill/MCP 及公开策略扩展。以下 stdio、热更新等完整目标不因此全部视为已交付。
+后续已实现能力包、Skill 与静态认证远程 MCP 执行：Backend 校验 Skill 授权和固定版本，Engine 链接本地正式目录，Pi 使用原生 Skill/MCP 及公开策略扩展。以下 stdio、热更新等完整目标不因此全部视为已交付。
 
 ## 1. 组件与进程边界
 
@@ -24,7 +24,7 @@ Conversation、Task 和 Session 均由 Backend 创建，首版一 Task 一 task 
 
 ## 2. 上游版本与使用约束
 
-使用固定的 [Pi v1.5.2](https://github.com/earendil-works/pi/releases/tag/v1.5.2)，不在启动时拉取 latest。旧 Pi ACP 0.0.34 只用于识别历史映射，不再是运行依赖。
+使用固定的 [Pi v1.5.2](https://github.com/earendil-works/pi/releases/tag/v1.5.2)，不在启动时拉取 latest。Engine 用 `session.json` 核对 Pi 返回的原生身份。
 
 遵守 [Pi 原生能力优先规则](../../AI_RULES.md#通用开发与静态检查)：未经用户明确确认，不改 Pi 源码、补丁/fork，不新增 Pi 插件、扩展或特殊桥接。Engine 负责公开协议通信、平台事件映射及旧数据迁移，不重写内部循环。原有 capability-policy.mjs 用于逐调用授权及 Skill 提示，context-receipt.mjs 用于输入回执；两者保留既有用途，本次未修改。官方 builtin:mcp 继续显式加载。 找人确认经用户确认增加 `human-tools.mjs`，使用公开工具注册和调用钩子结束执行段。Engine 在收到终态前核对输入门禁及所属 Runner，详见[找人确认](../../backend/docs/human-requests.md)。
 
@@ -60,11 +60,11 @@ Conversation、Task 和 Session 均由 Backend 创建，首版一 Task 一 task 
 
 每个 Session 使用独立 HOME、原生配置目录、工作目录及环境变量白名单，不继承开发者账号、祖先项目指令或任意扩展。仅允许固定工件、配置声明的原生能力及平台白名单扩展；task 模型参数跟随 Harness，chat 强制非思考策略；保持原生 MCP 内置支持，不因关闭任意扩展而一并禁用它。
 
-当前 Engine 在执行 Session 的 `context/native/` 保存 Pi 历史和身份映射。重构后主对话和任务统一使用 `workspaces/<W>/sessions/<sid>/pi/`，沿用原生 JSONL 和输入回执。开发环境一次性解除受影响旧 Session 的原生身份绑定，同一平台 `sid` 可从下一条新消息建立新上下文。此后重启按新目录恢复。[存储目录方案](../../docs/architecture/storage-paths.md)
+主对话和任务统一使用 `workspaces/<W>/sessions/<sid>/pi/`，沿用原生 JSONL 和输入回执。开发环境一次性解除受影响旧 Session 的原生身份绑定，同一平台 `sid` 可从下一条新消息建立新上下文。此后重启按新目录恢复。[存储目录方案](../../docs/architecture/storage-paths.md)
 
-通过原生 settings.json、models.json、mcp.json、`--system-prompt` 及必要环境变量装配。认证材料按消费者最小范围提供，与持久历史分开。新会话的 sessions/*.jsonl 由 Pi 初始化和写入，Engine 在 session.json 保存 id、nativeId 与 sessionFile。仅首次创建空文件供 Pi 初始化持久头部，Engine 不写原生条目；旧会话只读 home/.pi/pi-acp/session-map.json 找到同一文件，并保留旧数据库身份为别名。历史缺失、损坏、身份不符或越界时拒绝加载，不创建空白替代。进程重启使用同一持久目录和有效路径映射，不能手改历史来伪造成功加载。
+通过原生 settings.json、models.json、mcp.json、`--system-prompt` 及必要环境变量装配。认证材料按消费者最小范围提供，与持久历史分开。新会话的 sessions/*.jsonl 由 Pi 初始化和写入，Engine 在 session.json 保存 id、nativeId 与 sessionFile。仅首次创建空文件供 Pi 初始化持久头部，Engine 不写原生条目。历史缺失、损坏、身份不符或越界时拒绝加载，不创建空白替代。进程重启使用同一持久目录和有效路径映射，不能手改历史来伪造成功加载。
 
-Backend 在获准的 HarnessConfig 响应中提供本轮指令。主 chat 组合员工当前名称、职责和岗位规范与平台交互规则。task 组合已固定的员工版本、平台执行规则及有效能力包摘要。包名和说明取自任务快照，摘要仅包含当前仍授权且至少有一个可用 Skill 或工具的包。Engine 将装配后的指令与输入来源规则写入私有文件，通过 Pi 原生 `--system-prompt` 用作系统提示词开头。升级时清理旧版本生成的 `APPEND_SYSTEM.md`，保留原生会话历史。任务要求作为原生 user prompt 提交。
+Backend 在获准的 HarnessConfig 响应中提供本轮指令。主 chat 组合员工当前名称、职责和岗位规范与平台交互规则。task 组合已固定的员工版本、平台执行规则及有效能力包摘要。包名和说明取自任务快照，摘要仅包含当前仍授权且至少有一个可用 Skill 或工具的包。Engine 将装配后的指令与输入来源规则写入私有文件，通过 Pi 原生 `--system-prompt` 用作系统提示词开头。任务要求作为原生 user prompt 提交。
 
 Pi 的配置中每个 MCP 单独登记名称、HTTP 地址和当前认证：builtin MCP 直连 Sandbox 服务；stdio MCP 指向 Runner 对应 binding 的 HTTP 代理入口；远程 HTTP MCP 直连远端。不把第三方 stdio 的 command 写入 Engine 配置，否则进程会运行到 Engine。
 
@@ -76,11 +76,11 @@ Sandbox MCP Token 在环境首次授权绑定时生成，跟随 Sandbox 实例�
 
 ### Skill 资源与加载
 
-**当前实现**　Skill 保持标准目录及 SKILL.md。Engine 经受限 Backend 接口下载并校验固定版本目录，通过原生 `--skill` 供 Pi 加载和显式 `/skill:name` 使用；首版本机 Runner/builtin 复用同一绝对路径，不重复下载一份资产。脚本依赖使用本机已有程序，不自动执行安装脚本；chat 不加载员工任务 Skill/Plugin。自动选择仍由 Harness / 模型决定，不新增 Input 字段或平台斜杠解析器。
+**当前实现**　Skill 保持标准目录及 SKILL.md。Engine 根据 Backend 返回的授权版本建立 Session 链接，通过一个 `--skill` 入口供 Pi 加载和显式 `/skill:name` 使用。本机 Runner/builtin 通过同一绝对路径读取正式资产。脚本依赖使用本机已有程序，不自动执行安装脚本；chat 不加载员工任务 Skill/Plugin。自动选择仍由 Harness / 模型决定，不新增 Input 字段或平台斜杠解析器。
 
 当前 Pi 在禁用 read / bash 后不自动附加 Skill 目录提示。白名单扩展通过公开 before_agent_start 接口，复用 Pi 的已解析 Skill 元数据及 formatSkillsForPrompt，补入名称、描述和位置，并遵守原生 disable-model-invocation。正文按需读取。[上游提示生成](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/src/core/system-prompt.ts#L173)
 
-任务命令在所属项目执行。目录重构后，Engine 在节点本地为每个 Session 建立指向固定版本 `files/` 的链接，Pi 以一次 `--skill` 加载该 Session 的 `skills/`。容器内的本地入口和两个只读 Skill 挂载均须与 Engine 同路径。筛选、版本固定时机、升级和撤权留待专项设计。[Skill 版本目录与沙箱](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
+任务命令在所属项目执行。Engine 在节点本地为每个 Session 建立指向固定版本 `files/` 的链接，Pi 以一次 `--skill` 加载该 Session 的 `skills/`。容器内的本地入口和两个只读 Skill 挂载均须与 Engine 同路径。筛选、版本固定时机、升级和撤权留待专项设计。[Skill 版本目录与沙箱](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
 
 ## 5. 一轮执行与 RPC
 

@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -10,8 +9,9 @@ import (
 )
 
 func TestWorkMCPInputCredentialsDoNotReplacePi(t *testing.T) {
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
 	w := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
-	current := repository.Work{Assignment: repository.Assignment{SessionID: "session"}, WorkspaceID: "workspace", AgentID: "employee", Mode: "task", TaskID: "task", ConversationID: "conversation"}
+	current := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "workspace", AgentID: "employee", Mode: "task", TaskID: "task", ConversationID: "conversation"}
 	cfg := integration.HarnessConfig{
 		SessionID: current.SessionID, WorkspaceID: current.WorkspaceID,
 		AgentID: current.AgentID, Mode: current.Mode,
@@ -19,13 +19,13 @@ func TestWorkMCPInputCredentialsDoNotReplacePi(t *testing.T) {
 		WorkRole: "ordinary", WorkMCPToken: "test-first", WorkLocalToken: "test-first-local",
 	}
 	turn := repository.Turn{Input: repository.Input{ID: "first"}}
-	first, firstSignature, err := w.prepareConfiguration(context.Background(), current, turn, cfg, integration.Endpoint{})
+	first, firstSignature, err := w.prepareConfiguration(t.Context(), current, turn, cfg, integration.Endpoint{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	turn.Input.ID = "second"
 	cfg.WorkMCPToken, cfg.WorkLocalToken = "test-second", "test-second-local"
-	second, secondSignature, err := w.prepareConfiguration(context.Background(), current, turn, cfg, integration.Endpoint{})
+	second, secondSignature, err := w.prepareConfiguration(t.Context(), current, turn, cfg, integration.Endpoint{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestWorkMCPInputCredentialsDoNotReplacePi(t *testing.T) {
 		t.Fatal("latest Work MCP authority was not refreshed in turn configuration")
 	}
 	cfg.WorkRole = "review"
-	_, reviewSignature, err := w.prepareConfiguration(context.Background(), current, turn, cfg, integration.Endpoint{})
+	_, reviewSignature, err := w.prepareConfiguration(t.Context(), current, turn, cfg, integration.Endpoint{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,13 +47,14 @@ func TestWorkMCPInputCredentialsDoNotReplacePi(t *testing.T) {
 }
 
 func TestCorrectionConfigurationOnlyCarriesHumanReviewTools(t *testing.T) {
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
 	w := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
-	current := repository.Work{Assignment: repository.Assignment{SessionID: "session"}, WorkspaceID: "workspace", AgentID: "employee", Mode: "task", TaskID: "task", ConversationID: "conversation"}
+	current := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "workspace", AgentID: "employee", Mode: "task", TaskID: "task", ConversationID: "conversation"}
 	for _, role := range []string{"ordinary", "assignee", "review"} {
 		cfg := integration.HarnessConfig{SessionID: current.SessionID, WorkspaceID: current.WorkspaceID, AgentID: current.AgentID, Mode: current.Mode, TaskID: current.TaskID, ConversationID: current.ConversationID,
 			HumanMCPToken: "human-mcp", HumanToolsToken: "human-local", WorkRole: role, WorkMCPToken: "work-mcp", WorkLocalToken: "work-local", GroupHistoryToken: "history", CapabilityToken: "capability"}
 		turn := repository.Turn{Input: repository.Input{ID: "correction", CorrectionOnly: true}}
-		out, signature, e := w.prepareConfiguration(context.Background(), current, turn, cfg, integration.Endpoint{URL: "http://runner.invalid", Token: "builtin"})
+		out, signature, e := w.prepareConfiguration(t.Context(), current, turn, cfg, integration.Endpoint{URL: "http://runner.invalid", Token: "builtin"})
 		if e != nil || signature == "" || !out.PlanOnly || len(out.MCP) != 0 || len(out.Skills) != 0 || out.PolicyExtension != "" || out.HumanToolsExtension == "" || out.WorkMCPRole != "" || out.ReceiptExtension == "" {
 			t.Fatalf("role %s exposed unneeded capabilities: err=%v", role, e)
 		}
@@ -66,9 +67,10 @@ func TestCorrectionConfigurationOnlyCarriesHumanReviewTools(t *testing.T) {
 }
 
 func TestReportChatOnlyUsesSelectionEndpoint(t *testing.T) {
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
 	w := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
-	chat := repository.Work{Assignment: repository.Assignment{SessionID: "chat"}, WorkspaceID: "w", AgentID: "a", ConversationID: "conv", Mode: "chat"}
-	cfg := integration.HarnessConfig{WorkspaceID: "w", AgentID: "a", SessionID: "chat", ConversationID: "conv", Mode: "chat", ReportOnly: true, DelegationToken: "chat-scope", HumanToolsToken: "human", HumanMCPToken: "human"}
+	chat := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "w", AgentID: "a", ConversationID: "conv", Mode: "chat"}
+	cfg := integration.HarnessConfig{WorkspaceID: "w", AgentID: "a", SessionID: chat.SessionID, ConversationID: "conv", Mode: "chat", ReportOnly: true, DelegationToken: "chat-scope", HumanToolsToken: "human", HumanMCPToken: "human"}
 	turn := repository.Turn{Input: repository.Input{ID: "report"}}
 	out, _, err := w.prepareConfiguration(t.Context(), chat, turn, cfg, integration.Endpoint{URL: "http://runner.invalid", Token: "runner"})
 	if err != nil {
@@ -81,8 +83,9 @@ func TestReportChatOnlyUsesSelectionEndpoint(t *testing.T) {
 }
 
 func TestAttachmentToolUsesStableAssignmentCredentialForConversationTasks(t *testing.T) {
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
 	w := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
-	work := repository.Work{Assignment: repository.Assignment{SessionID: "task-session"}, WorkspaceID: "w", AgentID: "a", ConversationID: "conv", TaskID: "task", Mode: "task"}
+	work := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "w", AgentID: "a", ConversationID: "conv", TaskID: "task", Mode: "task"}
 	cfg := integration.HarnessConfig{WorkspaceID: "w", AgentID: "a", ConversationID: "conv", TaskID: "task", SessionID: work.SessionID, Mode: "task", AttachmentToken: "assignment-token"}
 	first, sig, err := w.prepareConfiguration(t.Context(), work, repository.Turn{Input: repository.Input{ID: "first"}}, cfg, integration.Endpoint{})
 	if err != nil {
@@ -103,6 +106,7 @@ func TestAttachmentToolUsesStableAssignmentCredentialForConversationTasks(t *tes
 
 	for _, scenario := range []string{"chat", "report", "task_space", "correction", "no_token"} {
 		t.Run(scenario, func(t *testing.T) {
+			t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
 			wc, cc := work, cfg
 			input := repository.Input{ID: "test-input"}
 			switch scenario {
@@ -128,9 +132,10 @@ func TestAttachmentToolUsesStableAssignmentCredentialForConversationTasks(t *tes
 }
 
 func TestChatPassesAttachmentReferencesToTaskWithoutExposingReader(t *testing.T) {
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
 	w := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
-	chat := repository.Work{Assignment: repository.Assignment{SessionID: "chat"}, WorkspaceID: "w", AgentID: "a", ConversationID: "conv", Mode: "chat"}
-	cfg := integration.HarnessConfig{WorkspaceID: "w", AgentID: "a", SessionID: "chat", ConversationID: "conv", Mode: "chat", DelegationToken: "delegation"}
+	chat := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "w", AgentID: "a", ConversationID: "conv", Mode: "chat"}
+	cfg := integration.HarnessConfig{WorkspaceID: "w", AgentID: "a", SessionID: chat.SessionID, ConversationID: "conv", Mode: "chat", DelegationToken: "delegation"}
 	out, _, err := w.prepareConfiguration(t.Context(), chat, repository.Turn{}, cfg, integration.Endpoint{})
 	if err != nil || len(out.MCP) != 1 || out.MCP["task_delegation"] == nil || out.MCP[attachmentMCPServer] != nil ||
 		!strings.Contains(out.Instruction, "attachment_ids") || !strings.Contains(out.Instruction, "attachment_paths") {

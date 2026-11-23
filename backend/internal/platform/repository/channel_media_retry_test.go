@@ -157,7 +157,7 @@ func TestChannelMediaSharedRetryBudgetAndNonblockingInbox(t *testing.T) {
 }
 
 func TestChannelMediaReconcilesPublishedFileAfterFinalLeaseExpires(t *testing.T) {
-	db, m, store, workspace, _, agent, binding := channelManagerFixture(t)
+	db, m, store, workspace, _, _, binding := channelManagerFixture(t)
 	m.ProjectRoot = t.TempDir()
 	ctx := t.Context()
 	must := func(err error) {
@@ -200,7 +200,7 @@ func TestChannelMediaReconcilesPublishedFileAfterFinalLeaseExpires(t *testing.T)
 	if count != 3 || path != "uploads/report.csv" {
 		t.Fatal(count, path)
 	}
-	dir := filepath.Join(m.ProjectRoot, "state/sandboxes/workspaces", workspace, "employees", agent, "conversations", conv, "project")
+	dir := filepath.Join(m.ProjectRoot, "workspaces", workspace, "projects", "conv-"+conv)
 	data, err := os.ReadFile(filepath.Join(dir, path))
 	must(err)
 	entries, err := os.ReadDir(filepath.Join(dir, "uploads"))

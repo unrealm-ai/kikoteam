@@ -13,7 +13,7 @@ backend=
 hub=
 engine=
 storage=$(mktemp -d "$RUNNER_TEMP/kiko-smoke.XXXXXX")
-storage_mount="type=bind,source=$storage,target=/var/lib/kiko"
+storage_mount="type=bind,source=$storage,target=/mnt/kikoteam"
 host_user="$(id -u):$(id -g)"
 
 cleanup() {
@@ -64,7 +64,7 @@ backend=$(docker run --detach --network host \
     --user "$host_user" --mount "$storage_mount" \
     -e "DATABASE_URL=$dsn" -e KIKO_AUTH_SECRET=kiko-acceptance-only-auth-not-a-secret \
     -e "KIKO_PUBLIC_ORIGIN=$backend_url" -e KIKO_HTTP_ADDRESS=127.0.0.1:18080 \
-    -e KIKO_WEB_DIR=/app/web -e KIKO_STORAGE_LOCAL_ROOT=/var/lib/kiko \
+    -e KIKO_WEB_DIR=/app/web -e KIKO_STORAGE_LOCAL_ROOT=/mnt/kikoteam \
     -e "KIKO_MODEL_PROXY_ORIGIN=$backend_url" -e "KIKO_HUB_TOKEN=$hub_token" \
     -e KIKO_HUB_CONTROL_URL=http://127.0.0.1:18082 -e "KIKO_ENGINE_TOKEN=$engine_token" "$BACKEND_IMAGE_ID")
 wait_until 'Backend HTTP liveness on the empty database' healthy_backend
@@ -104,7 +104,7 @@ engine=$(docker run --detach --network host --init \
     --user "$host_user" --mount "$storage_mount" \
     -e "DATABASE_URL=$dsn" -e "KIKO_BACKEND_URL=$backend_url" \
     -e "KIKO_ENGINE_TOKEN=$engine_token" -e KIKO_ENGINE_ADDRESS=127.0.0.1:18083 \
-    -e KIKO_ENGINE_HOST_ID=image-smoke -e KIKO_STORAGE_LOCAL_ROOT=/var/lib/kiko "$ENGINE_IMAGE_ID")
+    -e KIKO_ENGINE_HOST_ID=image-smoke -e KIKO_STORAGE_LOCAL_ROOT=/mnt/kikoteam "$ENGINE_IMAGE_ID")
 wait_until 'Engine registration with the published Backend' ready_engine
 registration=$(sql "SELECT EXISTS (SELECT 1 FROM public.manager_engines WHERE host_id='image-smoke' AND accepting)")
 [[ "$registration" == t ]]

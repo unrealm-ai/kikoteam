@@ -15,20 +15,20 @@ import (
 // Publish a single server-named entry into the already-prepared task project.
 // Rename replaces the directory entry, never follows an existing file symlink.
 func (w *Worker) materializeWebhookFile(task repository.Work, f integration.WebhookFile) error {
-	if task.Mode != "task" || task.TaskSpaceID == "" || task.TaskID == "" || len(f.Body) > 256*1024 || !webhookUUID.MatchString(f.EventID) {
+	if task.Mode != "task" || task.TaskSpaceID == "" || task.TaskID == "" || len(f.Body) > 256*1024 || !uuidPattern.MatchString(f.EventID) {
 		return errors.New("invalid webhook attachment scope")
 	}
 	digest := sha256.Sum256(f.Body)
 	if hex.EncodeToString(digest[:]) != f.SHA256 {
 		return errors.New("webhook attachment digest mismatch")
 	}
-	base := filepath.Join(w.Root, "state/sandboxes/workspaces", task.WorkspaceID, "employees", task.AgentID, "taskspaces", task.TaskSpaceID, "tasks", task.TaskID)
+	base := filepath.Join(w.Root, "workspaces", task.WorkspaceID, "projects")
 	taskRoot, err := os.OpenRoot(base)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = taskRoot.Close() }() //nolint:errcheck // Directory handle only.
-	dir, err := taskRoot.OpenRoot("project")
+	dir, err := taskRoot.OpenRoot("task-" + task.TaskID)
 	if err != nil {
 		return err
 	}
@@ -46,4 +46,4 @@ func (w *Worker) materializeWebhookFile(task repository.Work, f integration.Webh
 	return dir.Rename(tmp, "webhook-"+f.EventID+".body")
 }
 
-var webhookUUID = regexp.MustCompile(`^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
+var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)

@@ -24,30 +24,25 @@ Runner 仍是独立 Go 组件，本地由 Engine 启动为子进程，不要求�
 
 ## TaskSpace 增量（2026-11-18，实施中）
 
-普通 Conversation 仍复用会话环境；TaskSpace 内按 Task 独立登记 Sandbox 和 Runner，目录为 `state/sandboxes/workspaces/<workspace_id>/employees/<agent_id>/taskspaces/<space_id>/tasks/<task_id>/{project,runner-state}`。不使用共享的 space project，不复制其他任务文件。范围校验要求 Conversation owner 与 TaskSpace+Task owner 互斥，Runner 以真实 Session 归属核验成员，不能把缺失 Conversation 当通配。
+普通 Conversation 仍复用会话环境；TaskSpace 内按 Task 独立登记 Sandbox 和 Runner，目录为 `workspaces/<W>/projects/task-<task_id>/`。不使用共享的 space project，不复制其他任务文件。范围校验要求 Conversation owner 与 TaskSpace+Task owner 互斥，Runner 以真实 Session 归属核验成员，不能把缺失 Conversation 当通配。
 
 路径和身份的软件隔离不等于 OS 安全隔离：进程仍使用同账号权限。重启保留同一任务目录和环境身份；停止/回收仅处理该任务的环境，不影响同空间其他任务。首版不提供空间文件共享 API。代码与验收状态见 [TaskSpace 设计](../../backend/docs/task-spaces.md)。
 
 ## 稳定目录与工作方式
 
-以下为当前主线在 `KIKO_STORAGE_LOCAL_ROOT`（默认 `~/.kiko/`）下的路径。重构后项目按项目标识定位，工具状态独立保存在 Session 的 `runner/` 下。[目标布局与项目归属](../../docs/architecture/storage-paths.md#5-共享沙箱与本机目录)
+项目按归属定位，工具状态按执行 Session 保存。[布局与项目归属](../../docs/architecture/storage-paths.md#5-共享沙箱与本机目录)
 
 ```text
-<KIKO_STORAGE_LOCAL_ROOT>/
-  state/sandboxes/workspaces/<workspace_id>/employees/<employee_id>/
-    conversations/<conversation_id>/
-      project/                  # 稳定项目根，默认命令 cwd
-        tasks/<task_id>/         # 可选：按任务组织产出，不是隔离边界
-      runner-state/             # 稳定环境身份、固定凭据、命令账本和输出
-  state/engines/workspaces/<workspace_id>/employees/<employee_id>/
-    conversations/<conversation_id>/executions/<session_id>/context/native/
-                                # Pi 原生历史和 Engine 身份映射
-/tmp/kr-*/                      # 当前 Runner 的私有临时目录与管理 socket
+<KIKO_STORAGE_LOCAL_ROOT>/workspaces/<W>/
+  projects/conv-<conversation_id>/   # 普通会话及其委派任务共用
+  projects/task-<task_id>/           # TaskSpace 独立任务使用
+  sessions/<sid>/pi/                 # 原生历史、身份映射与回执
+  sessions/<sid>/runner/             # 固定 Token、命令账本和输出
 ```
 
 项目目录和持久状态路径不包含 Engine ID、Runner boot ID、assignment 或执行代次。环境身份变化写入元数据，不通过改路径丢弃原文件；重启使用原位置，已登记环境目录缺失时报告不可用，不悄悄创建空目录冒充恢复。首次创建才初始化空项目，不自动复制仓库或安装开发环境。
 
-同一 Conversation 的 task Session 默认以同一个 `project/` 为命令工作目录，共用代码和本机安装的依赖。`tasks/<task_id>/` 仅是可选文件组织方式，不强制每个任务独立项目；共享文件的并发写入由任务协调写入者或串行化，不因路径不同而声称自动避免冲突。模型上下文仍各自保存。
+同一 Conversation 的 task Session 默认以同一个 `projects/conv-<conversation_id>/` 为命令工作目录，共用代码和本机安装的依赖。`tasks/<task_id>/` 仅是可选文件组织方式，不强制每个任务独立项目；共享文件的并发写入由任务协调写入者或串行化，不因路径不同而声称自动避免冲突。模型上下文仍各自保存。
 
 项目目录和 Runner 状态属于必须保留的本地工作数据，不放入可随实例清除的 runtime/cache/tmp。即使配置 S3 保存 Skill 等不可变资产，项目工作盘、SQLite 和 Pi 原生历史仍使用本地文件系统，不上传整棵工作目录或逐轮快照。Web 私聊的目录树、上传、下载和聊天附件使用这个项目目录，接口及部署条件见[私聊项目文件](../../backend/docs/conversation-files.md)。
 
@@ -62,7 +57,7 @@ Runner 仍是独立 Go 组件，本地由 Engine 启动为子进程，不要求�
 
 本机 Git、Python、Node、Bash 等直接从经启动检查的 PATH 或显式程序路径使用；继承正常用户 HOME、语言、时区、临时目录及明确配置的代理/项目环境。Pi 使用独立的 Session 配置及历史位置，避免污染开发者个人 Pi 会话。平台管理凭据不主动注入普通业务命令；运行配置不是安全隔离机制。程序使用参数数组启动，含空格或中文的路径须正确传递，不拼接未转义 shell 命令。
 
-当前 Engine 下载并校验 Skill，裸沙箱工具读取同一份执行副本。重构后 Engine 在 Session 的本地 `skills/` 目录中建立链接。隔离沙箱从持久化根只读挂入 `official/skills/` 和 `workspaces/<W>/skills/`，入口和链接目标在 Engine 与沙箱中使用相同的绝对路径。裸沙箱仍以宿主账号权限执行。[各启动模式的路径和挂载](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
+Engine 在 Session 的本地 `skills/` 目录中建立链接。隔离沙箱从持久化根只读挂入 `official/skills/` 和 `workspaces/<W>/skills/`，入口和链接目标在 Engine 与沙箱中使用相同的绝对路径。裸沙箱仍以宿主账号权限执行。[各启动模式的路径和挂载](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
 
 ## 本机通信
 

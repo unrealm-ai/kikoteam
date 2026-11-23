@@ -28,7 +28,7 @@ func (s *Store) engineStopped(id string) (bool, error) {
 	if s.RuntimeRoot == "" {
 		return false, nil
 	}
-	f, err := os.OpenFile(filepath.Join(s.RuntimeRoot, "state", "engines", "instances", id+".lock"), os.O_RDWR, 0)
+	f, err := os.OpenFile(filepath.Join(s.RuntimeRoot, "temp", "runtime", id+".lock"), os.O_RDWR, 0)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}

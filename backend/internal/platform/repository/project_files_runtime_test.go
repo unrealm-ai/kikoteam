@@ -98,7 +98,7 @@ func projectModelReply(t *testing.T, w http.ResponseWriter, b runtimeRequest) bo
 func testRuntimeProjectFiles(t *testing.T, ctx context.Context, db *sql.DB, base, workspace, agent, root, server, token string, call func(string, string, any, string) map[string]any, wait func(func() bool)) {
 	t.Helper()
 	c := call("POST", base+"/conversations/web-direct", map[string]string{"agent_id": agent}, "")["id"].(string)
-	project := filepath.Join(root, "state/sandboxes/workspaces", workspace, "employees", agent, "conversations", c, "project")
+	project := filepath.Join(root, "workspaces", workspace, "projects", "conv-"+c)
 	if e := os.MkdirAll(filepath.Join(project, "outputs"), 0700); e != nil {
 		t.Fatal(e)
 	}

@@ -198,7 +198,7 @@ func TestUpstreamBuiltinHTTP(t *testing.T) {
 		}
 	}))
 	defer provider.Close()
-	cfg := Config{Directory: filepath.Join(dir, "native"), WorkDirectory: filepath.Join(dir, "pi-work"), PiCommand: filepath.Join(root, "node_modules/.bin/pi"), Launcher: filepath.Join(root, "scripts/pi.sh"), Model: Model{Protocol: "chat_completions", BaseURL: provider.URL + "/v1", ID: "fixture-tools", Key: "fixture"}, MCP: map[string]any{"builtin": map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d/mcp", port), "headers": map[string]string{"Authorization": "Bearer " + token}, "exposure": "direct"}}}
+	cfg := Config{Directory: filepath.Join(dir, "native"), RuntimeDirectory: filepath.Join(dir, "pi-work"), PiCommand: filepath.Join(root, "node_modules/.bin/pi"), Launcher: filepath.Join(root, "scripts/pi.sh"), Model: Model{Protocol: "chat_completions", BaseURL: provider.URL + "/v1", ID: "fixture-tools", Key: "fixture"}, MCP: map[string]any{"builtin": map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d/mcp", port), "headers": map[string]string{"Authorization": "Bearer " + token}, "exposure": "direct"}}}
 	c, err := Start(ctx, cfg, "")
 	if err != nil {
 		t.Fatal(err)

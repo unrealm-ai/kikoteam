@@ -88,13 +88,7 @@ func TestUpstreamConversationLoadAndCancel(t *testing.T) {
 	}))
 	defer server.Close()
 	dir := t.TempDir()
-	cfg := Config{Directory: filepath.Join(dir, "native"), WorkDirectory: filepath.Join(dir, "work"), PiCommand: filepath.Join(root, "node_modules/.bin/pi"), Launcher: filepath.Join(root, "scripts/pi.sh"), Chat: true, Model: Model{Protocol: "chat_completions", BaseURL: server.URL + "/v1", ID: "fixture-model", Key: "fixture-key"}, Instruction: "Be concise."}
-	if err = os.MkdirAll(filepath.Dir(cfg.systemPromptPath()), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(filepath.Join(filepath.Dir(cfg.systemPromptPath()), "APPEND_SYSTEM.md"), []byte("legacy chat addendum"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	cfg := Config{Directory: filepath.Join(dir, "native"), RuntimeDirectory: filepath.Join(dir, "work"), PiCommand: filepath.Join(root, "node_modules/.bin/pi"), Launcher: filepath.Join(root, "scripts/pi.sh"), Chat: true, Model: Model{Protocol: "chat_completions", BaseURL: server.URL + "/v1", ID: "fixture-model", Key: "fixture-key"}, Instruction: "Be concise."}
 	cfg.ReceiptExtension = filepath.Join(root, "extensions/context-receipt.mjs")
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()

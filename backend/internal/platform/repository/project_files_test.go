@@ -3,10 +3,8 @@ package repository
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -84,7 +82,7 @@ func TestPrivateProjectUploadAndMessage(t *testing.T) {
 	if out := get(a.Path); out.Code != 200 || out.Body.String() != "sales" {
 		t.Fatal(out.Code, out.Body.String())
 	}
-	dir := filepath.Join(svc.ProjectRoot, "state/sandboxes/workspaces", w, "employees", agent, "conversations", conv.ID, "project")
+	dir := filepath.Join(svc.ProjectRoot, "workspaces", w, "projects", "conv-"+conv.ID)
 	if e := os.Symlink(t.TempDir(), filepath.Join(dir, "link")); e != nil {
 		t.Fatal(e)
 	}
@@ -235,7 +233,7 @@ func TestProjectUploadVisibleAfterUncertainCommit(t *testing.T) {
 	}
 }
 
-func TestProjectUploadLegacyReceiptAndCaseSensitiveKeys(t *testing.T) {
+func TestProjectUploadCaseSensitiveKeys(t *testing.T) {
 	_, svc, _, w, actor, agent, _ := managerFixture(t)
 	root := t.TempDir()
 	svc.ProjectRoot = root
@@ -253,25 +251,7 @@ func TestProjectUploadLegacyReceiptAndCaseSensitiveKeys(t *testing.T) {
 		return file
 	}
 	original := upload("JobA", false)
-	// Recreate a v1 crash after linking the candidate, before marking it published.
-	legacyParent := filepath.Join(root, "state/project-uploads", w, c.ID, actor)
-	if err = os.MkdirAll(legacyParent, 0700); err != nil {
-		t.Fatal(err)
-	}
-	legacy := filepath.Join(legacyParent, "JobA")
-	current := filepath.Join(root, "state/project-uploads-v2", w, c.ID, actor, fmt.Sprintf("%x", sha256.Sum256([]byte("JobA"))))
-	if err = os.Rename(current, legacy); err != nil {
-		t.Fatal(err)
-	}
-	project := filepath.Join(root, "state/sandboxes/workspaces", w, "employees", agent, "conversations", c.ID, "project")
-	if err = os.Link(filepath.Join(project, original.Path), filepath.Join(legacy, "payload")); err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		if err = manager.UpgradeProjectUploadReceipts(root); err != nil {
-			t.Fatal(err)
-		}
-	}
+	project := filepath.Join(root, "workspaces", w, "projects", "conv-"+c.ID)
 	tree, err := svc.ListProject(c, "uploads")
 	if err != nil || len(tree.Entries) != 1 || tree.Entries[0].Path != original.Path {
 		t.Fatal(tree, err)

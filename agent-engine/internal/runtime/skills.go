@@ -3,15 +3,11 @@ package runtime
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/integration"
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
@@ -19,145 +15,100 @@ import (
 
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
-func validateSkill(skill integration.Skill) error {
-	if skill.Manifest.FormatVersion != 1 || len(skill.Manifest.Files) == 0 || len(skill.Manifest.Files) > 1000 || len(skill.Manifest.Digest) != 64 {
-		return errors.New("invalid Skill manifest")
-	}
-	data, err := json.Marshal(skill.Manifest.Files)
-	if err != nil {
-		return err
-	}
-	if digest(data) != skill.Manifest.Digest {
-		return errors.New("skill manifest digest mismatch")
-	}
-	total := int64(0)
-	seen := map[string]bool{}
-	for _, f := range skill.Manifest.Files {
-		if !fs.ValidPath(f.Path) || strings.ContainsAny(f.Path, "\\\r\n\x00") || len(f.SHA256) != 64 || f.Size < 0 || f.Size > 20<<20 || seen[f.Path] {
-			return errors.New("invalid Skill file")
-		}
-		seen[f.Path] = true
-		total += f.Size
-	}
-	if !seen["SKILL.md"] || total > 100<<20 {
-		return errors.New("invalid Skill directory")
-	}
-	return nil
-}
+var skillName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-func validSkillCache(dir string, skill integration.Skill) bool {
-	info, err := os.Lstat(dir)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return false
-	}
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = root.Close() }() //nolint:errcheck // Read-only cache handle.
-	count := 0
-	err = fs.WalkDir(root.FS(), ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.Type()&os.ModeSymlink != 0 {
-			return errors.New("linked Skill asset")
-		}
-		if !d.IsDir() && !d.Type().IsRegular() {
-			return errors.New("non-regular Skill cache entry")
-		}
-		if !d.IsDir() {
-			count++
-			if count > len(skill.Manifest.Files) {
-				return errors.New("unexpected Skill cache file")
-			}
-		}
-		return nil
-	})
-	if err != nil || count != len(skill.Manifest.Files) {
-		return false
-	}
-	for _, f := range skill.Manifest.Files {
-		info, err := root.Stat(f.Path)
-		if err != nil || !info.Mode().IsRegular() || info.Size() != f.Size {
-			return false
-		}
-		file, err := root.Open(f.Path)
-		if err != nil {
-			return false
-		}
-		data, err := io.ReadAll(io.LimitReader(file, f.Size+1))
-		closeErr := file.Close()
-		if err != nil || closeErr != nil || int64(len(data)) != f.Size || digest(data) != f.SHA256 {
-			return false
-		}
-	}
-	return true
-}
-
-func (w *Worker) materializeSkill(ctx context.Context, work repository.Work, input, native string, skill integration.Skill) (string, error) {
-	if err := validateSkill(skill); err != nil {
-		return "", err
-	}
-	// Names come from trusted UUIDs in the Backend snapshot; manifest paths
-	// are independently checked before any filesystem operation.
-	base := filepath.Join(native, "skills", skill.SkillID, skill.VersionID)
-	if len(skill.SkillID) != 36 || len(skill.VersionID) != 36 || strings.ContainsAny(skill.SkillID+skill.VersionID, "/\\.") {
+// The Backend authorizes fixed versions. Derive each target from its owner
+// here so that a configuration can never point Pi at an arbitrary directory.
+func skillTarget(root, workspace string, s integration.Skill) (string, error) {
+	if !uuidPattern.MatchString(workspace) || !uuidPattern.MatchString(s.SkillID) || !uuidPattern.MatchString(s.VersionID) || len(s.Name) > 64 || !skillName.MatchString(s.Name) {
 		return "", errors.New("invalid Skill identity")
 	}
-	if err := os.MkdirAll(native, 0700); err != nil {
-		return "", err
+	base := "official"
+	switch s.Scope {
+	case "workspace":
+		base = filepath.Join("workspaces", workspace)
+	case "official":
+	default:
+		return "", errors.New("invalid Skill scope")
 	}
-	root, err := os.OpenRoot(native)
+	canonical, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = root.Close() }() //nolint:errcheck // Directory handle; materialization errors are returned.
-	relative := filepath.Join("skills", skill.SkillID, skill.VersionID)
-	if err = root.MkdirAll(relative, 0700); err != nil {
-		return "", err
-	}
-	baseRoot, err := root.OpenRoot(relative)
+	relative := filepath.Join(base, "skills", s.SkillID, "versions", s.VersionID, "files")
+	entry := filepath.Join(canonical, relative, "SKILL.md")
+	resolved, err := filepath.EvalSymlinks(entry)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = baseRoot.Close() }() //nolint:errcheck // Directory handle; publication errors are returned.
-	dir := filepath.Join(base, skill.Manifest.Digest)
-	if validSkillCache(dir, skill) {
-		return dir, nil
+	if resolved != entry {
+		return "", errors.New("unexpected symlink in published Skill")
 	}
-	stage := ".prepare-" + NewID()
-	if err = baseRoot.Mkdir(stage, 0700); err != nil {
-		return "", err
-	}
-	defer func() { _ = baseRoot.RemoveAll(stage) }() //nolint:errcheck // Only this unpublished staging directory is removed.
-	stageRoot, err := baseRoot.OpenRoot(stage)
+	info, err := os.Stat(entry)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = stageRoot.Close() }() //nolint:errcheck // File writes and publication errors are checked.
-	for _, f := range skill.Manifest.Files {
-		encoded, err := w.Backend.SkillFile(ctx, work, input, skill, f)
+	if !info.Mode().IsRegular() {
+		return "", errors.New("invalid Skill entry point")
+	}
+	return filepath.Join(root, relative), nil
+}
+
+// Only the Session's assignment may write this directory. Existing links are
+// kept while the same pinned version is selected, including across Turns.
+func (w *Worker) linkSkills(ctx context.Context, work repository.Work, skills []integration.Skill) (string, []string, error) {
+	session, err := sessionNodePath("context", work.SessionID)
+	if err != nil {
+		return "", nil, err
+	}
+	dir := filepath.Join(session, "skills")
+	wanted := make(map[string]string, len(skills))
+	var problems []string
+	for _, skill := range skills {
+		if err := ctx.Err(); err != nil {
+			return "", nil, err
+		}
+		target, err := skillTarget(w.Root, work.WorkspaceID, skill)
+		if errors.Is(err, os.ErrNotExist) {
+			problems = append(problems, "skill_unavailable:"+skill.SkillID)
+			continue
+		}
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
-		data, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil || int64(len(data)) != f.Size || digest(data) != f.SHA256 {
-			return "", errors.New("skill asset digest mismatch")
+		if _, exists := wanted[skill.Name]; exists {
+			return "", nil, errors.New("duplicate Skill name")
 		}
-		path := filepath.FromSlash(f.Path)
-		if err = stageRoot.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			return "", err
-		}
-		if err = stageRoot.WriteFile(path, data, 0444); err != nil {
-			return "", err
+		wanted[skill.Name] = target
+	}
+	if len(wanted) == 0 {
+		return "", problems, os.RemoveAll(session)
+	}
+	for _, path := range []string{session, dir} {
+		if err := ensurePrivateDir(path); err != nil {
+			return "", nil, err
 		}
 	}
-	if err = baseRoot.RemoveAll(skill.Manifest.Digest); err != nil {
-		return "", err
+	existing, err := os.ReadDir(dir)
+	if err != nil {
+		return "", nil, err
 	}
-	if err = baseRoot.Rename(stage, skill.Manifest.Digest); err != nil {
-		return "", err
+	for _, entry := range existing {
+		path := filepath.Join(dir, entry.Name())
+		target, err := os.Readlink(path)
+		if err != nil {
+			return "", nil, err
+		}
+		if wanted[entry.Name()] == target {
+			delete(wanted, entry.Name())
+		} else if err := os.Remove(path); err != nil {
+			return "", nil, err
+		}
 	}
-	return dir, nil
+	for name, target := range wanted {
+		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+			return "", nil, err
+		}
+	}
+	return dir, problems, nil
 }

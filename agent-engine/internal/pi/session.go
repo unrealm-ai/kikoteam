@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// ID preserves the platform's native_session_id, including legacy ACP aliases.
+// ID preserves the platform's native_session_id.
 // NativeID is Pi's own identity. Only Engine metadata is written here.
 type sessionRecord struct {
 	ID       string `json:"id"`
@@ -50,17 +50,11 @@ func prepareSession(directory, id string) (sessionRecord, error) {
 func loadSession(directory, id string) (sessionRecord, error) {
 	data, err := os.ReadFile(filepath.Join(directory, "session.json"))
 	var record sessionRecord
-	if err == nil {
-		if json.Unmarshal(data, &record) != nil || record.ID != id || record.NativeID == "" {
-			return record, errors.New("native session identity mismatch")
-		}
-	} else if errors.Is(err, os.ErrNotExist) {
-		record, err = loadLegacySession(directory, id)
-		if err != nil {
-			return record, err
-		}
-	} else {
+	if err != nil {
 		return record, err
+	}
+	if json.Unmarshal(data, &record) != nil || record.ID != id || record.NativeID == "" {
+		return record, errors.New("native session identity mismatch")
 	}
 	path, err := containedHistory(directory, record.File)
 	if err != nil {
@@ -75,21 +69,6 @@ func loadSession(directory, id string) (sessionRecord, error) {
 	}
 	record.File, record.NativeID = path, nativeID
 	return record, nil
-}
-func loadLegacySession(directory, id string) (sessionRecord, error) {
-	data, err := os.ReadFile(filepath.Join(directory, "home/.pi/pi-acp/session-map.json"))
-	if err != nil {
-		return sessionRecord{}, errors.New("native session mapping unavailable")
-	}
-	var mapping struct {
-		Sessions map[string]struct {
-			File string `json:"sessionFile"`
-		} `json:"sessions"`
-	}
-	if json.Unmarshal(data, &mapping) != nil || mapping.Sessions[id].File == "" {
-		return sessionRecord{}, errors.New("legacy native session mapping missing")
-	}
-	return sessionRecord{ID: id, File: mapping.Sessions[id].File}, nil
 }
 func containedHistory(directory, path string) (string, error) {
 	root, err := filepath.EvalSymlinks(directory)

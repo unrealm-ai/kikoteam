@@ -226,7 +226,7 @@ def configuration(current):
         if cfg[app]["image"] != image_ref(app, current):
             raise RuntimeError(f"{app}: configured tag and installed release differ")
     for app in ("backend", "agent-engine"):
-        mount, = [m for m in cfg[app]["volumes"] if m["target"] == "/var/lib/kiko"]
+        mount, = [m for m in cfg[app]["volumes"] if m["target"] == "/mnt/kikoteam"]
         if mount["type"] != "bind":
             raise ValueError("Expected host bind mount for shared storage")
         data[app] = Path(mount["source"]).resolve(strict=True)

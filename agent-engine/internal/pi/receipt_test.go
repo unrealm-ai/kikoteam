@@ -66,15 +66,7 @@ func TestInputReceiptEvidence(t *testing.T) {
 	if err = os.WriteFile(history, []byte("{\"type\":\"session\",\"id\":\"native\"}\n"+marker+entry("1", "marker", "user", prompt)), 0600); err != nil {
 		t.Fatal(err)
 	}
-	mapping := filepath.Join(dir, "home/.pi/pi-acp/session-map.json")
-	if err = os.MkdirAll(filepath.Dir(mapping), 0700); err != nil {
-		t.Fatal(err)
-	}
-	m, err := json.Marshal(map[string]any{"sessions": map[string]any{"session": map[string]string{"sessionFile": history}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(mapping, m, 0600); err != nil {
+	if err = saveSession(dir, sessionRecord{ID: "session", NativeID: "native", File: history}); err != nil {
 		t.Fatal(err)
 	}
 	if got := NativeInputState(dir, "session", "input"); got != "committed" {

@@ -141,9 +141,9 @@ func writePrivate(path string, value any) error {
 	}
 	return os.Rename(path+".tmp", path)
 }
-func runtimeEnvironment() []string {
-	out := []string{}
-	for _, key := range []string{"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_PATH"} {
+func runtimeEnvironment(temp string) []string {
+	out := []string{"TMPDIR=" + temp}
+	for _, key := range []string{"PATH", "HOME", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_PATH"} {
 		if v, ok := os.LookupEnv(key); ok {
 			out = append(out, key+"="+v)
 		}

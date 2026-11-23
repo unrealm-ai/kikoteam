@@ -71,7 +71,7 @@ func TestInboundChannelMediaSizeAtManagerBoundary(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "SELECT path FROM manager_channel_media WHERE inbox_id=$1 AND ordinal=0", job.InboxID).Scan(&storedPath); err != nil || storedPath != "uploads/report.bin" {
 		t.Fatalf("stored path: %q %v", storedPath, err)
 	}
-	paths, err := filepath.Glob(filepath.Join(m.ProjectRoot, "state", "sandboxes", "workspaces", "*", "employees", "*", "conversations", "*", "project", storedPath))
+	paths, err := filepath.Glob(filepath.Join(m.ProjectRoot, "workspaces", "*", "projects", "conv-*", storedPath))
 	if err != nil || len(paths) != 1 {
 		t.Fatalf("project file missing: %v %v", paths, err)
 	}

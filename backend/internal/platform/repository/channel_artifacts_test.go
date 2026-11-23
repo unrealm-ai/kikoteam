@@ -19,7 +19,7 @@ import (
 )
 
 func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
-	db, m, store, w, _, agent, binding := channelManagerFixture(t)
+	db, m, store, w, _, _, binding := channelManagerFixture(t)
 	ctx := t.Context()
 	must := func(e error) {
 		t.Helper()
@@ -173,7 +173,7 @@ func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
 			reviewExec(t, db, `UPDATE manager_channel_inbox SET status='accepted' WHERE id=$1`, x.box)
 		}
 		scopeP := manager.WorkScope{Identity: tid, InputID: input}
-		dir := filepath.Join(m.ProjectRoot, "state/sandboxes/workspaces", w, "employees", agent, "conversations", x.conv, "project")
+		dir := filepath.Join(m.ProjectRoot, "workspaces", w, "projects", "conv-"+x.conv)
 		must(os.MkdirAll(dir, 0700))
 		must(os.WriteFile(filepath.Join(dir, p), []byte(p), 0600))
 		mux := http.NewServeMux()

@@ -1,8 +1,8 @@
 # Web 私聊项目文件
 
-**当前部署**　Backend 与 Runner 使用同一份持久 POSIX 文件系统，部署时将同一持久卷配置为 `KIKO_STORAGE_LOCAL_ROOT`，Backend 与 Runner 均需读写权限。该卷需要支持文件锁、同卷原子重命名（目标已存在时失败）和目录同步。Backend 与 Engine 都将 `~/` 展开到各自运行账号的主目录，账号或挂载点不同时应显式配置指向同一卷的路径。每个 Web 私聊使用 Runner 的 `state/sandboxes/workspaces/<workspace_id>/employees/<agent_id>/conversations/<conversation_id>/project` 工作目录。首次上传可以先于第一个 Session 和 Runner。归档会话保留文件供原用户读取。
+**当前部署**　Backend 与 Runner 使用同一份持久 POSIX 文件系统，部署时将同一持久卷配置为 `KIKO_STORAGE_LOCAL_ROOT`，Backend 与 Runner 均需读写权限。该卷需要支持文件锁、同卷原子重命名（目标已存在时失败）和目录同步。Backend 与 Engine 都将 `~/` 展开到各自运行账号的主目录，账号或挂载点不同时应显式配置指向同一卷的路径。每个 Web 私聊使用 Runner 的 `workspaces/<W>/projects/conv-<conversation_id>/` 工作目录。首次上传可以先于第一个 Session 和 Runner。归档会话保留文件供原用户读取。
 
-**重构目标**　会话项目根为 `workspaces/<W>/projects/conv-<conversation_id>/`，暂存的 `payload` 和文件回执归入同一挂载盘的 `temp/uploads/`。默认附件目录、重名处理、幂等键及同卷排他重命名沿用现行语义。[目录与回执设计](../../docs/architecture/storage-paths.md#上传发布和回执) · [异步附件规范](../../docs/spec/async-inbound-attachments.md)
+暂存的 `payload` 和文件回执位于同一挂载盘的 `temp/uploads/projects/`。默认附件目录、重名处理、幂等键及同卷排他重命名沿用现行语义。[目录与回执设计](../../docs/architecture/storage-paths.md#上传发布和回执) · [异步附件规范](../../docs/spec/async-inbound-attachments.md)
 
 ## 文件接口
 
@@ -12,7 +12,7 @@
 
 `GET /files/content` 接受必填 `path`，返回下载字节和原文件名。操作重新检查工作区、私聊归属和项目范围，路径仅接受规范的相对路径。项目外的链接和特殊文件不能通过接口读取。上传上限为 32 MiB，每条消息最多引用 32 个文件。目录树仅展示目录和单链接普通文件，路径组件拒绝符号链接。上传超限返回 413，归档后新增上传返回 409。
 
-现行 Backend 启动时可升级旧格式上传回执，并清理已发布文件在旧暂存目录中的硬链接。本地磁盘目录重构采用一次性开发环境切换，旧附件缺失只影响该附件。切换后的新上传应可从原业务会话及其任务读取。[旧会话验收](../../docs/architecture/storage-paths.md#7-验收与旧设计协调)
+本地磁盘目录重构采用一次性开发环境切换，旧附件缺失只影响该附件。切换后的新上传应可从原业务会话及其任务读取。[旧会话验收](../../docs/architecture/storage-paths.md#7-验收与旧设计协调)
 
 以下示例在同一个私聊中操作。
 

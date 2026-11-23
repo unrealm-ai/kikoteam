@@ -259,7 +259,7 @@ func (s *Store) Copy(ctx context.Context, from, to string, m service.SkillManife
 
 // Cleanup only accepts receipt staging prefixes; published versions cannot be deleted here.
 func (s *Store) Cleanup(ctx context.Context, prefix string, m service.SkillManifest) error {
-	if !strings.HasPrefix(prefix, "tmp/skill-imports/") || !validPath(prefix) || len(strings.Split(prefix, "/")) != 4 {
+	if !strings.HasPrefix(prefix, "temp/uploads/skill-imports/") || !validPath(prefix) || len(strings.Split(prefix, "/")) != 5 {
 		return fmt.Errorf("invalid cleanup prefix")
 	}
 	keys := []string{prefix + "/manifest.json"}

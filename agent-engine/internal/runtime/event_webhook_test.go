@@ -15,7 +15,7 @@ import (
 func TestWebhookAttachmentMaterialization(t *testing.T) {
 	w := Worker{Root: t.TempDir()}
 	task := repository.Work{WorkspaceID: NewID(), AgentID: NewID(), TaskSpaceID: NewID(), TaskID: NewID(), Mode: "task"}
-	project := filepath.Join(w.Root, "state/sandboxes/workspaces", task.WorkspaceID, "employees", task.AgentID, "taskspaces", task.TaskSpaceID, "tasks", task.TaskID, "project")
+	project := filepath.Join(w.Root, "workspaces", task.WorkspaceID, "projects", "task-"+task.TaskID)
 	if err := os.MkdirAll(project, 0700); err != nil {
 		t.Fatal(err)
 	}

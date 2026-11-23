@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -298,15 +299,27 @@ func testManagerRuntime(t *testing.T, mode string) {
 	}
 	engineToken := strings.Repeat("e", 40)
 	store := &managerrepo.Store{DB: db, SnapshotCapabilities: SnapshotCapabilities, TriggerSecret: []byte(strings.Repeat("t", 32))}
-	capabilities := runtimeCapabilityServices(t, db)
+	temp := t.TempDir()
+	t.Setenv("KIKO_CONTEXT_ROOT", filepath.Join(temp, "context"))
+	// Keep the Unix socket path below the macOS sockaddr_un limit.
+	private, err := os.MkdirTemp("/tmp", "kiko-runtime-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(private); err != nil {
+			t.Error(err)
+		}
+	})
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", private)
+	store.RuntimeRoot = filepath.Join(temp, "state")
+	capabilities := runtimeCapabilityServicesAt(t, db, store.RuntimeRoot)
 	var eventCommitTool string
 	if mode == "events" {
 		eventCommitTool = installEventTestPlugin(t, ctx, db, capabilities, workspace, actor, agent.ID, eventRepo)
 	}
-	temp := t.TempDir()
-	store.RuntimeRoot = filepath.Join(temp, "state")
 	if workMode || mode == "files" {
-		assets, e := skillasset.NewStore(ctx, skillasset.Config{LocalRoot: temp})
+		assets, e := skillasset.NewStore(ctx, skillasset.Config{LocalRoot: store.RuntimeRoot})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -689,10 +702,36 @@ func testManagerRuntime(t *testing.T, mode string) {
 	if background(a) != 1 || background(b) != 1 {
 		t.Fatal("idle release terminated a Session with live background commands")
 	}
-	project := filepath.Join(temp, "state/state/sandboxes/workspaces", workspace, "employees", agent.ID, "conversations", conversation, "project")
+	project := filepath.Join(temp, "state", "workspaces", workspace, "projects", "conv-"+conversation)
 	data, err := os.ReadFile(filepath.Join(project, "shared.txt"))
 	if err != nil || string(data) != "shared-value" {
 		t.Fatalf("shared project file %q %v", data, err)
+	}
+	// Find A's live control socket before release. Its launch ticket lives on
+	// node-local disk, whereas the token survives a new Runner binding.
+	launches, err := filepath.Glob(filepath.Join(private, "e-*", "r-*", "b-*", "launch.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var aSocket string
+	for _, launch := range launches {
+		data, err := os.ReadFile(launch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ticket struct {
+			Socket string   `json:"management_socket"`
+			Args   []string `json:"launch_args"`
+		}
+		if err := json.Unmarshal(data, &ticket); err != nil {
+			t.Fatal(err)
+		}
+		if slices.Contains(ticket.Args, filepath.Base(a)) {
+			aSocket = ticket.Socket
+		}
+	}
+	if _, err := os.Stat(aSocket); err != nil {
+		t.Fatal("missing live socket for task A", err)
 	}
 	call("POST", a+"/stop", map[string]any{}, "")
 	wait(func() bool { return background(a) == 0 })
@@ -706,19 +745,12 @@ func testManagerRuntime(t *testing.T, mode string) {
 		err := db.QueryRowContext(ctx, `SELECT engine_id FROM manager_sessions WHERE id=$1`, filepath.Base(a)).Scan(&engine)
 		return err == nil && engine == nil
 	})
-	stateDir := filepath.Join(filepath.Dir(project), "runner-state", filepath.Base(a))
-	launch, err := os.ReadFile(filepath.Join(stateDir, "launch.json"))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(aSocket); !os.IsNotExist(err) {
+		t.Fatal("idle Session retained its management socket", err)
 	}
-	var private struct {
-		Socket string `json:"management_socket"`
-	}
-	if err = json.Unmarshal(launch, &private); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = os.Stat(private.Socket); !os.IsNotExist(err) {
-		t.Fatal("idle Session retained its builtin MCP management socket")
+	stateDir := filepath.Join(store.RuntimeRoot, "workspaces", workspace, "sessions", filepath.Base(a), "runner")
+	if _, err := os.Stat(filepath.Join(stateDir, "launch.json")); !os.IsNotExist(err) {
+		t.Fatal("private launch configuration persisted", err)
 	}
 	tokenBefore, err := os.ReadFile(filepath.Join(stateDir, "token"))
 	if err != nil {
@@ -770,7 +802,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	// Normal shutdown stops live groups and permits same-host Engine transfer.
 	stopEngine()
 	stopEngine = nil
-	tokenPath := filepath.Join(filepath.Dir(project), "runner-state", filepath.Base(b), "token")
+	tokenPath := filepath.Join(store.RuntimeRoot, "workspaces", workspace, "sessions", filepath.Base(b), "runner", "token")
 	before, err := os.ReadFile(tokenPath)
 	if err != nil {
 		t.Fatal(err)

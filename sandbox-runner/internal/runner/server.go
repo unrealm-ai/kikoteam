@@ -18,17 +18,17 @@ import (
 )
 
 type server struct {
-	config                     Config
-	scope                      scope
-	ctx                        context.Context
-	boot, project, state, temp string
-	backend                    *http.Client
-	log                        *slog.Logger
-	mu                         sync.Mutex
-	bindings                   map[string]*binding
-	closing                    bool
-	stopped                    chan struct{}
-	lifetime                   *os.File
+	config              Config
+	scope               scope
+	ctx                 context.Context
+	boot, project, temp string
+	backend             *http.Client
+	log                 *slog.Logger
+	mu                  sync.Mutex
+	bindings            map[string]*binding
+	closing             bool
+	stopped             chan struct{}
+	lifetime            *os.File
 }
 
 func Run(ctx context.Context, path string) error {
@@ -54,18 +54,14 @@ func Run(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	base, err := s.scope.directory(c.Root)
+	s.project, err = s.scope.directory(c.Root)
 	if err != nil {
 		return err
 	}
-	s.project = filepath.Join(base, "project")
-	s.state = filepath.Join(base, "runner-state")
-	for _, dir := range []string{s.project, s.state} {
-		if err = os.MkdirAll(dir, 0700); err != nil {
-			return err
-		}
+	if err = os.MkdirAll(s.project, 0700); err != nil {
+		return err
 	}
-	s.temp, err = os.MkdirTemp("/tmp", "kr-")
+	s.temp, err = os.MkdirTemp(filepath.Dir(path), "r-")
 	if err != nil {
 		return err
 	}

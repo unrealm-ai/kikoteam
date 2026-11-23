@@ -117,10 +117,6 @@ func Run(stderr io.Writer, version string) int {
 		log.Error("Invalid asset storage configuration", "event", "startup.invalid_storage", "error_code", "invalid_config")
 		return 1
 	}
-	if err := manager.UpgradeProjectUploadReceipts(assetConfig.LocalRoot); err != nil {
-		log.Error("Project upload receipt upgrade failed", "event", "startup.project_upload_upgrade_failed", "error", err)
-		return 1
-	}
 	assets, err := skillasset.NewStore(context.Background(), assetConfig)
 	if err != nil {
 		log.Error("Asset storage initialization failed", "event", "startup.storage_failed", "error_code", "storage_unavailable")

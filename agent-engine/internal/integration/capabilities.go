@@ -1,29 +1,13 @@
 package integration
 
-import (
-	"context"
-	"encoding/json"
-	"net/url"
-	"strconv"
+import "encoding/json"
 
-	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
-)
-
-type SkillFile struct {
-	Path   string `json:"path"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
-}
 type Skill struct {
 	SkillID     string `json:"skill_id"`
 	VersionID   string `json:"version_id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Manifest    struct {
-		FormatVersion int         `json:"format_version"`
-		Digest        string      `json:"digest"`
-		Files         []SkillFile `json:"files"`
-	} `json:"manifest"`
+	Scope       string `json:"scope"`
 }
 type PluginTool struct {
 	Name         string          `json:"name"`
@@ -44,13 +28,4 @@ type Resources struct {
 	Skills   []Skill  `json:"skills"`
 	Plugins  []Plugin `json:"plugins"`
 	Problems []string `json:"problems"`
-}
-
-func (b *Backend) SkillFile(ctx context.Context, w repository.Work, input string, skill Skill, file SkillFile) (string, error) {
-	q := url.Values{"engine_id": {b.EngineID}, "assignment_id": {w.AssignmentID}, "generation": {strconv.FormatInt(w.Generation, 10)}, "input_id": {input}, "skill_id": {skill.SkillID}, "version_id": {skill.VersionID}, "path": {file.Path}}
-	var out struct {
-		Content string `json:"content_base64"`
-	}
-	err := b.Call(ctx, "GET", "/sessions/"+w.SessionID+"/skill-files?"+q.Encode(), nil, &out)
-	return out.Content, err
 }

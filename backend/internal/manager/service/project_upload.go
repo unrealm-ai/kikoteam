@@ -21,7 +21,7 @@ import (
 
 const ProjectUploadLimit = 32 << 20
 const ChannelMediaUploadLimit = 100 << 20
-const uploadLedgerBase = "state/project-uploads-v2"
+const uploadLedgerBase = "temp/uploads/projects"
 
 func uploadKeyDirectory(key string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(key)))

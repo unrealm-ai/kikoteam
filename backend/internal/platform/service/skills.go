@@ -71,7 +71,7 @@ func (s *SkillService) Import(ctx context.Context, w, a string, r SkillImportReq
 		return out, e
 	}
 	out = SkillImport{ID: NewID(), ActorID: a, TechnicalName: bundle.TechnicalName, Description: bundle.Description, Manifest: bundle.Manifest, Source: bundle.Source, StorageIdentity: s.Assets.Identity(), ExpiresAt: time.Now().UTC().Add(time.Hour)}
-	out.KeyPrefix = "tmp/skill-imports/" + w + "/" + out.ID
+	out.KeyPrefix = "temp/uploads/skill-imports/" + w + "/" + out.ID
 	if e = s.transaction(ctx, w, a, true, func(t SkillTx) error { return t.SaveImport(ctx, out) }); e != nil {
 		return out, e
 	}
@@ -150,7 +150,7 @@ func (s *SkillService) Publish(ctx context.Context, w, a, target string, r Skill
 	if id == "" {
 		id = imp.ID
 	}
-	prefix := "workspaces/" + w + "/shared/resources/skills/" + id + "/versions/" + imp.ID
+	prefix := "workspaces/" + w + "/skills/" + id + "/versions/" + imp.ID
 	e = s.transaction(ctx, w, a, true, func(t SkillTx) error {
 		current, e := t.Import(ctx, imp.ID)
 		if e != nil {
@@ -241,31 +241,10 @@ func (s *SkillService) Update(ctx context.Context, w, a, id string, r SkillPatch
 	return out, e
 }
 func (s *SkillService) File(ctx context.Context, w, a, id, version, p string) (SkillFileContent, error) {
-	return s.file(ctx, w, a, id, version, p, false)
-}
-func (s *SkillService) runtimeFile(ctx context.Context, w, a, id, version, p string) (SkillFileContent, error) {
-	return s.file(ctx, w, a, id, version, p, true)
-}
-func (s *SkillService) file(ctx context.Context, w, a, id, version, p string, runtime bool) (SkillFileContent, error) {
-	transaction := func(fn func(SkillTx) error) error {
-		return s.Store.WithWorkspace(ctx, w, func(t SkillTx) error {
-			check := func() error { return skillAuthorize(ctx, t, a, false) }
-			var err error
-			if runtime {
-				err = authorizeRuntime(ctx, t, a, "", check)
-			} else {
-				err = check()
-			}
-			if err != nil {
-				return err
-			}
-			return fn(t)
-		})
-	}
 	var v SkillVersion
 	var f SkillFile
 	out := SkillFileContent{}
-	e := transaction(func(t SkillTx) error {
+	e := s.transaction(ctx, w, a, false, func(t SkillTx) error {
 		var e error
 		v, e = t.GetVersion(ctx, id, version)
 		if e != nil {
@@ -290,7 +269,7 @@ func (s *SkillService) file(ctx context.Context, w, a, id, version, p string, ru
 		return out, Fail("skill_asset_unavailable", 503, "文件缺失或完整性校验失败")
 	}
 	// Recheck membership after external storage I/O, before disclosing the content.
-	if e = transaction(func(SkillTx) error { return nil }); e != nil {
+	if e = s.transaction(ctx, w, a, false, func(SkillTx) error { return nil }); e != nil {
 		return out, e
 	}
 	return SkillFileContent{Path: f.Path, Size: f.Size, SHA256: f.SHA256, ContentBase64: base64.StdEncoding.EncodeToString(b)}, nil

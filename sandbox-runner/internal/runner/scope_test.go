@@ -21,7 +21,7 @@ func TestOwnerDirectories(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if first != filepath.Join(root, "state/sandboxes/workspaces", conv.WorkspaceID, "employees", conv.AgentID, "conversations", conv.ConversationID) {
+	if first != filepath.Join(root, "workspaces", conv.WorkspaceID, "projects", "conv-"+conv.ConversationID) {
 		t.Fatal(first)
 	}
 	// Child task identity belongs to Sessions, never the conversation sandbox owner.
@@ -48,14 +48,14 @@ func TestOwnerDirectories(t *testing.T) {
 		t.Fatal("task projects aliased", two, e)
 	}
 	for _, dir := range []string{one, two} {
-		if e = os.MkdirAll(filepath.Join(dir, "project"), 0700); e != nil {
+		if e = os.MkdirAll(dir, 0700); e != nil {
 			t.Fatal(e)
 		}
 	}
-	if e = os.WriteFile(filepath.Join(one, "project", "result"), []byte("first task"), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(one, "result"), []byte("first task"), 0600); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = os.Stat(filepath.Join(two, "project", "result")); !os.IsNotExist(e) {
+	if _, e = os.Stat(filepath.Join(two, "result")); !os.IsNotExist(e) {
 		t.Fatal("task inherited another default directory", e)
 	}
 	again, e := task.directory(root)

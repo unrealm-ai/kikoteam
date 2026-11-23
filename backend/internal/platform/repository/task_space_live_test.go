@@ -223,7 +223,7 @@ func TestTaskSpaceRuntimeLiveModel(t *testing.T) {
 		if err = db.QueryRowContext(ctx, `SELECT task_id FROM manager_sessions WHERE id=$1`, id).Scan(&task); err != nil {
 			t.Fatal(err)
 		}
-		project := filepath.Join(temp, "state/sandboxes/workspaces", workspace, "employees", agent.ID, "taskspaces", space, "tasks", task, "project")
+		project := filepath.Join(temp, "workspaces", workspace, "projects", "task-"+task)
 		projects = append(projects, project)
 		proof, e := os.ReadFile(filepath.Join(project, "live-proof.txt"))
 		if e != nil || strings.TrimSpace(string(proof)) != nonces[n] {

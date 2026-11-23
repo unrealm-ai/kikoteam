@@ -97,7 +97,7 @@ func projectDir(root, rel string, create bool) (*os.File, error) {
 	return dir, nil
 }
 func projectBase(c Conversation) string {
-	return path.Join("state/sandboxes/workspaces", c.WorkspaceID, "employees", c.AgentID, "conversations", c.ID, "project")
+	return path.Join("workspaces", c.WorkspaceID, "projects", "conv-"+c.ID)
 }
 func (s *Service) OpenProjectFile(c Conversation, p string) (*os.File, os.FileInfo, error) {
 	return openProjectFile(s.ProjectRoot, projectBase(c), p)
@@ -227,12 +227,12 @@ func ReadWorkFile(root, workspace, agent, conversation, space, task, p string) (
 	if !ValidID(workspace) || !ValidID(agent) {
 		return nil, Fail("invalid_argument", 400, "事项文件归属无效")
 	}
-	base := path.Join("state/sandboxes/workspaces", workspace, "employees", agent)
+	base := path.Join("workspaces", workspace, "projects")
 	switch {
 	case ValidID(conversation) && space == "":
-		base = path.Join(base, "conversations", conversation, "project")
+		base = path.Join(base, "conv-"+conversation)
 	case conversation == "" && ValidID(space) && ValidID(task):
-		base = path.Join(base, "taskspaces", space, "tasks", task, "project")
+		base = path.Join(base, "task-"+task)
 	default:
 		return nil, Fail("invalid_argument", 400, "事项文件归属无效")
 	}

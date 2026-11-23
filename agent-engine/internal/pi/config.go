@@ -24,7 +24,7 @@ type Config struct {
 	HumanTools          HumanToolsConfig `json:"-"`
 	WorkMCPRole         string           `json:",omitempty"`
 	Directory           string
-	WorkDirectory       string
+	RuntimeDirectory    string
 	PiCommand           string
 	Launcher            string
 	Instruction         string
@@ -40,7 +40,7 @@ type Config struct {
 }
 
 func (c Config) systemPromptPath() string {
-	return filepath.Join(c.Directory, "agent", "system-prompt.md")
+	return filepath.Join(c.RuntimeDirectory, "agent", "system-prompt.md")
 }
 
 func (c Config) prepare() ([]string, error) {
@@ -50,15 +50,15 @@ func (c Config) prepare() ([]string, error) {
 			return nil, errors.New("plan-only Pi configuration can only expose local human confirmation tools")
 		}
 	}
-	if !filepath.IsAbs(c.Directory) || !filepath.IsAbs(c.WorkDirectory) {
+	if !filepath.IsAbs(c.Directory) || !filepath.IsAbs(c.RuntimeDirectory) {
 		return nil, errors.New("pi state and work directory must be absolute")
 	}
 	api, ok := map[string]string{"chat_completions": "openai-completions", "openai_responses": "openai-responses", "anthropic_messages": "anthropic-messages"}[c.Model.Protocol]
 	if !ok || c.Model.ID == "" || c.Model.BaseURL == "" {
 		return nil, errors.New("unsupported model configuration")
 	}
-	agent := filepath.Join(c.Directory, "agent")
-	for _, dir := range []string{agent, filepath.Join(c.Directory, "home"), c.WorkDirectory} {
+	agent := filepath.Join(c.RuntimeDirectory, "agent")
+	for _, dir := range []string{agent, filepath.Join(c.RuntimeDirectory, "home"), filepath.Join(c.RuntimeDirectory, "work")} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return nil, err
 		}
@@ -85,11 +85,6 @@ func (c Config) prepare() ([]string, error) {
 	if err := os.WriteFile(c.systemPromptPath(), []byte(c.Instruction+"\n\n"+inputContextInstruction), 0600); err != nil {
 		return nil, err
 	}
-	// Older Engine versions generated this addendum. Pi reads it even when
-	// --system-prompt supplies the preamble, so remove the stale managed file.
-	if err := os.Remove(filepath.Join(agent, "APPEND_SYSTEM.md")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
 	for _, path := range c.Skills {
 		if !filepath.IsAbs(path) || strings.ContainsAny(path, "\r\n\x00") {
 			return nil, errors.New("invalid explicit Skill path")
@@ -105,7 +100,7 @@ func (c Config) prepare() ([]string, error) {
 	if err = os.WriteFile(filepath.Join(agent, "capability-policy.json"), policy, 0600); err != nil {
 		return nil, err
 	}
-	env := []string{"HOME=" + filepath.Join(c.Directory, "home"), "PI_CODING_AGENT_DIR=" + agent, "PI_CODING_AGENT_SESSION_DIR=" + filepath.Join(c.Directory, "sessions"), "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "KIKO_PI_BINARY=" + c.PiCommand, "KIKO_MODEL_KEY=" + c.Model.Key}
+	env := []string{"TMPDIR=" + c.RuntimeDirectory, "HOME=" + filepath.Join(c.RuntimeDirectory, "home"), "PI_CODING_AGENT_DIR=" + agent, "PI_CODING_AGENT_SESSION_DIR=" + filepath.Join(c.Directory, "sessions"), "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "KIKO_PI_BINARY=" + c.PiCommand, "KIKO_MODEL_KEY=" + c.Model.Key}
 	env = append(env, "KIKO_SKILL_PATHS_FILE="+filepath.Join(agent, "skills.list"), "KIKO_CAPABILITY_POLICY="+filepath.Join(agent, "capability-policy.json"), "KIKO_POLICY_EXTENSION="+c.PolicyExtension, "KIKO_RECEIPT_EXTENSION="+c.ReceiptExtension, "KIKO_RECEIPT_DIRECTORY="+filepath.Join(c.Directory, "input-receipts"))
 	if c.PlanOnly {
 		env = append(env, "KIKO_PLAN_ONLY=1")
@@ -119,7 +114,7 @@ func (c Config) prepare() ([]string, error) {
 		}
 		env = append(env, key+"="+value)
 	}
-	for _, k := range []string{"PATH", "TMPDIR", "LANG", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"} {
+	for _, k := range []string{"PATH", "LANG", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"} {
 		if v, ok := os.LookupEnv(k); ok {
 			env = append(env, k+"="+v)
 		}

@@ -12,7 +12,9 @@ RUN go mod download
 COPY backend/ ./
 RUN CGO_ENABLED=0 go build -trimpath -o /out/backend ./cmd/backend
 FROM alpine:3.23
-RUN apk add --no-cache ca-certificates && adduser -D -u 10001 kiko
+ENV KIKO_STORAGE_LOCAL_ROOT=/mnt/kikoteam
+RUN apk add --no-cache ca-certificates && adduser -D -u 10001 kiko \
+    && mkdir -p /mnt/kikoteam && chown kiko:kiko /mnt/kikoteam
 WORKDIR /app
 COPY --from=build /out/backend /app/backend
 COPY --from=web /src/web/dist /app/web

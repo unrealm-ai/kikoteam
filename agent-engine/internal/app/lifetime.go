@@ -10,7 +10,7 @@ import (
 // One immutable file per boot. The kernel releases the lock after the last
 // Engine, Pi, Runner or builtin descriptor closes, including on process death.
 func lockLifetime(root, id string) (*os.File, error) {
-	dir := filepath.Join(root, "state", "engines", "instances")
+	dir := filepath.Join(root, "temp", "runtime")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}

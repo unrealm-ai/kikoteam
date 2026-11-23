@@ -52,11 +52,11 @@ type RuntimeAccountPin struct {
 	PluginVersionID string `json:"plugin_version_id"`
 }
 type RuntimeSkill struct {
-	SkillID     string        `json:"skill_id"`
-	VersionID   string        `json:"version_id"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	Manifest    SkillManifest `json:"manifest"`
+	SkillID     string `json:"skill_id"`
+	VersionID   string `json:"version_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Scope       string `json:"scope"`
 }
 type RuntimePlugin struct {
 	SourceRevision int64             `json:"-"`
@@ -396,35 +396,6 @@ func (s *PluginService) discoverRuntime(ctx context.Context, w, actor, employee 
 	return live, err
 }
 
-func (s *RuntimeService) File(ctx context.Context, w, actor, employee string, snapshot *ExecutionCapabilities, id, version, path string) (SkillFileContent, error) {
-	check := func() error {
-		packs, err := s.Effective(ctx, w, actor, employee, snapshot)
-		if err != nil {
-			return err
-		}
-		for _, p := range packs {
-			for _, pin := range p.Skills {
-				if pin.SkillID == id && pin.VersionID == version {
-					_, err = s.Skills.RuntimeSkill(ctx, w, actor, pin)
-					return err
-				}
-			}
-		}
-		return Fail("capability_forbidden", 403, "技能不在当前获准范围")
-	}
-	if err := check(); err != nil {
-		return SkillFileContent{}, err
-	}
-	out, err := s.Skills.runtimeFile(ctx, w, actor, id, version, path)
-	if err == nil {
-		err = check()
-	}
-	if err != nil {
-		return SkillFileContent{}, err
-	}
-	return out, nil
-}
-
 func (s *SkillService) RuntimeSkill(ctx context.Context, w, actor string, pin PackageSkill) (RuntimeSkill, error) {
 	var out RuntimeSkill
 	err := s.Store.WithWorkspace(ctx, w, func(t SkillTx) error {
@@ -442,10 +413,17 @@ func (s *SkillService) RuntimeSkill(ctx context.Context, w, actor string, pin Pa
 		if err != nil {
 			return err
 		}
-		if s.Assets == nil || v.StorageIdentity != s.Assets.Identity() {
+		if s.Assets == nil {
 			return Fail("skill_storage_unavailable", 503, "技能资产存储不可用")
 		}
-		out = RuntimeSkill{SkillID: pin.SkillID, VersionID: pin.VersionID, Name: v.TechnicalName, Description: v.Description, Manifest: v.Manifest}
+		base := "workspaces/" + w + "/skills/"
+		if current.Scope == "official" {
+			base = "official/skills/"
+		}
+		if !strings.HasPrefix(v.StorageIdentity, "local:") || v.StorageIdentity != s.Assets.Identity() || v.KeyPrefix != base+pin.SkillID+"/versions/"+pin.VersionID {
+			return Fail("skill_unavailable", 409, "此技能版本在当前挂载目录不可用")
+		}
+		out = RuntimeSkill{SkillID: pin.SkillID, VersionID: pin.VersionID, Name: v.TechnicalName, Description: v.Description, Scope: current.Scope}
 		return nil
 	})
 	return out, err

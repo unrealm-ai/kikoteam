@@ -22,8 +22,8 @@ func TestS3CompatibleImmutableRoundTrip(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	tmp := "tmp/skill-imports/ws/receipt"
-	dest := "workspaces/ws/shared/resources/skills/s/versions/v"
+	tmp := "temp/uploads/skill-imports/ws/receipt"
+	dest := "workspaces/ws/skills/s/versions/v"
 	if e = s.Write(ctx, tmp, b); e != nil {
 		t.Fatal(e)
 	}

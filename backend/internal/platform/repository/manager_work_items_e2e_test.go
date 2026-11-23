@@ -217,7 +217,7 @@ type workRuntimeCall func(string, string, any, string) map[string]any
 
 func testRuntimeWorkItems(t *testing.T, ctx context.Context, db *sql.DB, store *managerrepo.Store, base, workspace, actor, agent, conversation, temp string, call workRuntimeCall, wait func(func() bool), f workRuntimeFixture) {
 	t.Helper()
-	project := filepath.Join(store.RuntimeRoot, "state", "sandboxes", "workspaces", workspace, "employees", agent, "conversations", conversation, "project")
+	project := filepath.Join(store.RuntimeRoot, "workspaces", workspace, "projects", "conv-"+conversation)
 	if err := os.MkdirAll(project, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func testRuntimeWorkItems(t *testing.T, ctx context.Context, db *sql.DB, store *
 		t.Fatal(err)
 	}
 	assertWorkAssigneeFences(t, ctx, db, store, root)
-	product := filepath.Join(store.RuntimeRoot, "state", "sandboxes", "workspaces", workspace, "employees", assignee, "taskspaces", space, "tasks", task, "project", "result.txt")
+	product := filepath.Join(store.RuntimeRoot, "workspaces", workspace, "projects", "task-"+task, "result.txt")
 	if err := os.WriteFile(product, []byte("C produced artifact"), 0600); err != nil {
 		t.Fatal(err)
 	}

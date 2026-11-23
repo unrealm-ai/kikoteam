@@ -118,6 +118,6 @@ database.url、auth.secret、mail.smtp.password 是引用对象，每个只选�
 
 当前 Backend 使用 `KIKO_STORAGE_LOCAL_ROOT`（默认 `~/.kiko/`）或显式 S3 配置保存 Skill 和已交付的固定文件版本。下述配置适用于现行二进制。本轮[目录设计](../../docs/architecture/storage-paths.md)将统一持久根的容器内默认值调整为 `/mnt/kikoteam`，其下三个顶层目录共用本地磁盘。
 
-`start.sh` 在宿主展开本地根目录，将它 bind mount 到 Backend 的 `/var/lib/kiko`；容器只收到容器内路径。启动器注入宿主 UID/GID，Backend 以该身份读写目录，不自动对现有目录递归 chmod/chown。首次创建目录使用 0700；相对路径和直接符号链接被拒绝，目录必须可写。独立使用 Compose 时须显式提供 `KIKO_LOCAL_STORAGE_HOST_ROOT`、`KIKO_LOCAL_UID` 和 `KIKO_LOCAL_GID`，推荐通过启动器运行。原有 `.env` 不会被重写，缺少新增本地配置时沿用默认值；跨部署应配置不同的根。
+`start.sh` 在宿主展开本地根目录，将它 bind mount 到 Backend 的 `/mnt/kikoteam`；容器只收到容器内路径。启动器注入宿主 UID/GID，Backend 以该身份读写目录，不自动对现有目录递归 chmod/chown。首次创建目录使用 0700；相对路径和直接符号链接被拒绝，目录必须可写。独立使用 Compose 时须显式提供 `KIKO_LOCAL_STORAGE_HOST_ROOT`、`KIKO_LOCAL_UID` 和 `KIKO_LOCAL_GID`，推荐通过启动器运行。原有 `.env` 不会被重写，缺少新增本地配置时沿用默认值；跨部署应配置不同的根。
 
 S3 凭据仅注入 Backend，不注入 Event Hub；S3 模式下不将资产回退写入本地根。清空容器不删除bind mount内资产，数据库备份必须同时备份资产及原密钥。修改后端/根目录不是迁移：先复制并校验历史资产，再切换配置。资产逻辑key与版本参见[路径约束](../../docs/architecture/storage-paths.md)。

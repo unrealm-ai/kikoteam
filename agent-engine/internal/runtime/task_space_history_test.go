@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"testing"
 
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/integration"
@@ -20,13 +19,14 @@ func TestTaskSpaceHistoryMCPOnlyTaskSpaceExecution(t *testing.T) {
 		{"chat", "chat", "", NewID(), "history-token", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
 			w := repository.Work{WorkspaceID: NewID(), AgentID: NewID(), Mode: tc.mode, TaskSpaceID: tc.space, ConversationID: tc.conversation, Assignment: repository.Assignment{SessionID: NewID()}}
 			if tc.mode == "task" {
 				w.TaskID = NewID()
 			}
 			cfg := integration.HarnessConfig{WorkspaceID: w.WorkspaceID, AgentID: w.AgentID, TaskID: w.TaskID, SessionID: w.SessionID, Mode: tc.mode, TaskSpaceID: tc.space, ConversationID: tc.conversation, TaskSpaceHistoryToken: tc.token}
 			input := NewID()
-			out, _, err := worker.prepareConfiguration(context.Background(), w, repository.Turn{Input: repository.Input{ID: input}}, cfg, integration.Endpoint{})
+			out, _, err := worker.prepareConfiguration(t.Context(), w, repository.Turn{Input: repository.Input{ID: input}}, cfg, integration.Endpoint{})
 			if err != nil {
 				t.Fatal(err)
 			}

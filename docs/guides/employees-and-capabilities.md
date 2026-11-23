@@ -53,7 +53,7 @@ Skill 是一个包含 `SKILL.md` 的完整目录，用于封装某类专业任�
 3. **Markdown 文件导入**：适合仅包含单文件 `SKILL.md` 指令的轻量技能。
 4. **手动在线编辑**：在页面上直接编写或更新正文。
 
-每次发布都会生成不可变的独立版本目录。现行本地部署默认保存在宿主机 `~/.kiko`（容器内 `/var/lib/kiko`），也可通过 `KIKO_STORAGE_S3_*` 选择 S3 兼容资产后端。目录重构后的容器根和官方、工作区 Skill 的位置见[存储目录设计](../architecture/storage-paths.md)。
+每次发布都会生成不可变的独立版本目录。现行本地部署默认保存在宿主机 `~/.kiko`（容器内 `/mnt/kikoteam`），也可通过 `KIKO_STORAGE_S3_*` 选择 S3 兼容资产后端。任务执行通过共享本地磁盘读取 Skill，容器根和官方、工作区 Skill 的位置见[存储目录设计](../architecture/storage-paths.md)。
 
 ### 3.2 内置官方 Skill 一览
 

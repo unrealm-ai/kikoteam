@@ -108,9 +108,9 @@ Skill 和插件各自维护定义、版本和目录。官方资源对各空间�
 
 Platform 当前负责导入、不可变版本发布和文件访问授权，使用本地或 S3 资产后端。正式版本按逻辑 key、存储身份和清单读取。配置和备份见[统一存储配置](../../docs/architecture/storage-configuration.md)。
 
-当前工作区自建 Skill 常规发布到 `workspaces/<W>/shared/resources/skills/<skill_id>/versions/<version_id>/`。重构统一工作区发布与模板生成的正式版本到 `workspaces/<W>/skills/<skill_id>/versions/<version_id>/`。直接绑定官方版本继续复用引用。此次开发环境切换允许旧自定义资产缺失，对应绑定显示为不可用。
+工作区发布与模板生成的正式版本统一写入 `workspaces/<W>/skills/<skill_id>/versions/<version_id>/`。直接绑定官方版本继续复用引用。此次开发环境切换允许旧自定义资产缺失，对应绑定显示为不可用。
 
-重构后 Skill 导入材料按导入 ID 保存在 `<root>/temp/uploads/`，发布或导入过期后回收对应材料。Engine 依现有授权结果将 Session 加载名链接到固定版本的 `files/`。隔离沙箱同路径只读挂载官方和当前工作区两个 Skill 目录。筛选、升级与撤权另行设计。[Skill 目录与挂载](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
+Skill 导入材料按导入 ID 保存在 `<root>/temp/uploads/skill-imports/<W>/<import_id>/`，发布或导入过期后回收对应材料。Engine 依现有授权结果将 Session 加载名链接到固定版本的 `files/`。隔离沙箱同路径只读挂载官方和当前工作区两个 Skill 目录。筛选、升级与撤权另行设计。[Skill 目录与挂载](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
 
 ## 实施前待确认
 

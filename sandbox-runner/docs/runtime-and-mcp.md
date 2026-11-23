@@ -17,7 +17,7 @@ builtin MCP 采用用户提供的 TS 实现，包含六个 Pi 文件工具和五
 
 Agent / Session 不接受模板、镜像、挂载覆盖。Pi 始终由 Engine 启动并运行在 Engine 侧；Runner 不启动模型会话，不决定 Input / Turn 如何分配。
 
-当前项目目录和 `runner-state/` 跨 Engine/Runner 重启保留。命令以所属项目为 cwd。重构后项目按 Conversation 或独立任务共享，工具 Token 和账本按 Session 保存，`launch.json` 与 socket 放在本次启动的私有临时目录。
+命令以所属项目为 cwd。项目按 Conversation 或独立任务归属，跨 Engine/Runner 重启保留，工具 Token 和账本按 Session 保存，`launch.json` 与 socket 放在本次启动的私有临时目录。
 
 Sandbox 归 Conversation，Backend 唯一登记环境、宿主和管理 Engine，首版该业务会话全部 task Session 固定到此管理 Engine。Runner 只执行获准的准备和收尾，不因首个任务退出而自毁，不自行创建业务对象、改变归属或选择回收时机。活跃 Conversation 不做环境自动空闲回收；父会话归档且全部参与者停稳后，Backend 授权 Engine 回收运行资源，文件及核对证据保留。
 
@@ -138,4 +138,4 @@ builtin MCP 的 11 个工具、TS 复用、HTTP 直连及私有管理通道已�
 
 ## 文件路径与隔离
 
-目录重构后，隔离沙箱只读挂入官方和当前工作区两个 Skill 目录，Pi 和工具通过 Session 本地入口读取本次选择的版本。实际可见目录由挂载范围确定，Skill 筛选和授权变化另行设计。[挂载与链接路径](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
+隔离沙箱的挂载约定为只读挂入官方和当前工作区两个 Skill 目录，Pi 和工具通过 Session 本地入口读取本次选择的版本。实际可见目录由挂载范围确定，Skill 筛选和授权变化另行设计。[挂载与链接路径](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)

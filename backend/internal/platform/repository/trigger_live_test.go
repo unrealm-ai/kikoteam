@@ -253,7 +253,7 @@ func TestTriggerRuntimeLiveModel(t *testing.T) {
 	}
 	path := "/api/v1/workspaces/" + workspace + "/sessions/" + receipt.SessionID
 	taskSpaceLiveAwaitTurn(t, ctx, db, call, path, 1)
-	project := filepath.Join(temp, "state/sandboxes/workspaces", workspace, "employees", agent.ID, "taskspaces", receipt.TaskSpaceID, "tasks", receipt.TaskID, "project")
+	project := filepath.Join(temp, "workspaces", workspace, "projects", "task-"+receipt.TaskID)
 	proof, err := os.ReadFile(filepath.Join(project, "live-trigger.txt"))
 	if err != nil || strings.TrimSpace(string(proof)) != nonce {
 		t.Fatal("real tool proof failed", err)

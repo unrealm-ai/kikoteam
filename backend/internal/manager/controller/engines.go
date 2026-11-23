@@ -18,7 +18,6 @@ func (s *Server) internalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/mcp/plugin-connections/{connection_id}", s.pluginRelay)
 	mux.HandleFunc("POST /api/internal/v1/task-results/callback", s.internal(s.taskResult))
 	mux.HandleFunc("POST /api/internal/v1/sessions/{session_id}/capability-calls", s.internalCredential(s.capabilityCall, s.capabilityCredential))
-	mux.HandleFunc("GET /api/internal/v1/sessions/{session_id}/skill-files", s.internal(s.skillFile))
 	mux.HandleFunc("GET /api/internal/v1/engines/{engine_id}/sandboxes", s.internal(s.sandboxes))
 	mux.HandleFunc("POST /api/internal/v1/sandbox-instances/{sandbox_id}/state", s.internal(s.sandboxState))
 	mux.HandleFunc("GET /api/internal/v1/sandbox-instances/{sandbox_id}/config", s.internalCredential(s.sandboxConfig, func(r *http.Request) string {
@@ -206,26 +205,6 @@ func (s *Server) signHumanToolCredentials(v *service.HarnessConfig, identity ser
 	return err
 }
 
-func (s *Server) skillFile(r *http.Request) (any, int, error) {
-	q := r.URL.Query()
-	g, err := strconv.ParseInt(q.Get("generation"), 10, 64)
-	if err != nil || g < 1 || !service.ValidID(q.Get("engine_id")) || !service.ValidID(q.Get("assignment_id")) || !service.ValidID(q.Get("input_id")) || !service.ValidID(r.PathValue("session_id")) || !service.ValidID(q.Get("skill_id")) || !service.ValidID(q.Get("version_id")) {
-		return nil, 400, service.Fail("invalid_argument", 400, "技能执行身份无效")
-	}
-	if s.Runtime == nil {
-		return nil, 503, service.Fail("dependency_unavailable", 503, "能力执行未配置")
-	}
-	v, actor, err := s.Engines.HarnessConfig(r.Context(), q.Get("engine_id"), r.PathValue("session_id"), q.Get("assignment_id"), g, q.Get("input_id"))
-	if err != nil {
-		return nil, 0, err
-	}
-	if v.Mode != "task" {
-		return nil, 403, service.Fail("capability_forbidden", 403, "主对话不装载任务技能")
-	}
-	ctx := v.ExecutionContext(r.Context())
-	f, err := s.Runtime.File(ctx, v.WorkspaceID, actor, v.AgentID, v.Configuration.Capabilities, q.Get("skill_id"), q.Get("version_id"), q.Get("path"))
-	return f, 200, err
-}
 func (s *Server) releaseAssignment(r *http.Request) (any, int, error) {
 	var req struct {
 		EngineID   string `json:"engine_id"`

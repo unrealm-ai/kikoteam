@@ -17,10 +17,7 @@ const workMCPServer = "work_items"
 const attachmentMCPServer = "input_attachments"
 
 func (w *Worker) nativeDirectory(current repository.Work) string {
-	if current.TaskSpaceID != "" {
-		return filepath.Join(w.Root, "state/engines/workspaces", current.WorkspaceID, "employees", current.AgentID, "taskspaces", current.TaskSpaceID, "tasks", current.TaskID, "executions", current.SessionID, "context/native")
-	}
-	return filepath.Join(w.Root, "state/engines/workspaces", current.WorkspaceID, "employees", current.AgentID, "conversations", current.ConversationID, "executions", current.SessionID, "context/native")
+	return filepath.Join(w.Root, "workspaces", current.WorkspaceID, "sessions", current.SessionID, "pi")
 }
 
 func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Work, turn repository.Turn, cfg integration.HarnessConfig, endpoint integration.Endpoint) (pi.Config, string, error) {
@@ -34,8 +31,17 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 		}
 	}
 
+	// Pi records its cwd in the native history. Recreate the same private
+	// directory on every assignment before opening that history.
+	temp, err := sessionNodePath("temp", current.SessionID)
+	if err != nil {
+		return pi.Config{}, "", err
+	}
+	if err := ensurePrivateDir(temp); err != nil {
+		return pi.Config{}, "", err
+	}
 	native := w.nativeDirectory(current)
-	out := pi.Config{Directory: native, WorkDirectory: filepath.Join(native, "work"), PiCommand: w.Pi, Launcher: w.Launcher, Instruction: cfg.Configuration.Instruction, Model: cfg.Model(), Chat: current.Mode == "chat", MCP: map[string]any{}}
+	out := pi.Config{Directory: native, RuntimeDirectory: temp, PiCommand: w.Pi, Launcher: w.Launcher, Instruction: cfg.Configuration.Instruction, Model: cfg.Model(), Chat: current.Mode == "chat", MCP: map[string]any{}}
 	if w.Sandboxes != nil {
 		out.Lifetime = w.Sandboxes.Lifetime
 	}
@@ -118,23 +124,31 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 		if cfg.GroupHistoryToken != "" && current.ConversationID != "" {
 			out.MCP["group_history"] = map[string]any{"url": w.Backend.URL + "/mcp/group-history", "headers": map[string]string{"Authorization": "Bearer " + cfg.GroupHistoryToken}, "exposure": "direct"}
 		}
-		for _, skill := range cfg.Resources.Skills {
-			dir, err := w.materializeSkill(ctx, current, turn.Input.ID, native, skill)
-			if err != nil {
-				return out, "", err
-			}
-			out.Skills = append(out.Skills, dir)
-		}
-		w.configureRemotePlugins(&out, current, cfg)
-		if len(cfg.Resources.Problems) > 0 {
-			data, err := json.Marshal(cfg.Resources.Problems)
-			if err != nil {
-				return out, "", err
-			}
-			out.Instruction += "\nSome configured capabilities are unavailable; do not claim to have used them: " + string(data) + "\n"
+		if err := w.configureTaskResources(ctx, &out, current, cfg); err != nil {
+			return out, "", err
 		}
 	}
-	return configurationSignature(out, cfg.APIKey)
+	return configurationSignature(out, cfg.APIKey, cfg.Resources.Skills...)
+}
+
+func (w *Worker) configureTaskResources(ctx context.Context, out *pi.Config, current repository.Work, cfg integration.HarnessConfig) error {
+	dir, missing, err := w.linkSkills(ctx, current, cfg.Resources.Skills)
+	if err != nil {
+		return err
+	}
+	if dir != "" {
+		out.Skills = []string{dir}
+	}
+	w.configureRemotePlugins(out, current, cfg)
+	problems := append(cfg.Resources.Problems, missing...)
+	if len(problems) != 0 {
+		data, err := json.Marshal(problems)
+		if err != nil {
+			return err
+		}
+		out.Instruction += "\nSome configured capabilities are unavailable; do not claim to have used them: " + string(data) + "\n"
+	}
+	return nil
 }
 
 func (w *Worker) configureAttachmentLookup(out *pi.Config, current repository.Work, cfg integration.HarnessConfig) {
@@ -157,13 +171,14 @@ func (w *Worker) configureHumanTools(out *pi.Config, turn repository.Turn, cfg i
 	}
 }
 
-func configurationSignature(out pi.Config, key string) (pi.Config, string, error) {
+func configurationSignature(out pi.Config, key string, skills ...integration.Skill) (pi.Config, string, error) {
 	// The key is included only in this in-memory hash, never in a public event.
 	data, err := json.Marshal(struct {
 		Config      pi.Config
+		Skills      []integration.Skill
 		Key         string
 		Environment map[string]string
-	}{out, key, out.Environment})
+	}{out, skills, key, out.Environment})
 	if err != nil {
 		return out, "", err
 	}

@@ -1,7 +1,7 @@
 # Local-only stack. No public binding and no database port exposed.
 name: kikoteam-local
 x-catalog-storage: &catalog-storage
-  KIKO_STORAGE_LOCAL_ROOT: /var/lib/kiko
+  KIKO_STORAGE_LOCAL_ROOT: /mnt/kikoteam
   KIKO_STORAGE_S3_ENDPOINT: ${KIKO_STORAGE_S3_ENDPOINT:-}
   KIKO_STORAGE_S3_BUCKET: ${KIKO_STORAGE_S3_BUCKET:-}
   KIKO_STORAGE_S3_REGION: ${KIKO_STORAGE_S3_REGION:-}
@@ -13,7 +13,7 @@ x-catalog-storage: &catalog-storage
 x-storage-volumes: &local-data
   - type: bind
     source: ${KIKO_LOCAL_STORAGE_HOST_ROOT:?use start.sh}
-    target: /var/lib/kiko
+    target: /mnt/kikoteam
     bind:
       create_host_path: false
 services:

@@ -139,7 +139,7 @@ func TestRuntimeCapabilitiesPinsScopesRevocationAndSchema(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		if len(out.Skills) != 1 || out.Skills[0].VersionID != skillVersion || len(out.Plugins) != 1 || len(out.Plugins[0].Tools) != 2 || out.Plugins[0].Tools[0].Name != "lookup" {
+		if len(out.Skills) != 1 || out.Skills[0].VersionID != skillVersion || out.Skills[0].Scope != "workspace" || len(out.Plugins) != 1 || len(out.Plugins[0].Tools) != 2 || out.Plugins[0].Tools[0].Name != "lookup" {
 			t.Fatalf("grant expanded/drifted: %+v", out)
 		}
 		if out.Plugins[0].Headers["Authorization"] != "Bearer "+secret {
@@ -204,13 +204,6 @@ func TestRuntimeCapabilitiesPinsScopesRevocationAndSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertGranted(actor, v1.CurrentVersion.ID)
-	f, err := runtime.File(ctx, w, actor, agent.ID, snapshot, v1.ID, v1.CurrentVersion.ID, "SKILL.md")
-	if err != nil || f.Size == 0 {
-		t.Fatal("pinned asset missing", err)
-	}
-	if _, err = runtime.File(ctx, w, actor, agent.ID, snapshot, v1.ID, v2.CurrentVersion.ID, "SKILL.md"); err == nil {
-		t.Fatal("new version entered old snapshot")
-	}
 	probe.changed = true
 	out, err := runtime.Resolve(ctx, w, actor, agent.ID, snapshot, public.ID, true)
 	if err != nil || len(out.Plugins) != 0 {

@@ -14,27 +14,28 @@ import (
 
 // Delivery targets are returned by Manager, never inferred from message text.
 type Delivery struct {
-	ArtifactID        string         `json:"artifact_id,omitempty"`
-	Media             *deliveryMedia `json:"-"`
-	BeforeDispatch    func() error   `json:"-"`
-	Provider          string         `json:"provider"`
-	TenantID          string         `json:"external_tenant_id"`
-	ChatType          string         `json:"chat_type"`
-	RecipientID       string         `json:"recipient_id"`
-	ProviderRequestID string         `json:"provider_request_id,omitempty"`
-	TargetDigest      string         `json:"target_digest"`
-	QueryToken        string         `json:"query_token,omitempty"`
-	ID                string         `json:"id"`
-	LeaseToken        string         `json:"lease_token"`
-	BindingID         string         `json:"binding_id"`
-	Generation        int64          `json:"connection_generation"`
-	ConfigRevision    int64          `json:"config_revision,omitempty"`
-	ChatID            string         `json:"chat_id"`
-	ReplyToMessageID  string         `json:"reply_to_message_id"`
-	ThreadID          string         `json:"thread_id"`
-	Text              string         `json:"text"`
-	Format            string         `json:"format,omitempty"`
-	IdempotencyKey    string         `json:"idempotency_key"`
+	SessionWebhookEligible bool           `json:"session_webhook_eligible,omitempty"`
+	ArtifactID             string         `json:"artifact_id,omitempty"`
+	Media                  *deliveryMedia `json:"-"`
+	BeforeDispatch         func() error   `json:"-"`
+	Provider               string         `json:"provider"`
+	TenantID               string         `json:"external_tenant_id"`
+	ChatType               string         `json:"chat_type"`
+	RecipientID            string         `json:"recipient_id"`
+	ProviderRequestID      string         `json:"provider_request_id,omitempty"`
+	TargetDigest           string         `json:"target_digest"`
+	QueryToken             string         `json:"query_token,omitempty"`
+	ID                     string         `json:"id"`
+	LeaseToken             string         `json:"lease_token"`
+	BindingID              string         `json:"binding_id"`
+	Generation             int64          `json:"connection_generation"`
+	ConfigRevision         int64          `json:"config_revision,omitempty"`
+	ChatID                 string         `json:"chat_id"`
+	ReplyToMessageID       string         `json:"reply_to_message_id"`
+	ThreadID               string         `json:"thread_id"`
+	Text                   string         `json:"text"`
+	Format                 string         `json:"format,omitempty"`
+	IdempotencyKey         string         `json:"idempotency_key"`
 }
 
 func (d Delivery) contentFormat() string {
@@ -64,7 +65,16 @@ type deliverySender func(context.Context, Binding, Delivery) deliveryReceipt
 // RunDeliveries never retries an external send after ambiguity. Only receipt
 // persistence may use a bounded cleanup context after cancellation.
 func RunDeliveries(ctx context.Context, b *Backend, lookup func(string) (Binding, bool)) error {
-	return runDeliveries(ctx, b, lookup, sendProviderDelivery)
+	if b.humanNoticeDelivery || b.notificationDelivery || b.dingReplies == nil {
+		return runDeliveries(ctx, b, lookup, sendProviderDelivery)
+	}
+	client := newDingSessionHTTP()
+	return runDeliveries(ctx, b, lookup, func(ctx context.Context, binding Binding, d Delivery) deliveryReceipt {
+		if binding.Provider == "dingtalk" {
+			return sendDingSessionReply(ctx, binding, d, b.dingReplies, client, sendDingTalkDelivery)
+		}
+		return sendProviderDelivery(ctx, binding, d)
+	})
 }
 func runDeliveries(ctx context.Context, b *Backend, lookup func(string) (Binding, bool), send deliverySender) error {
 	ticker := time.NewTicker(time.Second)
@@ -72,6 +82,9 @@ func runDeliveries(ctx context.Context, b *Backend, lookup func(string) (Binding
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if b.dingReplies != nil && !b.humanNoticeDelivery && !b.notificationDelivery {
+			b.dingReplies.prune(time.Now())
 		}
 		var batch struct {
 			Items []Delivery `json:"items"`

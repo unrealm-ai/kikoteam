@@ -57,6 +57,9 @@ func validateDeliveryReceipt(v service.DeliveryCompletion) error {
 	return nil
 }
 func deliveryEvidence(provider string, v service.DeliveryCompletion) bool {
+	if v.EvidenceType == "session_webhook" {
+		return false // Requires the source Inbox and ordinary send lease, not a proactive ledger.
+	}
 	switch v.Status {
 	case "sent":
 		switch provider {
@@ -76,6 +79,29 @@ func deliveryEvidence(provider string, v service.DeliveryCompletion) bool {
 	}
 	return false
 }
+func validDingSessionReplyEvidence(v service.DeliveryCompletion, original string) bool {
+	return v.Status == "sent" && original != "" && v.EvidenceID == original &&
+		v.ProviderMessageID == "" && v.ProviderRequestID == "" && v.ProviderSessionID == "" &&
+		v.ProviderChatID == "" && v.ProviderThreadID == "" && v.ProviderCreatedAtMS == 0 && v.QueryToken == "" && v.ErrorCode == ""
+}
+
+func sessionWebhookReceipt(ctx context.Context, tx *sql.Tx, id, provider, kind, format, original, state, request, query string, artifact, leaseCurrent bool, v service.DeliveryCompletion) (replay bool, err error) {
+	if provider != "dingtalk" || !dingSessionReply(kind, format, artifact) || !validDingSessionReplyEvidence(v, original) {
+		return false, service.Fail("receipt_evidence_required", 400, "缺少可信供应商证据")
+	}
+	if state == "sending" && leaseCurrent && request == "" && query == "" {
+		return false, nil
+	}
+	// Hub may lose the response to a committed receipt. Only recognize an
+	// exact retry; never turn an unknown or active query into sent.
+	if state == "sent" {
+		if replayed, err := hasDeliveryReceipt(ctx, tx, id, v); replayed || err != nil {
+			return replayed, err
+		}
+	}
+	return false, service.Fail("receipt_mismatch", 409, "回执与发送尝试不符")
+}
+
 func (s *Store) CompleteChannelDelivery(ctx context.Context, id string, v service.DeliveryCompletion) error {
 	if !service.ValidID(id) {
 		return service.Fail("invalid_argument", 400, "投递身份无效")
@@ -88,13 +114,13 @@ func (s *Store) CompleteChannelDelivery(ctx context.Context, id string, v servic
 		return e
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
-	var state, provider, lease, digest, request, query, binding, inbox, chat, thread, kind string
-	var artifact bool
+	var state, provider, lease, digest, request, query, binding, inbox, chat, thread, kind, format, original string
+	var artifact, leaseCurrent bool
 	var attempts int
 	e = tx.QueryRowContext(ctx, `SELECT d.status,d.provider,COALESCE(d.lease_token::text,''),COALESCE(d.attempt_target_digest,''),
- COALESCE(d.provider_request_id,''),COALESCE(d.query_token::text,''),d.binding_id,d.inbox_id,n.external_chat_id,n.thread_id,d.kind,d.artifact_id IS NOT NULL,d.attempts
+ COALESCE(d.provider_request_id,''),COALESCE(d.query_token::text,''),d.binding_id,d.inbox_id,n.external_chat_id,n.thread_id,d.kind,d.content_format,n.provider_message_id,d.artifact_id IS NOT NULL,d.attempts,COALESCE(d.lease_until>now(),false)
  FROM manager_channel_deliveries d JOIN manager_channel_inbox n ON n.id=d.inbox_id
- WHERE d.id=$1 FOR UPDATE OF d`, id).Scan(&state, &provider, &lease, &digest, &request, &query, &binding, &inbox, &chat, &thread, &kind, &artifact, &attempts)
+ WHERE d.id=$1 FOR UPDATE OF d`, id).Scan(&state, &provider, &lease, &digest, &request, &query, &binding, &inbox, &chat, &thread, &kind, &format, &original, &artifact, &attempts, &leaseCurrent)
 	if errors.Is(e, sql.ErrNoRows) {
 		return service.Fail("delivery_not_found", 404, "投递不存在")
 	}
@@ -104,7 +130,15 @@ func (s *Store) CompleteChannelDelivery(ctx context.Context, id string, v servic
 	if !matchesDeliveryAttempt(state, lease, digest, v) {
 		return acceptArtifactReceiptReplay(ctx, tx, id, artifact, v)
 	}
-	if !deliveryEvidence(provider, v) {
+	if v.EvidenceType == "session_webhook" {
+		replay, e := sessionWebhookReceipt(ctx, tx, id, provider, kind, format, original, state, request, query, artifact, leaseCurrent, v)
+		if e != nil {
+			return e
+		}
+		if replay {
+			return tx.Commit()
+		}
+	} else if !deliveryEvidence(provider, v) {
 		return service.Fail("receipt_evidence_required", 400, "缺少可信供应商证据")
 	}
 	if request != "" && v.ProviderRequestID != "" && request != v.ProviderRequestID {

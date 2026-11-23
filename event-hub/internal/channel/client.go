@@ -20,6 +20,7 @@ type BackendError struct{ Status int }
 func (e *BackendError) Error() string { return fmt.Sprintf("channel backend status %d", e.Status) }
 
 type Backend struct {
+	dingReplies          *dingSessionReplies
 	Logger               *slog.Logger
 	notificationDelivery bool
 	humanNoticeDelivery  bool
@@ -33,7 +34,7 @@ func NewBackend(base, token string) (*Backend, error) {
 	if e != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || token == "" {
 		return nil, errors.New("invalid channel backend configuration")
 	}
-	return &Backend{URL: strings.TrimRight(base, "/"), Token: token, HTTP: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	return &Backend{dingReplies: &dingSessionReplies{}, URL: strings.TrimRight(base, "/"), Token: token, HTTP: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
 // ReconcileTaskReports carries no task content; Manager owns the transaction.

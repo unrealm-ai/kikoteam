@@ -122,6 +122,10 @@ func markdownReplyProviders(turnStatus, text string) []string {
 const deliverySelect = `d.id,d.lease_token,d.binding_id,d.connection_generation,n.external_chat_id,n.provider_message_id,n.thread_id,d.text,d.content_format,CASE WHEN d.authorized_at IS NULL THEN (SELECT provider FROM platform_channel_bindings WHERE id=d.binding_id) ELSE d.provider END,n.external_tenant_id,n.chat_type,CASE WHEN n.chat_type='direct' THEN n.sender_id ELSE '' END,COALESCE(d.provider_request_id,''),COALESCE(d.attempt_target_digest,''),COALESCE(d.query_token::text,''),d.kind,COALESCE(d.artifact_id::text,'')`
 
 func scanDelivery(row scanner) (service.ChannelDelivery, error) {
+	return scanDeliveryLease(row, false)
+}
+
+func scanDeliveryLease(row scanner, authorized bool) (service.ChannelDelivery, error) {
 	var v service.ChannelDelivery
 	var kind string
 	e := row.Scan(&v.ID, &v.LeaseToken, &v.BindingID, &v.ConnectionGeneration, &v.ChatID, &v.ReplyToMessageID, &v.ThreadID, &v.Text, &v.Format, &v.Provider, &v.ExternalTenantID, &v.ChatType, &v.RecipientID, &v.ProviderRequestID, &v.TargetDigest, &v.QueryToken, &kind, &v.ArtifactID)
@@ -130,8 +134,16 @@ func scanDelivery(row scanner) (service.ChannelDelivery, error) {
 	if v.Provider == "wecom" && v.ChatType == "direct" && v.ThreadID == "" && v.ChatID == v.RecipientID && (strings.HasPrefix(kind, "task_reply:") || v.ArtifactID != "") {
 		v.ReplyToMessageID = ""
 	}
+	// The inbound anchor already formed part of the destination contract.
+	// Confirm explicit support only on an ordinary, authorized send so a
+	// newer Hub cannot infer this mode from an older Backend's reply hint.
+	v.SessionWebhookEligible = authorized && v.Provider == "dingtalk" && dingSessionReply(kind, v.Format, v.ArtifactID != "") && v.ReplyToMessageID != ""
 	v.IdempotencyKey = v.ID
 	return v, e
+}
+
+func dingSessionReply(kind, format string, artifact bool) bool {
+	return kind == "reply" && !artifact && (format == "text" || format == "markdown")
 }
 
 // Each claim spends one attachment attempt, including a lease that expires
@@ -232,7 +244,7 @@ func (s *Store) AuthorizeChannelDelivery(ctx context.Context, id, lease string) 
 	if _, e = tx.ExecContext(ctx, `UPDATE manager_channel_deliveries SET status='sending',provider=(SELECT provider FROM platform_channel_bindings WHERE id=binding_id),authorized_at=now(),lease_until=now()+CASE WHEN artifact_id IS NULL THEN interval '45 seconds' ELSE interval '3 minutes' END,updated_at=now() WHERE id=$1`, id); e != nil {
 		return out, e
 	}
-	out, e = scanDelivery(tx.QueryRowContext(ctx, `SELECT `+deliverySelect+` FROM manager_channel_deliveries d JOIN manager_channel_inbox n ON n.id=d.inbox_id WHERE d.id=$1`, id))
+	out, e = scanDeliveryLease(tx.QueryRowContext(ctx, `SELECT `+deliverySelect+` FROM manager_channel_deliveries d JOIN manager_channel_inbox n ON n.id=d.inbox_id WHERE d.id=$1`, id), true)
 	if e != nil {
 		return out, e
 	}

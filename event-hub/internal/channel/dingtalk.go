@@ -212,7 +212,7 @@ func runDingStream(ctx context.Context, b Binding, backend *Backend, conn *webso
 		}
 		identityChanged := matched && (b.BotOpenID != v.BotID || b.TenantID != v.TenantID)
 		if matched {
-			if err = backend.Inbound(ctx, v); err != nil {
+			if err = backend.forwardDingInbound(ctx, v, f.Data); err != nil {
 				backend.traceInbound(ctx, "channel.callback.result", "dingtalk", v, "forward_failed")
 				return err
 			}

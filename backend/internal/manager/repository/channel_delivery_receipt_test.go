@@ -21,3 +21,15 @@ func TestDeliveryReceiptAcceptsFullProviderRequestKey(t *testing.T) {
 		t.Fatal("invalid key accepted")
 	}
 }
+
+func TestSessionWebhookEvidenceNotAcceptedInProactiveLedgers(t *testing.T) {
+	for _, status := range []string{"sent", "accepted", "failed", "unknown"} {
+		v := service.DeliveryCompletion{Status: status, EvidenceType: "session_webhook", EvidenceID: "original"}
+		if deliveryEvidence("dingtalk", v) {
+			t.Fatalf("proactive ledger accepted webhook evidence in %q", status)
+		}
+	}
+	if dingSessionReply("reply", "text", true) || dingSessionReply("reply", "image", false) {
+		t.Fatal("attachment can be treated as ordinary text")
+	}
+}

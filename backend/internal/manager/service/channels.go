@@ -118,6 +118,8 @@ type ChannelDelivery struct {
 	Format               string `json:"format,omitempty"`
 	IdempotencyKey       string `json:"idempotency_key"`
 	Allowed              bool   `json:"allowed"`
+
+	SessionWebhookEligible bool `json:"session_webhook_eligible,omitempty"`
 }
 type DeliveryCompletion struct {
 	ProviderCreatedAtMS int64  `json:"provider_created_at_ms,string,omitempty"`

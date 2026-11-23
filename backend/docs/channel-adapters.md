@@ -82,14 +82,14 @@ Hub `wecom_history.go` 经固定官方 CLI messages 服务读取授权近期群�
 飞书和钉钉的主会话成功回复，无论由用户消息还是后台任务回报触发，只要有正文，Manager 都按同一规则保存 `format=markdown`。正文含 Markdown 图片标记（`![`）或 HTML 图片标签（`<img`，不区分大小写）时，整条按普通文本发送；失败、取消和无正文时的固定提示仍用 `text`。任务回报仍关联最初委派消息的 Inbox；已入队的投递不改格式、不重发。Hub 对同一已授权投递的目标、正文和格式执行一致性检查。
 
 - 飞书使用现有 HTTP 创建或回复接口发送 `post` 的 `md` 节点。话题回复继续传 `reply_in_thread`，两种格式继续使用既有发送 UUID。[飞书发送结构](https://open.feishu.cn/document/server-docs/im-v1/message-content-description/create_json?lang=zh-CN)
-- 钉钉使用现有 HTTP 单聊或群发接口，Markdown 用 `sampleMarkdown`，普通文本用 `sampleText`。两种格式都按 `processQueryKey` 查询发送状态。[钉钉发送结构](https://dingtalk.apifox.cn/doc-3550110)
+- 钉钉普通文字回复优先使用原入站的临时会话入口，详见[行为基线](../../docs/spec/dingtalk-session-reply.md)。主动路径仍用 HTTP 单聊或群发接口，Markdown 用 `sampleMarkdown`，普通文本用 `sampleText`，按 `processQueryKey` 查询发送状态。[钉钉发送结构](https://dingtalk.apifox.cn/doc-3550110)
 - Markdown 保留 Unicode 表情及组合字符，例如 `🎉`、`👩🏽‍💻`。飞书原生 `emotion` 节点仍在入站解析范围内。自定义表情包和贴纸留在后续范围。原生图片通过选中的产物独立投递。
 
 迁移 59 由 Hub 执行，旧投递保留原正文、状态和 `text` 格式。合并发布富文本收发时，可以先让新 Hub 在未配置 `EVENT_HUB_BACKEND_URL` 的模式下当选并执行迁移，再升级 Manager，最后启用新 Hub 的渠道工作。旧 Hub 仍能领取普通文本，Markdown 仅由声明支持新格式的 Hub 领取。降级应用时保留数据库列和已记录格式。
 
-**迁移 28 已落地，最终集成回归中**：状态为 pending → leased → sending → accepted/sent/failed/unknown，并保留 cancelled 授权终态。飞书确认 sent 需要供应商消息 ID，话题回复还须核对回执中的会话和话题 ID；钉钉 processQueryKey 仅记 accepted，之后按 2/5/10/20/30 秒最多五次且五分钟预算查询原请求，SUCCESS 才 sent，耗尽为 unknown；企微同 session 匹配业务 ACK 才 sent，不伪造消息 ID。
+**迁移 28 已落地，最终集成回归中**：状态为 pending → leased → sending → accepted/sent/failed/unknown，并保留 cancelled 授权终态。飞书确认 sent 需要供应商消息 ID，话题回复还须核对回执中的会话和话题 ID；钉钉主动路径的 processQueryKey 仅记 accepted，之后按 2/5/10/20/30 秒最多五次且五分钟预算查询原请求，SUCCESS 才 sent，耗尽为 unknown；企微同 session 匹配业务 ACK 才 sent，不伪造消息 ID。
 
-迟到可信回执必须匹配原 attempt token、规范目标 digest 与 provider 证据，才可补齐 unknown。Hub 最多三次重试同一回执提交，不重发供应商请求。撤权后可审计真实已发生发送事实，但不能新发送；授权结论与 transport 事实分开。provider 返回与回执持久化之间崩溃仍可能 unknown，不能宣称已完全消除不确定结果。
+迟到可信回执必须匹配原 attempt token、规范目标 digest 与 provider 证据，才可补齐 unknown；钉钉临时会话回复不支持补认 unknown。Hub 最多三次重试同一回执提交，不重发供应商请求。撤权后可审计真实已发生发送事实，但不能新发送；授权结论与 transport 事实分开。provider 返回与回执持久化之间崩溃仍可能 unknown，不能宣称已完全消除不确定结果。
 
 ### 升级迁移 28
 

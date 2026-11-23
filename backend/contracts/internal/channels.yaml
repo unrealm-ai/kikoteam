@@ -388,7 +388,12 @@
           "type": "string"
         },
         "reply_to_message_id": {
-          "type": "string"
+          "type": "string",
+          "description": "The original inbound provider message ID. This is an anchor, never a session webhook or proof that webhook routing is supported."
+        },
+        "session_webhook_eligible": {
+          "type": "boolean",
+          "description": "Present only for an authorized ordinary non-attachment DingTalk text or Markdown reply. Missing means active sending only."
         },
         "thread_id": {
           "type": "string",
@@ -923,7 +928,8 @@
                   "type": "string"
                 },
                 "evidence_type": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "session_webhook records a successful ordinary non-attachment DingTalk reply in its current send lease. evidence_id is the original inbound message ID, not an outbound ID; no provider IDs or query token accompany it."
                 },
                 "evidence_id": {
                   "type": "string",

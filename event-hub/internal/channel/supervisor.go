@@ -236,7 +236,13 @@ func (s *Supervisor) Run(ctx context.Context, _ *election.Session) error {
 	server := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
-	defer func() { _ = server.Close(); s.stop() }() //nolint:errcheck // Close all notification sockets on elected-term exit.
+	defer func() {
+		_ = server.Close() //nolint:errcheck // Close all notification sockets on elected-term exit.
+		s.stop()
+		if s.Backend.dingReplies != nil {
+			s.Backend.dingReplies.reset()
+		}
+	}()
 	s.reconcile(ctx)
 	reactionDone := make(chan struct{})
 	go func() {

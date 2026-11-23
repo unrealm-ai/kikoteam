@@ -56,3 +56,28 @@ func TestHumanClarificationRequiresOneMatchingVisibleFocus(t *testing.T) {
 		})
 	}
 }
+
+func TestHumanReplyMarkerSupportsLegacyIDOnlyAtFirstVersion(t *testing.T) {
+	id := service.NewID()
+	other := service.NewID()
+	for _, tc := range []struct {
+		name    string
+		version int64
+		marker  string
+		valid   bool
+	}{
+		{name: "legacy first version", version: 1, marker: id, valid: true},
+		{name: "legacy second version", version: 2, marker: id},
+		{name: "current short code", version: 2, marker: service.HumanShortCode(id, 2), valid: true},
+		{name: "stale short code", version: 2, marker: service.HumanShortCode(id, 1)},
+		{name: "unrelated ID", version: 1, marker: other},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := service.HumanRequest{ID: id, Version: tc.version, Code: service.HumanShortCode(id, tc.version)}
+			err := verifyHumanReplyAssociation(humanReplyContext{}, request, service.HumanAnswer{Association: "current_message"}, "同意 "+tc.marker)
+			if (err == nil) != tc.valid {
+				t.Fatalf("marker validation = %v, want valid %t", err, tc.valid)
+			}
+		})
+	}
+}

@@ -62,6 +62,7 @@ func flushHumanDMContext(ctx context.Context, tx *sql.Tx, workspace, session, co
 	if err != nil {
 		return err
 	}
+	defer func() { _ = rows.Close() }() //nolint:errcheck // Explicit closes report errors below.
 	type pending struct {
 		source, principal, text string
 		generation, epoch       int64

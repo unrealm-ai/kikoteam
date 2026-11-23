@@ -180,6 +180,7 @@ func matchingHumanClarifications(ctx context.Context, tx *sql.Tx, viewer humanVi
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = rows.Close() }() //nolint:errcheck // Explicit closes report errors below.
 	var out []humanReplyRef
 	for rows.Next() {
 		var ref humanReplyRef
@@ -226,9 +227,10 @@ func humanReferenceMatches(ref humanReplyRef, request service.HumanRequest) bool
 func verifyHumanReplyAssociation(reply humanReplyContext, request service.HumanRequest, answer service.HumanAnswer, selected string) error {
 	markers := humanCodeMarker.FindAllString(selected, -1)
 	for _, marker := range markers {
-		if !strings.EqualFold(marker, request.Code) && !(request.Version == 1 && strings.EqualFold(marker, request.ID)) {
-			return service.Fail("human_request_mismatch", 409, "当前答复片段中的编号与提交的确认题不同")
+		if strings.EqualFold(marker, request.Code) || (request.Version == 1 && strings.EqualFold(marker, request.ID)) {
+			continue
 		}
+		return service.Fail("human_request_mismatch", 409, "当前答复片段中的编号与提交的确认题不同")
 	}
 	focus := reply.ClarificationFocus
 	if reply.QuotePresent {

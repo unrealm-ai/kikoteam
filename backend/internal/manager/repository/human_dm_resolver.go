@@ -28,6 +28,7 @@ func findHumanDMSent(ctx context.Context, tx *sql.Tx, viewer humanViewer, quote 
 	if err != nil {
 		return selection, err
 	}
+	defer func() { _ = rows.Close() }() //nolint:errcheck // Explicit closes report errors below.
 	if rows.Next() {
 		err = rows.Scan(&selection.id, &selection.version)
 		if err == nil && rows.Next() {

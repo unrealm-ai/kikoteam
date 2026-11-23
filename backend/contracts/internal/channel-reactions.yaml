@@ -1,0 +1,66 @@
+claim:
+  post:
+    operationId: claimChannelReceiptReaction
+    description: Event Hub only. Consumes at most one recent attempt for a durably admitted original user channel message. A lost response is not retried.
+    security: [{hubBearer: []}]
+    responses:
+      '200':
+        description: One at-most-once claim, or null if none remain
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [claim]
+              properties:
+                claim:
+                  type: [object, 'null']
+                  additionalProperties: false
+                  required: [inbox_id, claim_token]
+                  properties:
+                    inbox_id: {type: string, format: uuid}
+                    claim_token: {type: string, format: uuid}
+      '401': {description: Invalid service identity}
+      '503': {description: Dependency unavailable}
+authorize:
+  post:
+    operationId: authorizeChannelReceiptReaction
+    description: Event Hub only. Revalidates the durable input, original scope, current binding and optional permissions. Null is a silent skip, not an ordinary response.
+    security: [{hubBearer: []}]
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [claim_token]
+            properties:
+              claim_token: {type: string, format: uuid}
+    responses:
+      '200':
+        description: Authorized original-message target or null
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [target]
+              properties:
+                target:
+                  type: [object, 'null']
+                  additionalProperties: false
+                  required: [binding_id, provider, connection_generation, tenant_id, bot_id, chat_id, message_id]
+                  properties:
+                    binding_id: {type: string, format: uuid}
+                    provider: {type: string, enum: [feishu, dingtalk]}
+                    connection_generation: {type: integer, minimum: 1}
+                    tenant_id: {type: string, minLength: 1}
+                    bot_id: {type: string, minLength: 1}
+                    chat_id: {type: string, minLength: 1}
+                    message_id: {type: string, minLength: 1}
+      '400': {description: Invalid claim identity}
+      '401': {description: Invalid service identity}
+      '503': {description: Dependency unavailable}

@@ -20,6 +20,7 @@ type ChannelServer struct {
 
 func (s *ChannelServer) Routes(mux *http.ServeMux) {
 	s.mediaRoutes(mux)
+	s.reactionRoutes(mux)
 	s.triggerScheduleRoutes(mux)
 	s.sharedGroupHistoryRoutes(mux)
 	s.notificationContextRoutes(mux)

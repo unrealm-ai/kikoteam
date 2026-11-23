@@ -19,13 +19,17 @@ type FeishuPermissionProfile struct {
 	Groups       []FeishuPermissionGroup `json:"groups"`
 }
 
-const FeishuContactRangeScope = "application:application.contacts_range:write"
+const (
+	FeishuContactRangeScope    = "application:application.contacts_range:write"
+	FeishuReceiptReactionScope = "im:message.reactions:write_only"
+)
 
 func FeishuProfile() *FeishuPermissionProfile {
 	return &FeishuPermissionProfile{
-		Version: "conversation-business-v3", ContactRange: "all", Groups: []FeishuPermissionGroup{
+		Version: "conversation-business-v4", ContactRange: "all", Groups: []FeishuPermissionGroup{
 			{ID: "conversation-directory", Label: "基础聊天与通讯录", Required: true, Identity: "tenant", Scopes: []string{"tenant:tenant:readonly", "contact:contact.base:readonly", "contact:user.base:readonly", "contact:user.employee:readonly", "contact:user.department:readonly", "contact:department.base:readonly", "contact:department.organize:readonly", "contact:user.employee_id:readonly", "im:message.p2p_msg:readonly", "im:message.group_at_msg:readonly", "im:message:send_as_bot", "im:message:readonly", "im:message.group_msg", "im:chat:readonly"}},
 			{ID: "messages-groups", Label: "消息、附件与群", Required: false, Note: "仅预申请权限，不表示相关业务工具已接入；执行操作仍须校验具体资源和动作授权。", Identity: "tenant", Scopes: []string{"im:resource", "im:chat:read", "im:chat.access_event.bot_p2p_chat:read", "im:chat.announcement:read", "im:chat.members:read", "im:message.group_at_msg.include_bot:readonly", "im:message.group_msg.include_bot:read", "im:message.pins:read", "im:message.reactions:read"}},
+			{ID: "receipt-reaction", Label: "原消息接收反应", Required: false, Note: "可选。无权限时不添加接收反应，不影响正常聊天。飞书已有获取与发送单聊、群组消息（im:message）权限也支持添加反应。", Identity: "tenant", Scopes: []string{FeishuReceiptReactionScope}},
 			{ID: "organization", Label: "组织、部门与成员关系", Required: false, Note: "仅预申请权限，不表示相关业务工具已接入；执行操作仍须校验具体资源和动作授权。", Identity: "tenant", Scopes: []string{"contact:user.basic_profile:readonly", "contact:user.dotted_line_leader_info.read", "directory:department:search", "directory:department:list", "directory:department:read", "directory:department.base:read", "directory:department.department_path:read", "directory:department.has_child:read", "directory:department.name:read", "directory:department.organization:read", "directory:department.parent_id:read", "directory:employee:list", "directory:employee:read", "directory:employee:search", "directory:employee.base.base:read", "directory:employee.base.department:read", "directory:employee.base.department_path:read", "directory:employee.base.leader:read"}},
 			{ID: "documents", Label: "文档与评论读写", Required: false, Note: "仅预申请权限，不表示相关业务工具已接入；执行操作仍须校验具体资源和动作授权。", Identity: "tenant", Scopes: []string{"docx:document:readonly", "docx:document:create", "docx:document:write_only", "docs:document.comment:read", "docs:document.comment:create", "docs:document.comment:update", "docs:document.comment:delete"}},
 			{ID: "base", Label: "多维表格读写", Required: false, Note: "仅预申请权限，不表示相关业务工具已接入；执行操作仍须校验具体资源和动作授权。", Identity: "tenant", Scopes: []string{"base:app:read", "base:app:create", "base:app:update", "base:app:copy", "base:table:read", "base:table:create", "base:table:update", "base:table:delete", "base:field:read", "base:field:create", "base:field:update", "base:field:delete", "base:record:retrieve", "base:record:create", "base:record:update", "base:record:delete", "base:view:read", "base:view:write_only"}},

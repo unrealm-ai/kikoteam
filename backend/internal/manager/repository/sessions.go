@@ -417,7 +417,7 @@ func (t *sessionTx) InsertInput(v service.Input) (service.Input, error) {
 	}
 	if err == nil {
 		if a, ok := service.ChannelActorFrom(t.ctx); ok && a.InboxID != "" {
-			err = acceptChannelInput(t.ctx, t.tx, a.InboxID, v)
+			err = acceptChannelInput(t.ctx, t.tx, a.InboxID, v, !a.ConfirmationOnly && v.SourceKind == "user" && *v.TriggerAgentLoop)
 			if err == nil && a.ConfirmationOnly {
 				_, err = t.tx.ExecContext(t.ctx, `INSERT INTO manager_human_chat_inputs(input_id,inbox_id) VALUES($1,$2)`, v.ID, a.InboxID)
 			}

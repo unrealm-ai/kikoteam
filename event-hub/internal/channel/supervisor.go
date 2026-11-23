@@ -238,6 +238,12 @@ func (s *Supervisor) Run(ctx context.Context, _ *election.Session) error {
 	go func() { done <- server.Serve(listener) }()
 	defer func() { _ = server.Close(); s.stop() }() //nolint:errcheck // Close all notification sockets on elected-term exit.
 	s.reconcile(ctx)
+	reactionDone := make(chan struct{})
+	go func() {
+		defer close(reactionDone)
+		s.runReceiptReactions(ctx)
+	}()
+	defer func() { cancel(); <-reactionDone }()
 	mediaDone := make(chan struct{})
 	go func() {
 		defer close(mediaDone)

@@ -1583,6 +1583,8 @@ CREATE TABLE public.manager_channel_inbox (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     message_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     provider_directed boolean DEFAULT false NOT NULL,
+    reaction_ready_at timestamp with time zone,
+    reaction_claim_token uuid,
     CONSTRAINT manager_channel_inbox_chat_type_check CHECK ((chat_type = ANY (ARRAY['direct'::text, 'group'::text]))),
     CONSTRAINT manager_channel_inbox_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'history'::text, 'accepted'::text, 'rejected'::text, 'ignored'::text]))),
     CONSTRAINT manager_channel_metadata_object CHECK ((jsonb_typeof(message_metadata) = 'object'::text))
@@ -5823,6 +5825,13 @@ CREATE INDEX manager_channel_inbox_conversation_pending ON public.manager_channe
 --
 
 CREATE INDEX manager_channel_inbox_pending ON public.manager_channel_inbox USING btree (status, created_at);
+
+
+--
+-- Name: manager_channel_reaction_ready_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_channel_reaction_ready_idx ON public.manager_channel_inbox USING btree (reaction_ready_at, id) WHERE ((reaction_ready_at IS NOT NULL) AND (reaction_claim_token IS NULL));
 
 
 --

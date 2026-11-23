@@ -164,6 +164,10 @@ paths:
     $ref: ./channel-lifecycle.yaml#/claim
   /api/internal/v1/channel-groups/{id}/complete:
     $ref: ./channel-lifecycle.yaml#/complete
+  /api/internal/v1/channel-reactions/claim:
+    $ref: ./channel-reactions.yaml#/claim
+  /api/internal/v1/channel-reactions/{id}/authorize:
+    $ref: ./channel-reactions.yaml#/authorize
   /api/internal/v1/channel-inbox:
     $ref: ./channels.yaml#/inbox
   /api/internal/v1/channel-media/claim:

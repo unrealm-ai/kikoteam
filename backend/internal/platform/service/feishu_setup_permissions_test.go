@@ -4,7 +4,7 @@ import "testing"
 
 func TestFeishuRegistrationProfileSnapshotAndRealScopeStates(t *testing.T) {
 	profile := FeishuProfile()
-	if profile.Version != "conversation-business-v3" || profile.ContactRange != "all" || len(profile.Groups) != 10 {
+	if profile.Version != "conversation-business-v4" || profile.ContactRange != "all" || len(profile.Groups) != 11 {
 		t.Fatal(profile)
 	}
 	seen := map[string]bool{}
@@ -14,7 +14,7 @@ func TestFeishuRegistrationProfileSnapshotAndRealScopeStates(t *testing.T) {
 		}
 		seen[p.Scope] = true
 	}
-	for _, scope := range []string{FeishuContactRangeScope, "approval:task", "minutes:minutes.transcript:export", "contact:user.employee_id:readonly"} {
+	for _, scope := range []string{FeishuContactRangeScope, FeishuReceiptReactionScope, "approval:task", "minutes:minutes.transcript:export", "contact:user.employee_id:readonly"} {
 		if !seen[scope] {
 			t.Fatal(scope)
 		}
@@ -36,7 +36,7 @@ func TestFeishuRegistrationProfileSnapshotAndRealScopeStates(t *testing.T) {
 		t.Fatal("optional scopes blocked core setup")
 	}
 	groups := permissionGroups(profile, &d)
-	if groups[0].Status != "granted" || groups[1].Status != "unknown" {
+	if groups[0].Status != "granted" || groups[1].Status != "unknown" || groups[2].ID != "receipt-reaction" || groups[2].Required || groups[2].Status != "unknown" {
 		t.Fatal(groups)
 	}
 	d.Permissions[0].Status = "missing"

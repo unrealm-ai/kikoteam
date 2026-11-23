@@ -138,6 +138,10 @@ func inspectScopes(d *service.FeishuDiagnostics, m map[string]json.RawMessage) {
 		seen[r.Scope] = state
 	}
 	d.ScopeStatus = "pass"
+	// Observe the provider's broader alternative only if reported; never request it in onboarding.
+	if state, ok := seen["im:message"]; ok {
+		d.Permissions = append(d.Permissions, service.FeishuPermission{Scope: "im:message", Status: state})
+	}
 	for n := range d.Permissions {
 		if state, ok := seen[d.Permissions[n].Scope]; ok {
 			d.Permissions[n].Status = state

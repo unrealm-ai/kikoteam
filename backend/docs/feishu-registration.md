@@ -21,7 +21,7 @@
 
 飞书个人版可以只返回非空的 `user_ids`。接入检查和通讯录同步都接受仅有用户或仅有部门的授权范围。未披露范围、无法解析或仅包含不支持的用户组时，检查仍会报告错误。
 
-新登记快照保存 `conversation-business-v3` profile。基础聊天/通讯录为必须；消息群、组织、文档、多维表格、日程、待办、会议妙记、审批、通讯录范围管理为扩展。全部使用 tenant 身份，不将其当作个人 OAuth。预申请不表示工具已实现，也不赋予任意资源访问权。
+新登记快照保存 `conversation-business-v4` profile。基础聊天/通讯录为必须；消息群、[接收反应](../../docs/spec/channel-receipt-reactions.md)、组织、文档、多维表格、日程、待办、会议妙记、审批、通讯录范围管理为扩展。全部使用 tenant 身份，不将其当作个人 OAuth。预申请不表示工具已实现，也不赋予任意资源访问权。
 
 `permission_groups` 返回每组和每项 granted / missing / unknown，不将缺失或不完整清单伪装已授权。扩展检查只刷新权限清单，保留原完整验证时间，另用 `permission_checked_at` 记录清单时间。
 

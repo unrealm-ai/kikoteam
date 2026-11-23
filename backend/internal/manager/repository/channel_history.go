@@ -227,8 +227,10 @@ func (s *Store) CompleteChannelHistory(ctx context.Context, id string, v service
 
 // Input and its group boundary are committed together. Context-only events
 // participate too; receipt/turn status cannot move this cursor backwards.
-func acceptChannelInput(ctx context.Context, tx *sql.Tx, inbox string, input service.Input) error {
-	if _, e := tx.ExecContext(ctx, `UPDATE manager_channel_inbox SET status='accepted',input_id=$2,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`, inbox, input.ID); e != nil {
+func acceptChannelInput(ctx context.Context, tx *sql.Tx, inbox string, input service.Input, reaction bool) error {
+	if _, e := tx.ExecContext(ctx, `UPDATE manager_channel_inbox n SET status='accepted',input_id=$2,lease_token=NULL,lease_until=NULL,updated_at=now(),
+ reaction_ready_at=CASE WHEN $3 AND n.status='processing' AND n.input_id IS NULL AND b.provider IN ('feishu','dingtalk') THEN now() ELSE n.reaction_ready_at END
+ FROM platform_channel_bindings b WHERE n.id=$1 AND b.id=n.binding_id`, inbox, input.ID, reaction); e != nil {
 		return e
 	}
 	_, e := tx.ExecContext(ctx, `INSERT INTO manager_channel_history_boundaries(conversation_id,trigger_message_id,trigger_created_at_ms,input_seq,inbox_id)

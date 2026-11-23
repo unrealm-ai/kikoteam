@@ -2,19 +2,50 @@ name: Publish images
 
 on:
   push:
-    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.image }}
+  qualify:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      commit_sha: ${{ steps.tag.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Require a strict release tag on main history
+        id: tag
+        run: |
+          set -euo pipefail
+          version=$GITHUB_REF_NAME
+          if [[ ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || ${#version} -gt 128 ]]; then
+            echo "::error::Release tag must be vX.Y.Z with no leading zeros and fit the 128-character registry limit."
+            exit 1
+          fi
+          sha=$(git rev-parse HEAD^{commit})
+          if ! git merge-base --is-ancestor "$sha" refs/remotes/origin/main; then
+            echo "::error::Release tag must point to a commit on main history."
+            exit 1
+          fi
+          printf 'version=%s\ncommit_sha=%s\n' "$version" "$sha" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.image }} / ${{ matrix.architecture }}
+    needs: qualify
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
+        image: [backend, event-hub, agent-engine]
+        architecture: [amd64, arm64]
         include:
           - image: backend
             file: deploy/local/backend.Dockerfile
@@ -22,51 +53,132 @@ jobs:
             file: deploy/local/event-hub.Dockerfile
           - image: agent-engine
             file: agent-engine/Dockerfile
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          ref: ${{ needs.qualify.outputs.commit_sha }}
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v6
-        id: meta
-        with:
-          images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
-          tags: type=sha,format=short,prefix=
+      - name: Check native builder architecture
+        id: target
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+          APP: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          case "$ARCHITECTURE:$(uname -m)" in
+            amd64:x86_64|arm64:aarch64) ;;
+            *) echo "::error::Expected a native $ARCHITECTURE builder."; exit 1 ;;
+          esac
+          printf 'image=ghcr.io/%s/%s\n' "${GITHUB_REPOSITORY,,}" "$APP" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7
+        id: image
         with:
           context: .
           file: ${{ matrix.file }}
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          platforms: linux/${{ matrix.architecture }}
+          outputs: type=image,name=${{ steps.target.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.qualify.outputs.commit_sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.architecture }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.architecture }}
           provenance: mode=max
           sbom: true
+      - name: Record the registry digest
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf '%s\n' "$DIGEST" > "$RUNNER_TEMP/digest"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: descriptor-${{ matrix.image }}-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/digest
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  candidate:
+    name: Assemble the three multi-platform candidates
+    needs: [qualify, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digests: ${{ steps.index.outputs.digests }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: descriptor-*
+          path: ${{ runner.temp }}/native
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Assemble and check the exact platform set
+        id: index
+        env:
+          COMMIT_SHA: ${{ needs.qualify.outputs.commit_sha }}
+          VERSION: ${{ needs.qualify.outputs.version }}
+        run: |
+          set -euo pipefail
+          base="ghcr.io/${GITHUB_REPOSITORY,,}"
+          result='{}'
+          for app in backend event-hub agent-engine; do
+            image="$base/$app"
+            amd=$(cat "$RUNNER_TEMP/native/descriptor-$app-amd64/digest")
+            arm=$(cat "$RUNNER_TEMP/native/descriptor-$app-arm64/digest")
+            [[ "$amd" =~ ^sha256:[0-9a-f]{64}$ && "$arm" =~ ^sha256:[0-9a-f]{64}$ && "$amd" != "$arm" ]]
+            # Never use an architecture tag as a build input; each digest came
+            # from a native build. This temporary tag is unique to the attempt.
+            ref="$image:candidate-$COMMIT_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            docker buildx imagetools create --annotation "index:org.opencontainers.image.revision=$COMMIT_SHA" \
+              --annotation "index:org.opencontainers.image.version=$VERSION" \
+              --metadata-file "$RUNNER_TEMP/$app-metadata.json" \
+              --tag "$ref" "$image@$amd" "$image@$arm"
+            digest=$(jq -er '."containerimage.descriptor".digest' "$RUNNER_TEMP/$app-metadata.json")
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            docker buildx imagetools inspect --raw "$image@$digest" > "$RUNNER_TEMP/$app.json"
+            jq -e --arg sha "$COMMIT_SHA" '
+              .annotations["org.opencontainers.image.revision"] == $sha and
+              ([.manifests[] | select(.annotations["vnd.docker.reference.type"] != "attestation-manifest") |
+                [.platform.os, .platform.architecture]] | sort) ==
+              [["linux", "amd64"], ["linux", "arm64"]]
+            ' "$RUNNER_TEMP/$app.json" >/dev/null
+            result=$(jq -c --arg app "$app" --arg digest "$digest" '.[$app] = $digest' <<< "$result")
+          done
+          printf 'digests=%s\n' "$result" >> "$GITHUB_OUTPUT"
 
   acceptance:
-    needs: build
+    needs: [qualify, candidate]
     permissions:
       contents: read
       packages: read
     uses: ./.github/workflows/image-acceptance.yml
     with:
-      commit_sha: ${{ github.sha }}
+      commit_sha: ${{ needs.qualify.outputs.commit_sha }}
+      candidate_digests: ${{ needs.candidate.outputs.digests }}
 
   release:
-    name: Publish latest image tags
-    needs: acceptance
+    name: Promote accepted version, latest and deployment pointer
+    needs: [qualify, candidate, acceptance]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
-      actions: read
     concurrency:
       group: publish-verified-images
       queue: max
@@ -77,24 +189,197 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Promote the verified main revision
+      - name: Promote and verify accepted image digests
         env:
+          VERSION: ${{ needs.qualify.outputs.version }}
+          COMMIT_SHA: ${{ needs.qualify.outputs.commit_sha }}
+          DIGESTS: ${{ needs.candidate.outputs.digests }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          last_success=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/images.yml/runs?branch=main&event=push&status=success&per_page=1" \
-            --jq '.workflow_runs[0].run_number // 0')
-          if (( GITHUB_RUN_NUMBER < last_success )); then
-            echo "A newer main build has already succeeded. Keeping the commit tags."
+          set -euo pipefail
+          base="ghcr.io/${GITHUB_REPOSITORY,,}"
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          digest_pattern='^sha256:[0-9a-f]{64}$'
+          apps=(backend event-hub agent-engine)
+          [[ "$VERSION" =~ $semver && "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ && "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          # Reject a moved/deleted tag even if it changed while the tests ran.
+          remote=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq '.object | [.type, .sha] | @tsv')
+          read -r type remote_sha <<< "$remote"
+          for _ in {1..8}; do
+            if [[ "$type" != tag ]]; then break; fi
+            remote=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$remote_sha" --jq '.object | [.type, .sha] | @tsv')
+            read -r type remote_sha <<< "$remote"
+          done
+          if [[ "$type" != commit || "$remote_sha" != "$COMMIT_SHA" ]]; then
+            echo "::error::Release tag no longer points to the accepted commit."
+            exit 1
+          fi
+
+          # Only a proven missing manifest permits creating a new alias.
+          # Any other lookup error stops the release instead of resetting the high-water mark.
+          read_ref() {
+            local ref=$1 output=$2
+            if docker buildx imagetools inspect --raw "$ref" > "$output" 2> "$output.stderr"; then
+              return 0
+            fi
+            if grep -Ei 'manifest unknown|manifest_unknown|: not found$|404 Not Found' "$output.stderr" >/dev/null; then
+              return 1
+            fi
+            cat "$output.stderr" >&2
+            exit 1
+          }
+          version_of() {
+            jq -er '.annotations["org.opencontainers.image.version"] // ""' "$1"
+          }
+          revision_of() {
+            jq -er '.annotations["org.opencontainers.image.revision"] // ""' "$1"
+          }
+          digest_of() {
+            printf 'sha256:%s\n' "$(sha256sum "$1" | cut -d' ' -f1)"
+          }
+          newer_than() {
+            [[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort -V | tail -n 1)" == "$1" ]]
+          }
+          verify_index() {
+            local app=$1 digest=$2
+            [[ "$digest" =~ $digest_pattern ]]
+            docker buildx imagetools inspect --raw "$base/$app@$digest" > "$RUNNER_TEMP/$app-accepted.json"
+            [[ "$(digest_of "$RUNNER_TEMP/$app-accepted.json")" == "$digest" ]]
+            jq -e --arg sha "$COMMIT_SHA" --arg v "$VERSION" '
+              .annotations["org.opencontainers.image.revision"] == $sha and
+              .annotations["org.opencontainers.image.version"] == $v and
+              ([.manifests[] | select(.annotations["vnd.docker.reference.type"] != "attestation-manifest") |
+                [.platform.os, .platform.architecture]] | sort) ==
+              [["linux", "amd64"], ["linux", "arm64"]]
+            ' "$RUNNER_TEMP/$app-accepted.json" >/dev/null
+          }
+          existing="$RUNNER_TEMP/existing.json"
+          pointer="$RUNNER_TEMP/pointer.json"
+          version_key=$(printf '%s' "$VERSION" | sha256sum | cut -d' ' -f1)
+          bundle="$base/backend:accepted-$version_key"
+          write_latest=yes
+          publish_run=$GITHUB_RUN_NUMBER
+          gh_run=$GITHUB_RUN_NUMBER
+          if read_ref "$base/backend:verified-deploy" "$pointer"; then
+            previous_run=$(jq -er '.annotations["io.kikoteam.run"]' "$pointer")
+            [[ "$previous_run" =~ ^[1-9][0-9]*$ ]]
+            if (( publish_run <= previous_run )); then
+              publish_run=$((previous_run + 1))
+            fi
+            previous=$(jq -er '.annotations["io.kikoteam.version"] // ""' "$pointer")
+            if [[ -n "$previous" ]]; then
+              [[ "$previous" =~ $semver ]]
+              if newer_than "$previous" "$VERSION"; then write_latest=no; fi
+              if [[ "$previous" == "$VERSION" && "$(revision_of "$pointer")" != "$COMMIT_SHA" ]]; then
+                echo "::error::Deployment pointer already uses a different revision for $VERSION."
+                exit 1
+              fi
+              if [[ "$previous" == "$VERSION" ]]; then
+                publish_run=$previous_run
+                gh_run=$(jq -er '.annotations["io.kikoteam.github-run"]' "$pointer")
+              fi
+            fi
+          fi
+          # Check every latest alias: even a partial newer promotion must not
+          # be reversed by an old run. Only the initial amd64 aliases lack version.
+          for app in "${apps[@]}"; do
+            if read_ref "$base/$app:latest" "$existing"; then
+              previous=$(version_of "$existing")
+              if [[ -n "$previous" ]]; then
+                [[ "$previous" =~ $semver ]]
+                if newer_than "$previous" "$VERSION"; then write_latest=no; fi
+                if [[ "$previous" == "$VERSION" && "$(revision_of "$existing")" != "$COMMIT_SHA" ]]; then
+                  echo "::error::Existing $app:latest uses a different revision for $VERSION."
+                  exit 1
+                fi
+              fi
+            fi
+          done
+          # An accepted, per-version checkpoint is written before aliases. A
+          # retry recovers the original accepted digests, not rebuilt candidates.
+          if read_ref "$bundle" "$existing"; then
+            [[ "$(revision_of "$existing")" == "$COMMIT_SHA" && "$(version_of "$existing")" == "$VERSION" ]]
+            [[ "$(jq -er '.annotations["io.kikoteam.version"]' "$existing")" == "$VERSION" ]]
+            DIGESTS=$(jq -cer '[.annotations |
+              {"backend": .["io.kikoteam.backend"], "event-hub": .["io.kikoteam.event-hub"],
+               "agent-engine": .["io.kikoteam.agent-engine"]}][0]' "$existing")
+            has_bundle=yes
+          else
+            has_bundle=no
+          fi
+          [[ "$publish_run" =~ ^[1-9][0-9]*$ && "$gh_run" =~ ^[1-9][0-9]*$ ]]
+          annotations=(--annotation "index:io.kikoteam.run=$publish_run"
+            --annotation "index:io.kikoteam.github-run=$gh_run"
+            --annotation "index:io.kikoteam.version=$VERSION"
+            --annotation "index:org.opencontainers.image.revision=$COMMIT_SHA")
+          for app in "${apps[@]}"; do
+            digest=$(jq -er --arg app "$app" '.[$app]' <<< "$DIGESTS")
+            verify_index "$app" "$digest"
+            annotations+=(--annotation "index:io.kikoteam.$app=$digest")
+            # Preflight immutable version aliases before any writes.
+            if read_ref "$base/$app:$VERSION" "$existing"; then
+              if [[ "$(digest_of "$existing")" != "$digest" ]]; then
+                echo "::error::Existing immutable $app:$VERSION points to different content."
+                exit 1
+              fi
+            fi
+            # Full/short revision aliases may already represent another release
+            # of this same exact commit. Never replace them or accept collisions.
+            for alias in "$COMMIT_SHA" "${COMMIT_SHA:0:7}"; do
+              if read_ref "$base/$app:$alias" "$existing"; then
+                revision=$(revision_of "$existing")
+                if [[ -z "$revision" && "$alias" == "${COMMIT_SHA:0:7}" ]]; then
+                  # The former main workflow only labeled the image config,
+                  # not the index. Resolve the captured digest, never the tag.
+                  existing_digest=$(digest_of "$existing")
+                  docker pull --platform linux/amd64 "$base/$app@$existing_digest"
+                  revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$base/$app@$existing_digest")
+                fi
+                if [[ "$revision" != "$COMMIT_SHA" ]]; then
+                  echo "::error::Cannot prove existing $app:$alias is this revision."
+                  exit 1
+                fi
+              fi
+            done
+          done
+
+          backend_digest=$(jq -er '.backend' <<< "$DIGESTS")
+          create_pointer() {
+            docker buildx imagetools create "${annotations[@]}" --tag "$1" "$base/backend@$backend_digest"
+            docker buildx imagetools inspect --raw "$1" > "$RUNNER_TEMP/verify-pointer.json"
+            jq -e --arg run "$publish_run" --arg github_run "$gh_run" --arg version "$VERSION" --arg sha "$COMMIT_SHA" --argjson digests "$DIGESTS" '
+              .annotations as $a |
+              $a["io.kikoteam.run"] == $run and $a["io.kikoteam.github-run"] == $github_run and $a["io.kikoteam.version"] == $version and
+              $a["org.opencontainers.image.revision"] == $sha and
+              all($digests | to_entries[]; . as $d | $a["io.kikoteam." + $d.key] == $d.value)
+            ' "$RUNNER_TEMP/verify-pointer.json" >/dev/null
+          }
+          if [[ "$has_bundle" == no ]]; then create_pointer "$bundle"; fi
+
+          for app in "${apps[@]}"; do
+            digest=$(jq -er --arg app "$app" '.[$app]' <<< "$DIGESTS")
+            for alias in "$VERSION" "$COMMIT_SHA" "${COMMIT_SHA:0:7}"; do
+              ref="$base/$app:$alias"
+              if ! read_ref "$ref" "$existing"; then
+                docker buildx imagetools create --tag "$ref" "$base/$app@$digest"
+                docker buildx imagetools inspect --raw "$ref" > "$existing"
+                [[ "$(digest_of "$existing")" == "$digest" ]]
+              fi
+            done
+          done
+          if [[ "$write_latest" == no ]]; then
+            echo "Published immutable $VERSION; a newer version owns latest and verified-deploy." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          repository=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
-          for name in backend event-hub agent-engine; do
-            image="ghcr.io/$repository/$name"
-            commit_tag="$image:${GITHUB_SHA::7}"
-            docker buildx imagetools inspect --raw "$commit_tag" > "$RUNNER_TEMP/commit.json"
-            jq -e '[.manifests[] | select(.annotations["vnd.docker.reference.type"] != "attestation-manifest") | .platform | [.os, .architecture]] == [["linux", "amd64"]]' "$RUNNER_TEMP/commit.json"
-            docker buildx imagetools create --tag "$image:latest" "$commit_tag"
-            docker buildx imagetools inspect --raw "$image:latest" > "$RUNNER_TEMP/latest.json"
-            cmp "$RUNNER_TEMP/commit.json" "$RUNNER_TEMP/latest.json"
-            printf 'Verified `%s` at `%s` for linux/amd64.\n' "$name" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+          # Registry aliases cannot move transactionally. If promotion stops,
+          # retry this tag to resume its checkpoint; the deployment pointer
+          # is changed only after all three latest aliases have been verified.
+          for app in "${apps[@]}"; do
+            digest=$(jq -er --arg app "$app" '.[$app]' <<< "$DIGESTS")
+            docker buildx imagetools create --tag "$base/$app:latest" "$base/$app@$digest"
+            docker buildx imagetools inspect --raw "$base/$app:latest" > "$existing"
+            [[ "$(digest_of "$existing")" == "$digest" ]]
           done
+          create_pointer "$base/backend:verified-deploy"
+          printf 'Published accepted %s (%s) for linux/amd64 and linux/arm64.\n' "$VERSION" "$COMMIT_SHA" >> "$GITHUB_STEP_SUMMARY"

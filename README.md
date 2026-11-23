@@ -117,7 +117,7 @@ http://localhost:18080
 
 ### 容器镜像
 
-`main` 分支代码变更由 [GitHub Actions](.github/workflows/images.yml) 自动构建并发布以下三个 `linux/amd64` 镜像（同一批发布共用 7 位 Git 短 SHA，校验通过后同步更新 `latest` 标签）：
+推送指向 `main` 已合入提交的正式 Git 标签（如 `v1.2.3`）后，[GitHub Actions](.github/workflows/images.yml) 构建以下三个镜像，每个标签都包含 `linux/amd64` 和 `linux/arm64`。以 Git 标签为产品版本，不在代码里另设版本号。普通 `main` 推送不构建发布镜像。
 
 | GHCR 镜像 | 内容 |
 | --- | --- |
@@ -125,7 +125,7 @@ http://localhost:18080
 | `ghcr.io/unrealm-ai/kikoteam/event-hub` | Event Hub 服务与内嵌的 PostgreSQL 迁移文件 |
 | `ghcr.io/unrealm-ai/kikoteam/agent-engine` | Agent Engine、Pi 运行时、Sandbox Runner 与 builtin-mcp |
 
-拉取示例：
+拉取示例（GHCR 包未公开时，需要先用有包读取权限的账号登录）：
 
 ```sh
 docker pull ghcr.io/unrealm-ai/kikoteam/backend:latest
@@ -135,8 +135,9 @@ docker pull ghcr.io/unrealm-ai/kikoteam/backend:latest
 <summary>镜像触发规则与手动验收工作流说明</summary>
 
 - 每个 PR 和每次推送到 `main` 都会运行静态检查，涉及相应路径时还会运行组件检查和本地 Compose 集成测试。各检查也可在 **Actions** 中手动运行。
-- 每次推送到 `main` 都会构建三个镜像，包括纯文档变更。工作流按本次提交的 SHA 验证部署准入，并用打包后的 Engine 运行端到端测试。验收通过后才更新 `latest` 和部署指针。
-- 在 **Actions → Published image acceptance → Run workflow** 可以单独复验已发布的镜像，默认使用 `latest`，也可指定完整提交 SHA。
+- 两种架构都通过镜像验收后才发布版本标签；旧版本不能回退 `latest` 或托管部署使用的 `verified-deploy`，同版本重跑可以补完被中断的晋级。不要为试运行推送正式标签，它会进入生产发布流程。首个标签须指向已包含新发布工作流的提交。
+- 在 **Actions → Published image acceptance → Run workflow** 可单独复验。留空读取已验收的部署指针，也可指定双架构镜像的完整提交 SHA。复验不推进发布。
+- Apple Silicon 的 Docker Desktop 会为双架构镜像选择 Linux ARM64。仓库的 `./start.sh` 仍从源码构建，不使用这些预构建镜像。详见[镜像发布规范](docs/spec/tagged-multiarch-release.md)。
 
 </details>
 

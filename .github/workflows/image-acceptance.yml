@@ -7,10 +7,14 @@ on:
         description: '本次构建的完整提交 SHA'
         type: string
         required: true
+      candidate_digests:
+        description: '本次构建的三个服务多架构索引摘要（JSON，按服务名索引）'
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: '已发布镜像的完整提交 SHA（留空使用 latest）'
+        description: '已通过验收的完整提交 SHA（留空使用 verified-deploy）'
         type: string
 
 permissions:
@@ -18,9 +22,85 @@ permissions:
   packages: read
 
 jobs:
-  verify:
+  resolve:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      digests: ${{ steps.resolve.outputs.digests }}
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve one immutable release for both architectures
+        id: resolve
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          CANDIDATE_DIGESTS: ${{ inputs.candidate_digests }}
+        run: |
+          set -euo pipefail
+          base="ghcr.io/${GITHUB_REPOSITORY,,}"
+          sha="$COMMIT_SHA"
+          if [[ -n "$CANDIDATE_DIGESTS" ]]; then
+            # Reusable callers already know the immutable digests; do not look up tags.
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+            digests="$CANDIDATE_DIGESTS"
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && -n "$sha" ]]; then
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected a full lowercase commit SHA'; exit 1; }
+            digests='{}'
+            release_version=''
+            version_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+            for app in backend event-hub agent-engine; do
+              raw="$RUNNER_TEMP/$app.json"
+              docker buildx imagetools inspect --raw "$base/$app:$sha" > "$raw"
+              if ! version=$(jq -er --arg sha "$sha" '
+                select(.annotations["org.opencontainers.image.revision"] == $sha)
+                | .annotations["org.opencontainers.image.version"] | select(type=="string")
+              ' "$raw") || [[ ! "$version" =~ $version_pattern || ${#version} -gt 128 ||
+                             ( -n "$release_version" && "$release_version" != "$version" ) ]]; then
+                echo 'The commit aliases do not identify one accepted version. Use the verified-deploy pointer instead.'
+                exit 1
+              fi
+              release_version="$version"
+              digest="sha256:$(sha256sum "$raw" | cut -d' ' -f1)"
+              digests=$(jq -ce --arg app "$app" --arg digest "$digest" '.[$app]=$digest' <<< "$digests")
+            done
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            docker buildx imagetools inspect --raw "$base/backend:verified-deploy" > "$RUNNER_TEMP/verified.json"
+            jq -e '.annotations["io.kikoteam.run"] | type=="string" and test("^[1-9][0-9]*$")' "$RUNNER_TEMP/verified.json" >/dev/null
+            sha=$(jq -er '.annotations["org.opencontainers.image.revision"]' "$RUNNER_TEMP/verified.json")
+            digests=$(jq -ce '.annotations | {
+              "backend": .["io.kikoteam.backend"],
+              "event-hub": .["io.kikoteam.event-hub"],
+              "agent-engine": .["io.kikoteam.agent-engine"]
+            }' "$RUNNER_TEMP/verified.json")
+          else
+            echo 'Missing acceptance revision and immutable candidate digests'
+            exit 1
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          digests=$(jq -ce '
+            select(type=="object" and (keys==["agent-engine","backend","event-hub"])
+              and all(.[]; type=="string" and test("^sha256:[0-9a-f]{64}$")))
+          ' <<< "$digests")
+          printf 'sha=%s\ndigests=%s\n' "$sha" "$digests" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Verify linux/${{ matrix.arch }}
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16.6
@@ -30,47 +110,84 @@ jobs:
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Resolve the published Engine image and its source revision
-        id: image
+      - name: Verify the source revision and load all pinned native images
+        id: images
         env:
-          COMMIT_SHA: ${{ inputs.commit_sha }}
+          ARCH: ${{ matrix.arch }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+          DIGESTS: ${{ needs.resolve.outputs.digests }}
         run: |
-          tag=latest
-          if [[ -n "$COMMIT_SHA" ]]; then
-            [[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected a full lowercase commit SHA'; exit 1; }
-            tag=${COMMIT_SHA:0:7}
-          fi
-          repository=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
-          image="ghcr.io/$repository/agent-engine:$tag"
-          docker pull --platform linux/amd64 "$image"
-          id=$(docker image inspect --format '{{.Id}}' "$image")
-          sha=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$id")
-          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ || ( -n "$COMMIT_SHA" && "$sha" != "$COMMIT_SHA" ) ]]; then
-            echo "Image $image has an unexpected source revision: $sha"
-            exit 1
-          fi
-          printf 'sha=%s\nid=%s\n' "$sha" "$id" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ steps.image.outputs.sha }}
-          persist-credentials: false
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          case "$ARCH/$(uname -m)" in
+            amd64/x86_64|arm64/aarch64) ;;
+            *) echo 'Expected a native runner for this platform'; exit 1 ;;
+          esac
+          base="ghcr.io/${GITHUB_REPOSITORY,,}"
+          for app in backend event-hub agent-engine; do
+            repo="$base/$app"
+            index=$(jq -er --arg app "$app" '.[$app]' <<< "$DIGESTS")
+            docker buildx imagetools inspect --raw "$repo@$index" > "$RUNNER_TEMP/index.json"
+            platform_digest=$(jq -er --arg arch "$ARCH" '
+              .manifests
+              | map(select(
+                   .annotations["vnd.docker.reference.type"] != "attestation-manifest"
+                   or .platform.os != "unknown" or .platform.architecture != "unknown"
+                )) as $runtime
+              | if ($runtime | map([.platform.os,.platform.architecture]) | sort)
+                   == [["linux","amd64"],["linux","arm64"]]
+                   and all($runtime[];
+                     .mediaType == "application/vnd.oci.image.manifest.v1+json"
+                     or .mediaType == "application/vnd.docker.distribution.manifest.v2+json")
+                then $runtime[] | select(.platform.architecture==$arch) | .digest
+                else error("Expected exactly one linux image for each of amd64 and arm64")
+                end
+              | select(test("^sha256:[0-9a-f]{64}$"))
+            ' "$RUNNER_TEMP/index.json")
+            ref="$repo@$platform_digest"
+            docker pull --platform "linux/$ARCH" "$ref"
+            id=$(docker image inspect --format '{{.Id}}' "$ref")
+            test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$id")" = "linux/$ARCH"
+            revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$id")
+            [[ "$id" =~ ^sha256:[0-9a-f]{64}$ && "$revision" == "$SOURCE_SHA" ]] || {
+              echo "Unexpected revision for $app on linux/$ARCH"
+              exit 1
+            }
+            printf '%s=%s\n' "${app//-/_}" "$id" >> "$GITHUB_OUTPUT"
+            printf 'Verified `%s` for `linux/%s` at `%s`.\n' "$app" "$ARCH" "$platform_digest" >> "$GITHUB_STEP_SUMMARY"
+          done
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.2'
           cache-dependency-path: backend/go.sum
+      - name: Start the three published services against an empty database
+        env:
+          BACKEND_IMAGE_ID: ${{ steps.images.outputs.backend }}
+          HUB_IMAGE_ID: ${{ steps.images.outputs.event_hub }}
+          ENGINE_IMAGE_ID: ${{ steps.images.outputs.agent_engine }}
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: bash deploy/auto/image-smoke.sh
       - name: Verify single-host deployment admission against the image's schema
-        run: KIKO_TEST_POSTGRES_BIN="$(pg_config --bindir)" python3 deploy/auto/test_deploy.py -v
+        run: |
+          pg_bin=$(pg_config --bindir)
+          test -x "$pg_bin/initdb" && test -x "$pg_bin/pg_ctl"
+          KIKO_TEST_POSTGRES_BIN="$pg_bin" python3 deploy/auto/test_deploy.py -v
       - name: Compile the deterministic runtime acceptance test
         working-directory: backend
         run: CGO_ENABLED=0 go test -c -o "$RUNNER_TEMP/runtime.test" ./internal/platform/repository
       - name: Run a task with the packaged Engine, Pi, Runner and builtin MCP
         env:
-          IMAGE_ID: ${{ steps.image.outputs.id }}
+          IMAGE_ID: ${{ steps.images.outputs.agent_engine }}
         run: |
           docker run --rm --network host \
             -e BACKEND_TEST_DATABASE_URL='postgres://postgres:test-only-password@127.0.0.1:5432/postgres?sslmode=disable' \
@@ -78,4 +195,4 @@ jobs:
             -v "$RUNNER_TEMP/runtime.test:/runtime.test:ro" \
             -v "$PWD/event-hub/database/postgres/migrations:/opt/kikoteam/event-hub/database/postgres/migrations:ro" \
             -w /opt/kikoteam/backend/internal/platform/repository --entrypoint /runtime.test "$IMAGE_ID" \
-            -test.run '^TestManagerRuntime(Chat|HumanRequests)EndToEnd$' -test.v -test.timeout 4m
+            -test.run '^TestManagerRuntime(Chat|HumanRequests)EndToEnd$' -test.v -test.timeout 6m

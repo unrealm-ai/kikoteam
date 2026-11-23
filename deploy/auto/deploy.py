@@ -24,6 +24,7 @@ BACKUPS = STATE / "backups"
 STAGED = STATE / "accepted-run.json"
 REGISTRY = "ghcr.io/unrealm-ai/kikoteam"
 APPS = ("backend", "event-hub", "agent-engine")
+VERSION_TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 COMPOSE = ["docker", "compose", "-f", "compose.yaml", "--env-file", ".env"]
 PSQL = COMPOSE + ["exec", "-T", "postgres", "sh", "-ec",
                   'exec psql -XqAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
@@ -75,7 +76,13 @@ def registry_release():
     if not (re.fullmatch(r"[1-9][0-9]*", number) and re.fullmatch(r"[0-9a-f]{40}", sha)
             and all(re.fullmatch(r"sha256:[0-9a-f]{64}", d) for d in digests.values())):
         raise ValueError("Invalid registry release pointer")
-    return {"run": int(number), "sha": sha, "digests": digests}
+    target = {"run": int(number), "sha": sha, "digests": digests}
+    if "io.kikoteam.version" in a:
+        version = a["io.kikoteam.version"]
+        if not VERSION_TAG.fullmatch(version):
+            raise ValueError("Invalid registry release version")
+        target["version"] = version
+    return target
 
 
 def release():
@@ -87,36 +94,73 @@ def release():
     return latest
 
 
+def version_order(version):
+    match = VERSION_TAG.fullmatch(version)
+    if not match:
+        raise ValueError("Invalid release version")
+    return tuple(map(int, match.groups()))
+
+
 def stage_success(metadata):
     # The operator supplies GitHub's successful Actions run through SSH. This
     # permits recovery of a missing marker without giving the host write access.
-    required = {"name": "Publish images", "event": "push", "head_branch": "main",
+    required = {"name": "Publish images", "event": "push",
                 "status": "completed", "conclusion": "success", "path": ".github/workflows/images.yml"}
+    ref = metadata.get("head_branch") or ""
+    version = ref.removeprefix("refs/tags/")
+    legacy = ref == "main"
     if (any(metadata.get(k) != v for k, v in required.items())
-            or metadata["head_repository"]["full_name"] != "unrealm-ai/kikoteam"):
-        raise ValueError("Expected a successful main image workflow from the deployment repository")
+            or metadata["head_repository"]["full_name"] != "unrealm-ai/kikoteam"
+            or (not legacy and not VERSION_TAG.fullmatch(version))):
+        raise ValueError("Expected a successful tagged image workflow from the deployment repository")
     sha, number = metadata["head_sha"], metadata["run_number"]
     if type(number) is not int or number < 1 or not re.fullmatch("[0-9a-f]{40}", sha):
         raise ValueError("Invalid GitHub run metadata")
-    if number <= max(read(CURRENT)["run"], release()["run"]):
+    current, available = read(CURRENT), release()
+    previous_number = max(current["run"], available["run"])
+    candidate_version = () if legacy else version_order(version)
+    for state in (current, available):
+        if not legacy and state.get("version") == version and state["sha"] == sha:
+            print("Accepted release already known")
+            return
+        if "version" in state and candidate_version <= version_order(state["version"]):
+            raise ValueError("Cannot stage a release older than or conflicting with the accepted version")
+    if legacy and number <= previous_number:
         print("Accepted release already known")
         return
+    if not legacy:
+        number = max(number, previous_number + 1)
     digests = {}
     for app in APPS:
         image = f"{REGISTRY}/{app}"
         def index(tag):
             return subprocess.check_output(["docker", "buildx", "imagetools", "inspect", "--raw",
                                             image + ":" + tag], timeout=90)
-        raw = index(sha[:7])
+        raw = index(sha[:7] if legacy else version)
         if raw != index("latest"):
-            raise ValueError(f"{app}: latest and successful commit indexes differ")
+            raise ValueError(f"{app}: latest and successful release indexes differ")
+        if not legacy:
+            annotations = json.loads(raw).get("annotations", {})
+            if (annotations.get("org.opencontainers.image.revision") != sha
+                    or annotations.get("org.opencontainers.image.version") != version):
+                raise ValueError(f"{app}: image index does not match the successful tag and revision")
         digests[app] = "sha256:" + hashlib.sha256(raw).hexdigest()
-    atomic(STAGED, {"run": number, "sha": sha, "digests": digests})
+    target = {"run": number, "sha": sha, "digests": digests}
+    if not legacy:
+        target["version"] = version
+    atomic(STAGED, target)
     print("Staged verified run for normal timer processing", number, sha[:7])
 
 
+def image_tag(revision):
+    tag = revision.get("local_tag", revision["sha"][:7])
+    if tag != revision["sha"][:7] and not VERSION_TAG.fullmatch(tag):
+        raise ValueError("Invalid local deployment image tag")
+    return tag
+
+
 def image_ref(app, revision):
-    return f"{REGISTRY}/{app}:{revision['sha'][:7]}"
+    return f"{REGISTRY}/{app}:{image_tag(revision)}"
 
 
 def verified_image(app, target):
@@ -315,8 +359,8 @@ def backup(folder, data, current):
 def switch_tag(old, new):
     p = ROOT / ".env"
     s = p.read_bytes()
-    pattern = rb"(?m)^KIKO_IMAGE_TAG=" + old["sha"][:7].encode() + rb"$"
-    s, count = re.subn(pattern, b"KIKO_IMAGE_TAG=" + new["sha"][:7].encode(), s)
+    pattern = rb"(?m)^KIKO_IMAGE_TAG=" + re.escape(image_tag(old).encode()) + rb"$"
+    s, count = re.subn(pattern, b"KIKO_IMAGE_TAG=" + image_tag(new).encode(), s)
     if count != 1:
         raise ValueError("Expected exactly one matching KIKO_IMAGE_TAG in .env")
     atomic(p, s)
@@ -346,15 +390,23 @@ def tick():
             print("PAUSED: operator recovery required; see", PENDING)
         return
     current = read(CURRENT)
-    target = release()
+    published_target = release()
+    target = published_target
     if target["run"] <= current["run"]:
         return
-    if target["sha"] == current["sha"]:
+    if target["sha"] == current["sha"] and target.get("digests") == current.get("digests"):
+        if "local_tag" in current:
+            target = dict(target, local_tag=image_tag(current))
         healthy(target)
         atomic(CURRENT, target)
         return
-    if target["sha"][:7] == current["sha"][:7]:
-        raise ValueError("Target short SHA collides with the installed version")
+    if image_tag(target) == image_tag(current):
+        # Keep the running/rollback tag pinned while preparing different
+        # verified content, even if the source revision is unchanged.
+        version = target.get("version")
+        if not version or not VERSION_TAG.fullmatch(version):
+            raise ValueError("Target short SHA collides with the installed version")
+        target = dict(target, local_tag=version)
     print(f"Preparing run {target['run']} {target['sha'][:7]}")
     data, host = configuration(current)
     space_check(data)
@@ -365,7 +417,7 @@ def tick():
     if not idle():
         return
     space_check(data)
-    if release() != target:
+    if release() != published_target:
         print("Deployment pointer changed during preparation; retrying newest release next tick")
         return
     if MAINTENANCE.exists() or sql(f"SELECT to_regnamespace('{SCHEMA}') IS NOT NULL;") != "f":

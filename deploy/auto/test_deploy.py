@@ -1,5 +1,6 @@
 """Exercise deployment ordering and the write fence against the real schema."""
 from contextlib import ExitStack
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -61,6 +62,59 @@ class DeploymentTest(unittest.TestCase):
             deploy.stage_success(metadata)
         self.assertEqual(deploy.read(deploy.STAGED)["run"], self.new["run"])
         self.assertEqual(set(deploy.read(deploy.STAGED)["digests"]), set(deploy.APPS))
+
+    def test_tagged_stage_requires_three_matching_aliases_and_newer_version(self):
+        metadata = {"name": "Publish images", "event": "push", "head_branch": "v1.10.0",
+                    "status": "completed", "conclusion": "success", "path": ".github/workflows/images.yml",
+                    "head_repository": {"full_name": "unrealm-ai/kikoteam"}, "head_sha": self.new["sha"],
+                    "run_number": self.new["run"]}
+        self.mock["release"].return_value = dict(self.old, run=56, version="v1.9.9")
+        index = json.dumps({"annotations": {
+            "org.opencontainers.image.revision": self.new["sha"],
+            "org.opencontainers.image.version": "v1.10.0",
+        }}).encode()
+        with patch.object(subprocess, "check_output", side_effect=[index, b"bad"]):
+            with self.assertRaisesRegex(ValueError, "indexes differ"):
+                deploy.stage_success(metadata)
+        self.assertFalse(deploy.STAGED.exists())
+        wrong_revision = index.replace(self.new["sha"].encode(), self.old["sha"].encode())
+        with patch.object(subprocess, "check_output", side_effect=[wrong_revision] * 2):
+            with self.assertRaisesRegex(ValueError, "does not match"):
+                deploy.stage_success(metadata)
+        self.assertFalse(deploy.STAGED.exists())
+        with patch.object(subprocess, "check_output", side_effect=[index] * 6) as inspect:
+            deploy.stage_success(metadata)
+        self.assertEqual(deploy.read(deploy.STAGED)["version"], "v1.10.0")
+        self.assertEqual(deploy.read(deploy.STAGED)["run"], 57)
+        for i in range(0, 6, 2):
+            refs = [call.args[0][-1].rsplit(":", 1)[1] for call in inspect.call_args_list[i:i+2]]
+            self.assertEqual(refs, ["v1.10.0", "latest"])
+        with patch.object(subprocess, "check_output") as inspect:
+            for version in ("v1.8.0", "main", "v01.10.0", "v2.0.0-rc.1"):
+                with self.subTest(version=version), self.assertRaises(ValueError):
+                    deploy.stage_success(dict(metadata, head_branch=version))
+            inspect.assert_not_called()
+
+    def test_releasing_same_commit_keeps_old_image_tag_for_rollback(self):
+        current = dict(self.old, digests={app: "old" for app in deploy.APPS})
+        target = dict(current, run=53, version="v1.2.3",
+                      digests={app: "new" for app in deploy.APPS})
+        deploy.atomic(deploy.CURRENT, current)
+        self.mock["release"].return_value = target
+        selected = dict(target, local_tag="v1.2.3")
+        self.mock["idle"].return_value = True
+        self.mock["output"].return_value = '{"phase":"running"}'
+        self.mock["http_status"].return_value = 200
+        deploy.tick()
+        self.mock["pull"].assert_called_once_with(selected)
+        self.assertEqual([call.args[0] for call in self.mock["healthy"].call_args_list],
+                         [current, selected])
+        self.mock["backup"].assert_called_once()
+        self.assertEqual(self.mock["backup"].call_args.args[2], current)
+        self.mock["switch_tag"].assert_called_once_with(current, selected)
+        self.assertEqual(deploy.read(deploy.CURRENT), selected)
+        self.assertTrue(deploy.image_ref("backend", current).endswith(":1111111"))
+        self.assertTrue(deploy.image_ref("backend", selected).endswith(":v1.2.3"))
 
     def test_busy_at_final_check_reopens(self):
         def busy(host):

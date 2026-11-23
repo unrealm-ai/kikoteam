@@ -45,9 +45,9 @@ Backend 可通过 `KIKO_DINGTALK_REGISTRATION_SOURCE` 设置钉钉扫码登记�
 
 全新实例默认允许免验证码密码注册，邮件关闭。SMTP 与注册策略通过「设置 → 平台管理 → 邮件与注册」配置；GitHub 插件 OAuth 在「集成设置」配置。只有尚无对应数据库记录时，既有环境变量／旧 JSON 才继续提供兼容值。环境变量清单见 [部署指南](../../docs/deployment.md#32-smtp注册策略与-github-插件-oauth)。
 
-## 文件存储配置（待实现）
+## 文件存储配置
 
-Platform、Manager 与 Engine 按[统一存储配置与跨模块资产约定](../../docs/architecture/storage-configuration.md)使用同名环境配置，各组件自行实现，不新增共享存储 lib。无 S3 配置默认本地根 `~/.kiko/`，路径由 `.env` 配置；有 S3 配置则严格校验并使用 S3，故障不静默回退。当前 `.env.example` 和 Compose 尚未接入这些变量与文件挂载，本节不是已实现功能。
+Compose 已接入本地资产目录和 S3 配置。现行变量与挂载见[Skill 资产配置与本地容器](#skill-资产配置与本地容器)，已确认的三类存储与迁移顺序见[目录设计](../../docs/architecture/storage-paths.md)。
 
 ## 公开部署
 
@@ -114,9 +114,9 @@ database.url、auth.secret、mail.smtp.password 是引用对象，每个只选�
 
 ## Skill 资产配置与本地容器
 
-本文现有启动命令仍描述 Compose 已实现路径。首版执行底座另按[Mac/Linux 裸 Sandbox](../../sandbox-runner/docs/local-sandbox.md)提供待实现的原生进程启动链：Backend/Event Hub/Engine 本机运行，Runner 由 Engine 按需启动；数据库可连接现有实例，整体不强制 Docker。裸环境不做安全隔离，容器 Sandbox 仅保留扩展，不把当前 Compose 支持当作已交付环境供应系统。
+本页的启动命令使用 Compose。原生进程部署见[本机运行说明](../../docs/operations/minimal-agent-runtime.md)。两种方式下，裸沙箱的 Runner 都由 Engine 按需启动。
 
-Skill 资产使用 `KIKO_STORAGE_LOCAL_ROOT`（默认 `~/.kiko/`）或显式 S3 配置；无 S3 时本地，任一 S3 配置非空则严格校验，故障不回退本地。`.env.example` 提供 endpoint、bucket、region、prefix、静态凭据及 path-style 配置。当前范围是 Platform Skill 资产，不代表 Engine/Runner 已实现。
+当前 Backend 使用 `KIKO_STORAGE_LOCAL_ROOT`（默认 `~/.kiko/`）或显式 S3 配置保存 Skill 和已交付的文件版本。项目、Pi 和 Runner 状态仍依赖持久工作盘。资产、工作盘和节点临时盘分开配置是待实施的[目录重构](../../docs/architecture/storage-paths.md)，下述参数适用于现行主线。
 
 `start.sh` 在宿主展开本地根目录，将它 bind mount 到 Backend 的 `/var/lib/kiko`；容器只收到容器内路径。启动器注入宿主 UID/GID，Backend 以该身份读写目录，不自动对现有目录递归 chmod/chown。首次创建目录使用 0700；相对路径和直接符号链接被拒绝，目录必须可写。独立使用 Compose 时须显式提供 `KIKO_LOCAL_STORAGE_HOST_ROOT`、`KIKO_LOCAL_UID` 和 `KIKO_LOCAL_GID`，推荐通过启动器运行。原有 `.env` 不会被重写，缺少新增本地配置时沿用默认值；跨部署应配置不同的根。
 

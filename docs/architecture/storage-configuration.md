@@ -1,6 +1,6 @@
 # 统一存储配置与跨模块资产约定
 
-状态：2026-11-17 Platform 本地/S3 Skill 资产、Engine/Runner 本机目录及 Skill 运行物化已实现；其他资产仍为设计目标。各模块统一遵守部署配置和资产互通契约，**不新增统一存储 lib、公共 Go module 或独立文件存储服务**。Platform 与 Manager 同属 Backend，Engine 是独立进程；各组件按实际需求实现自己的存储适配，不因此改变业务数据所有权。
+**当前配置与重构目标**　当前主线用同一个 `KIKO_STORAGE_LOCAL_ROOT` 承接本地资产和持久工作状态。本页记录仍可使用的配置与备份方法。已确定的重构将资产存储、工作盘和节点临时盘分开，目录、Skill 直接引用及迁移顺序见[存储目录方案](storage-paths.md)。各组件按职责使用现有适配器。
 
 ## 1. 配置来源与后端选择
 
@@ -8,7 +8,7 @@
 
 当前 `start.sh` 显式向 Compose 传根 `.env`；Backend 与 Event Hub 自身只读进程环境，不自动加载 dotenv 文件。Platform 的 Skill 资产适配及挂载见第 6 节；Engine/Runner 的本机目录和原生启动链已实现，Skill 缓存经授权内部接口下载并校验，复用 Platform 的本地/S3 权威资产。具体边界见[资源与能力包设计](../../backend/docs/platform-capabilities.md)，不因此承诺容器或跨机恢复。
 
-建议实施时采用以下统一配置名；默认值、校验和选择语义在各组件必须一致：
+当前启动配置如下。
 
 | 配置 | 默认值与含义 |
 | --- | --- |
@@ -16,27 +16,27 @@
 | `KIKO_STORAGE_S3_ENDPOINT` | 空；S3 兼容 endpoint，OSS 等须按供应商 S3 接入方式配置 |
 | `KIKO_STORAGE_S3_BUCKET` | 空；启用 S3 时必填的私有 bucket |
 | `KIKO_STORAGE_S3_REGION` | 空；按供应商及签名方式校验，不能各组件猜不同默认 region |
-| `KIKO_STORAGE_S3_PREFIX` | `kiko/`；部署内统一的对象前缀，不同部署须隔离 |
+| `KIKO_STORAGE_S3_PREFIX` | 默认空。可设置部署专用的对象前缀 |
 | `KIKO_STORAGE_S3_ACCESS_KEY_ID` | 空；静态认证可选项，与 secret 成对配置 |
 | `KIKO_STORAGE_S3_SECRET_ACCESS_KEY` | 空；秘密，不得输出至日志或普通接口 |
 | `KIKO_STORAGE_S3_SESSION_TOKEN` | 空；使用临时凭据时与对应认证方式一起提供 |
 | `KIKO_STORAGE_S3_FORCE_PATH_STYLE` | `false`；按供应商兼容性选择，使用一致的布尔解析 |
 
-**选择规则**：未提供任何非空 S3 连接或认证配置时使用本地；出现 endpoint、bucket、region、AK/secret/token 中任一配置即进入 S3 配置校验。仅默认 prefix/path-style 不触发切换。S3 的 bucket、endpoint/默认 AWS endpoint 规则、region 和认证方式必须构成可用的完整配置；静态 AK 配置不完整应报错，不能偷偷换成另一身份。若使用部署角色/SDK 凭据链而不填静态 AK，仍由显式 S3 目标配置选择后端，并限定与核验实际身份。
+**选择规则**　所有 S3 配置为空时使用本地存储。任一 S3 字段显式非空即校验 S3 配置，包括前缀和 path-style。需要 bucket 和 region。静态凭据成对配置，也可以使用 SDK 凭据链。[配置解析](../../backend/internal/platform/integration/skillasset/store.go)
 
 S3 配置不完整、认证失败或服务不可达时明确失败或报告依赖不可用，**不得静默退回本地**。未使用存储的组件不必要求 S3 就绪；需要存储的操作不得假成功。配置在进程启动时生效，变更后端按迁移流程执行，不热切换到空目录/空 bucket。
 
-具体工作区/AI 员工/业务会话/执行 Session 路径、共享 Sandbox、会话记忆及输入产物与缓存隔离统一遵循[文件路径与隔离约束](storage-paths.md)。各适配器不得另造冲突布局。
+现行配置继续服务现有部署。项目归属、Session 目录与 Skill 正式版本目录的重构约定见[文件路径与隔离约束](storage-paths.md)。
 
 **本机持久运行数据**：local/S3 选择适用于 Skill 等不可变资产。Pi 原生历史、Engine 身份映射、业务会话 project 和 Runner 账本都放本地根下稳定 `state/`，不放入可清除的 runtime/cache/tmp，不把 S3 当作 append 文件系统，也不建设逐轮检查点。首版按[Mac/Linux 裸 Sandbox](../../sandbox-runner/docs/local-sandbox.md)使用 Engine 本机目录、同账号进程，不做安全隔离或容器供应；后续容器扩展须保留这些数据。原生数据或已有项目缺失明确失败，不用空目录或公开事件冒充恢复。
 
 ## 2. 本地路径、容器与多机
 
-本地后端将不可变资产存于 `${KIKO_STORAGE_LOCAL_ROOT}/workspaces/`；格式版本保存在 manifest/数据库，不额外增加 storage 或顶层 v1。临时导入放 tmp，可重建缓存放 cache，当前进程临时配置和端口放 runtime。项目文件、Runner 账本和 Pi 上下文按[路径约定](storage-paths.md#5-共享沙箱与本机目录)放 state，虽不是已发布资产也必须跨重启保留，不能随实例清理。默认根可通过 .env 修改，不同部署不得无意共用。
+现行本地资产位于 `${KIKO_STORAGE_LOCAL_ROOT}/official/` 和 `workspaces/`。Skill 待发布的导入位于 `tmp/skill-imports/`，项目、Runner 账本、上传回执与 Pi 历史位于 `state/`。新布局按三个根分别管理。已返回导入 ID 的内容由资产存储限期保留，节点临时盘承接可重传的缓冲和可再生的启动材料。
 
-Docker 中的 `~` 指容器用户而非宿主用户。本地启动层在宿主解析根目录，通过明确 bind mount 挂到容器固定目录（例如 `/var/lib/kiko`），再向容器注入容器内绝对根路径；不得把宿主路径原样传进去后写到容器临时层。多个本地容器需访问同一权威存储时挂载同一宿主目录，读写权限按组件需要收窄。具体挂载实现需与 start/Compose 一起验收。
+Docker 中的 `~` 指容器用户而非宿主用户。本地启动层在宿主解析根目录，通过明确 bind mount 挂到容器固定目录（例如 `/var/lib/kiko`），再向容器注入容器内绝对根路径；不得把宿主路径原样传进去后写到容器临时层。多个本地容器需访问同一权威存储时挂载同一宿主目录，读写权限按组件需要收窄。当前本地 Compose 的挂载方式见[Backend 配置](../../backend/docs/configuration.md#skill-资产配置与本地容器)。
 
-不同机器上相同的 `~/.kiko/` 不是同一份存储。多 Backend 副本或跨机器 Engine 使用权威资产时，必须采用 S3、真正共享的文件系统，或由资产拥有者通过授权传输接口交付固定对象；各组件的本地缓存不能冒充共享源。若部署没有可达的权威源，应明确拒绝这类跨节点分配或资源准备，不能只传本机绝对路径。Runner 仍按既有受限配置领取/资源准备设计工作，不默认取得全局 S3 密钥，也不直接访问业务数据库。
+跨机器部署要验证各消费者能访问同一资产版本和其负责的工作盘。当前 Engine 经授权接口下载 Skill 到执行 Session。重构后裸沙箱直接引用正式版本目录，隔离沙箱只读映射该目录。挂载由部署提供，业务授权仍由 Backend 核验。
 
 ## 3. 各自实现，但使用同一资产契约
 
@@ -62,7 +62,7 @@ Event Hub 继续统一 PostgreSQL 迁移 SQL、执行器、历史与结构快照
 
 从本地切到 S3、改根目录/bucket/prefix 或更换存储身份前，须复制已有引用资产、校验大小和摘要、控制迁移期间写入，并验证消费者可读取后才切换。仅修改 `.env` 不会自动迁移旧数据；新配置不能把旧引用解释成另一个空后端。回退方案保留旧资产和引用对应关系，验证前不清理源。
 
-备份覆盖数据库、被引用资产、Pi 原生 state 及必要部署配置；根密钥单独安全备份。原生数据在停止写入或一致性文件系统快照条件下备份，不引入每 Turn 检查点发布。恢复须验证固定 Skill 版本、原生会话及 Engine 身份映射可读，不以数据库恢复成功代替文件恢复成功。
+备份覆盖 PostgreSQL、被引用的资产、仍有效的导入、项目工作文件、上传回执、Pi 历史与 Runner 账本，以及必要的部署配置和密钥。可写状态采用停写备份或一致性快照。恢复时核对固定 Skill 版本、历史会话续跑、项目相对路径和上传结果。
 
 实现验收至少包含：无 S3 配置默认本地；部分配置和 S3 故障不回退；宿主路径到容器映射与重建持久化；本地/S3 独立适配器交叉读取；路径穿越和摘要错误拒绝；无明文秘密输出；多实例读写同一资产；后端切换及失败恢复；孤儿清理不破坏历史引用。OSS 等供应商须对所用 API 和签名/寻址方式真实测试，不以“S3 兼容”宣称所有特性通用。
 

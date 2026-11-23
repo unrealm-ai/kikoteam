@@ -28,7 +28,7 @@
 
 前端按已交付管理功能推进；渠道、业务定时、指定确认人和事项交接暂缓。Conversation / Task / Session / Sandbox 的创建、停止、归档及回收已按[生命周期设计](../architecture/conversation-lifecycle.md)确定。主 chat 的[会话委派 MCP task_delegation](../../backend/docs/task-delegation-mcp.md)已设计六个带 task_delegation_ 前缀的工具，复用 Manager 创建 Task/唯一 task Session/首条 Input、查询、追加和停止，代码尚未实现。业务 key 路由、业务完成判定、自动结果入上下文及唤醒仍另行细化；跨员工名单和原始主体核验就绪前不启用跨员工目标，不默认共享环境。
 
-File、Artifact 及上传发布 API、自动记忆抽取尚未实现；业务会话共享 Sandbox 和记忆归属已确定。Skill 目录、Pi 原生历史和执行工作目录属于运行基础，不因此新增文件资源。首版采用[Mac/Linux 裸 Sandbox](../../sandbox-runner/docs/local-sandbox.md)：Engine 本机的稳定 project 目录、同账号 Runner 和工具进程，不提供安全隔离，不要求容器或独立环境系统。Agent/Session 不开放特殊环境配置；容器只保留扩展设计。
+现行附件进入所属项目，任务可以显式发布文件版本。自动记忆抽取仍待设计。项目、Pi 历史与正式 Skill 的归属见[存储目录方案](../architecture/storage-paths.md)。首版采用[Mac/Linux 裸 Sandbox](../../sandbox-runner/docs/local-sandbox.md)：Engine 本机的稳定 project 目录、同账号 Runner 和工具进程，不提供安全隔离，不要求容器或独立环境系统。Agent/Session 不开放特殊环境配置；容器只保留扩展设计。
 
 系统生成稳定资源标识，展示名可修改；资源记录归属、创建者和时间，平台核验当前访问权限。下面的参数为产品概念，具体字段、状态枚举及约束由技术契约确定。未列出的删除、回滚、草稿或发布操作不自动加入交付范围。
 

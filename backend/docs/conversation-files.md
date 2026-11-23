@@ -1,6 +1,8 @@
 # Web 私聊项目文件
 
-Backend 与 Runner 使用同一份持久 POSIX 文件系统，部署时将同一持久卷配置为 `KIKO_STORAGE_LOCAL_ROOT`，Backend 与 Runner 均需读写权限。该卷需要支持文件锁、同卷原子重命名（目标已存在时失败）和目录同步。Backend 与 Engine 都将 `~/` 展开到各自运行账号的主目录，账号或挂载点不同时应显式配置指向同一卷的路径。每个 Web 私聊使用 Runner 的 `state/sandboxes/workspaces/<workspace_id>/employees/<agent_id>/conversations/<conversation_id>/project` 工作目录。首次上传可以先于第一个 Session 和 Runner。归档会话保留文件供原用户读取。
+**当前部署**　Backend 与 Runner 使用同一份持久 POSIX 文件系统，部署时将同一持久卷配置为 `KIKO_STORAGE_LOCAL_ROOT`，Backend 与 Runner 均需读写权限。该卷需要支持文件锁、同卷原子重命名（目标已存在时失败）和目录同步。Backend 与 Engine 都将 `~/` 展开到各自运行账号的主目录，账号或挂载点不同时应显式配置指向同一卷的路径。每个 Web 私聊使用 Runner 的 `state/sandboxes/workspaces/<workspace_id>/employees/<agent_id>/conversations/<conversation_id>/project` 工作目录。首次上传可以先于第一个 Session 和 Runner。归档会话保留文件供原用户读取。
+
+**重构目标**　会话项目归入持久工作盘的 `workspaces/<W>/projects/conv-<conversation_id>/`。上传幂等回执将迁往 PostgreSQL，成功的附件仍按原相对路径读取。迁移须同时核对项目文件、在途回执和既有附件预留 ID。[目录与迁移方案](../../docs/architecture/storage-paths.md#上传发布和回执) · [异步附件规范](../../docs/spec/async-inbound-attachments.md)
 
 ## 文件接口
 

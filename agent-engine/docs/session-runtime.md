@@ -60,7 +60,7 @@ Conversation、Task 和 Session 均由 Backend 创建，首版一 Task 一 task 
 
 每个 Session 使用独立 HOME、原生配置目录、工作目录及环境变量白名单，不继承开发者账号、祖先项目指令或任意扩展。仅允许固定工件、配置声明的原生能力及平台白名单扩展；task 模型参数跟随 Harness，chat 强制非思考策略；保持原生 MCP 内置支持，不因关闭任意扩展而一并禁用它。
 
-路径采用[文件路径与隔离约束](../../docs/architecture/storage-paths.md)规定的工作区、AI 员工、业务会话和执行 Session 层级。Pi 原生会话及 Engine 身份映射保存在独立于 engine_id、assignment 和进程实例的持久 `context/native/` 目录；实例目录只放装配配置、只读资源及临时运行材料。通过固定版本支持的目录配置或受控挂载维持原生路径，不在每轮打包上传。该目录是单写者持久工作数据，不是可随实例清理的缓存；不能把两台机器上的相同路径当成共享目录。
+当前 Engine 将历史和身份映射保存在每个执行 Session 的 `context/native/`，位置独立于 Engine、assignment 和进程启动代次。Pi 配置和下载的 Skill 也在这个目录下生成。重构将主对话、任务的 Pi 状态统一到 `workspaces/<W>/sessions/<S>/pi/`，工作项目按独立的项目标识定位。迁移需要保留原生历史中的身份及文件映射。[存储目录方案](../../docs/architecture/storage-paths.md)
 
 通过原生 settings.json、models.json、mcp.json、`--system-prompt` 及必要环境变量装配。认证材料按消费者最小范围提供，与持久历史分开。新会话的 sessions/*.jsonl 由 Pi 初始化和写入，Engine 在 session.json 保存 id、nativeId 与 sessionFile。仅首次创建空文件供 Pi 初始化持久头部，Engine 不写原生条目；旧会话只读 home/.pi/pi-acp/session-map.json 找到同一文件，并保留旧数据库身份为别名。历史缺失、损坏、身份不符或越界时拒绝加载，不创建空白替代。进程重启使用同一持久目录和有效路径映射，不能手改历史来伪造成功加载。
 
@@ -76,11 +76,11 @@ Sandbox MCP Token 在环境首次授权绑定时生成，跟随 Sandbox 实例�
 
 ### Skill 资源与加载
 
-Skill 保持标准目录及 SKILL.md。Engine 经受限 Backend 接口下载并校验固定版本目录，通过原生 `--skill` 供 Pi 加载和显式 `/skill:name` 使用；首版本机 Runner/builtin 复用同一绝对路径，不重复下载一份资产。脚本依赖使用本机已有程序，不自动执行安装脚本；chat 不加载员工任务 Skill/Plugin。自动选择仍由 Harness / 模型决定，不新增 Input 字段或平台斜杠解析器。
+**当前实现**　Skill 保持标准目录及 SKILL.md。Engine 经受限 Backend 接口下载并校验固定版本目录，通过原生 `--skill` 供 Pi 加载和显式 `/skill:name` 使用；首版本机 Runner/builtin 复用同一绝对路径，不重复下载一份资产。脚本依赖使用本机已有程序，不自动执行安装脚本；chat 不加载员工任务 Skill/Plugin。自动选择仍由 Harness / 模型决定，不新增 Input 字段或平台斜杠解析器。
 
 当前 Pi 在禁用 read / bash 后不自动附加 Skill 目录提示。白名单扩展通过公开 before_agent_start 接口，复用 Pi 的已解析 Skill 元数据及 formatSkillsForPrompt，补入名称、描述和位置，并遵守原生 disable-model-invocation。正文按需读取。[上游提示生成](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/src/core/system-prompt.ts#L173)
 
-首版本机 Engine/Pi 与工具可使用同一份固定版本 Skill 物化和绝对路径，版本/摘要必须一致，不另造两套路径映射。任务命令默认 cwd 是业务会话的稳定 project，显式加载后的相对脚本路径须正确解析。自动选择后的正文读取使用 builtin read，脚本/CLI 通过 bash_start；显式 /skill:name 仍走 Pi。平台不把 Engine 配置当作业务资源发布，但本机同账号命令不受目录安全隔离。两种 Skill 调用方式均需联调。
+当前 Pi 与本机工具共用 Engine 准备的同一绝对路径。任务命令在所属项目执行，引用 Skill 脚本时应按该版本的目录定位。重构后两个沙箱模式直接引用正式版本，结束 Session 级下载与复制。筛选、版本固定时机、装配、升级和撤权行为留待专项设计。[Skill 版本目录与沙箱](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
 
 ## 5. 一轮执行与 RPC
 

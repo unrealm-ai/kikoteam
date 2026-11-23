@@ -25,6 +25,7 @@
 | --- | --- |
 | [参与贡献指南](../CONTRIBUTING.md) | 开发环境依赖、代码静态检查（`make lint` / `make check`）、隔离 PostgreSQL 测试、提交规范与 PR 流程 |
 | [设计与开发文档总索引](design-index.md) | 仓库内所有产品设计、系统架构、API 契约、状态机与业务流程文档的完整分类索引 |
+| [存储目录设计](architecture/storage-paths.md) · [当前存储配置](architecture/storage-configuration.md) | 确认的资产、项目与 Session 目录重构，及现行版本的存储配置和备份范围 |
 | [整体架构速览](architecture/README.md) | 五大组件（`web`、`backend`、`event-hub`、`agent-engine`、`sandbox-runner`）交互关系与执行链路 |
 | [领域模型](architecture/domain-model.md) · [会话生命周期](architecture/conversation-lifecycle.md) | `Agent`、`CapabilityPackage`、`Conversation`、`Task`、`Session`、`Input`、`Turn` 与 `Sandbox` 的边界与状态转换 |
 | [编码代理入口（AGENTS.md）](../AGENTS.md) · [工程开发规则（AI_RULES.md）](../AI_RULES.md) | 跨组件工程规范、Go/Vue/数据库/运维约束与验收准则 |

@@ -106,11 +106,11 @@ Skill 和插件各自维护定义、版本和目录。官方资源对各空间�
 
 ## Skill 资产存储
 
-遵循[统一存储配置与跨模块资产约定](../../docs/architecture/storage-configuration.md)：各组件自行实现本地/S3 访问，不建立公共存储 lib；统一 `.env` 配置，无 S3 时默认本地根 `~/.kiko/`，有配置时严格使用 S3。Platform 负责导入、完整目录的不可变版本发布及权限；持久引用使用逻辑 key/摘要而非本机绝对路径。容器挂载、跨节点交付、后端切换和备份按该设计验收，尚未实现。
+Platform 当前负责导入、不可变版本发布和文件访问授权，使用本地或 S3 资产后端。正式版本按逻辑 key、存储身份和清单读取。配置和备份见[统一存储配置](../../docs/architecture/storage-configuration.md)。
 
-空间自建 Skill 逻辑根为 `workspaces/<workspace_id>/shared/resources/skills/<skill_id>/versions/<version_id>/`；local 直接拼接 `${KIKO_STORAGE_LOCAL_ROOT}/`（默认 `~/.kiko/`），S3 拼接配置 prefix，不再增加 `storage/v1/`。插件若有非秘密附带资产，使用并列的 `plugins/<plugin_id>/versions/<version_id>/`；远程 MCP 只有定义时不为凑目录生成空资产。员工能力包绑定官方或本空间资源，执行快照保存版本引用，不把同一 Skill 复制进每个员工或业务会话持久目录；将来的运行物化属于缓存，不是新权威版本。
+当前空间自建 Skill 常规发布到 `workspaces/<W>/shared/resources/skills/<skill_id>/versions/<version_id>/`，模板导入私有 Skill 时可写到 `workspaces/<W>/skills/<skill_id>/versions/<version_id>/`。重构统一新写入到后者，已有版本按数据库 `key_prefix` 读取。直接绑定官方版本继续复用引用。
 
-资产与运行/cache/tmp 边界、完整性及 local/S3 互读格式以路径设计为准。MCP 业务凭据不走此资产存储；Event Hub 只统一新增表迁移，不承担文件转发或秘密保管。
+已返回 ID 的 Skill 导入在有效期内可预览、发布，目标存于资产暂存区。重构后裸沙箱直接引用正式版本的 `files/`，隔离沙箱只读映射同一目录。Session 的 Skill 使用专项再确定筛选、装配与权限变化的行为。[目标路径与边界](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
 
 ## 实施前待确认
 
@@ -128,7 +128,7 @@ Skill 和插件各自维护定义、版本和目录。官方资源对各空间�
 
 ## 文件路径与隔离
 
-持久资源、上下文、Session 输入与产物、记忆及本机缓存遵循[文件路径与隔离约束](../../docs/architecture/storage-paths.md)。路径归属不代替业务授权；工作区共享定义不包含账号凭据，运行目录不等于已发布资产。此约束不扩大本组件当前已实现范围。
+Backend 核验工作区归属、资源版本和访问权限。项目中的可编辑文件、显式交付的固定版本及执行历史各自的存储位置见[文件路径设计](../../docs/architecture/storage-paths.md)。
 
 ### 飞书运行主体与能力包范围
 

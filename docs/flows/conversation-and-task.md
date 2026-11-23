@@ -2,7 +2,7 @@
 
 > **2026-11-16 关系与生命周期已确认**：一 Task 一 task Session，共享环境归 Conversation；创建、停止、归档、首版放置及三层回收按[业务会话与共享环境生命周期](../architecture/conversation-lifecycle.md)。本页已同步目标设计，执行编排及相关机器契约仍待实现。
 
-状态：渠道、文件发布及投递仍是后续业务参考；用户/群到 Conversation 的映射另行设计。已确认一 Conversation 含唯一主 chat、多个 Task，每个 Task 对应唯一 task Session；创建和生命周期以[专项设计](../architecture/conversation-lifecycle.md)为准。文本 Input 不依赖文件资源或 Run。
+一个普通业务会话可包含主对话和多个任务。各 Session 独立保存历史并共享该会话项目。文本 Input 可以独立提交。附件的受理、项目文件及固定交付版本见[会话文件](../../backend/docs/conversation-files.md)。
 
 当前链路为 backend 受理 Session / Input 并分配执行归属 → Engine 串行处理 Turn → Pi 直连获准 MCP（Runner 管理 Sandbox 并代理 stdio 插件） → Pi 持久化原生历史、Engine 保存消息与可靠事件 → backend 提供查询和 SSE。未开始输入可撤回，每次 stop 都停止本次受理范围内的工作及本 Session 后台进程，重试也重新确定范围，归档只读；故障后新 Input 加载原生会话，不自动续跑旧 Turn。详见[运行时与隔离](../architecture/runtime-and-isolation.md)。以下企微案例留待后续业务阶段重新确认。
 
@@ -15,8 +15,8 @@
 | 1. 收到消息 | 企微经已建连接推送 → event-hub → 内部 backend | event-hub 主动向企微建连，再从连接上的事件取得来源和消息 ID。backend 按工作区、机器人、群及发送人受理；重连收到同一事件时复用原回执。 |
 | 2. 识别委派 | 业务层 → Backend | 核验 Conversation 和父级准入，原子建立 Task、唯一 task Session、配置快照及首条 Input；具体渠道材料另行设计，不建 Run。 |
 | 3. 开始执行 | Backend → Engine | 首次任务由 Backend 登记唯一共享环境和管理 Engine；后续同会话任务复用该放置，容量不足排队。指定 Engine 准备环境，Runner 获取配置/启动 MCP，Pi 留在 Engine。 |
-| 4. 生成报告 | Pi → builtin MCP / stdio 代理 / 远程 MCP | Pi 直接访问已配置 MCP；Sandbox 内 stdio 插件由 Runner Gateway 转接。环境中的文件与命令操作由[builtin 的 11 个工具](../../sandbox-runner/docs/builtin-mcp.md)提供；报告发布与平台文件流程仍待后续设计。追加输入先持久排队，Engine 开始处理后再展示执行状态。 |
-| 5. 确认结果 | Engine、backend、后续文件能力 | Pi 保存原生历史，Engine 提交执行完成事实；报告发布和下载需后续文件方案定义。业务层核对后完成 Task 并创建原群 Delivery，本期不预定 Runner 的产物上传工具。 |
+| 4. 生成报告 | Pi、builtin MCP | 任务通过[沙箱工具](../../sandbox-runner/docs/builtin-mcp.md)在所属项目生成报告。项目保留可编辑文件，后续输入沿用原会话队列。 |
+| 5. 确认结果 | Pi、Engine、Backend | Pi 保存原生历史，Engine 提交执行结果。任务调用 `artifact_publish` 固定文件版本，主对话可从本轮候选中选择要交付的版本。 |
 | 6. 返回原群 | event-hub → 企微 → backend | event-hub 按绑定身份及目标权限使用原机器人连接发送，向 backend 回报渠道结果。Web 可按事件游标续读进度，按当前权限下载产物。 |
 
 ## 渠道边界

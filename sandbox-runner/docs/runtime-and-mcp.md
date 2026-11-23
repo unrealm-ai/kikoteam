@@ -17,7 +17,7 @@ builtin MCP 采用用户提供的 TS 实现，包含六个 Pi 文件工具和五
 
 Agent / Session 不接受模板、镜像、挂载覆盖。Pi 始终由 Engine 启动并运行在 Engine 侧；Runner 不启动模型会话，不决定 Input / Turn 如何分配。
 
-项目目录和 runner-state 属于持久本机 state，不随 Engine/Runner 重启改路径；runtime 只保存本次启动信息。命令默认 cwd 为共享 project，任务产出可以放 tasks 子目录；Pi 保留各自配置和原生历史。正常运行无须镜像、挂载或两套工作文件传输，固定 Skill 可使用相同绝对路径。
+当前项目目录和 `runner-state/` 跨 Engine/Runner 重启保留。命令以所属项目为 cwd。重构后项目按 Conversation 或独立任务共享，工具 Token 和账本按 Session 保存，`launch.json` 与 socket 放在本次启动的私有临时目录。
 
 Sandbox 归 Conversation，Backend 唯一登记环境、宿主和管理 Engine，首版该业务会话全部 task Session 固定到此管理 Engine。Runner 只执行获准的准备和收尾，不因首个任务退出而自毁，不自行创建业务对象、改变归属或选择回收时机。活跃 Conversation 不做环境自动空闲回收；父会话归档且全部参与者停稳后，Backend 授权 Engine 回收运行资源，文件及核对证据保留。
 
@@ -138,4 +138,4 @@ builtin MCP 的 11 个工具、TS 复用、HTTP 直连及私有管理通道已�
 
 ## 文件路径与隔离
 
-持久资源、上下文、Session 输入与产物、记忆及本机缓存遵循[文件路径与隔离约束](../../docs/architecture/storage-paths.md)。路径归属不代替业务授权；工作区共享定义不包含账号凭据，运行目录不等于已发布资产。此约束不扩大本组件当前已实现范围。
+项目工作文件、Runner 状态及正式 Skill 版本的挂载边界见[文件路径设计](../../docs/architecture/storage-paths.md)。Runner 只为本次获准的固定版本提供访问，隔离沙箱的具体配置随 Skill 使用专项设计。

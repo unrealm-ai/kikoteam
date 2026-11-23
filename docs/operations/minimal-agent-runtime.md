@@ -49,6 +49,8 @@ task 的创建请求将 mode 改为 task，保持同一个 Conversation。通常
 
 ## 进程、目录与凭据
 
+下列目录适用于现行二进制。规划中的 Session、项目与节点临时目录另见[存储目录重构](../architecture/storage-paths.md)。
+
 ```text
 <root>/state/engines/workspaces/W/employees/A/conversations/C/
   executions/S/context/native/     # 每 Session 独立的 Pi 映射和历史

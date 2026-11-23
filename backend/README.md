@@ -23,7 +23,7 @@
 
 > **2026-11-16 关系与生命周期已确认**：一 Task 一 task Session，共享环境归 Conversation；创建、停止、归档、首版放置及三层回收按[业务会话与共享环境生命周期](../docs/architecture/conversation-lifecycle.md)。下文保留完整目标范围；当前最小实现与限制见仓库运行说明和实施计划。
 
-**存储配置**　Platform Skill 资产已有本地/S3 适配；本期会话使用 PG 与 Engine/Runner 的本机持久目录。其他 Manager 资产按[统一存储配置与资产约定](../docs/architecture/storage-configuration.md)后续接入，不新建统一存储 lib。部署层按消费者注入配置，本地根默认 `~/.kiko/`。
+**存储配置**　Backend 将 Skill 和已交付的固定文件版本写入本地或 S3 资产后端。项目文件与上传回执使用持久工作盘。现行配置见[统一存储配置](../docs/architecture/storage-configuration.md)，确认的目标布局见[存储目录设计](../docs/architecture/storage-paths.md)。
 
 组件名、目录、Go module 和命令统一使用 `backend`。API 表示其提供的接口，不再作为组件名称；HTTP 路径 `/api/v1`、`/api/internal/v1` 保持不变。
 
@@ -43,7 +43,7 @@ Go 实现，可部署多个副本。Backend 承担平台业务逻辑、资源与
 - **归档与环境回收**　Session 级控制只作用自身；Conversation 首次归档要求主 chat 与全部关联任务无运行、排队、后台或未知活动，否则 409；先停止并等收尾，再关闭父准入并推进子级归档。全部停稳后授权管理 Engine 回收运行资源，活跃会话不自动空闲回收，历史和文件保留。
 - **运行配置**　分别向 Engine 和 Runner 提供固定资源清单与当前授权材料，核验调用主体、会话、实例及执行代次。Runner 主动领取 Sandbox 配置，不直接访问业务数据库。
 
-**后续范围**　不引入 Run；业务管理页面、自动委派结果回报、模板、渠道、定时、人工协作和 Delivery 后续细化，文件体系另行设计。最小归属和生命周期已接入，详见[生命周期](../docs/architecture/conversation-lifecycle.md)及[会话底座需求](../docs/product/agent-sessions.md)。
+**后续范围**　不引入 Run；业务管理页面、自动委派结果回报、模板、渠道、定时、人工协作和 Delivery 后续细化，项目附件与交付文件版本见[会话文件](docs/conversation-files.md)。最小归属和生命周期已接入，详见[生命周期](../docs/architecture/conversation-lifecycle.md)及[会话底座需求](../docs/product/agent-sessions.md)。
 
 **写入归属**　Backend 提交配置、受理、控制意图及会话执行归属，当前 Engine 提交 Turn、消息、可靠执行事件及运行概况，Pi 自己维护原生历史与映射。输入撤回与开始领取通过条件转换互斥，详见[数据归属](../docs/architecture/data-ownership.md)。
 

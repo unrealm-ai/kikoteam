@@ -30,7 +30,7 @@ Runner 仍是独立 Go 组件，本地由 Engine 启动为子进程，不要求�
 
 ## 稳定目录与工作方式
 
-复用部署配置 `KIKO_STORAGE_LOCAL_ROOT`，默认 `~/.kiko/`，启动层展开并规范为绝对路径。以下省略不相关的资产和缓存目录；完整布局见[路径约定](../../docs/architecture/storage-paths.md#5-共享沙箱与本机目录)。
+以下为当前主线在 `KIKO_STORAGE_LOCAL_ROOT`（默认 `~/.kiko/`）下的路径。重构后项目按项目标识定位，工具状态独立保存在 Session 的 `runner/` 下。[目标布局与项目归属](../../docs/architecture/storage-paths.md#5-共享沙箱与本机目录)
 
 ```text
 <KIKO_STORAGE_LOCAL_ROOT>/
@@ -42,8 +42,7 @@ Runner 仍是独立 Go 组件，本地由 Engine 启动为子进程，不要求�
   state/engines/workspaces/<workspace_id>/employees/<employee_id>/
     conversations/<conversation_id>/executions/<session_id>/context/native/
                                 # Pi 原生历史和 Engine 身份映射
-  runtime/runners/<runner_boot_id>/...
-                                # 本次启动的临时配置、端口及连接信息
+/tmp/kr-*/                      # 当前 Runner 的私有临时目录与管理 socket
 ```
 
 项目目录和持久状态路径不包含 Engine ID、Runner boot ID、assignment 或执行代次。环境身份变化写入元数据，不通过改路径丢弃原文件；重启使用原位置，已登记环境目录缺失时报告不可用，不悄悄创建空目录冒充恢复。首次创建才初始化空项目，不自动复制仓库或安装开发环境。
@@ -63,7 +62,7 @@ Runner 仍是独立 Go 组件，本地由 Engine 启动为子进程，不要求�
 
 本机 Git、Python、Node、Bash 等直接从经启动检查的 PATH 或显式程序路径使用；继承正常用户 HOME、语言、时区、临时目录及明确配置的代理/项目环境。Pi 使用独立的 Session 配置及历史位置，避免污染开发者个人 Pi 会话。平台管理凭据不主动注入普通业务命令；运行配置不是安全隔离机制。程序使用参数数组启动，含空格或中文的路径须正确传递，不拼接未转义 shell 命令。
 
-Engine 与工具可使用同一份已物化的固定版本 Skill 绝对路径，避免重复复制和两套路径映射；S3 资产先下载校验到本机。固定资源不由任务原地升级；这是资源管理约定，不是对同账号命令的文件写入隔离承诺。
+当前 Engine 下载并校验 Skill，裸沙箱工具使用同一份执行副本。重构后裸沙箱直接使用正式版本的 `files/`，隔离沙箱把同一目录只读映射到沙箱内。授权和选择由运行时核验，裸沙箱按宿主账号权限执行。[Skill 目录设计](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
 
 ## 本机通信
 

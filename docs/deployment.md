@@ -129,15 +129,17 @@ server {
 
 ### 3.3 存储配置变量（Backend & Agent Engine）
 
+下表适用于当前发布方式。资产存储、持久工作盘和节点临时盘分开配置的目标布局及升级条件见[存储目录重构方案](architecture/storage-paths.md)。
+
 | 变量名 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `KIKO_STORAGE_LOCAL_ROOT` | 否 | `~/.kiko/`（容器内 `/var/lib/kiko`） | 持久状态根目录（保存沙箱 `project/` 工作目录、Pi 原生会话历史、以及未启用 S3 时的 Skill 资产） |
-| `KIKO_STORAGE_S3_ENDPOINT` | 否 | 空 | S3 兼容对象存储 Endpoint（**任一 `KIKO_STORAGE_S3_*` 非空即启用 S3 模式保存 Skill 资产，配置不完整直接报错拒绝启动，不静默回退本地**） |
+| `KIKO_STORAGE_LOCAL_ROOT` | 否 | `~/.kiko/`（容器内 `/var/lib/kiko`） | 持久状态根目录，保存项目文件、Pi 历史、Runner 账本与上传回执。本地资产模式还保存 Skill 和固定交付文件 |
+| `KIKO_STORAGE_S3_ENDPOINT` | 否 | 空 | S3 兼容对象存储 Endpoint（**任一 `KIKO_STORAGE_S3_*` 非空即启用 S3 模式保存 Skill 资产和已交付的固定文件版本，配置不完整直接报错拒绝启动，不静默回退本地**） |
 | `KIKO_STORAGE_S3_BUCKET` | S3 模式必填 | 空 | S3 Bucket 名称 |
 | `KIKO_STORAGE_S3_REGION` | S3 模式必填 | 空 | S3 Region |
 | `KIKO_STORAGE_S3_PREFIX` | 否 | 空 | 对象 Key 前缀 |
-| `KIKO_STORAGE_S3_ACCESS_KEY_ID` | S3 模式必填 | 空 | S3 Access Key ID（仅注入 Backend，不注入 Event Hub 或 Engine） |
-| `KIKO_STORAGE_S3_SECRET_ACCESS_KEY` | S3 模式必填 | 空 | S3 Secret Access Key |
+| `KIKO_STORAGE_S3_ACCESS_KEY_ID` | 使用静态凭据时必填 | 空 | S3 Access Key ID，配对设置。也可使用 SDK 凭据链 |
+| `KIKO_STORAGE_S3_SECRET_ACCESS_KEY` | 使用静态凭据时必填 | 空 | 与 Access Key ID 配对设置，凭据只提供给资产存储消费者 |
 | `KIKO_STORAGE_S3_SESSION_TOKEN` | 否 | 空 | 可选临时 STS Session Token |
 | `KIKO_STORAGE_S3_FORCE_PATH_STYLE` | 否 | `false` | MinIO 等要求 Path-Style 访问的对象存储设为 `true` |
 
@@ -186,4 +188,4 @@ server {
 
 1. **PostgreSQL 数据库完整转储**（`pg_dump` 或数据卷快照）；
 2. **配置文件与密钥**：`.env`（特别是 `KIKO_AUTH_SECRET`）与 `.kiko-local/`（包含 `runtime.env` 与 `config.sha256`）；
-3. **持久化目录与对象存储**：`KIKO_STORAGE_LOCAL_ROOT`（默认 `~/.kiko`，包含所有会话的项目工作目录 `state/sandboxes/`、Pi 原生上下文 `state/engines/` 与本地 Skill 资产）以及 S3 Bucket（若启用了 S3）。
+3. **持久化目录与对象存储**：备份当前 `KIKO_STORAGE_LOCAL_ROOT` 中的项目、Pi 历史、Runner 状态和上传回执，同时备份本地或 S3 上的 Skill、仍有效的导入和已交付文件版本。可写状态应采用停写备份或一致性快照。

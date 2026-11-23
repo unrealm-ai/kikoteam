@@ -46,8 +46,8 @@ func (s *Server) mailSettingsTest(_ http.ResponseWriter, r *http.Request) (any, 
 	if err != nil {
 		return nil, 0, err
 	}
-	err = s.MailSettings.Test(r.Context(), actor.ID, in)
-	return map[string]bool{"ok": true}, 200, err
+	token, err := s.MailSettings.Test(r.Context(), actor.ID, in)
+	return map[string]any{"ok": true, "test_receipt": token}, 200, err
 }
 
 func decodeMailSettings(r *http.Request) (service.MailSettingsDraft, error) {
@@ -61,6 +61,7 @@ func decodeMailSettings(r *http.Request) (service.MailSettingsDraft, error) {
 		From                 *string `json:"from"`
 		ImplicitTLS          *bool   `json:"implicit_tls"`
 		Password             string  `json:"password"`
+		TestReceipt          string  `json:"test_receipt"`
 	}
 	if err := decode(r, &in); err != nil {
 		return service.MailSettingsDraft{}, err
@@ -69,7 +70,7 @@ func decodeMailSettings(r *http.Request) (service.MailSettingsDraft, error) {
 		in.Address == nil || in.Host == nil || in.Username == nil || in.From == nil || in.ImplicitTLS == nil {
 		return service.MailSettingsDraft{}, service.Fail("invalid_mail_settings", 400, "邮件设置缺少必填字段")
 	}
-	return service.MailSettingsDraft{Version: *in.Version, Password: in.Password, MailSettings: service.MailSettings{
+	return service.MailSettingsDraft{Version: *in.Version, Password: in.Password, TestReceipt: in.TestReceipt, MailSettings: service.MailSettings{
 		MailPolicy: service.MailPolicy{Enabled: *in.Enabled, VerificationRequired: *in.VerificationRequired},
 		Address:    *in.Address, Host: *in.Host, Username: *in.Username, From: *in.From, ImplicitTLS: *in.ImplicitTLS,
 	}}, nil

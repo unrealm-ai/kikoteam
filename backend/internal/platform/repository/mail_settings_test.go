@@ -22,24 +22,18 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 	mailStore := &MailSettingsStore{DB: db}
 	candidate := service.MailSettings{
 		MailPolicy: fallback, Address: "mail.example.test:465", Host: "mail.example.test",
-		Username: "root@example.test", From: "noreply@example.test", ImplicitTLS: true,
+		Username: "noreply@example.test", From: "noreply@example.test", ImplicitTLS: true,
 	}
 	var deliveryTarget string
-	probes := 0
+	sends := 0
 	settings := &service.MailSettingsService{
 		Store: mailStore, Secret: bytes.Repeat([]byte("x"), 32),
 		Fallback: service.MailSettingsDraft{MailSettings: candidate, Password: "environment-fixture-secret"},
-		Probe: func(_ context.Context, d service.MailSettingsDraft) error {
-			probes++
-			if d.Password == "reject-fixture" {
-				return errors.New("SMTP fixture rejection")
-			}
-			return nil
-		},
 		SendTest: func(_ context.Context, d service.MailSettingsDraft, to string) error {
+			sends++
 			deliveryTarget = to
-			if d.Password != "environment-fixture-secret" {
-				return errors.New("unexpected effective test password")
+			if d.Password != "environment-fixture-secret" && d.Password != "database-fixture-secret" {
+				return errors.New("SMTP fixture rejection")
 			}
 			return nil
 		},
@@ -84,23 +78,65 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 	if deliveryTarget != "" {
 		t.Fatal("unauthorized mail test reached sender")
 	}
-	request("POST", path+"/test", adminToken, draft, 200)
+	fallbackReceipt := testMailReceipt(t, request("POST", path+"/test", adminToken, draft, 200))
 	if deliveryTarget != "admin@example.test" {
 		t.Fatal("mail test must target current admin")
+	}
+	badTargets := map[string]func(*service.MailSettingsDraft){
+		"ip":       func(d *service.MailSettingsDraft) { d.Address, d.Host = "127.0.0.1:465", "127.0.0.1" },
+		"ipv6":     func(d *service.MailSettingsDraft) { d.Address, d.Host = "[::1]:465", "::1" },
+		"url":      func(d *service.MailSettingsDraft) { d.Address = "https://mail.example.test:465" },
+		"port":     func(d *service.MailSettingsDraft) { d.Address = "mail.example.test:2525" },
+		"tls-host": func(d *service.MailSettingsDraft) { d.Host = "wrong.example.test" },
+		"tls-mode": func(d *service.MailSettingsDraft) { d.ImplicitTLS = false },
+		"relay":    func(d *service.MailSettingsDraft) { d.Username, d.Password = "", "" },
+		"alias":    func(d *service.MailSettingsDraft) { d.From = "alias@example.test" },
+		"missing-credential": func(d *service.MailSettingsDraft) {
+			d.Address, d.Host, d.Password = "other.example.test:465", "other.example.test", ""
+		},
+	}
+	for name, mutate := range badTargets {
+		t.Run(name, func(t *testing.T) {
+			bad := draft
+			bad.Password = "fixture-direct-api"
+			mutate(&bad)
+			for _, endpoint := range []struct{ method, path string }{{"PATCH", path}, {"POST", path + "/test"}} {
+				out := request(endpoint.method, endpoint.path, adminToken, bad, 400)
+				if !strings.Contains(out.Body.String(), "invalid_mail_settings") || strings.Contains(out.Body.String(), bad.Password) && bad.Password != "" {
+					t.Fatal(out.Body.String())
+				}
+			}
+		})
+	}
+	if sends != 1 {
+		t.Fatal("invalid API settings reached the SMTP sender")
 	}
 	draft.Address = "other.example.test:465"
 	request("POST", path+"/test", adminToken, draft, 400)
 	draft.Address = candidate.Address
 	draft.Password = "reject-fixture"
-	request("PATCH", path, adminToken, draft, 400)
+	out := request("POST", path+"/test", adminToken, draft, 400)
+	if strings.Contains(out.Body.String(), "test_receipt") {
+		t.Fatal("rejected SMTP test issued a receipt")
+	}
+	out = request("PATCH", path, adminToken, draft, 400)
+	if !strings.Contains(out.Body.String(), "smtp_test_required") {
+		t.Fatal(out.Body.String())
+	}
 	fallbackView = request("GET", path, adminToken, nil, 200)
 	assertSafeMailView(t, fallbackView, "environment", 0)
 	draft.Password = "database-fixture-secret"
-	draft.VerificationRequired = true
+	draft.TestReceipt = fallbackReceipt
+	out = request("PATCH", path, adminToken, draft, 400)
+	if !strings.Contains(out.Body.String(), "smtp_test_required") {
+		t.Fatal("receipt for a different effective password was accepted")
+	}
+	draft.TestReceipt = testMailReceipt(t, request("POST", path+"/test", adminToken, draft, 200))
+	draft.VerificationRequired = true // Policy does not change how SMTP sends.
 	view := request("PATCH", path, adminToken, draft, 200)
 	assertSafeMailView(t, view, "database", 1)
-	if probes != 2 {
-		t.Fatal("mail setup probe not enforced")
+	if sends != 3 {
+		t.Fatal("saving must not make another SMTP call")
 	}
 	record, err := mailStore.Read(ctx)
 	if err != nil || len(record.Ciphertext) == 0 || bytes.Contains(record.Ciphertext, []byte(draft.Password)) {
@@ -128,6 +164,11 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 	request("POST", "/api/v1/auth/email-codes", "", map[string]string{"email": "other@example.test", "purpose": "register"}, 403)
 	draft.Version = 2
 	draft.Enabled = true
+	out = request("PATCH", path, adminToken, draft, 400)
+	if !strings.Contains(out.Body.String(), "smtp_test_required") {
+		t.Fatal("old receipt should be invalid at the new version")
+	}
+	draft.TestReceipt = testMailReceipt(t, request("POST", path+"/test", adminToken, draft, 200))
 	view = request("PATCH", path, adminToken, draft, 200)
 	assertSafeMailView(t, view, "database", 3)
 	effective, err := settings.Runtime(ctx)
@@ -142,6 +183,18 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 	request("POST", "/api/v1/auth/registrations", "", map[string]any{
 		"method": "password", "email": "other@example.test", "name": "Other", "password": "fixture-password",
 	}, 503)
+}
+
+func testMailReceipt(t *testing.T, w *httptest.ResponseRecorder) string {
+	t.Helper()
+	var out struct {
+		OK      bool   `json:"ok"`
+		Receipt string `json:"test_receipt"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || !out.OK || out.Receipt == "" || strings.Contains(w.Body.String(), "fixture-secret") {
+		t.Fatalf("missing or unsafe SMTP receipt: %v", err)
+	}
+	return out.Receipt
 }
 
 func assertSafeMailView(t *testing.T, w *httptest.ResponseRecorder, source string, version int64) {
@@ -167,7 +220,7 @@ func TestInvitationDispatcherFollowsDatabaseMailPolicyWithoutRestart(t *testing.
 	actor := admin.ID
 	settings := &service.MailSettingsService{
 		Store: &MailSettingsStore{DB: db}, Secret: bytes.Repeat([]byte("x"), 32),
-		Probe: func(context.Context, service.MailSettingsDraft) error { return nil },
+		SendTest: func(context.Context, service.MailSettingsDraft, string) error { return nil },
 	}
 	ws := &service.WorkspaceService{Store: NewWorkspaceStore(db), ReadMailPolicy: settings.Policy,
 		MailSecret: settings.Secret, PublicURL: "https://example.test"}
@@ -186,8 +239,12 @@ func TestInvitationDispatcherFollowsDatabaseMailPolicyWithoutRestart(t *testing.
 	}
 	draft := service.MailSettingsDraft{MailSettings: service.MailSettings{
 		MailPolicy: service.MailPolicy{Enabled: true}, Address: "mail.example.test:465",
-		Host: "mail.example.test", From: "sender@example.test", ImplicitTLS: true,
-	}}
+		Host: "mail.example.test", From: "sender@example.test", Username: "sender@example.test", ImplicitTLS: true,
+	}, Password: "smtp-fixture-password"}
+	draft.TestReceipt, err = settings.Test(ctx, actor, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
 	on, err := settings.Save(ctx, actor, draft)
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +260,7 @@ func TestInvitationDispatcherFollowsDatabaseMailPolicyWithoutRestart(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft.Version, draft.Enabled = on.Version, false
+	draft.Version, draft.Enabled, draft.Password = on.Version, false, ""
 	if _, err := settings.Save(ctx, actor, draft); err != nil {
 		t.Fatal(err)
 	}

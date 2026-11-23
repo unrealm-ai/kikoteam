@@ -42,9 +42,9 @@ const update = <T>(path: string, data: unknown, signal: AbortSignal) =>
 
 export const platformSettings = {
   mail: (signal: AbortSignal) => platformRequest<MailSettings>(mailPath, { signal: bounded(signal) }),
-  saveMail: (data: MailSettingsWrite, signal: AbortSignal) => update<MailSettings>(mailPath, data, signal),
+  saveMail: (data: MailSettingsWrite & { test_receipt?: string }, signal: AbortSignal) => update<MailSettings>(mailPath, data, signal),
   testMail: (data: MailSettingsWrite, signal: AbortSignal) =>
-    platformRequest<{ok: true}>(mailPath + '/test', { ...post(data), signal: bounded(signal) }),
+    platformRequest<{ok: true; test_receipt: string}>(mailPath + '/test', { ...post(data), signal: bounded(signal) }),
   github: (signal: AbortSignal) => platformRequest<GithubOAuthApp>(githubPath, { signal: bounded(signal) }),
   saveGithub: (data: GithubOAuthWrite, signal: AbortSignal) => update<GithubOAuthApp>(githubPath, data, signal),
 };

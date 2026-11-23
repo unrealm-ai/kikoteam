@@ -79,7 +79,7 @@ func TestSMTPSettingsProbeAndTestMailWithTLS(t *testing.T) {
 				results <- err
 				return
 			}
-			results <- serveSMTPSettingsFixture(conn, send)
+			results <- serveSMTPSettingsFixture(conn, send, true, "fixture")
 		}(sending)
 		s := SMTP{Address: listener.Addr().String(), Host: cert.DNSNames[0], From: "from@example.test",
 			ImplicitTLS: true, RootCAs: roots, Username: "fixture", Password: "mock-password"}
@@ -97,12 +97,72 @@ func TestSMTPSettingsProbeAndTestMailWithTLS(t *testing.T) {
 	}
 }
 
-func serveSMTPSettingsFixture(conn net.Conn, send bool) error {
+// A standard self-host can require STARTTLS, then authenticate using the
+// same address as the message sender. No alias or cleartext fallback is needed.
+func TestSMTPTestMailWithSTARTTLSSelfHosted(t *testing.T) {
+	https := httptest.NewTLSServer(nil)
+	cert, key := https.Certificate(), https.TLS.Certificates[0]
+	https.Close()
+	roots := x509.NewCertPool()
+	roots.AddCert(cert)
+	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Second)
+	defer cancel()
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	const sender = "from@example.test"
+	done := make(chan error, 1)
+	go func() {
+		c, e := listener.Accept()
+		if e != nil {
+			done <- e
+			return
+		}
+		defer func() { _ = c.Close() }()
+		if e = c.SetDeadline(time.Now().Add(3 * time.Second)); e != nil {
+			done <- e
+			return
+		}
+		for _, step := range [][2]string{
+			{"", "220 test SMTP\r\n"},
+			{"EHLO ", "250-test SMTP\r\n250 STARTTLS\r\n"},
+			{"STARTTLS", "220 ready for TLS\r\n"},
+		} {
+			if step[0] != "" {
+				line, err := bufio.NewReader(c).ReadString('\n')
+				if err != nil || !strings.HasPrefix(line, step[0]) {
+					done <- fmt.Errorf("expected SMTP command %q before TLS", step[0])
+					return
+				}
+			}
+			if _, e = fmt.Fprint(c, step[1]); e != nil {
+				done <- e
+				return
+			}
+		}
+		secure := tls.Server(c, &tls.Config{Certificates: []tls.Certificate{key}, MinVersion: tls.VersionTLS12})
+		done <- serveSMTPSettingsFixture(secure, true, false, sender)
+	}()
+	server := &SMTP{Address: listener.Addr().String(), Host: cert.DNSNames[0], Username: sender, Password: "mock-password", From: sender, RootCAs: roots}
+	if err = server.SendTest(ctx, "admin@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func serveSMTPSettingsFixture(conn net.Conn, send, greeting bool, account string) error {
 	r := bufio.NewReader(conn)
 	exchanges := [][2]string{
 		{"", "220 test SMTP\r\n"},
 		{"EHLO ", "250-test SMTP\r\n250 AUTH PLAIN\r\n"},
-		{"AUTH PLAIN " + base64.StdEncoding.EncodeToString([]byte("\x00fixture\x00mock-password")), "235 test auth accepted\r\n"},
+		{"AUTH PLAIN " + base64.StdEncoding.EncodeToString([]byte("\x00"+account+"\x00mock-password")), "235 test auth accepted\r\n"},
+	}
+	if !greeting {
+		exchanges = exchanges[1:]
 	}
 	if send {
 		exchanges = append(exchanges, [2]string{"MAIL FROM:<from@example.test>", "250 ok\r\n"},

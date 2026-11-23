@@ -12,7 +12,14 @@ settings:
   patch:
     operationId: updatePlatformMailSettings
     summary: Save instance mail transport and registration policy as a platform administrator
-    description: Version zero covers the environment fallback before the first database save. A stored disabled policy does not fall back to environment variables.
+    description: >-
+      Version zero covers the environment fallback before the first database save.
+      Every enabled save requires a current test_receipt for the same SMTP
+      profile, credential, administrator and configuration version.
+      Disabling retains the existing connection and credentials: repeat the existing
+      connection fields or leave them empty, do not send a password or require
+      registration verification. A stored disabled policy does not fall back to
+      environment variables.
     security:
     - sessionCookie: []
     parameters:
@@ -28,7 +35,11 @@ test:
   post:
     operationId: testPlatformMailSettings
     summary: Send a test email to the signed-in platform administrator
-    description: Checks the candidate without saving it. The destination is the administrator's account email, not a request parameter.
+    description: >-
+      Sends the candidate using the same authenticated SMTP restrictions as enabling,
+      without saving it. The destination is the administrator's account email,
+      not a request parameter. SMTP acceptance returns a receipt valid for
+      10 minutes; the registration verification choice is independent.
     security:
     - sessionCookie: []
     parameters:
@@ -43,9 +54,10 @@ test:
             schema:
               type: object
               additionalProperties: false
-              required: [ok]
+              required: [ok, test_receipt]
               properties:
                 ok: { type: boolean, const: true }
+                test_receipt: { type: string, minLength: 1, description: Short-lived proof for an enabled save. }
       default:
         $ref: '#/error'
 candidateRequest:
@@ -55,6 +67,11 @@ candidateRequest:
       schema:
         type: object
         additionalProperties: false
+        description: >-
+          For Test or an enabled save, address must be a DNS hostname with port
+          465 (implicit TLS) or 587 (STARTTLS); host must match that hostname;
+          username and from must be the same email address. The password cannot
+          be empty unless retained from the same saved profile.
         required: [version, enabled, registration_verification_required, address, host, username, from, implicit_tls]
         properties:
           version: { type: integer, minimum: 0 }
@@ -65,10 +82,14 @@ candidateRequest:
           username: { type: string }
           from: { type: string }
           implicit_tls: { type: boolean }
+          test_receipt:
+            type: string
+            writeOnly: true
+            description: Required for an enabled save. Run the separate test operation and submit the receipt with the same SMTP profile.
           password:
             type: string
             writeOnly: true
-            description: Omit or leave blank to retain the current password only for the same server, TLS identity and username.
+            description: Omit or leave blank to retain the current password only for the same server, TLS mode and identity, username, and sender address.
 mailSettingsResponse:
   description: Effective mail settings; the password is not returned
   content:

@@ -1,6 +1,6 @@
 # 统一存储配置与跨模块资产约定
 
-**当前配置与重构目标**　当前主线用同一个 `KIKO_STORAGE_LOCAL_ROOT` 承接本地资产和持久工作状态。本页记录仍可使用的配置与备份方法。已确定的重构将资产存储、工作盘和节点临时盘分开，目录、Skill 直接引用及迁移顺序见[存储目录方案](storage-paths.md)。各组件按职责使用现有适配器。
+**当前配置与重构目标**　本页记录现行二进制的配置、资产适配器和备份方法。已确认的本地磁盘重构使用一个 `KIKO_STORAGE_LOCAL_ROOT`，顶层为 `official/`、`workspaces/` 和 `temp/`。各模式的默认路径、节点本地 Skill 入口和开发环境切换见[存储目录设计](storage-paths.md)。
 
 ## 1. 配置来源与后端选择
 
@@ -32,11 +32,11 @@ S3 配置不完整、认证失败或服务不可达时明确失败或报告依�
 
 ## 2. 本地路径、容器与多机
 
-现行本地资产位于 `${KIKO_STORAGE_LOCAL_ROOT}/official/` 和 `workspaces/`。Skill 待发布的导入位于 `tmp/skill-imports/`，项目、Runner 账本、上传回执与 Pi 历史位于 `state/`。新布局按三个根分别管理。已返回导入 ID 的内容由资产存储限期保留，节点临时盘承接可重传的缓冲和可再生的启动材料。
+现行本地资产位于 `KIKO_STORAGE_LOCAL_ROOT` 下的 `official/` 和 `workspaces/`，导入暂存在 `tmp/skill-imports/`，项目和执行状态在 `state/`。重构将项目与 Session 放入 `workspaces/<W>/`，上传暂存、回执和实例锁归入挂载盘的 `temp/`，进程私有临时文件放在根外。上传区与项目须位于同一文件系统。
 
-Docker 中的 `~` 指容器用户而非宿主用户。本地启动层在宿主解析根目录，通过明确 bind mount 挂到容器固定目录（例如 `/var/lib/kiko`），再向容器注入容器内绝对根路径；不得把宿主路径原样传进去后写到容器临时层。多个本地容器需访问同一权威存储时挂载同一宿主目录，读写权限按组件需要收窄。当前本地 Compose 的挂载方式见[Backend 配置](../../backend/docs/configuration.md#skill-资产配置与本地容器)。
+当前启动器在宿主展开 `~/.kiko`，将宿主目录绑定到容器内的 `/var/lib/kiko`。目录重构实施后，Mac 原生默认 `~/.kiko`，Mac Compose 和 Linux 容器默认 `/mnt/kikoteam`，均由 `KIKO_STORAGE_LOCAL_ROOT` 指定。现行挂载参数见[Backend 配置](../../backend/docs/configuration.md#skill-资产配置与本地容器)。
 
-跨机器部署要验证各消费者能访问同一资产版本和其负责的工作盘。当前 Engine 经授权接口下载 Skill 到执行 Session。重构后裸沙箱直接引用正式版本目录，隔离沙箱只读映射该目录。挂载由部署提供，业务授权仍由 Backend 核验。
+当前 Engine 经授权接口下载 Skill 到执行 Session。重构后 Engine 为 Session 创建指向已选版本的目录链接。隔离沙箱只读挂载官方 Skill 和当前工作区 Skill 两个目录，并使本地 Session 入口与目标均按相同绝对路径可见。[Skill 挂载约定](storage-paths.md#skill-版本目录与沙箱)
 
 ## 3. 各自实现，但使用同一资产契约
 
@@ -60,7 +60,7 @@ Event Hub 继续统一 PostgreSQL 迁移 SQL、执行器、历史与结构快照
 
 ## 5. 变更、备份与验收
 
-从本地切到 S3、改根目录/bucket/prefix 或更换存储身份前，须复制已有引用资产、校验大小和摘要、控制迁移期间写入，并验证消费者可读取后才切换。仅修改 `.env` 不会自动迁移旧数据；新配置不能把旧引用解释成另一个空后端。回退方案保留旧资产和引用对应关系，验证前不清理源。
+需要保留历史的部署在更换资产后端、bucket 或前缀前，应控制写入，复制并校验已引用资产，验证消费者读取与回退。当前开发环境这次目录切换允许旧文件丢失，以原业务会话可继续工作为验收条件，采用[一次性切换步骤](storage-paths.md#7-验收与旧设计协调)。
 
 备份覆盖 PostgreSQL、被引用的资产、仍有效的导入、项目工作文件、上传回执、Pi 历史与 Runner 账本，以及必要的部署配置和密钥。可写状态采用停写备份或一致性快照。恢复时核对固定 Skill 版本、历史会话续跑、项目相对路径和上传结果。
 

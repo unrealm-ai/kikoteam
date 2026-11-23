@@ -49,7 +49,7 @@ task 的创建请求将 mode 改为 task，保持同一个 Conversation。通常
 
 ## 进程、目录与凭据
 
-下列目录适用于现行二进制。规划中的 Session、项目与节点临时目录另见[存储目录重构](../architecture/storage-paths.md)。
+下列目录用于诊断现行二进制。重构后共享挂载盘的 `temp/` 保存上传回执和实例锁，Runner 启动配置及 socket 位于根外的进程私有临时目录。各模式的完整路径和旧开发会话切换步骤见[存储目录设计](../architecture/storage-paths.md)。
 
 ```text
 <root>/state/engines/workspaces/W/employees/A/conversations/C/

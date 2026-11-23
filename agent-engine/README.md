@@ -10,7 +10,7 @@
 
 > **2026-11-16 关系与生命周期已确认**：一 Task 一 task Session，共享环境归 Conversation；创建、停止、归档、首版放置及三层回收按[业务会话与共享环境生命周期](../docs/architecture/conversation-lifecycle.md)。下文保留完整目标范围；当前最小实现与限制见仓库运行说明和实施计划。
 
-**存储配置**　当前 Pi 原生状态位于持久 POSIX 盘，默认根为 `~/.kiko/`。Engine 经 Backend 读取获准的 Skill 文件并在 Session 内生成执行副本。目录重构将统一 Session 和项目路径，切换到正式 Skill 目录的直接引用。当前部署参数见[统一存储配置](../docs/architecture/storage-configuration.md)，目标布局见[文件路径设计](../docs/architecture/storage-paths.md)。
+**存储配置**　当前 Engine 经 Backend 读取获准的 Skill 文件并生成 Session 执行副本。本地磁盘目录重构后，Mac 原生根默认 `~/.kiko`，容器内根默认 `/mnt/kikoteam`。Pi 历史按平台 `sid` 保留，已选 Skill 由节点本地的 Session 入口链接到正式版本。现行镜像的部署参数见[统一存储配置](../docs/architecture/storage-configuration.md)，目标布局见[文件路径设计](../docs/architecture/storage-paths.md)。
 
 Go 实现，可多实例部署，主动向 backend 注册、心跳和对账。backend 分配 Session；Engine 为每个归属自己的活跃 Session 启动一个专属 Pi RPC 进程，运行在 Engine 侧，与 Sandbox 分开。跨轮复用，无后台进程等活动时可释放；后续 Input 通过 Pi 原生 `--session` 加载并继续同一会话。
 

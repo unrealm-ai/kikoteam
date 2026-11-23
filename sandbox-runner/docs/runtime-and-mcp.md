@@ -138,4 +138,4 @@ builtin MCP 的 11 个工具、TS 复用、HTTP 直连及私有管理通道已�
 
 ## 文件路径与隔离
 
-项目工作文件、Runner 状态及正式 Skill 版本的挂载边界见[文件路径设计](../../docs/architecture/storage-paths.md)。Runner 只为本次获准的固定版本提供访问，隔离沙箱的具体配置随 Skill 使用专项设计。
+目录重构后，隔离沙箱只读挂入官方和当前工作区两个 Skill 目录，Pi 和工具通过 Session 本地入口读取本次选择的版本。实际可见目录由挂载范围确定，Skill 筛选和授权变化另行设计。[挂载与链接路径](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)

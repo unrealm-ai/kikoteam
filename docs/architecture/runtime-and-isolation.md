@@ -25,7 +25,7 @@ chat 不申请 Sandbox 或启动 Runner，固定 Pi 与非思考平台模型，�
 | 后端 | 工作目录与 Runner | 找回环境时核对什么 |
 | --- | --- | --- |
 | 裸目录（首版目标） | Mac/Linux 的 Engine 在本机启动同账号 Runner 子进程；任务以固定 project 目录为 cwd，不需要独立 Sandbox 服务 | 共享存储上的稳定项目/state、实例和 Runner boot；失联或目录缺失时不以新空目录代替 |
-| 容器级（仅扩展设计） | 以后由环境实现接入容器或外部 Sandbox 系统；本期不做供应、镜像和调度 | 后续单独定义容器、工作盘及隔离边界，不改变会话与 MCP 关系 |
+| 容器级（仅扩展设计） | 环境实现负责容器供应与调度 | [目录重构设计](storage-paths.md#skill-版本目录与沙箱)已确定两个只读 Skill 挂载及 Session 链接的同路径要求，其余容器隔离细节另行设计 |
 
 Agent 和 Session 不接受模板、镜像、挂载等特殊配置。首版使用本机工具链、同账号普通权限；Pi、Runner 和命令在同一个操作系统环境，组件边界不等于安全隔离。builtin 已允许 Mac/Linux，Mac 的实际执行链含 pipe/PTY 已验证，Linux 本批结果待 CI 单独记录。Web 私聊通过 Backend 浏览、上传和下载当前项目的文件，task 以相对路径读取附件。见[私聊项目文件](../../backend/docs/conversation-files.md)。
 

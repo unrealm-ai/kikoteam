@@ -47,7 +47,7 @@ Backend 可通过 `KIKO_DINGTALK_REGISTRATION_SOURCE` 设置钉钉扫码登记�
 
 ## 文件存储配置
 
-Compose 已接入本地资产目录和 S3 配置。现行变量与挂载见[Skill 资产配置与本地容器](#skill-资产配置与本地容器)，已确认的三类存储与迁移顺序见[目录设计](../../docs/architecture/storage-paths.md)。
+现行 Compose 的本地资产目录和 S3 参数见[Skill 资产配置与本地容器](#skill-资产配置与本地容器)。本地磁盘目标布局和开发环境切换见[目录设计](../../docs/architecture/storage-paths.md)。
 
 ## 公开部署
 
@@ -116,7 +116,7 @@ database.url、auth.secret、mail.smtp.password 是引用对象，每个只选�
 
 本页的启动命令使用 Compose。原生进程部署见[本机运行说明](../../docs/operations/minimal-agent-runtime.md)。两种方式下，裸沙箱的 Runner 都由 Engine 按需启动。
 
-当前 Backend 使用 `KIKO_STORAGE_LOCAL_ROOT`（默认 `~/.kiko/`）或显式 S3 配置保存 Skill 和已交付的文件版本。项目、Pi 和 Runner 状态仍依赖持久工作盘。资产、工作盘和节点临时盘分开配置是待实施的[目录重构](../../docs/architecture/storage-paths.md)，下述参数适用于现行主线。
+当前 Backend 使用 `KIKO_STORAGE_LOCAL_ROOT`（默认 `~/.kiko/`）或显式 S3 配置保存 Skill 和已交付的固定文件版本。下述配置适用于现行二进制。本轮[目录设计](../../docs/architecture/storage-paths.md)将统一持久根的容器内默认值调整为 `/mnt/kikoteam`，其下三个顶层目录共用本地磁盘。
 
 `start.sh` 在宿主展开本地根目录，将它 bind mount 到 Backend 的 `/var/lib/kiko`；容器只收到容器内路径。启动器注入宿主 UID/GID，Backend 以该身份读写目录，不自动对现有目录递归 chmod/chown。首次创建目录使用 0700；相对路径和直接符号链接被拒绝，目录必须可写。独立使用 Compose 时须显式提供 `KIKO_LOCAL_STORAGE_HOST_ROOT`、`KIKO_LOCAL_UID` 和 `KIKO_LOCAL_GID`，推荐通过启动器运行。原有 `.env` 不会被重写，缺少新增本地配置时沿用默认值；跨部署应配置不同的根。
 

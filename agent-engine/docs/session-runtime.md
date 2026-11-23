@@ -60,7 +60,7 @@ Conversation、Task 和 Session 均由 Backend 创建，首版一 Task 一 task 
 
 每个 Session 使用独立 HOME、原生配置目录、工作目录及环境变量白名单，不继承开发者账号、祖先项目指令或任意扩展。仅允许固定工件、配置声明的原生能力及平台白名单扩展；task 模型参数跟随 Harness，chat 强制非思考策略；保持原生 MCP 内置支持，不因关闭任意扩展而一并禁用它。
 
-当前 Engine 将历史和身份映射保存在每个执行 Session 的 `context/native/`，位置独立于 Engine、assignment 和进程启动代次。Pi 配置和下载的 Skill 也在这个目录下生成。重构将主对话、任务的 Pi 状态统一到 `workspaces/<W>/sessions/<S>/pi/`，工作项目按独立的项目标识定位。迁移需要保留原生历史中的身份及文件映射。[存储目录方案](../../docs/architecture/storage-paths.md)
+当前 Engine 在执行 Session 的 `context/native/` 保存 Pi 历史和身份映射。重构后主对话和任务统一使用 `workspaces/<W>/sessions/<sid>/pi/`，沿用原生 JSONL 和输入回执。开发环境一次性解除受影响旧 Session 的原生身份绑定，同一平台 `sid` 可从下一条新消息建立新上下文。此后重启按新目录恢复。[存储目录方案](../../docs/architecture/storage-paths.md)
 
 通过原生 settings.json、models.json、mcp.json、`--system-prompt` 及必要环境变量装配。认证材料按消费者最小范围提供，与持久历史分开。新会话的 sessions/*.jsonl 由 Pi 初始化和写入，Engine 在 session.json 保存 id、nativeId 与 sessionFile。仅首次创建空文件供 Pi 初始化持久头部，Engine 不写原生条目；旧会话只读 home/.pi/pi-acp/session-map.json 找到同一文件，并保留旧数据库身份为别名。历史缺失、损坏、身份不符或越界时拒绝加载，不创建空白替代。进程重启使用同一持久目录和有效路径映射，不能手改历史来伪造成功加载。
 
@@ -80,7 +80,7 @@ Sandbox MCP Token 在环境首次授权绑定时生成，跟随 Sandbox 实例�
 
 当前 Pi 在禁用 read / bash 后不自动附加 Skill 目录提示。白名单扩展通过公开 before_agent_start 接口，复用 Pi 的已解析 Skill 元数据及 formatSkillsForPrompt，补入名称、描述和位置，并遵守原生 disable-model-invocation。正文按需读取。[上游提示生成](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/src/core/system-prompt.ts#L173)
 
-当前 Pi 与本机工具共用 Engine 准备的同一绝对路径。任务命令在所属项目执行，引用 Skill 脚本时应按该版本的目录定位。重构后两个沙箱模式直接引用正式版本，结束 Session 级下载与复制。筛选、版本固定时机、装配、升级和撤权行为留待专项设计。[Skill 版本目录与沙箱](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
+任务命令在所属项目执行。目录重构后，Engine 在节点本地为每个 Session 建立指向固定版本 `files/` 的链接，Pi 以一次 `--skill` 加载该 Session 的 `skills/`。容器内的本地入口和两个只读 Skill 挂载均须与 Engine 同路径。筛选、版本固定时机、升级和撤权留待专项设计。[Skill 版本目录与沙箱](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
 
 ## 5. 一轮执行与 RPC
 

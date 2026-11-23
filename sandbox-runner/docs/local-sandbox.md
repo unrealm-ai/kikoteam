@@ -62,7 +62,7 @@ Runner 仍是独立 Go 组件，本地由 Engine 启动为子进程，不要求�
 
 本机 Git、Python、Node、Bash 等直接从经启动检查的 PATH 或显式程序路径使用；继承正常用户 HOME、语言、时区、临时目录及明确配置的代理/项目环境。Pi 使用独立的 Session 配置及历史位置，避免污染开发者个人 Pi 会话。平台管理凭据不主动注入普通业务命令；运行配置不是安全隔离机制。程序使用参数数组启动，含空格或中文的路径须正确传递，不拼接未转义 shell 命令。
 
-当前 Engine 下载并校验 Skill，裸沙箱工具使用同一份执行副本。重构后裸沙箱直接使用正式版本的 `files/`，隔离沙箱把同一目录只读映射到沙箱内。授权和选择由运行时核验，裸沙箱按宿主账号权限执行。[Skill 目录设计](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
+当前 Engine 下载并校验 Skill，裸沙箱工具读取同一份执行副本。重构后 Engine 在 Session 的本地 `skills/` 目录中建立链接。隔离沙箱从持久化根只读挂入 `official/skills/` 和 `workspaces/<W>/skills/`，入口和链接目标在 Engine 与沙箱中使用相同的绝对路径。裸沙箱仍以宿主账号权限执行。[各启动模式的路径和挂载](../../docs/architecture/storage-paths.md#skill-版本目录与沙箱)
 
 ## 本机通信
 

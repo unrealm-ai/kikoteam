@@ -1,6 +1,6 @@
 # 文件路径、业务会话与隔离约束
 
-**方案状态（2026-11-23）**　存储目录重构方案已确定，代码与数据迁移待实施。第 2、5 节列出目标路径，第 7 节列出现行路径与迁移顺序。当前部署配置见[统一存储配置](storage-configuration.md)。
+**已确认的目录重构设计（2026-11-24），待实现。** 本轮在本地磁盘上统一文件路径。Pi 继续写原生 JSONL，Runner 继续使用 SQLite，项目上传保留文件回执和同卷原子发布。现行二进制的配置见[统一存储配置](storage-configuration.md)。
 
 ## 1. 关系与术语
 
@@ -27,22 +27,47 @@ Workspace
 
 ## 2. 统一逻辑 key 与物理根
 
-资产存储、持久工作盘和节点临时盘按用途独立选择位置。下表中的路径均相对各自的根。工作区 ID 记为 `W`，执行 Session ID 记为 `S`，项目标识记为 `P`。业务归属与权限由 Backend 在数据库中核验。
+`<root>` 表示进程看到的 `KIKO_STORAGE_LOCAL_ROOT`，`W` 是工作区 ID，`P` 是项目标识，`sid` 是平台执行 Session ID。以下是重构后的默认值。
 
-| 介质 | 目标路径 | 内容与生命周期 |
-| --- | --- | --- |
-| 资产存储 | `official/skills/<skill_id>/versions/<version_id>/` | 官方 Skill 的不可变版本。每个版本内含 `manifest.json` 和 `files/`，其中 `files/SKILL.md` 为入口 |
-| 资产存储 | `workspaces/<W>/skills/<skill_id>/versions/<version_id>/` | 工作区 Skill 的正式版本。用户发布和模板生成独立版本时统一写入此处。直接绑定已有版本时只保存引用 |
-| 资产存储 | `workspaces/<W>/work-files/<sha256>` | 显式发布产物或交接文件时保存当时的字节。文件名、归属、摘要和交付引用由数据库记录，修改项目源文件后仍可读取已交付版本 |
-| 资产存储（限期） | `staging/skill-imports/<W>/<import_id>/` | 已返回导入 ID 的完整 Skill 待预览、发布，按导入有效期保留。当前有效期为一小时，发布或过期后回收暂存内容 |
-| 持久工作盘 | `workspaces/<W>/projects/<P>/` | 用户、Backend 与任务读写的项目根。聊天附件默认写入 `uploads/`，项目文件 API 返回相对路径 |
-| 持久工作盘 | `workspaces/<W>/sessions/<S>/pi/` | 主对话和任务使用相同布局。保存 `sessions/*.jsonl`、身份映射 `session.json` 及输入回执。释放执行进程后仍可恢复 |
-| 持久工作盘 | `workspaces/<W>/sessions/<S>/runner/` | 用到 Runner 时创建。保存该 Session 的工具 Token、`processes/processes.sqlite` 及初始化标记 `processes/initialized` |
-| 节点临时盘 | `temp/uploads/`、`temp/runtime/` | 可重传的接收缓冲、可重新生成的启动配置和本次进程的 socket。接收方与进程负责各自的清理 |
+| 启动方式 | 持久化根 `<root>` | Session Skill 入口 | 进程私有临时目录 |
+| --- | --- | --- | --- |
+| Mac 原生 Engine | `~/.kiko` | `~/Library/Caches/Kiko/context/<sid>/skills/` | `~/Library/Caches/Kiko/temp/` |
+| Mac 通过 `./start.sh` 跑容器 | 容器内 `/mnt/kikoteam`，宿主机默认绑定 `~/.kiko` | `/mnt/context/<sid>/skills/` | `/var/tmp/kikoteam/temp/` |
+| Linux 容器部署 | `/mnt/kikoteam`，绑定宿主机本地磁盘 | `/mnt/context/<sid>/skills/` | `/var/tmp/kikoteam/temp/` |
 
-资产存储可使用本地目录或对象存储。对象 key 使用配置的前缀，数据库保留版本的 `storage_identity` 和 `key_prefix`。Skill 正式版本先校验清单和文件，再提交数据库引用。对象存储挂载为目录时，应验证实际使用的发布方式；现行本地适配器以硬链接发布，S3 适配器使用条件写入。[资产写入实现](../../backend/internal/platform/integration/skillasset/store.go)
+Mac 原生进程使用展开的绝对路径。Backend、Engine 和 Runner 按同一个持久化根解析其负责的文件。容器的 `/mnt/kikoteam/temp/` 位于挂载盘，存有跨进程使用的上传回执和实例锁。每次启动生成的 `launch.json`、控制 socket 则位于进程私有临时目录。
 
-项目文件的并发读写、Pi 历史追加、SQLite 事务、实例锁和上传发布需要相应的文件系统语义。选择工作盘时核验文件锁、同卷排他重命名、同步写入及访问延迟，确保 Backend 与负责该项目的 Engine/Runner 看到同一份文件。仅有对象存储可以跨主机保留数据的部署，需另行确定工作盘的持久提交点、故障恢复和接管方式。
+```text
+<root>/
+├── official/skills/<skill_id>/versions/<version_id>/
+│   ├── manifest.json
+│   └── files/SKILL.md
+├── workspaces/<W>/
+│   ├── skills/<skill_id>/versions/<version_id>/
+│   │   ├── manifest.json
+│   │   └── files/SKILL.md
+│   ├── work-files/<sha256>
+│   ├── projects/<P>/
+│   │   └── uploads/
+│   └── sessions/<sid>/
+│       ├── pi/
+│       │   ├── sessions/*.jsonl
+│       │   ├── session.json
+│       │   └── input-receipts/
+│       └── runner/
+│           ├── token
+│           └── processes/
+│               ├── processes.sqlite
+│               └── initialized
+└── temp/
+    ├── uploads/
+    └── runtime/
+        └── <engine_instance_id>.lock
+```
+
+Skill 的 `files/` 保存固定版本的完整内容，包括入口 `SKILL.md`、脚本和参考资料。工作区直接绑定官方版本时只保存引用。日常编辑使用 `projects/<P>/`，显式交付时才将当时的字节写入 `work-files/<sha256>`，由数据库记录名称、来源、摘要和交付关系。
+
+主会话和任务各自使用 `pi/` 中的原生历史、身份映射和输入回执。首次使用 Runner 时才创建 `runner/`，固定 Token、进程账本及初始化标记随 Session 保留。Engine 在 `temp/runtime/` 创建并持有实例锁，Backend 在同一文件上核对接管条件。挂载盘须支持文件锁、SQLite 事务、同步写入和同卷排他重命名。`temp/` 中的文件按各自生命周期清理，运行中不得整体清空。
 
 ### 资产归属与引用
 
@@ -50,7 +75,14 @@ Workspace
 
 ### Skill 版本目录与沙箱
 
-Session 引用 Backend 授权的固定版本。裸 Sandbox 直接使用该版本的 `files/`，隔离 Sandbox 将同一目录只读映射到其文件系统。资产发布方校验版本清单并记录来源。重构移除执行 Session 的 `context/native/skills/` 下载副本，并取消此前规划的 `cache/skills/`。主对话和任务各自如何筛选 Skill、如何结合能力包与权限、何时固定版本、如何装配到 Pi/工具，以及升级或撤权后已有 Session 如何处理，留待 Skill 使用专项设计。
+Engine 沿用现有 Skill 选择与授权结果，在节点本地建立每个 Session 的加载入口。每个加载名软链接到对应正式版本的 `files/`。Pi 通过一个 `--skill` 参数读取该 Session 的 `skills/`。裸沙箱直接解析这些路径。隔离沙箱从持久化根获得两项目录挂载，均为只读，源和目标使用与 Engine 相同的绝对路径。
+
+| Engine 可见的源 | 容器 Sandbox 内目标 |
+| --- | --- |
+| `/mnt/kikoteam/official/skills/` | `/mnt/kikoteam/official/skills/` |
+| `/mnt/kikoteam/workspaces/<W>/skills/` | `/mnt/kikoteam/workspaces/<W>/skills/` |
+
+其中 `W` 限定为当前工作区。Session 本地入口也要在 Pi 和沙箱内同路径可见，例如 `/mnt/context/<sid>/skills/sales-report` 指向 `/mnt/kikoteam/workspaces/<W>/skills/<id>/versions/<version>/files/`。共享沙箱须能解析后加入任务的入口。Mac 原生模式使用展开后的对应路径。Session 链接可按固定版本引用重建，在 Pi 和仍引用它的后台进程退出后回收。此布局移除当前的 `context/native/skills/` 下载副本，也无需 `cache/skills/`。筛选、同名取舍、升级与撤权留给 Skill 使用专项。
 
 ## 3. 会话记忆的共享方式
 
@@ -74,15 +106,15 @@ Hook/定时任务由业务配置定义 **business key 的提取或生成规则**
 
 ## 5. 共享沙箱与本机目录
 
-项目归属和 Session 身份分别决定稳定路径。普通业务会话的主对话与它派出的任务使用 `P = conv-<conversation_id>`，各自按 `S` 保存独立执行历史。TaskSpace 中的每个独立任务使用 `P = task-<task_id>`。项目可在首次上传时先于 Session/Runner 创建。前端、消息历史和工具继续使用相对项目根的文件引用。
+项目归属和平台 `sid` 分别决定稳定路径。普通业务会话的主对话与它派出的任务共用 `P = conv-<conversation_id>`，各自保留独立执行历史。TaskSpace 中的独立任务使用 `P = task-<task_id>`。项目可在首次上传时先于 Session 和 Runner 创建。前端、消息历史和工具使用相对项目根的文件引用。
 
 普通会话内多个任务可共享文件，并发修改时协调写入者。归档单个任务只收尾其执行资源。父会话归档后，Backend 核验各 Session 停稳再回收共享环境，项目和原生历史按各自保留规则处理。任务空间内只收尾该任务的环境。首次创建才初始化工作盘，恢复时缺少项目或执行证据须报告实际状态。
 
 ### 上传、发布和回执
 
-1. Backend 可将尚未承诺恢复、允许重传的请求字节放在节点临时盘。与项目盘跨挂载时，先在目标文件系统写完整，核验准入并以排他原子改名发布到最终文件名。项目文件 API 只展示完整发布的文件。
-2. 上传幂等键按工作区、会话和操作者限定。目标由 PostgreSQL 保存请求指纹（目标目录、文件名、内容摘要）、选定相对路径和发布状态。文件系统操作与数据库提交可能分别成功。发布前持久记录操作和候选文件名，重启后按原幂等键核对落盘结果。发布状态未确定时保留核对所需的数据。重启或响应丢失后，同键同内容返回第一次的文件，同键不同内容仍报冲突。
-3. Web 附件预留和渠道附件各有稳定 ID 与访问控制。预留可先于字节到达和消息发送，项目文件落盘后才可返回就绪路径。迁移需保留 Web 附件预留 ID、渠道附件引用、状态、投递来源及重试语义。[异步附件规范](../spec/async-inbound-attachments.md)
+1. Backend 在 `<root>/temp/uploads/` 保存项目上传的 `payload` 和文件回执。接收完整并核验准入后，在同一文件系统上排他原子重命名到项目的 `uploads/` 或用户指定的子目录。同名文件按现有规则选新名称。
+2. 回执继续记录请求指纹和候选相对路径。发布完成后保留回执，重启或响应丢失时以原键重试返回首次结果，同键不同内容报冲突。Web 和渠道的附件预留、授权及投递状态沿用现有业务流程。[异步附件规范](../spec/async-inbound-attachments.md)
+3. Skill 导入预览材料也使用 `temp/uploads/`，与项目上传按用途和导入 ID 区分。仅回收对应导入的材料，发布或导入有效期届满后清理，当前有效期为一小时。
 
 Backend 管理 Sandbox 登记、管理 Engine 及获准参与的 Session。环境代次与每个 Session 的分配代次分别核验，重复准备复用已登记的环境。裸沙箱的工具仍按宿主账号权限执行。各 Session 独立核验工具 Token、执行窗口与授权，项目共享不会扩大可调用的工具范围。
 
@@ -98,24 +130,26 @@ Backend 管理 Sandbox 登记、管理 Engine 及获准参与的 Session。环�
 - Pi 原生历史由 Pi 持久化，身份映射由 Engine 保存；平台只保存位置和身份，不增加检查点包或上传提交屏障。公开消息和可靠事件仍以 DB 为准，原生历史供模型上下文加载，两者无跨存储原子提交承诺；压缩和静默追加遵守各自 Session 的单写者顺序。故障后旧 Turn interrupted，新 Input 经 `--session` 加载并继续，不自动重发旧 prompt。
 - 运行/缓存/tmp 清理不得删除引用中的持久资产。共享 Sandbox 回收不删除会话记忆、历史产物或 PluginAuth；删除员工不级联清除仍有引用的工作区资源。
 - 归档、停用、撤权与物理删除分开；未定保留期限前不默认启用破坏性 TTL。共享记忆以引用和授权计算保留，不能删除单个任务就清掉整个会话记忆。
-- 相同本地路径不是跨机器共享：不可变资产使用共同 S3/共享盘或授权传输，原生 state 则需要可访问的持久 POSIX 目录；本地缓存不是权威源。备份/迁移须同时覆盖 DB、资产、原生 state 与必要秘密，原生上下文加载不代表共享工作盘已恢复。原生目录缺失时明确失败，不新建空白会话替代。
+- 本轮默认将宿主机本地磁盘挂入容器。常规备份应覆盖数据库、资产、项目、原生历史、Runner 账本和必要密钥。日常恢复遇到原生目录缺失时报告实际状态。下一节的一次性开发环境切换允许重新初始化受影响的旧 Session。
 
 ## 7. 验收与旧设计协调
 
-当前主线仍以 `KIKO_STORAGE_LOCAL_ROOT` 作为运行根。下列顺序用于后续实现和迁移验收。
+此次开发环境切换从新文件布局启动，保留 PostgreSQL 中的用户、工作区、员工、业务会话、任务和平台 `sid`。旧上下文、附件、命令输出允许丢失。无需扫描、搬运或双读旧目录。
 
-1. **配置和资产**　区分资产存储、持久工作盘、节点临时盘。当前常规发布写入 `workspaces/<W>/shared/resources/skills/…`，模板导入已有 `workspaces/<W>/skills/…` 分支。统一新写入，已有版本按数据库记录的前缀读取。当前待发布的 `tmp/skill-imports/` 按有效期兼容迁移，已返回的导入 ID 可继续发布。
-2. **项目和 Session**　盘点 `state/sandboxes/`、`state/engines/workspaces/` 下普通会话和 TaskSpace 两类旧路径，区分项目、每个 Session 的 Pi 状态与 `runner-state/<S>/`。停稳写入后迁移并核验 Pi 映射（含旧映射中的文件路径）、输入回执、Runner Token、SQLite 内的绝对路径归属和 `initialized` 标记。保留未决命令状态，切换时核对 `state/engines/instances/` 的实例锁与跨实例接管。Runner 每次启动重建的 `launch.json` 随 socket 迁入私有临时目录。
-3. **项目上传**　当前 Backend 从 `state/project-uploads/` 升级旧回执，现行路径为 `state/project-uploads-v2/`。覆盖其中已完成和在途请求，逐项核对项目文件与回执。验证中断后使用原键重试、响应丢失重试、文件重名、归档和渠道附件恢复后再退出旧路径。
-4. **Skill 执行**　随 Skill 使用专项切换正式版本目录映射，停止生成 `context/native/skills/` 副本。待引用旧副本的执行全部退出后清理。核验两个沙箱模式读取同一获准版本以及历史会话对旧版本的引用。
+1. 停稳旧 Engine、Pi、Runner 和后台命令，释放受影响的旧执行分配，将未完成的 Turn 标记为中断。已停止或归档的业务对象保留原状态。
+2. 仅对切换前受影响的旧 Session，一次性解除旧 Pi 原生身份和失效的运行绑定。按正常启动流程同步官方资源，缺失的自定义 Skill 显示为不可用。缺少旧附件只影响该附件。
+3. 用户打开原会话发送新消息时，沿用平台 `sid` 初始化新的 Pi 原生会话、项目和按需使用的 Runner。切换后产生的历史和账本走正常恢复流程，后续重启不重复重置。
+4. 用切换前创建的会话验证发消息、上传附件、派任务从共享项目读取、加载获准 Skill。同键重试应返回首次上传的路径。重启服务后，验证切换后产生的历史可续聊、文件可读取。
 
-切换前联合备份 DB、资产、项目、Pi 和 Runner 状态与必要密钥。用已有项目和 Session 演练恢复，确认旧附件仍可按原路径读取、旧历史可续聊，核验完成前保留回退所需的原数据。其余生命周期验收沿用以下约定。
+**后续 OSS 改造**将单独设计整根挂载、Runner 账本迁 PostgreSQL、Pi 历史和项目上传发布适配。届时 Engine 接管改为数据库分配与停止确认，并允许旧实例失联时接管。本轮仍以本地文件锁判断接管。
+
+其余生命周期验收沿用以下约定。
 
 - 两工作区、员工和业务会话的平台资源引用与模型上下文不串线；同业务会话任务复用一个项目目录。裸模式不验收操作系统安全隔离。
 - task 重试、一个执行 Session 停止/归档、Engine 切换，不误停或删除其他活跃任务的环境。
 - 会话最小粒度抽取，多个会话/整员工显式共享与撤销有效；共享目标身份和来源限制同时生效，不能经记忆越权。
 - Hook/定时同 key 并发归一、事件幂等独立；缺失/冲突/归档/规则变更策略有明确结果，不能默默扩大共享。
-- local/S3 互读同一逻辑内容；本机进程重启保留持久数据，容器重建留后续扩展验收；配置错误不回退；发布失败可恢复且孤儿清理不破坏引用。
+- local/S3 资产适配器互读同一逻辑内容。目录重构验收覆盖本机进程重启及同一挂载盘上的容器重建，核对切换后生成的数据。配置错误应报告失败，孤儿清理保留有效引用。
 - Mac/Linux 真实运行、共享项目文件冲突、按 Session 停止、进程退出及文件保留分别验收，不把目录设计当作安全隔离结果。
 
 Task 与 task Session 首版一对一，具体语义按[生命周期设计](conversation-lifecycle.md)。现有 agent_id 仍表示员工，不直接修改已发布员工表/API；Session 和项目按已核验的业务归属解析。业务 key 缺失或冲突的策略，以及记忆的发布接口，按各自业务设计演进。

@@ -129,7 +129,7 @@ server {
 
 ### 3.3 存储配置变量（Backend & Agent Engine）
 
-下表适用于当前发布方式。资产存储、持久工作盘和节点临时盘分开配置的目标布局及升级条件见[存储目录重构方案](architecture/storage-paths.md)。
+本页拓扑和参数表适用于现行镜像，容器持久化根为 `/var/lib/kiko`。已确认的目录重构以本地磁盘挂载整个 `KIKO_STORAGE_LOCAL_ROOT`，Mac 原生默认 `~/.kiko`，容器内默认 `/mnt/kikoteam`。开发环境一次性切换及验收见[存储目录方案](architecture/storage-paths.md)。
 
 | 变量名 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |

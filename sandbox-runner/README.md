@@ -37,7 +37,7 @@ Session stop/archive 只关闭其执行窗口并收尾所属进程，不影响�
 
 **实现入口**　Go 管理在 cmd/sandbox-runner 与 internal/runner；[builtin-mcp](builtin-mcp/README.md) 提供独立构建和检查。管理契约见 [contracts/openapi.yaml](contracts/openapi.yaml)。Token 保存在 runner-state/S/token，进程重建沿用；临时控制 socket 使用短路径，持久账本不变。第三方 stdio Gateway 后续实现。
 
-**文件归属**　Runner 在项目内操作工作文件。Manager 负责将显式发布的文件写成固定交付版本。空闲释放或归档 Session 时退出它的 builtin 进程，保留 Token、账本和共享 Runner。重构后的项目、Session 及 Skill 目录见[存储路径设计](../docs/architecture/storage-paths.md)。
+**文件归属**　Runner 在项目内操作工作文件，Manager 将显式发布的文件保存为固定交付版本。目录重构后，Runner 的 Token 和 SQLite 位于 `workspaces/<W>/sessions/<sid>/runner/`，启动配置和 socket 位于进程私有临时目录。单个 Session 释放时收尾其 builtin 进程，保留账本和共享 Runner。[目录与生命周期](../docs/architecture/storage-paths.md)
 
 ## 健康检查与退出
 

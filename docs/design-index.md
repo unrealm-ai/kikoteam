@@ -25,7 +25,7 @@
 | 领域模型与数据 | [领域模型](architecture/domain-model.md)、[数据模型与状态机](architecture/session-data-model.md)、[数据归属](architecture/data-ownership.md) |
 | 生命周期 | [业务会话与共享环境生命周期](architecture/conversation-lifecycle.md) |
 | 运行时与隔离 | [运行时、沙箱与接管](architecture/runtime-and-isolation.md)、[裸 Sandbox](../sandbox-runner/docs/local-sandbox.md) |
-| 存储 | [统一存储配置（当前部署）](architecture/storage-configuration.md)、[资产、Session 与项目目录（重构目标及迁移）](architecture/storage-paths.md) |
+| 存储 | [统一存储配置（当前部署）](architecture/storage-configuration.md)、[本地磁盘目录重构与开发环境切换](architecture/storage-paths.md) |
 
 当前执行链为 `Engine → pi --mode rpc → 模型/MCP`。架构手稿 [architecture-sketch-v4.png](architecture/assets/architecture-sketch-v4.png) 中仍保留早期手稿标注，现已统一使用 Pi 原生 RPC。
 

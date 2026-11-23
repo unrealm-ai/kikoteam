@@ -48,7 +48,7 @@ assignment 状态为 reserved → active → releasing → released；异常可�
 
 周期调度检查待处理任务的沙箱管理者。管理者停接或失联时，Backend 在事务内锁定原沙箱记录，核实交接条件，选择有容量的新引擎，更新管理者并递增 Session 分配代次。旧实例的迟到写入仍受当前归属校验。
 
-Engine 注册前创建本次启动独占的 `state/engines/instances/<engine_id>.lock`。Pi、Runner 与 builtin 继承文件描述符。Backend 在接管时尝试获取旧实例的锁。Runner 发现父 Engine 退出会收尾，Pi 收到 RPC 输入关闭后退出。旧版引擎没有锁文件时，仅接受已停接、沙箱为 `stopped` 或 `preparing`、全部任务分配及工具活动已收尾的交接。状态不明时任务详情显示恢复原因。
+当前 Engine 在注册前锁住 `state/engines/instances/<engine_instance_id>.lock`。目录重构将创建端和 Backend 检查端一起改到 `<root>/temp/runtime/<engine_instance_id>.lock`。Pi、Runner 和 builtin 继承文件描述符，Backend 接管时尝试获取同一文件的锁。Runner 发现父 Engine 退出会收尾，Pi 收到 RPC 输入关闭后退出。旧实例没有锁文件时，仅接受已停接、沙箱为 `stopped` 或 `preparing`、全部任务分配及工具活动已收尾的交接。状态不明时任务详情显示恢复原因。数据库加停止确认的接管协议归入[后续 OSS 改造](../../docs/architecture/storage-paths.md#7-验收与旧设计协调)。
 
 ### Session 分配
 

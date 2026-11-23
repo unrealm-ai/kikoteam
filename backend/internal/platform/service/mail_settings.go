@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net"
 	"net/mail"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -32,8 +33,9 @@ type MailSettings struct {
 
 type MailSettingsDraft struct {
 	MailSettings
-	Version  int64  `json:"version"`
-	Password string `json:"password,omitempty"`
+	Version     int64  `json:"version"`
+	Password    string `json:"password,omitempty"`
+	TestReceipt string `json:"test_receipt,omitempty"`
 }
 
 type MailSettingsView struct {
@@ -60,7 +62,6 @@ type MailSettingsService struct {
 	Store     MailSettingsStore
 	Fallback  MailSettingsDraft
 	Secret    []byte
-	Probe     func(context.Context, MailSettingsDraft) error
 	SendTest  func(context.Context, MailSettingsDraft, string) error
 	AllowTest func(context.Context, string, int, time.Duration) error
 }
@@ -128,7 +129,13 @@ func (s *MailSettingsService) prepare(ctx context.Context, in MailSettingsDraft,
 	if err = validateMailSettings(in, test); err != nil {
 		return in, old, err
 	}
-	targetMatches := sameMailCredentials(in.MailSettings, old.MailSettings)
+	if !in.Enabled && !test {
+		return prepareDisabledMailSettings(in, old)
+	}
+	targetMatches := sameMailCredentials(in.MailSettings, old.MailSettings) && in.From == old.From
+	if err := validateSimpleMailSettings(in.MailSettings); err != nil {
+		return in, old, err
+	}
 	if in.Password == "" && in.Username != "" && targetMatches {
 		if old.Version == 0 {
 			in.Password = s.Fallback.Password
@@ -139,9 +146,24 @@ func (s *MailSettingsService) prepare(ctx context.Context, in MailSettingsDraft,
 			}
 		}
 	}
-	if (in.Enabled || test) && in.Username != "" && in.Password == "" {
+	if in.Password == "" {
 		return in, old, invalidMailSettings("请输入 SMTP 密码；更换服务器或账号时不能沿用旧密码")
 	}
+	return in, old, nil
+}
+
+func prepareDisabledMailSettings(in MailSettingsDraft, old MailSettingsRecord) (MailSettingsDraft, MailSettingsRecord, error) {
+	hasTarget := in.Address != "" || in.Host != "" || in.Username != "" || in.From != "" || in.ImplicitTLS
+	baseline := old.MailSettings
+	baseline.Address = strings.TrimSpace(baseline.Address)
+	baseline.Host = strings.TrimSpace(baseline.Host)
+	baseline.Username = strings.TrimSpace(baseline.Username)
+	baseline.From = strings.TrimSpace(baseline.From)
+	if in.Password != "" || hasTarget && (!sameMailCredentials(in.MailSettings, baseline) || in.From != baseline.From) {
+		return in, old, invalidMailSettings("停用邮件不能同时更改 SMTP 连接或凭据")
+	}
+	in.MailSettings = old.MailSettings
+	in.MailPolicy = MailPolicy{}
 	return in, old, nil
 }
 
@@ -169,6 +191,29 @@ func validateMailSettings(in MailSettingsDraft, test bool) error {
 	return nil
 }
 
+var smtpDNSLabel = regexp.MustCompile(`(?i)^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+var smtpNumericLabel = regexp.MustCompile(`^[0-9]+$`)
+
+func validateSimpleMailSettings(in MailSettings) error {
+	host, port, err := net.SplitHostPort(in.Address)
+	if err != nil || len(host) > 253 || (port != "465" && port != "587") || (port == "465") != in.ImplicitTLS || !strings.EqualFold(host, in.Host) {
+		return invalidMailSettings("只支持 SMTP DNS 地址的 465 端口（TLS）或 587 端口（STARTTLS），TLS 主机名必须与地址一致")
+	}
+	labels := strings.Split(host, ".")
+	if len(labels) < 2 || smtpNumericLabel.MatchString(labels[len(labels)-1]) {
+		return invalidMailSettings("请使用 SMTP DNS 主机名，不支持 IP 地址")
+	}
+	for _, label := range labels {
+		if !smtpDNSLabel.MatchString(label) {
+			return invalidMailSettings("SMTP DNS 主机名格式无效")
+		}
+	}
+	if in.Username == "" || in.Username != in.From {
+		return invalidMailSettings("SMTP 认证账号和发件人必须是同一个邮箱地址")
+	}
+	return nil
+}
+
 func (s *MailSettingsService) Save(ctx context.Context, actor string, in MailSettingsDraft) (MailSettingsView, error) {
 	if _, err := s.Store.AdminEmail(ctx, actor); err != nil {
 		return MailSettingsView{}, err
@@ -177,17 +222,10 @@ func (s *MailSettingsService) Save(ctx context.Context, actor string, in MailSet
 	if err != nil {
 		return MailSettingsView{}, err
 	}
-	if candidate.Enabled && (!old.Enabled || old.Version == 0 || !sameMailCredentials(old.MailSettings, candidate.MailSettings) || old.From != candidate.From || in.Password != "") {
-		if s.AllowTest != nil {
-			if err = s.AllowTest(ctx, "platform-mail-probe:"+HashToken(actor), 10, 10*time.Minute); err != nil {
-				return MailSettingsView{}, err
-			}
-		}
-		if s.Probe == nil || s.Probe(ctx, candidate) != nil {
-			return MailSettingsView{}, Fail("smtp_test_failed", 400, "SMTP 连接或认证失败，请检查配置")
-		}
+	if candidate.Enabled && !s.validMailTestReceipt(actor, candidate, time.Now()) {
+		return MailSettingsView{}, Fail("smtp_test_required", 400, "请先成功试发当前 SMTP 配置，再保存")
 	}
-	sealed, err := s.seal(candidate.Password)
+	sealed, err := s.mailSettingsCiphertext(candidate, old)
 	if err != nil {
 		return MailSettingsView{}, err
 	}
@@ -198,24 +236,34 @@ func (s *MailSettingsService) Save(ctx context.Context, actor string, in MailSet
 	return mailSettingsView(record), nil
 }
 
-func (s *MailSettingsService) Test(ctx context.Context, actor string, in MailSettingsDraft) error {
+func (s *MailSettingsService) mailSettingsCiphertext(candidate MailSettingsDraft, old MailSettingsRecord) ([]byte, error) {
+	if candidate.Enabled {
+		return s.seal(candidate.Password)
+	}
+	if old.Version == 0 {
+		return s.seal(s.Fallback.Password)
+	}
+	return old.Ciphertext, nil
+}
+
+func (s *MailSettingsService) Test(ctx context.Context, actor string, in MailSettingsDraft) (string, error) {
 	recipient, err := s.Store.AdminEmail(ctx, actor)
 	if err != nil {
-		return err
+		return "", err
 	}
 	candidate, _, err := s.prepare(ctx, in, true)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if s.AllowTest != nil {
 		if err = s.AllowTest(ctx, "platform-mail-test:"+HashToken(actor), 5, 10*time.Minute); err != nil {
-			return err
+			return "", err
 		}
 	}
 	if s.SendTest == nil || s.SendTest(ctx, candidate, recipient) != nil {
-		return Fail("smtp_test_failed", 400, "SMTP 测试邮件发送失败，请检查配置")
+		return "", Fail("smtp_test_failed", 400, "SMTP 测试邮件发送失败，请检查配置")
 	}
-	return nil
+	return s.issueMailTestReceipt(actor, candidate, time.Now())
 }
 
 func (s *MailSettingsService) cipher() (cipher.AEAD, error) {

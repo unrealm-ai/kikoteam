@@ -9,13 +9,14 @@ interface EditorOptions<S, D> {
   toDraft: (snapshot: S) => D;
   validate: (draft: D, baseline: S, operation: 'write' | 'test') => string | undefined;
   errors: Record<string, string>;
+  sameField?: (key: keyof D, before: D, after: D) => boolean;
   reviewRebase?: (previousDraft: D, mergedDraft: D) => { draft: D; notice?: string };
 }
 
-function rebase<D extends object>(existing: D, changed: D, next: D): D {
+function rebase<D extends object>(existing: D, changed: D, next: D, sameField?: EditorOptions<never, D>['sameField']): D {
   const merged = { ...next };
   for (const key of Object.keys(changed) as Array<keyof D>) {
-    if (existing[key] !== changed[key]) merged[key] = changed[key];
+    if (!(sameField ? sameField(key, existing, changed) : existing[key] === changed[key])) merged[key] = changed[key];
   }
   return merged;
 }
@@ -65,7 +66,7 @@ export function useVersionedPlatformSettings<S, D extends object>(options: Edito
       if (signal.aborted) return;
       const next = options.toDraft(latest);
       if (preserveDraft && current && previous) {
-        const merged = rebase(options.toDraft(previous), current, next);
+        const merged = rebase(options.toDraft(previous), current, next, options.sameField);
         const reviewed = options.reviewRebase?.(current, merged);
         draft.value = reviewed?.draft ?? merged;
         notice.value = reviewed?.notice || '已读取最新版本并保留修改，请核对后提交。';

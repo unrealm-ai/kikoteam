@@ -86,9 +86,6 @@ func Run(stderr io.Writer, version string) int {
 			Address:    cfg.Mail.SMTP.Address, Host: cfg.Mail.SMTP.Host, Username: cfg.Mail.SMTP.Username,
 			From: cfg.Mail.SMTP.From, ImplicitTLS: cfg.Mail.SMTP.ImplicitTLS,
 		}},
-		Probe: func(ctx context.Context, d service.MailSettingsDraft) error {
-			return integration.SMTPForSettings(d).Probe(ctx)
-		},
 		SendTest: func(ctx context.Context, d service.MailSettingsDraft, to string) error {
 			return integration.SMTPForSettings(d).SendTest(ctx, to)
 		},

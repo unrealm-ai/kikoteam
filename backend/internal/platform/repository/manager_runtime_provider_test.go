@@ -38,7 +38,9 @@ func employeePromptModelReply(t *testing.T, w http.ResponseWriter, body runtimeR
 		return false
 	}
 	input := fmt.Sprint(body.Messages[len(body.Messages)-1].Content)
-	name, description := `名称 "Runtime"`, ""
+	const original = `名称 "Original package"，说明 "Original scope"`
+	const updated = `名称 "Updated package"，说明 "Updated scope"`
+	name, description, stale := `名称 "Runtime"`, "", ""
 	switch {
 	case strings.Contains(input, "remember amber"):
 	case strings.Contains(input, "你是谁？你叫什么？"):
@@ -46,10 +48,12 @@ func employeePromptModelReply(t *testing.T, w http.ResponseWriter, body runtimeR
 		if !strings.Contains(fmt.Sprint(body.Messages), "remember amber") {
 			t.Error("employee rename lost chat history")
 		}
-	case strings.Contains(input, "task-old-package"):
-		description = `名称 "Original package"，说明 "Original scope"`
+	case strings.Contains(input, "task-package-before-edit"):
+		description, stale = original, updated
+	case strings.Contains(input, "task-existing-after-edit"), strings.Contains(input, "task-first-turn-after-edit"):
+		description, stale = updated, original
 	case strings.Contains(input, "task-new-package"):
-		name, description = `名称 "Runtime renamed"`, `名称 "Updated package"，说明 "Updated scope"`
+		name, description, stale = `名称 "Runtime renamed"`, updated, original
 	default:
 		return false
 	}
@@ -61,7 +65,7 @@ func employeePromptModelReply(t *testing.T, w http.ResponseWriter, body runtimeR
 		if !strings.Contains(prompt, "直接用当前配置的员工名称自我介绍") || strings.Contains(prompt, "你是 AI 员工的主对话助手") || strings.Contains(prompt, "本任务能力包") {
 			t.Errorf("chat system prompt has the wrong identity policy: %q", prompt)
 		}
-	} else if !strings.Contains(prompt, description) || !strings.Contains(prompt, "report-skill") {
+	} else if !strings.Contains(prompt, description) || strings.Contains(prompt, stale) || !strings.Contains(prompt, "report-skill") {
 		t.Errorf("wrong task package or Skill configuration for %q: %q", input, prompt)
 	}
 	humanTextStream(t, w, "prompt fixture checked")
@@ -76,15 +80,6 @@ func testRuntimeEmployeePrompts(t *testing.T, ctx context.Context, runtime *serv
 		t.Fatal(err)
 	}
 	base := "/api/v1/workspaces/" + workspace + "/sessions"
-	oldTask := call("POST", base, map[string]any{"conversation_id": conversation, "mode": "task"}, "")["id"].(string)
-	newName, newDescription := "Updated package", "Updated scope"
-	if _, err = runtime.Packages.Update(ctx, workspace, actor, employee.ID, pack.ID, service.PackagePatch{Version: pack.Version, Name: &newName, Description: &newDescription}); err != nil {
-		t.Fatal(err)
-	}
-	renamed := "Runtime renamed"
-	if _, err = agents.Update(ctx, workspace, actor, employee.ID, service.AgentPatch{Version: employee.Version, Name: &renamed}); err != nil {
-		t.Fatal(err)
-	}
 	await := func(id string, count int) {
 		t.Helper()
 		wait(func() bool {
@@ -103,10 +98,23 @@ func testRuntimeEmployeePrompts(t *testing.T, ctx context.Context, runtime *serv
 		}
 	}
 	await(chat, 1)
+	activeTask := call("POST", base, map[string]any{"conversation_id": conversation, "mode": "task", "input": map[string]string{"text": "task-package-before-edit"}}, "package-before-edit")["id"].(string)
+	await(activeTask, 1)
+	unstartedTask := call("POST", base, map[string]any{"conversation_id": conversation, "mode": "task"}, "")["id"].(string)
+	newName, newDescription := "Updated package", "Updated scope"
+	if _, err = runtime.Packages.Update(ctx, workspace, actor, employee.ID, pack.ID, service.PackagePatch{Version: pack.Version, Name: &newName, Description: &newDescription}); err != nil {
+		t.Fatal(err)
+	}
+	renamed := "Runtime renamed"
+	if _, err = agents.Update(ctx, workspace, actor, employee.ID, service.AgentPatch{Version: employee.Version, Name: &renamed}); err != nil {
+		t.Fatal(err)
+	}
 	call("POST", base+"/"+chat+"/inputs", map[string]string{"text": "你是谁？你叫什么？"}, "employee-renamed")
 	await(chat, 2)
-	call("POST", base+"/"+oldTask+"/inputs", map[string]string{"text": "task-old-package"}, "task-old-package")
-	await(oldTask, 1)
+	call("POST", base+"/"+activeTask+"/inputs", map[string]string{"text": "task-existing-after-edit"}, "package-after-edit")
+	await(activeTask, 2)
+	call("POST", base+"/"+unstartedTask+"/inputs", map[string]string{"text": "task-first-turn-after-edit"}, "first-turn-after-edit")
+	await(unstartedTask, 1)
 	newTask := call("POST", base, map[string]any{"conversation_id": conversation, "mode": "task", "input": map[string]string{"text": "task-new-package"}}, "task-new-package")["id"].(string)
 	await(newTask, 1)
 }

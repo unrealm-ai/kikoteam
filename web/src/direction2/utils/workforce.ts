@@ -625,6 +625,7 @@ export function patchChannelRuntimeStatusFields(
     permissionReady?: boolean | undefined;
     identityConfirmed?: boolean | undefined;
     directoryStatus?: EmployeeChannelBinding['directoryStatus'];
+    dingtalkProactiveSendPermissionMissing?: EmployeeChannelBinding['dingtalkProactiveSendPermissionMissing'];
     businessCapabilities?: EmployeeChannelBinding['businessCapabilities'];
     lastVerifiedAt?: string | undefined;
     errorDetail?: string | undefined;
@@ -638,6 +639,7 @@ export function patchChannelRuntimeStatusFields(
   if ('permissionReady' in src) targetCh.permissionReady = src.permissionReady;
   if ('identityConfirmed' in src) targetCh.identityConfirmed = src.identityConfirmed;
   if ('directoryStatus' in src) targetCh.directoryStatus = src.directoryStatus;
+  if ('dingtalkProactiveSendPermissionMissing' in src) targetCh.dingtalkProactiveSendPermissionMissing = src.dingtalkProactiveSendPermissionMissing;
   if ('businessCapabilities' in src) targetCh.businessCapabilities = src.businessCapabilities;
   if (src.lastVerifiedAt !== undefined) targetCh.lastVerifiedAt = src.lastVerifiedAt;
   targetCh.errorDetail = src.errorDetail;

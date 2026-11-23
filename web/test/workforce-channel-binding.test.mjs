@@ -32,3 +32,10 @@ test('current binding evidence replaces cached readiness and points to the missi
   assert.equal(bindingForWorkforce(binding,usage).permissionReady,undefined);
 });
 test('connection tooltip only receives safe code from the current backend observation',()=>{const applied={status:'failed',connection_generation:2,config_revision:3,error_code:'connection_failed'};const b={...binding,config_revision:3,applied};assert.equal(bindingForWorkforce(b,usage).connectionErrorCode,'connection_failed');assert.equal(bindingForWorkforce({...b,config_revision:4},usage).connectionErrorCode,undefined);assert.equal(bindingForWorkforce({...b,applied:{...applied,status:'connected'}},usage).connectionErrorCode,undefined);for(const code of ['', 'Secret: abc', '<script>', 'https://token.test/', 'x'.repeat(97)])assert.equal(bindingForWorkforce({...b,applied:{...applied,error_code:code}},usage).connectionErrorCode,undefined)});
+
+test('DingTalk proactive-send permission warning comes only from enabled DingTalk binding', () => {
+  const ding = {...binding, provider: 'dingtalk', dingtalk_proactive_send_permission_missing: true};
+  assert.equal(bindingForWorkforce(ding, usage).dingtalkProactiveSendPermissionMissing, true);
+  assert.equal(bindingForWorkforce({...ding, enabled: false}, usage).dingtalkProactiveSendPermissionMissing, undefined);
+  assert.equal(bindingForWorkforce({...ding, provider: 'wecom'}, usage).dingtalkProactiveSendPermissionMissing, undefined);
+});

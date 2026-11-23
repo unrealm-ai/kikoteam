@@ -60,6 +60,8 @@ export function createWorkforcePlatformActions(workspace=()=>activeWorkspaceId.v
         statusText: previous.enabled ? '状态未知' : '已停用', connectionState: 'disconnected', boundGroups: [],
         ...(binding === null ? {bindingMissing: true as const} : {}),
         permissionReady: undefined, businessCapabilities: undefined, directoryStatus: undefined, identityConfirmed: undefined,
+        // A temporary read error is not new evidence about proactive delivery.
+        ...(binding === null ? {dingtalkProactiveSendPermissionMissing: undefined} : {}),
       }];
     });
     // Runtime refresh must not silently advance editable usage/rule CAS versions.

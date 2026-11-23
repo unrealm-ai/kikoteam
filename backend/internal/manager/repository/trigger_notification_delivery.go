@@ -98,7 +98,7 @@ func (s *Store) AuthorizeTriggerNotification(ctx context.Context, id, lease stri
 	}
 	out.Allowed = true
 	out.TargetDigest = deliveryTargetDigest(out)
-	_, err = tx.ExecContext(ctx, `UPDATE manager_trigger_notifications SET status='sending',authorized_at=now(),lease_until=now()+interval '45 seconds',attempt_target_digest=$2,updated_at=now()WHERE id=$1`, id, out.TargetDigest)
+	_, err = tx.ExecContext(ctx, `UPDATE manager_trigger_notifications SET status='sending',authorized_at=CASE WHEN target->>'provider'='dingtalk' THEN clock_timestamp() ELSE now() END,lease_until=now()+interval '45 seconds',attempt_target_digest=$2,updated_at=now()WHERE id=$1`, id, out.TargetDigest)
 	if err != nil {
 		return out, err
 	}
@@ -166,6 +166,9 @@ func (s *Store) CompleteTriggerNotification(ctx context.Context, id string, v se
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE manager_trigger_notifications SET status=$2,provider_message_id=COALESCE(NULLIF($3,''),provider_message_id),provider_request_id=COALESCE(NULLIF($4,''),provider_request_id),provider_session_id=COALESCE(NULLIF($5,''),provider_session_id),error_code=NULLIF($6,''),confirmed_at=CASE WHEN $2 IN ('sent','failed')THEN now()ELSE confirmed_at END,next_query_at=CASE WHEN $2 IN ('accepted','unknown')AND COALESCE(NULLIF($4,''),provider_request_id)IS NOT NULL THEN now()+make_interval(secs=>CASE query_attempts WHEN 0 THEN 2 WHEN 1 THEN 5 WHEN 2 THEN 10 WHEN 3 THEN 20 ELSE 30 END)ELSE NULL END,query_until=NULL,updated_at=now()WHERE id=$1`, id, v.Status, v.ProviderMessageID, v.ProviderRequestID, v.ProviderSessionID, v.ErrorCode)
 	if err != nil {
+		return err
+	}
+	if err := recordDingProactiveSend(ctx, tx, provider, dingTriggerAttempt, id, v); err != nil {
 		return err
 	}
 	err = tx.Commit()

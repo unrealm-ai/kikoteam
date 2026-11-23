@@ -22,6 +22,7 @@ export interface FeishuBinding extends FeishuRules {
   permission_diagnostics?: FeishuDiagnostics;
   permission_groups?: FeishuPermissionGroup[];
   directory_status?: FeishuDirectoryStatus;
+  dingtalk_proactive_send_permission_missing?: boolean;
   rebind_impact?: ChannelRebindImpact;
 }
 export interface FeishuConfiguration extends FeishuRules { version: number; app_id: string; app_secret?: string; enabled: boolean }

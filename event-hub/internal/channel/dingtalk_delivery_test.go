@@ -160,3 +160,100 @@ func TestDingTalkRevokedDuringTokenLookupNeverDispatches(t *testing.T) {
 		t.Fatal(got, sends)
 	}
 }
+
+func TestDingTalkProactiveSendDiagnosticsPreserveUnknownOutcome(t *testing.T) {
+	const permission = `{"Code":"Forbidden.AccessDenied.AccessTokenPermissionDenied","Message":"raw-provider-message"}`
+	for _, tc := range []struct {
+		name, kind, body, code, evidence string
+		status                           int
+	}{
+		{"group scope denied", "group", permission, "dingtalk_proactive_permission_denied", "send_response", http.StatusForbidden},
+		{"private scope denied", "direct", permission, "dingtalk_proactive_permission_denied", "send_response", http.StatusForbidden},
+		{"scope denied in legacy response", "direct", `{"errcode":"Forbidden.AccessDenied.AccessTokenPermissionDenied"}`, "dingtalk_proactive_permission_denied", "send_response", http.StatusOK},
+		{"bare forbidden", "group", "", "dingtalk_send_unknown", "", http.StatusForbidden},
+		{"HTML forbidden", "group", "<html>Forbidden</html>", "dingtalk_send_unknown", "", http.StatusForbidden},
+		{"contradictory send evidence", "direct", `{"processQueryKey":"conflict","code":"Forbidden.AccessDenied.AccessTokenPermissionDenied"}`, "dingtalk_send_unknown", "", http.StatusOK},
+		{"IP restriction not scope", "direct", `{"code":"Forbidden.AccessDenied.IpNotInWhiteList"}`, "dingtalk_send_unknown", "", http.StatusForbidden},
+		{"provider rate denial not scope", "group", `{"code":"Forbidden.AccessDenied.QpsLimitForApi"}`, "dingtalk_send_unknown", "", http.StatusForbidden},
+		{"definitive bad request", "group", `{"code":"invalidParameter"}`, "dingtalk_send_unknown", "", http.StatusBadRequest},
+		{"legacy rejection", "group", `{"errcode":123}`, "dingtalk_send_rejected", "", http.StatusOK},
+		{"malformed business code", "group", `{"errcode":null}`, "dingtalk_send_rejected", "", http.StatusOK},
+		{"ambiguous timeout", "direct", permission, "dingtalk_send_unknown", "", http.StatusRequestTimeout},
+		{"temporarily rate limited", "group", "", "dingtalk_send_unknown", "", http.StatusTooManyRequests},
+		{"ambiguous server error", "group", permission, "dingtalk_send_unknown", "", http.StatusBadGateway},
+		{"ambiguously invalid reply", "group", "{", "dingtalk_send_unknown", "", http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := "/v1.0/robot/groupMessages/send"
+			d := Delivery{ChatType: tc.kind, ChatID: "group", Text: "test"}
+			if tc.kind == "direct" {
+				path = "/v1.0/robot/oToMessages/batchSend"
+				d.ChatID, d.RecipientID = "", "recipient"
+			}
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1.0/oauth2/accessToken" {
+					if _, err := w.Write([]byte(`{"accessToken":"token","expireIn":7200}`)); err != nil {
+						t.Error("write token fixture:", err)
+					}
+					return
+				}
+				calls++
+				if r.URL.Path != path || r.Header.Get("x-acs-dingtalk-access-token") != "token" {
+					t.Error("wrong proactive endpoint or authentication")
+				}
+				w.WriteHeader(tc.status)
+				if _, err := w.Write([]byte(tc.body)); err != nil {
+					t.Error("write send fixture:", err)
+				}
+			}))
+			defer server.Close()
+			b, _ := dingFixture()
+			b.BotOpenID, b.TenantID = "robot", "tenant"
+			got := sendDingTalkWithHTTP(t.Context(), b, d, dingHTTP{server.Client(), server.URL})
+			if want := (deliveryReceipt{Status: "unknown", ErrorCode: tc.code, EvidenceType: tc.evidence}); calls != 1 || got != want {
+				t.Fatalf("unexpected delivery state, evidence or retry: %+v, calls=%d", got, calls)
+			}
+		})
+	}
+}
+
+func TestDingTalkProactiveSendDoesNotClassifyPermissionAtTokenOrQuery(t *testing.T) {
+	for _, tc := range []struct {
+		name, endpoint, want string
+		query                bool
+	}{
+		{"token", "/v1.0/oauth2/accessToken", "dingtalk_authentication_failed", false},
+		{"query", "/v1.0/robot/groupMessages/query", "dingtalk_status_unknown", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var raw string
+				switch {
+				case r.URL.Path == tc.endpoint:
+					w.WriteHeader(http.StatusForbidden)
+					raw = `{"code":"Forbidden.AccessDenied.AccessTokenPermissionDenied"}`
+				case tc.query && r.URL.Path == "/v1.0/oauth2/accessToken":
+					raw = `{"accessToken":"token","expireIn":7200}`
+				default:
+					t.Error("unexpected endpoint")
+				}
+				if _, err := w.Write([]byte(raw)); err != nil {
+					t.Error("write fixture:", err)
+				}
+			}))
+			defer server.Close()
+			b, _ := dingFixture()
+			b.BotOpenID, b.TenantID = "robot", "tenant"
+			d := Delivery{ChatType: "group", ChatID: "group", Text: "test", ProviderRequestID: "accepted-key"}
+			h := dingHTTP{server.Client(), server.URL}
+			send := sendDingTalkWithHTTP
+			if tc.query {
+				send = queryDingTalkWithHTTP
+			}
+			if got := send(t.Context(), b, d, h); got.ErrorCode != tc.want {
+				t.Fatalf("non-send endpoint mislabeled as an active send failure: %+v", got)
+			}
+		})
+	}
+}

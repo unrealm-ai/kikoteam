@@ -101,6 +101,7 @@ export interface EmployeeChannelBinding {
   permissionReady?: boolean | undefined;
   identityConfirmed?: boolean | undefined;
   directoryStatus?: import('./api/feishu').FeishuDirectoryStatus | undefined;
+  dingtalkProactiveSendPermissionMissing?: boolean | undefined;
   connectionMethod?: 'qrcode' | 'existing_app' | undefined;
   appId?: string | undefined;
   corpId?: string | undefined;

@@ -85,6 +85,16 @@ func (s *ChannelService) ObservedProvider(ctx context.Context, w, a, employee, p
 			}
 		}
 	}
+	if provider == "dingtalk" && b.Enabled {
+		if store, ok := s.Store.(interface {
+			DingTalkProactiveSendPermissionMissing(context.Context, ChannelBinding) (bool, error)
+		}); ok {
+			b.DingTalkProactiveSendPermissionMissing, err = store.DingTalkProactiveSendPermissionMissing(ctx, b)
+			if err != nil {
+				return b, err
+			}
+		}
+	}
 	if provider == "feishu" || provider == "dingtalk" {
 		if store, ok := s.Store.(ChannelDirectoryStore); ok {
 			status, readErr := store.DirectoryStatus(ctx, b)

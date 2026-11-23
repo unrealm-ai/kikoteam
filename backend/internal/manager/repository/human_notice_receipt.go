@@ -57,6 +57,9 @@ func (s *Store) CompleteHumanNotice(ctx context.Context, id string, v service.De
 	if err != nil {
 		return err
 	}
+	if err := recordDingProactiveSend(ctx, tx, provider, dingHumanAttempt, id, v); err != nil {
+		return err
+	}
 	if v.Status == "sent" {
 		if err = captureHumanDMNoticeContext(ctx, tx, id); err != nil {
 			return err

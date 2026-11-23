@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { copyText } from '../../utils/clipboard';
 import WorkforceConnectionStatus from './WorkforceConnectionStatus.vue';
+import WorkforceStatusHelp from './WorkforceStatusHelp.vue';
 import WorkforceWecomContactPermission from './WorkforceWecomContactPermission.vue';
 import { computed, onUnmounted, ref, watch } from 'vue';
 import {
@@ -109,6 +110,22 @@ const wecomChannel = computed(() =>
 const dingtalkChannel = computed(() =>
   props.employee.channels.find(c => c.platform === 'dingtalk') || null
 );
+const dingtalkSendPermissionMissing = computed(() => {
+  const channel = dingtalkChannel.value;
+  return realPlatform && channel?.status !== 'disabled' && !channel?.configurationChanged
+    && channel?.dingtalkProactiveSendPermissionMissing === true;
+});
+const dingtalkSendHelp = [
+  '钉钉权限不足，请在钉钉开放平台开通「企业内机器人发送消息权限」。',
+];
+const dingtalkDirectoryAuthorizationFailed = computed(() => {
+  const channel = dingtalkChannel.value;
+  return realPlatform && channel?.status !== 'disabled'
+    && channel?.directoryStatus?.error_code === 'directory_authorization_failed';
+});
+const dingtalkDirectoryHelp = [
+  '请检查「通讯录部门成员读权限」和「成员信息读权限」，并确认应用的通讯录授权范围包含需要同步的部门和人员。',
+];
 const savedFeishuChannel = computed(() =>
   props.savedEmployee?.channels.find(c => c.platform === 'feishu') || null
 );
@@ -1259,7 +1276,11 @@ defineExpose({ resetQrState, stopQrTimers });
             <NTag v-if="!realPlatform" size="small" :type="dingtalkChannel.permissionReady === true ? 'success' : dingtalkChannel.permissionReady === false ? 'warning' : 'default'">
               {{ dingtalkChannel.permissionReady === true ? '权限就绪' : dingtalkChannel.permissionReady === false ? '权限未就绪' : '权限未确认' }}
             </NTag>
-            <NTag v-if="realPlatform" size="small" :type="directoryAvailability.type">{{ directoryAvailability.label }}</NTag>
+            <WorkforceStatusHelp v-if="dingtalkDirectoryAuthorizationFailed"
+              :label="directoryAvailability.label" :lines="dingtalkDirectoryHelp" />
+            <NTag v-else-if="realPlatform" size="small" :type="directoryAvailability.type">{{ directoryAvailability.label }}</NTag>
+            <WorkforceStatusHelp v-if="dingtalkSendPermissionMissing"
+              label="主动发送权限" :lines="dingtalkSendHelp" />
             <span class="clb-appid">Client ID（AppKey）: <code>{{ dingtalkChannel.appKey }}</code></span>
           </div>
           <div class="clb-actions">
@@ -1273,7 +1294,7 @@ defineExpose({ resetQrState, stopQrTimers });
 
         <div v-if="realPlatform && dingtalkChannel.directoryStatus" class="ch-section">
           <p class="field-note" role="status">{{ directoryStatusText(dingtalkChannel) }}</p>
-          <p v-if="canManage !== false && dingtalkChannel.status !== 'disabled' && dingtalkChannel.directoryStatus.error_code === 'directory_authorization_failed'" class="field-note">
+          <p v-if="canManage !== false && dingtalkDirectoryAuthorizationFailed" class="field-note">
             <a :href="channelOnboarding.dingtalk.consoleUrl" target="_blank" rel="noopener noreferrer">去钉钉补充通讯录权限 ↗</a>
           </p>
         </div>

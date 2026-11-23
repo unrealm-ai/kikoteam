@@ -1694,6 +1694,20 @@ CREATE TABLE public.manager_conversations (
 
 
 --
+-- Name: manager_dingtalk_proactive_send_observations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manager_dingtalk_proactive_send_observations (
+    binding_id uuid NOT NULL,
+    connection_generation bigint NOT NULL,
+    authorized_at timestamp with time zone NOT NULL,
+    attempt_token uuid NOT NULL,
+    permission_missing boolean NOT NULL,
+    CONSTRAINT manager_dingtalk_proactive_send_obs_connection_generation_check CHECK ((connection_generation > 0))
+);
+
+
+--
 -- Name: manager_engines; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4235,6 +4249,14 @@ ALTER TABLE ONLY public.manager_conversations
 
 ALTER TABLE ONLY public.manager_conversations
     ADD CONSTRAINT manager_conversations_workspace_id_id_key UNIQUE (workspace_id, id);
+
+
+--
+-- Name: manager_dingtalk_proactive_send_observations manager_dingtalk_proactive_send_observations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_dingtalk_proactive_send_observations
+    ADD CONSTRAINT manager_dingtalk_proactive_send_observations_pkey PRIMARY KEY (binding_id);
 
 
 --
@@ -6884,6 +6906,14 @@ ALTER TABLE ONLY public.manager_conversations
 
 ALTER TABLE ONLY public.manager_conversations
     ADD CONSTRAINT manager_conversations_workspace_id_agent_id_fkey FOREIGN KEY (workspace_id, agent_id) REFERENCES public.platform_agents(workspace_id, id);
+
+
+--
+-- Name: manager_dingtalk_proactive_send_observations manager_dingtalk_proactive_send_observations_binding_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_dingtalk_proactive_send_observations
+    ADD CONSTRAINT manager_dingtalk_proactive_send_observations_binding_id_fkey FOREIGN KEY (binding_id) REFERENCES public.platform_channel_bindings(id) ON DELETE CASCADE;
 
 
 --

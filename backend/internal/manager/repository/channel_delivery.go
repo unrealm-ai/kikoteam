@@ -241,7 +241,7 @@ func (s *Store) AuthorizeChannelDelivery(ctx context.Context, id, lease string) 
 		}
 		return out, service.Fail("access_revoked", 409, "投递权限已撤销")
 	}
-	if _, e = tx.ExecContext(ctx, `UPDATE manager_channel_deliveries SET status='sending',provider=(SELECT provider FROM platform_channel_bindings WHERE id=binding_id),authorized_at=now(),lease_until=now()+CASE WHEN artifact_id IS NULL THEN interval '45 seconds' ELSE interval '3 minutes' END,updated_at=now() WHERE id=$1`, id); e != nil {
+	if _, e = tx.ExecContext(ctx, `UPDATE manager_channel_deliveries SET status='sending',provider=(SELECT provider FROM platform_channel_bindings WHERE id=binding_id),authorized_at=CASE WHEN (SELECT provider FROM platform_channel_bindings WHERE id=binding_id)='dingtalk' THEN clock_timestamp() ELSE now() END,lease_until=now()+CASE WHEN artifact_id IS NULL THEN interval '45 seconds' ELSE interval '3 minutes' END,updated_at=now() WHERE id=$1`, id); e != nil {
 		return out, e
 	}
 	out, e = scanDeliveryLease(tx.QueryRowContext(ctx, `SELECT `+deliverySelect+` FROM manager_channel_deliveries d JOIN manager_channel_inbox n ON n.id=d.inbox_id WHERE d.id=$1`, id), true)

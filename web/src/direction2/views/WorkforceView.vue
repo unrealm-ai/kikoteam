@@ -765,6 +765,7 @@ const { startChannelStatusPolling, stopChannelStatusPolling, retryChannel, retry
   employees,
   snapshot: originalEmpSnapshot,
   getStatuses: workforceApi.getEmployeeChannelStatuses,
+  isDingTalkTabActive: () => activeDetailTab.value === 'channels' && activeChannelPlatform.value === 'dingtalk',
   onSnapshotPatched: recomputeDirty
 });
 

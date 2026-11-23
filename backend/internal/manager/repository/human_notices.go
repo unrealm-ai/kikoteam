@@ -238,7 +238,7 @@ func (s *Store) AuthorizeHumanNotice(ctx context.Context, id, lease string, disp
 	if !dispatchCheck {
 		d.TargetDigest = deliveryTargetDigest(d)
 		_, err = tx.ExecContext(ctx, `UPDATE manager_human_notices SET status='sending',attempt_id=$2,
- authorized_at=now(),attempt_target_digest=$3,text=$4,lease_until=now()+interval '30 seconds' WHERE id=$1`, id, lease, d.TargetDigest, d.Text)
+ authorized_at=CASE WHEN provider='dingtalk' THEN clock_timestamp() ELSE now() END,attempt_target_digest=$3,text=$4,lease_until=now()+interval '30 seconds' WHERE id=$1`, id, lease, d.TargetDigest, d.Text)
 		if err != nil {
 			return d, err
 		}

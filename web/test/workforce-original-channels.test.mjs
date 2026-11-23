@@ -514,6 +514,18 @@ test('DingTalk reports directory status before robot identity confirmation',asyn
   await pause();
   assert.match(document.body.textContent,/通讯录缺少权限或可见范围/);
   assert.ok(permissionLink());
+  const trigger=button('通讯录不可用');
+  assert.ok(trigger);
+  const tooltip=document.getElementById(trigger.getAttribute('aria-describedby'));
+  assert.equal(tooltip.getAttribute('role'),'tooltip');
+  assert.equal(tooltip.style.display,'none');
+  trigger.focus();
+  await nextTick();
+  assert.notEqual(tooltip.style.display,'none');
+  assert.match(tooltip.textContent,/通讯录部门成员读权限.*成员信息读权限.*部门和人员/);
+  trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  await nextTick();
+  assert.equal(tooltip.style.display,'none');
   m.state.employee.channels[0].directoryStatus.error_code='directory_authentication_failed';
   await pause();
   assert.match(document.body.textContent,/通讯录认证失败/);
@@ -556,4 +568,41 @@ test('WeCom and DingTalk capability notices retain the same warning style before
  for(const platform of ['wecom','dingtalk'])for(const channels of [[],[binding(platform)]]){
   const m=await mount({platform,channels});try{const notice=document.querySelector('.ch-notice.dingtalk-notice');assert.ok(notice);assert.match(notice.textContent,/平台能力限制/);assert.equal(document.querySelector('.wecom-notice'),null)}finally{await m.cleanup()}
  }
+});
+
+test('DingTalk shows only definite proactive-send permission evidence and leaves connection intact', async () => {
+  const status={status:'connected',statusText:'已连接',connectionState:'connected'};
+  const m=await mount({platform:'dingtalk',channels:[{...binding('dingtalk'), ...status}]});
+  const warning=()=>button('主动发送权限');
+  try {
+    const channel=m.state.employee.channels[0];
+    assert.equal(warning(),undefined);
+    channel.dingtalkProactiveSendPermissionMissing=false;
+    await nextTick();
+    assert.equal(warning(),undefined);
+
+    channel.dingtalkProactiveSendPermissionMissing=true;
+    await nextTick();
+    const trigger=warning();
+    assert.ok(trigger);
+    const tooltip=document.getElementById(trigger.getAttribute('aria-describedby'));
+    assert.equal(tooltip.style.display,'none');
+    trigger.parentElement.dispatchEvent(new MouseEvent('mouseenter'));
+    await nextTick();
+    assert.notEqual(tooltip.style.display,'none');
+    assert.match(tooltip.textContent,/企业内机器人发送消息权限/);
+    assert.doesNotMatch(tooltip.textContent,/私聊|群聊/);
+    trigger.parentElement.dispatchEvent(new MouseEvent('mouseleave'));
+    await nextTick();
+    assert.equal(tooltip.style.display,'none');
+    trigger.focus();
+    await nextTick();
+    assert.notEqual(tooltip.style.display,'none');
+    assert.match(document.querySelector('.connection-status').textContent,/已连接/);
+
+    channel.dingtalkProactiveSendPermissionMissing=undefined;
+    await nextTick();
+    assert.equal(warning(),undefined);
+    assert.equal(m.calls.length,0);
+  } finally { await m.cleanup(); }
 });

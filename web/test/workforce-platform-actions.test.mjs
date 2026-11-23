@@ -101,3 +101,22 @@ test('real unavailable model blocks enable before HTTP but does not block disabl
  await api.getWorkforcePlatformEmployee('model-block','a');const port=api.createWorkforcePlatformActions(()=> 'model-block');await assert.rejects(port.updateEmployeeStatus('a','active',7),/模型当前不可用/);assert.equal(writes,0);
  enabled=true;await api.getWorkforcePlatformEmployee('model-block','a');await port.updateEmployeeStatus('a','disabled',7);assert.equal(writes,1);
 });
+
+test('DingTalk status reads preserve warnings on temporary failure and clear on authoritative omission', async () => {
+ const ding={id:'ding',provider:'dingtalk',app_id:'ding_fixture',enabled:true,has_secret:true,config_revision:1,connection_generation:1};
+ let observation=()=>Response.json({...ding,dingtalk_proactive_send_permission_missing:true});
+ globalThis.fetch=async(url,init)=>{
+  assert.equal(init?.method??'GET','GET');
+  return url.endsWith('/channels/dingtalk')?observation():response(url);
+ };
+ await api.getWorkforcePlatformEmployee('ding-status','a');
+ const port=api.createWorkforcePlatformActions(()=> 'ding-status');
+ async function read(){return (await port.getEmployeeChannelStatuses('a','ding-status',{channels:['dingtalk']})).channels[0]}
+ assert.equal((await read()).dingtalkProactiveSendPermissionMissing,true);
+ observation=()=>Response.json({error:{code:'temporary',message:'unavailable'}},{status:503});
+ assert.equal(Object.hasOwn(await read(),'dingtalkProactiveSendPermissionMissing'),false);
+ observation=()=>Response.json(ding);
+ const cleared=await read();
+ assert.equal(Object.hasOwn(cleared,'dingtalkProactiveSendPermissionMissing'),true);
+ assert.equal(cleared.dingtalkProactiveSendPermissionMissing,undefined);
+});

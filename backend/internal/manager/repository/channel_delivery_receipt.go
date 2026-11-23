@@ -173,6 +173,9 @@ func (s *Store) CompleteChannelDelivery(ctx context.Context, id string, v servic
 	if e != nil {
 		return e
 	}
+	if err := recordDingProactiveSend(ctx, tx, provider, dingChannelAttempt, id, v); err != nil {
+		return err
+	}
 	if v.Status == "sent" && kind == "human_confirmation" {
 		if e = captureLegacyHumanReplyContext(ctx, tx, id); e != nil {
 			return e

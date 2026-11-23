@@ -548,7 +548,7 @@ export const workforceApi = {
       channelReadErrors?: Partial<Record<PlatformType, string | null>>;
       channels: (Pick<
         EmployeeChannelBinding,
-        'platform' | 'connectionId' | 'status' | 'statusText' | 'credentialStatus' | 'connectionState' | 'permissionReady' | 'lastVerifiedAt' | 'errorDetail' | 'boundGroups' | 'businessCapabilities'
+        'platform' | 'connectionId' | 'status' | 'statusText' | 'credentialStatus' | 'connectionState' | 'permissionReady' | 'lastVerifiedAt' | 'errorDetail' | 'boundGroups' | 'businessCapabilities' | 'connectionGeneration' | 'dingtalkProactiveSendPermissionMissing'
       > & { observedConfigRevision?: number; bindingMissing?: true })[];
     }>(`${wsBase(wsId)}/entities/${encodeURIComponent(id)}/channels/status`),
   previewTriggerCron: (id: string, cron: string, timezone: string, wsId = activeWorkspaceId.value) =>

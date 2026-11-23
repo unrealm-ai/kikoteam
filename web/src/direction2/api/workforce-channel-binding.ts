@@ -38,6 +38,7 @@ export function bindingForWorkforce(binding: FeishuBinding, usage?: UsageResourc
     businessCapabilities:provider==='feishu' ? groups?.map(group => businessCapability(group,binding.app_id)) : undefined,
     identityConfirmed: binding.identity_confirmed,
     directoryStatus: binding.directory_status,
+    dingtalkProactiveSendPermissionMissing: provider === 'dingtalk' && binding.enabled ? binding.dingtalk_proactive_send_permission_missing : undefined,
     appId: provider === 'feishu' ? binding.app_id : '', appKey: provider === 'dingtalk' ? binding.app_id : '', botId: provider === 'wecom' ? binding.app_id : '',
     lastVerifiedAt: diagnostics?.checked_at || '',
     usageScope: {

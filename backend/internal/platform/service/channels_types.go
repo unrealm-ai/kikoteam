@@ -74,6 +74,8 @@ type ChannelBinding struct {
 	PermissionGroups           []FeishuPermissionGroup `json:"permission_groups,omitempty"`
 	DirectoryStatus            *DirectoryStatus        `json:"directory_status,omitempty"`
 	RebindImpact               *ChannelRebindImpact    `json:"rebind_impact,omitempty"`
+
+	DingTalkProactiveSendPermissionMissing bool `json:"dingtalk_proactive_send_permission_missing,omitempty"`
 }
 type ChannelPut struct {
 	Version   int64          `json:"version"`

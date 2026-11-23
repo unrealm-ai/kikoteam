@@ -23,18 +23,18 @@ type dingHTTP struct {
 func newDingHTTP() dingHTTP {
 	return dingHTTP{client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, origin: "https://api.dingtalk.com"}
 }
-func (h dingHTTP) request(ctx context.Context, method, path, token string, body, out any) error {
+func (h dingHTTP) do(ctx context.Context, method, path, token string, body any) (*http.Response, error) {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
-			return errors.New("invalid dingtalk request")
+			return nil, errors.New("invalid dingtalk request")
 		}
 		reader = bytes.NewReader(data)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, h.origin+path, reader)
 	if err != nil {
-		return errors.New("invalid dingtalk request")
+		return nil, errors.New("invalid dingtalk request")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -43,13 +43,25 @@ func (h dingHTTP) request(ctx context.Context, method, path, token string, body,
 	}
 	resp, err := h.client.Do(req)
 	if err != nil {
-		return errors.New("dingtalk provider unavailable")
+		return nil, errors.New("dingtalk provider unavailable")
+	}
+	return resp, nil
+}
+
+func (h dingHTTP) request(ctx context.Context, method, path, token string, body, out any) error {
+	resp, err := h.do(ctx, method, path, token, body)
+	if err != nil {
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // Read-only response cleanup.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return errors.New("dingtalk provider rejected")
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	return decodeDingResponse(resp.Body, out)
+}
+
+func decodeDingResponse(body io.Reader, out any) error {
+	data, err := io.ReadAll(io.LimitReader(body, (1<<20)+1))
 	if err != nil || len(data) > 1<<20 || json.Unmarshal(data, out) != nil {
 		return errors.New("invalid dingtalk provider response")
 	}
@@ -136,17 +148,15 @@ func sendDingTalkWithHTTP(ctx context.Context, b Binding, d Delivery, h dingHTTP
 	} else {
 		body["openConversationId"] = d.ChatID
 	}
-	var result struct {
-		Key     string          `json:"processQueryKey"`
-		Invalid []string        `json:"invalidStaffIdList"`
-		Limited []string        `json:"flowControlledStaffIdList"`
-		Code    json.RawMessage `json:"errcode"`
-	}
-	if err = h.request(ctx, "POST", path, token, body, &result); err != nil {
-		return deliveryReceipt{Status: "unknown", ErrorCode: "dingtalk_send_unknown"}
-	}
-	if len(result.Code) != 0 && string(result.Code) != "0" {
-		return deliveryReceipt{Status: "unknown", ErrorCode: "dingtalk_send_rejected"}
+	result, rejection := h.proactiveSend(ctx, path, token, body)
+	if rejection != "" {
+		// Diagnostic refinement only. Keep the conservative delivery state,
+		// with no new confirmation evidence or permission to retry.
+		receipt := deliveryReceipt{Status: "unknown", ErrorCode: rejection}
+		if rejection == dingProactivePermissionDenied {
+			receipt.EvidenceType = "send_response"
+		}
+		return receipt
 	}
 	if d.ChatType == "direct" {
 		for _, list := range [][]string{result.Invalid, result.Limited} {
@@ -165,6 +175,61 @@ func sendDingTalkWithHTTP(ctx context.Context, b Binding, d Delivery, h dingHTTP
 	}
 	return deliveryReceipt{Status: "accepted", ProviderRequestID: result.Key, EvidenceType: "send_response", EvidenceID: result.Key}
 }
+
+const (
+	dingProactivePermissionDenied = "dingtalk_proactive_permission_denied"
+	dingSendUnknown               = "dingtalk_send_unknown"
+	// Listed in the DingTalk OpenAPI error catalog as missing interface permission.
+	dingPermissionDeniedCode = "Forbidden.AccessDenied.AccessTokenPermissionDenied"
+)
+
+type dingActiveSendResponse struct {
+	Key     string          `json:"processQueryKey"`
+	Invalid []string        `json:"invalidStaffIdList"`
+	Limited []string        `json:"flowControlledStaffIdList"`
+	Code    json.RawMessage `json:"code"`
+	ErrCode json.RawMessage `json:"errcode"`
+}
+
+func (h dingHTTP) proactiveSend(ctx context.Context, path, token string, body any) (dingActiveSendResponse, string) {
+	var result dingActiveSendResponse
+	resp, err := h.do(ctx, http.MethodPost, path, token, body)
+	if err != nil {
+		return result, dingSendUnknown
+	}
+	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // Read-only response cleanup.
+	status := resp.StatusCode
+	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		if status == http.StatusForbidden && decodeDingResponse(resp.Body, &result) == nil && result.Key == "" && result.permissionDenied() {
+			return result, dingProactivePermissionDenied
+		}
+		return result, dingSendUnknown
+	}
+	if decodeDingResponse(resp.Body, &result) != nil {
+		return result, dingSendUnknown
+	}
+	if result.permissionDenied() {
+		if result.Key != "" {
+			return result, dingSendUnknown // Contradictory provider evidence; do not confirm this send.
+		}
+		return result, dingProactivePermissionDenied
+	}
+	if len(result.ErrCode) != 0 && string(result.ErrCode) != "0" {
+		return result, "dingtalk_send_rejected"
+	}
+	return result, ""
+}
+
+func (v dingActiveSendResponse) permissionDenied() bool {
+	for _, raw := range []json.RawMessage{v.Code, v.ErrCode} {
+		var code string
+		if json.Unmarshal(raw, &code) == nil && code == dingPermissionDeniedCode {
+			return true
+		}
+	}
+	return false
+}
+
 func queryDingTalkDelivery(ctx context.Context, b Binding, d Delivery) deliveryReceipt {
 	return queryDingTalkWithHTTP(ctx, b, d, newDingHTTP())
 }

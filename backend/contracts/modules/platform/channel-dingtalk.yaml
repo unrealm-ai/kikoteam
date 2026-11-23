@@ -40,7 +40,14 @@
           "application/json": {
             "schema": {
               "type": "object",
-              "properties": {"rebind_impact": {"$ref": "channel-rebind-impact-schema.yaml"}}
+              "properties": {
+                "rebind_impact": {"$ref": "channel-rebind-impact-schema.yaml"},
+                "dingtalk_proactive_send_permission_missing": {
+                  "type": "boolean",
+                  "const": true,
+                  "description": "Present as true only for an observed, explicit proactive send permission denial on the current enabled DingTalk binding. Cleared by a newer confirmed proactive send. Omission is not a proof of permission."
+                }
+              }
             }
           }
         },

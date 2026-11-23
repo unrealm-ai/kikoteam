@@ -26,15 +26,17 @@ function getBoundChannels(target: DigitalEmployee): PlatformType[] {
 }
 
 export function useWorkforceChannelStatuses({
-  employee, employees, snapshot, getStatuses, onSnapshotPatched
+  employee, employees, snapshot, getStatuses, isDingTalkTabActive, onSnapshotPatched
 }: {
   employee: Ref<DigitalEmployee | null>;
   employees: Ref<DigitalEmployee[]>;
   snapshot: Ref<string>;
   getStatuses: WorkforcePorts['workforceApi']['getEmployeeChannelStatuses'];
+  isDingTalkTabActive: () => boolean;
   onSnapshotPatched: () => void;
 }) {
   let timer: ReturnType<typeof setInterval> | undefined;
+  let dingTalkTimer: ReturnType<typeof setInterval> | undefined;
   let inFlight: AbortController | undefined;
   const retryingChannel = ref<PlatformType>();
 
@@ -44,6 +46,8 @@ export function useWorkforceChannelStatuses({
     retryingChannel.value = undefined;
     clearInterval(timer);
     timer = undefined;
+    clearInterval(dingTalkTimer);
+    dingTalkTimer = undefined;
   }
 
   async function fetchStatuses(options: { provider?: PlatformType | undefined; channels?: PlatformType[] | undefined } = {}) {
@@ -87,7 +91,11 @@ export function useWorkforceChannelStatuses({
             const revision = target.resourceVersions?.channels?.[channel.platform];
             if (revision !== observedRevisions[channel.platform] || channel.configurationChanged) continue;
             const sameBinding = channel.connectionId === observation.connectionId;
-            if (observation.bindingMissing || (observation.observedConfigRevision !== undefined
+            const generationChanged = observation.platform === 'dingtalk'
+              && observation.connectionGeneration !== undefined
+              && channel.connectionGeneration !== undefined
+              && channel.connectionGeneration !== observation.connectionGeneration;
+            if (observation.bindingMissing || generationChanged || (observation.observedConfigRevision !== undefined
               && (!sameBinding || revision !== observation.observedConfigRevision))) {
               channel.configurationChanged = true;
               patchChannelRuntimeStatusFields(channel, {
@@ -97,6 +105,7 @@ export function useWorkforceChannelStatuses({
                 permissionReady: undefined,
                 businessCapabilities: undefined,
                 directoryStatus: undefined,
+                dingtalkProactiveSendPermissionMissing: undefined,
                 identityConfirmed: undefined,
                 lastVerifiedAt: ''
               });
@@ -133,6 +142,17 @@ export function useWorkforceChannelStatuses({
     if (channels.length) void fetchStatuses({ channels });
   };
 
+  const pollDingTalkStatus = () => {
+    if (!isDingTalkTabActive()) return;
+    const current = employee.value;
+    // The ordinary 4 s status watcher already covers transitional bindings.
+    const channel = current?.channels.find(ch => ch.platform === 'dingtalk');
+    if (current && channel?.connectionId && !channel.configurationChanged && channel.status !== 'disabled' &&
+        !getTransitionalChannels(current).includes('dingtalk')) {
+      void fetchStatuses({ channels: ['dingtalk'] });
+    }
+  };
+
   const pollFocus = () => {
     const current = employee.value;
     if (!current) return;
@@ -147,6 +167,7 @@ export function useWorkforceChannelStatuses({
     stopChannelStatusPolling();
     if (!realPlatform) pollFocus();
     timer = setInterval(pollInterval, 4000);
+    if (realPlatform) dingTalkTimer = setInterval(pollDingTalkStatus, 30_000);
   }
 
   onMounted(() => {

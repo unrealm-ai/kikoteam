@@ -19,30 +19,16 @@ type query struct {
 
 func Register(mux *http.ServeMux, reader service.InputAttachmentReader, manager *service.Service, secret string) {
 	server := sdk.NewServer(&sdk.Implementation{Name: "input_attachments", Version: "1.0.0"}, nil)
-	sdk.AddTool(server, &sdk.Tool{Name: "attachment_get", Description: "立即查询已授权的输入附件。downloading 或 failed 不返回路径；ready 返回项目相对路径，可用任务工具读取。不要立即反复调用。"}, func(ctx context.Context, _ *sdk.CallToolRequest, args query) (*sdk.CallToolResult, any, error) {
+	sdk.AddTool(server, &sdk.Tool{Name: "attachment_get", Description: "查询已授权的输入附件。ID 错误时可返回当前任务的候选；先确认目标，再复制完整 ID，不自动换用其他文件。downloading 或 failed 不返回路径；ready 返回项目相对路径。不要立即反复调用。"}, func(ctx context.Context, _ *sdk.CallToolRequest, args query) (*sdk.CallToolResult, any, error) {
 		id, ok := ctx.Value(identityKey{}).(service.DelegationIdentity)
 		if !ok {
 			return nil, nil, errors.New("unauthenticated")
 		}
 		result, conv, err := reader.ReadInputAttachment(ctx, id, args.AttachmentID)
 		if err != nil {
-			code, msg := "dependency_unavailable", "附件查询暂时不可用"
-			var problem *service.Error
-			if errors.As(err, &problem) {
-				code, msg = problem.Code, problem.Message
-			}
-			return &sdk.CallToolResult{IsError: true}, map[string]any{"error": map[string]string{"code": code, "message": msg}}, nil
+			return &sdk.CallToolResult{IsError: true}, attachmentErrorResult(err), nil
 		}
-		if result.Status == "ready" {
-			file, _, e := manager.OpenProjectFile(conv, result.Path)
-			if e != nil {
-				result.Status, result.Path = "failed", ""
-			} else {
-				_ = file.Close() //nolint:errcheck // This only validates the relative path.
-			}
-		} else {
-			result.Path = ""
-		}
+		validateAttachmentResult(manager, conv, &result)
 		return nil, result, nil
 	})
 	handler := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
@@ -63,4 +49,40 @@ func Register(mux *http.ServeMux, reader service.InputAttachmentReader, manager 
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		handler.ServeHTTP(w, r.WithContext(context.WithValue(ctx, identityKey{}, id)))
 	})
+}
+
+func attachmentErrorResult(err error) map[string]any {
+	code, msg := "dependency_unavailable", "附件查询暂时不可用"
+	var problem *service.Error
+	if errors.As(err, &problem) {
+		code, msg = problem.Code, problem.Message
+	}
+	out := map[string]any{"error": map[string]string{"code": code, "message": msg}}
+	var lookup *service.InputAttachmentLookupError
+	if errors.As(err, &lookup) {
+		out["candidates"] = lookup.Recovery.Candidates
+		out["advice"] = lookup.Recovery.Advice
+		if lookup.Recovery.Truncated {
+			out["candidates_truncated"] = true
+		}
+	}
+	return out
+}
+
+func validateAttachmentResult(manager *service.Service, conv service.Conversation, result *service.InputAttachmentStatus) {
+	if result.Status == "ready" {
+		file, _, err := manager.OpenProjectFile(conv, result.Path)
+		if err == nil {
+			_ = file.Close() //nolint:errcheck // This only validates the relative path.
+			return
+		}
+		result.Status = "failed"
+	}
+	result.Path = ""
+	switch result.Status {
+	case "downloading":
+		result.Advice = "附件仍在准备；不要立即反复查询。需要时稍后用同一 ID 查询。"
+	case "failed":
+		result.Advice = "此附件未能准备好，无可用路径。不要自行替换；如仍需此文件，请用户重新发送。"
+	}
 }

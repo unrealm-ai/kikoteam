@@ -11,3 +11,4 @@
 | 主对话与任务提示词 | [委派回话、员工身份与能力包文案](task-package-prompt.md) | 主对话回话规则单测；身份与能力包文案经隔离 PostgreSQL 与 Engine/Pi 测试模型端到端验证 |
 | 钉钉回复 | [原会话回复、主动投递与缺权限提示](dingtalk-session-reply.md) | 本地渠道协议夹具、隔离 PostgreSQL；真实账号待验 |
 | 入站附件 | [四入口异步准备与任务按需读取](async-inbound-attachments.md) | 隔离 PostgreSQL、Engine/Pi 端到端及 100 MiB 边界测试通过；真实渠道尚未全部通过 |
+| 主对话工具恢复 | [任务状态、写入回执和回复产物](chat-tool-recovery.md) | MCP 错误负载、任务规则和隔离 PostgreSQL 的候选授权回归；未用真实 IM 交付验收 |

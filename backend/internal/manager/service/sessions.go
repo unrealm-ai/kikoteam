@@ -361,6 +361,9 @@ func (s *Service) ControlSession(ctx context.Context, w, actor, id string, archi
 func (s *Service) controlSession(ctx context.Context, w, actor, id string, archive bool, source *DelegationIdentity) (Session, error) {
 	err := s.Store.WithSession(ctx, Target{Workspace: w, Actor: actor, Session: id, Source: source, Control: true}, func(tx SessionTx) error {
 		st := tx.State()
+		if source != nil && !archive && st.Session.PlanningState == "canceled" {
+			return CanceledTodoError{}
+		}
 		if !archive && (st.Session.PlanningState == "planned" || st.Session.PlanningState == "canceled") {
 			return Fail("task_not_started", 409, "未启动待办请使用取消待办，而不是停止执行")
 		}

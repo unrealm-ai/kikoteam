@@ -60,6 +60,13 @@ func (d *Delegation) planned(ctx context.Context, scope DelegationScope, name st
 	return st.PlannedTaskCommand(ctx, scope, q)
 }
 
+// CanceledTodoError distinguishes an inert canceled todo without changing the
+// task_not_started error code surfaced by callers.
+type CanceledTodoError struct{}
+
+func (CanceledTodoError) Error() string   { return "待办已取消，未启动任何执行" }
+func (e CanceledTodoError) Unwrap() error { return Fail("task_not_started", 409, e.Error()) }
+
 type DelegationReceiptStore interface {
 	DelegatedInputReceipt(context.Context, DelegationScope, string, string) (Input, error)
 }

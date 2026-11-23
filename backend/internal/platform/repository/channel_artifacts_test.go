@@ -3,6 +3,7 @@ package repository
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -158,6 +159,18 @@ func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
 			}
 			_, _, err = store.ReadInputAttachment(ctx, tid, x.box+":1")
 			assertChannelError(t, err, "attachment_forbidden") // A queued supplement has not yet granted it.
+			var lookup *manager.InputAttachmentLookupError
+			if !errors.As(err, &lookup) || len(lookup.Recovery.Candidates) != 1 ||
+				lookup.Recovery.Candidates[0] != (manager.InputAttachmentCandidate{ID: x.box + ":0", Name: "first.csv"}) {
+				t.Fatal("channel recovery included an ungranted or queued attachment", err)
+			}
+			// The same durable task grant stops being usable when its media source is revoked.
+			reviewExec(t, db, `UPDATE manager_channel_inbox SET status='rejected' WHERE id=$1`, x.box)
+			_, _, err = store.ReadInputAttachment(ctx, tid, "wrong-attachment-id")
+			if !errors.As(err, &lookup) || len(lookup.Recovery.Candidates) != 0 {
+				t.Fatal("revoked media was still suggested", err)
+			}
+			reviewExec(t, db, `UPDATE manager_channel_inbox SET status='accepted' WHERE id=$1`, x.box)
 		}
 		scopeP := manager.WorkScope{Identity: tid, InputID: input}
 		dir := filepath.Join(m.ProjectRoot, "state/sandboxes/workspaces", w, "employees", agent, "conversations", x.conv, "project")
@@ -207,7 +220,6 @@ func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
 	z := receive("bob", "third", false)
 	foreign, _ := makeTask(z, "c.txt", false)
 	id, chatTurn := start(x.chat, *r.TargetInputID)
-	reviewExec(t, db, `UPDATE manager_inputs SET status='started',turn_id=$2,context_state='committed' WHERE id=$1`, *q.TargetInputID, chatTurn)
 	scope, e := store.DelegationSource(ctx, id)
 	must(e)
 	if !scope.ReportOnly {
@@ -236,8 +248,48 @@ func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
 	if _, e = d.Call(ctx, scope, "create_session", manager.DelegationArgs{Instruction: "invalid report write"}); e == nil {
 		t.Fatal("pure report delegated another task")
 	}
-	if _, e = d.Call(ctx, scope, "artifact_select", manager.DelegationArgs{ArtifactIDs: []string{a.ID, foreign.ID}}); e == nil {
-		t.Fatal("accepted candidate from another conversation")
+	assertCandidates := func(err error, code string, want ...manager.Artifact) {
+		t.Helper()
+		assertChannelError(t, err, code)
+		var recovery *manager.ArtifactSelectionError
+		if !errors.As(err, &recovery) || len(recovery.Candidates) != len(want) {
+			t.Fatalf("incorrect authorized recovery candidates: %v %+v", err, recovery)
+		}
+		for i, expected := range want {
+			if recovery.Candidates[i] != (manager.ArtifactSelectionCandidate{ID: expected.ID, Name: expected.Name}) {
+				t.Fatal("candidate outside the current reply or out of order", recovery.Candidates)
+			}
+		}
+		projection, err := json.Marshal(recovery.Candidates)
+		must(err)
+		for _, secret := range []string{foreign.ID, a.Version, b.Version, "size_bytes", "path", "media_type"} {
+			if strings.Contains(string(projection), secret) {
+				t.Fatalf("unsafe candidate projection: %s", projection)
+			}
+		}
+	}
+	_, e = d.Call(ctx, scope, "artifact_select", manager.DelegationArgs{ArtifactIDs: []string{foreign.ID}})
+	assertCandidates(e, "artifact_forbidden", a) // The second same-actor report is still queued.
+	reviewExec(t, db, `UPDATE manager_inputs SET status='started',turn_id=$2,context_state='committed' WHERE id=$1`, *q.TargetInputID, chatTurn)
+	_, e = d.Call(ctx, scope, "artifact_select", manager.DelegationArgs{ArtifactIDs: []string{a.ID, foreign.ID}})
+	assertCandidates(e, "artifact_forbidden", a, b)
+	_, e = d.Call(ctx, scope, "artifact_select", manager.DelegationArgs{ArtifactIDs: []string{"not-an-artifact-id"}})
+	assertCandidates(e, "invalid_artifact_selection", a, b)
+	_, e = d.Call(ctx, scope, "artifact_select", manager.DelegationArgs{ArtifactIDs: []string{a.ID, a.ID}})
+	assertChannelError(t, e, "invalid_artifact_selection")
+	var noDuplicates *manager.ArtifactSelectionError
+	if errors.As(e, &noDuplicates) {
+		t.Fatal("duplicate-only error changed")
+	}
+	var selected int
+	must(db.QueryRow(`SELECT count(*) FROM manager_artifact_selections WHERE chat_turn_id=$1`, chatTurn).Scan(&selected))
+	if selected != 0 {
+		t.Fatal("a failed selection committed a partial artifact list")
+	}
+	stale := scope
+	stale.Identity.AssignmentID = manager.NewID()
+	if _, e = store.SelectArtifacts(ctx, stale, []string{foreign.ID}); e == nil || errors.As(e, &noDuplicates) {
+		t.Fatal("stale reply authority recovered candidates")
 	}
 	for range 2 {
 		_, e = d.Call(ctx, scope, "artifact_select", manager.DelegationArgs{ArtifactIDs: []string{b.ID, a.ID}})
@@ -289,6 +341,25 @@ func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
 			t.Fatal("wrong frozen bytes or target", version, auth)
 		}
 	}
+	// A later user query may explicitly offer a prior artifact, but only that
+	// exact same-actor offer can be recovered for the new reply.
+	resend := receive("alice", "ask-to-resend", false)
+	resendID, resendTurn := start(resend.chat, resend.input)
+	resendScope, e := store.DelegationSource(ctx, resendID)
+	must(e)
+	var sourceTurn string
+	must(db.QueryRow(`SELECT turn_id FROM manager_task_artifacts WHERE id=$1`, a.ID).Scan(&sourceTurn))
+	offered, e := store.OfferArtifacts(ctx, resendScope, sourceTurn)
+	must(e)
+	if len(offered) != 1 || offered[0].ID != a.ID {
+		t.Fatal("valid same-conversation offer missing", offered)
+	}
+	reviewExec(t, db, `INSERT INTO manager_artifact_offers VALUES($1,$2,$3)`, resendTurn, resend.input, foreign.ID)
+	_, e = d.Call(ctx, resendScope, "artifact_select", manager.DelegationArgs{ArtifactIDs: []string{foreign.ID}})
+	assertCandidates(e, "artifact_forbidden", a)
+	_, e = d.Call(ctx, resendScope, "artifact_select", manager.DelegationArgs{ArtifactIDs: []string{a.ID}})
+	must(e)
+
 }
 
 func TestProviderNativeAttachmentsReachProjectInput(t *testing.T) {

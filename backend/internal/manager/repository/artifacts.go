@@ -86,6 +86,61 @@ func (s *Store) OfferArtifacts(ctx context.Context, scope service.DelegationScop
 	return a, tx.Commit()
 }
 
+const artifactSelectionTurn = `SELECT t.id` + delegationFrom + ` AND i.channel_principal_id=$5 AND i.channel_generation=$6 AND ` + effectiveDelegatingInput + `=$7`
+
+// Use the same eligible set for selection and its recovery list. The active
+// source is resolved again in the same query snapshot as the candidate rows.
+const artifactSelectionScope = `WITH active AS (` + artifactSelectionTurn + ` AND manager_input_actor_allowed($7)),
+ eligible AS (
+ SELECT ra.artifact_id,n.id AS inbox_id,r.id AS report_id
+ FROM active JOIN manager_inputs received ON received.turn_id=active.id
+ JOIN manager_task_reports r ON r.target_input_id=received.id JOIN manager_report_artifacts ra ON ra.report_id=r.id
+ JOIN manager_task_artifacts f ON f.id=ra.artifact_id AND f.turn_id=r.source_turn_id
+ JOIN manager_sessions chat ON chat.id=received.session_id AND r.target_session_id=chat.id
+ JOIN manager_inputs origin ON origin.id=r.source_input_id JOIN manager_sessions task ON task.id=origin.session_id
+ JOIN manager_tasks k ON k.id=task.task_id JOIN manager_channel_inbox n ON n.input_id=k.source_chat_input_id
+ WHERE (received.id=(SELECT input_id FROM manager_turns WHERE id=active.id) OR received.context_state='committed')
+ AND chat.id=$1 AND task.conversation_id=chat.conversation_id AND n.conversation_id=chat.conversation_id AND n.principal_id=$5 AND n.connection_generation=$6
+ AND manager_input_actor_allowed(origin.id) AND manager_channel_actor_allowed(n.principal_id,n.conversation_id,n.connection_generation)
+ UNION ALL SELECT o.artifact_id,n.id,NULL::uuid
+ FROM active JOIN manager_artifact_offers o ON o.chat_turn_id=active.id
+ JOIN manager_channel_inbox n ON n.input_id=o.input_id JOIN manager_inputs u ON u.id=o.input_id
+ JOIN manager_task_artifacts f ON f.id=o.artifact_id JOIN manager_turns src ON src.id=f.turn_id
+ JOIN manager_inputs auth ON auth.id=src.input_id JOIN manager_sessions task ON task.id=src.session_id
+ JOIN manager_tasks k ON k.id=task.task_id
+ WHERE o.input_id=$7 AND n.principal_id=$5 AND n.connection_generation=$6 AND u.source_kind='user' AND manager_input_actor_allowed(u.id)
+ AND src.status IN ('completed','failed','interrupted','canceled') AND k.source_chat_session_id=$1
+ AND task.conversation_id=n.conversation_id AND auth.channel_principal_id=$5 AND auth.channel_generation=$6
+ AND manager_input_actor_allowed(auth.id))
+ `
+
+func artifactSelectionScopeArgs(scope service.DelegationScope) []any {
+	id := scope.Identity
+	return []any{id.SessionID, id.EngineID, id.AssignmentID, id.Generation, scope.ActorID, scope.Channel.Generation, scope.InputID}
+}
+
+func artifactSelectionRecovery(ctx context.Context, tx *sql.Tx, args []any, original error) error {
+	rows, err := tx.QueryContext(ctx, artifactSelectionScope+`
+ SELECT a.id,a.name FROM manager_task_artifacts a JOIN (SELECT DISTINCT artifact_id FROM eligible) x ON x.artifact_id=a.id
+ ORDER BY a.created_at,a.id LIMIT 32`, args...)
+	if err != nil {
+		return original
+	}
+	defer func() { _ = rows.Close() }() //nolint:errcheck // Recovery is optional; the original failure is authoritative.
+	var candidates []service.ArtifactSelectionCandidate
+	for rows.Next() {
+		var candidate service.ArtifactSelectionCandidate
+		if err := rows.Scan(&candidate.ID, &candidate.Name); err != nil {
+			return original
+		}
+		candidates = append(candidates, candidate)
+	}
+	if rows.Err() != nil || len(candidates) == 0 {
+		return original
+	}
+	return &service.ArtifactSelectionError{Err: original, Candidates: candidates}
+}
+
 func (s *Store) SelectArtifacts(ctx context.Context, scope service.DelegationScope, ids []string) (any, error) {
 	if scope.Channel == nil || len(ids) == 0 || len(ids) > 32 {
 		return nil, service.Fail("invalid_artifact_selection", 400, "需要渠道回复和候选产物")
@@ -95,33 +150,31 @@ func (s *Store) SelectArtifacts(ctx context.Context, scope service.DelegationSco
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit or the operational error owns the result.
-	id := scope.Identity
+	args := artifactSelectionScopeArgs(scope)
 	var chatTurn string
-	err = tx.QueryRowContext(ctx, `SELECT t.id`+delegationFrom+` AND i.channel_principal_id=$5 AND i.channel_generation=$6 AND `+effectiveDelegatingInput+`=$7 FOR SHARE OF s,t`, id.SessionID, id.EngineID, id.AssignmentID, id.Generation, scope.ActorID, scope.Channel.Generation, scope.InputID).Scan(&chatTurn)
+	err = tx.QueryRowContext(ctx, artifactSelectionTurn+` FOR SHARE OF s,t`, args...).Scan(&chatTurn)
 	if err != nil {
 		return nil, visibleError(err)
 	}
 	seen := map[string]bool{}
 	for _, a := range ids {
-		if !service.ValidID(a) || seen[a] {
+		if seen[a] {
 			return nil, service.Fail("invalid_artifact_selection", 400, "候选 ID 无效或重复")
+		}
+		if !service.ValidID(a) {
+			err = service.Fail("invalid_artifact_selection", 400, "候选 ID 无效或重复")
+			return nil, artifactSelectionRecovery(ctx, tx, args, err)
 		}
 		seen[a] = true
 		var inbox string
 		var report sql.NullString
 		// Each report retains its own original inbox even when multiple reports steer the same chat Turn.
-		err = tx.QueryRowContext(ctx, `SELECT n.id,r.id FROM manager_report_artifacts ra JOIN manager_task_reports r ON r.id=ra.report_id
- JOIN manager_inputs received ON received.id=r.target_input_id JOIN manager_sessions chat ON chat.id=received.session_id
- JOIN manager_inputs origin ON origin.id=r.source_input_id JOIN manager_sessions task ON task.id=origin.session_id
- JOIN manager_tasks k ON k.id=task.task_id JOIN manager_channel_inbox n ON n.input_id=k.source_chat_input_id
- WHERE ra.artifact_id=$1 AND received.turn_id=$2 AND (received.id=(SELECT input_id FROM manager_turns WHERE id=$2) OR received.context_state='committed')
- AND chat.id=$6 AND task.conversation_id=chat.conversation_id AND n.conversation_id=chat.conversation_id AND n.principal_id=$3 AND n.connection_generation=$4 AND manager_input_actor_allowed(origin.id)
- AND manager_channel_actor_allowed(n.principal_id,n.conversation_id,n.connection_generation)
- UNION ALL SELECT n.id,NULL::uuid FROM manager_artifact_offers o JOIN manager_channel_inbox n ON n.input_id=o.input_id JOIN manager_inputs u ON u.id=o.input_id
- WHERE o.artifact_id=$1 AND o.chat_turn_id=$2 AND o.input_id=$5 AND n.principal_id=$3 AND n.connection_generation=$4 AND u.source_kind='user' AND manager_input_actor_allowed(u.id)
- ORDER BY 2 NULLS FIRST LIMIT 1`, a, chatTurn, scope.ActorID, scope.Channel.Generation, scope.InputID, scope.Identity.SessionID).Scan(&inbox, &report)
+		err = tx.QueryRowContext(ctx, artifactSelectionScope+`
+ SELECT inbox_id,report_id FROM eligible WHERE artifact_id=$8 ORDER BY report_id NULLS FIRST LIMIT 1`,
+			append(args, a)...).Scan(&inbox, &report)
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, service.Fail("artifact_forbidden", 403, "产物不属于这次回复的候选清单")
+			err = service.Fail("artifact_forbidden", 403, "产物不属于这次回复的候选清单")
+			return nil, artifactSelectionRecovery(ctx, tx, args, err)
 		}
 		if err != nil {
 			return nil, err

@@ -181,7 +181,10 @@ func pinsDelegationInput(name string, args DelegationArgs) bool {
 }
 
 func (d *Delegation) sendTaskMessage(ctx context.Context, scope DelegationScope, v Session, args DelegationArgs) (any, error) {
-	if v.PlanningState == "planned" || v.PlanningState == "canceled" {
+	if v.PlanningState == "canceled" {
+		return nil, CanceledTodoError{}
+	}
+	if v.PlanningState == "planned" {
 		return nil, Fail("task_not_started", 409, "未启动的待办请使用 supplement_todo")
 	}
 	if len(args.AttachmentPaths) == 0 {

@@ -12,6 +12,8 @@
 | ATT-06 | 钉钉按官方换链结果的原 HTTP/HTTPS 协议下载，允许从 HTTPS 跳转到 HTTP。企微的初始地址和跳转地址均须使用 HTTPS。钉钉和企微按 DNS 主机名校验地址，无固定域名名单，每次下载最多跟随 5 次重定向。两条链路仅接受协议默认端口。默认仅连接 DNS 返回的公网 IP，平台管理员可在[附件下载设置](platform-service-settings.md#附件下载)中允许连接 DNS 返回的内网 IP。飞书使用固定 API，附件重试预算为三次。 |
 | ATT-07 | 内置普通 `read` 在文件开头识别到 PDF 文件头时返回 `pdftotext` 使用提示，不把原始字节当文本。Engine 持久化事件和轮次结果摘要时将实际 NUL 替换为 U+FFFD，保留普通的字面量 `\u0000` 和工具原始输出。 |
 | ATT-08 | 飞书、钉钉、企微的入站附件由下载到项目存储统一限制为每件 100 MiB（104857600 字节，含等于上限）；企微以解密后的文件大小为准。超过上限不能发布为就绪。不改变 Web 上传、事项交接、出站附件及读取工具各自的限制。渠道自身限制及既有下载、保存超时也不变。 |
+| ATT-09 | 飞书富文本保留原有正文及内联图片；同一条消息可同时接收内联图片、内联文件和根级 `files[]` 文件，也支持正文段落为空但包含有效文件的消息。按原内联顺序后接根数组顺序；同一条消息中同一文件键只生成一条文件引用，根数组中的目录或无效条目不影响正文及其他附件。群触发、单独发送的图片和文件不变。 |
+| ATT-10 | `attachment_get` 仍使用现有工具和错误码。输入 ID 无效或不可访问时，仅在当前运行任务的授权通过后，附最多 32 个已授权附件的完整 ID 与名称（超出标记截断）。不返回其他任务附件、路径或供应商凭据，不从候选自动换文件。下载中提示稍后用同一 ID 查询；最终失败或路径不可用时不返回路径、可让用户重发。 |
 
 ## 实现和兼容
 
@@ -29,6 +31,8 @@
 | ATT-06 | [DNS、TLS 与逐跳防护](../../event-hub/internal/channel/media_download_transport_test.go)、[钉钉签名地址与协议跳转](../../event-hub/internal/channel/media_inbound_ding_url_test.go)、[企微跨域下载与两渠道跳数边界](../../event-hub/internal/channel/media_inbound_protocol_test.go)、[共享重试预算](../../backend/internal/platform/repository/channel_media_retry_test.go) |
 | ATT-07 | [真实 stdio MCP 读取回归](../../sandbox-runner/builtin-mcp/tests/stdio.test.mjs)、[隔离 PostgreSQL 事件与摘要回归](../../agent-engine/internal/repository/event_encoding_test.go) |
 | ATT-08 | [三渠道体积及企微解密边界](../../event-hub/internal/channel/media_inbound_protocol_test.go)、[Manager 入口至真实项目持久化](../../backend/internal/platform/repository/channel_media_size_test.go)：声明 100 MiB + 1 字节返回 413；恰好 100 MiB 的文件成功落盘。 |
+| ATT-09 | [飞书入站消息夹具](../../event-hub/internal/channel/media_inbound_feishu_post_test.go)：正文、内联图片、多份文件、语言和 `content_v2` 选择、空正文、去重、目录及畸形元数据、群触发和原消息资源身份。 |
+| ATT-10 | [工具结果测试](../../backend/internal/manager/mcp/inputattachments/http_test.go)、[授权数据回归](../../backend/internal/platform/repository/input_attachment_status_test.go)：候选投影及状态引导，错 ID 和失效身份的授权边界。 |
 | 厂商协议和后台限制 | [Event Hub 夹具](../../event-hub/internal/channel/media_inbound_protocol_test.go)，覆盖钉钉下载码、企微文件名、错误归类及独立 worker 限制 |
 
 已通过隔离 PostgreSQL 和[实际 Engine/Pi 的附件端到端用例](../../backend/internal/platform/repository/async_attachment_runtime_test.go)：附件未传输时状态无路径，后续文字可以应答；上传完成后同一任务可查询到路径，并用执行工具读取文件内容。真实供应商账号另行验收，夹具及隔离数据库不代表真实渠道收件验证。

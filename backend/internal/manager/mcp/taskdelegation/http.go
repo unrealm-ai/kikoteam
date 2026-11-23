@@ -45,7 +45,7 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 			if log != nil {
 				log.Warn("Delegation operation failed", "event", "delegation.failed", "source_session_id", scope.Identity.SessionID, "operation", name, "error_code", code)
 			}
-			return &sdk.CallToolResult{IsError: true}, map[string]any{"error": map[string]string{"code": code, "message": message}}, nil
+			return &sdk.CallToolResult{IsError: true}, failedToolResult(name, code, message, args, err), nil
 		}
 		sdk.AddTool[manager.DelegationArgs, any](server, &spec, call)
 		if name == "artifact_select" {

@@ -157,10 +157,23 @@ func renderNode(n map[string]json.RawMessage, mentions map[string]string) (strin
 
 // PostBlocks selects the same locale and ordering for text and native resources.
 func PostBlocks(raw string) ([][]map[string]json.RawMessage, string, error) {
+	post, err := ParsePost(raw)
+	return post.Blocks, post.Title, err
+}
+
+type Post struct {
+	Blocks [][]map[string]json.RawMessage
+	Title  string
+	Files  json.RawMessage // Top-level attachment entries, separate from any locale or content version.
+}
+
+// ParsePost keeps the existing content/locale projection while retaining root files.
+func ParsePost(raw string) (Post, error) {
 	var body map[string]json.RawMessage
 	if len(raw) > 1<<20 || json.Unmarshal([]byte(raw), &body) != nil || body == nil {
-		return nil, "", errors.New("invalid_feishu_content")
+		return Post{}, errors.New("invalid_feishu_content")
 	}
+	rootFiles := body["files"]
 	if body["content"] == nil && body["content_v2"] == nil {
 		keys := []string{"zh_cn", "en_us"}
 		rest := make([]string, 0, len(body))
@@ -185,7 +198,7 @@ func PostBlocks(raw string) ([][]map[string]json.RawMessage, string, error) {
 	}
 	var blocks [][]map[string]json.RawMessage
 	if json.Unmarshal(source, &blocks) != nil || blocks == nil {
-		return nil, "", errors.New("invalid_post_blocks")
+		return Post{}, errors.New("invalid_post_blocks")
 	}
-	return blocks, optional(body, "title"), nil
+	return Post{Blocks: blocks, Title: optional(body, "title"), Files: rootFiles}, nil
 }

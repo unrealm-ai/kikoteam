@@ -10,7 +10,29 @@ type InputAttachmentStatus struct {
 	Status string `json:"status"`
 	Name   string `json:"name,omitempty"`
 	Path   string `json:"path,omitempty"`
+	Advice string `json:"advice,omitempty"`
 }
+
+// InputAttachmentCandidate identifies an exact authorized reference, not a file path.
+type InputAttachmentCandidate struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type InputAttachmentRecovery struct {
+	Candidates []InputAttachmentCandidate `json:"candidates"`
+	Truncated  bool                       `json:"candidates_truncated,omitempty"`
+	Advice     string                     `json:"advice"`
+}
+
+// InputAttachmentLookupError retains the original argument/authorization error.
+type InputAttachmentLookupError struct {
+	Cause    error
+	Recovery InputAttachmentRecovery
+}
+
+func (e *InputAttachmentLookupError) Error() string { return e.Cause.Error() }
+func (e *InputAttachmentLookupError) Unwrap() error { return e.Cause }
 
 type InputAttachmentReader interface {
 	ReadInputAttachment(context.Context, DelegationIdentity, string) (InputAttachmentStatus, Conversation, error)

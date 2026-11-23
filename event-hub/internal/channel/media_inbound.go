@@ -80,22 +80,7 @@ func cleanMediaName(name string) string {
 }
 func feishuMedia(kind, raw string) []MediaReference {
 	if kind == "post" {
-		var out []MediaReference
-		blocks, _, err := feishucontent.PostBlocks(raw)
-		if err != nil {
-			return nil
-		}
-		for _, block := range blocks {
-			for _, n := range block {
-				switch jsonString(n["tag"]) {
-				case "img":
-					out = append(out, mediaRef("image", "", jsonString(n["image_key"]), "")...)
-				case "file":
-					out = append(out, mediaRef("file", jsonString(n["file_name"]), jsonString(n["file_key"]), "")...)
-				}
-			}
-		}
-		return out
+		return feishuPostMedia(raw)
 	}
 	var n struct {
 		Image string `json:"image_key"`
@@ -113,6 +98,57 @@ func feishuMedia(kind, raw string) []MediaReference {
 	}
 	return nil
 }
+func feishuPostMedia(raw string) []MediaReference {
+	post, err := feishucontent.ParsePost(raw)
+	if err != nil {
+		return nil
+	}
+	var out []MediaReference
+	files := make(map[string]int)
+	appendFile := func(key, name string) {
+		if strings.TrimSpace(key) == "" || strings.ContainsAny(key, "\x00\r\n") {
+			return
+		}
+		if index, exists := files[key]; exists {
+			if out[index].Name == "" {
+				out[index].Name = cleanMediaName(name)
+			}
+			return
+		}
+		refs := mediaRef("file", name, key, "")
+		if len(refs) != 0 {
+			files[key] = len(out)
+			out = append(out, refs...)
+		}
+	}
+	for _, block := range post.Blocks {
+		for _, n := range block {
+			switch jsonString(n["tag"]) {
+			case "img":
+				out = append(out, mediaRef("image", "", jsonString(n["image_key"]), "")...)
+			case "file":
+				appendFile(jsonString(n["file_key"]), jsonString(n["file_name"]))
+			}
+		}
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(post.Files, &items) != nil {
+		return out
+	}
+	for _, rawFile := range items {
+		var file struct {
+			Key      string          `json:"file_key"`
+			Name     string          `json:"file_name"`
+			IsFolder json.RawMessage `json:"is_folder"`
+		}
+		if json.Unmarshal(rawFile, &file) != nil || (len(file.IsFolder) != 0 && string(file.IsFolder) != "false") {
+			continue // Skip folders and malformed explicit indicators; do not guess they are files.
+		}
+		appendFile(file.Key, file.Name)
+	}
+	return out
+}
+
 func dingMedia(kind string, raw json.RawMessage) []MediaReference {
 	if kind == "richText" {
 		var body struct {

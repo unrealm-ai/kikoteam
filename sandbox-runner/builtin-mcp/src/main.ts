@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { serveStdio, StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { createLogger, logLevel } from './logging.js';
-import { configuration } from './config.js';
+import { configuration, RuntimeDirectoryError } from './config.js';
 import type { ProcessManager } from './process/manager.js';
 import { StateGuard } from './state-guard.js';
 import type { FileWorker } from './file-worker.js';
@@ -105,11 +105,14 @@ try {
   await main((current) => {
     phase = current;
   });
-} catch {
+} catch (error) {
   createLogger()(
     'server.failed',
     'Builtin MCP startup or shutdown failed',
-    { error_code: 'builtin_failure', reason: phase },
+    {
+      error_code: 'builtin_failure',
+      reason: error instanceof RuntimeDirectoryError ? error.message : phase,
+    },
     'ERROR',
   );
   process.exitCode = 1;

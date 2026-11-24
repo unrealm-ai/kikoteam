@@ -18,13 +18,13 @@ export interface ProcessContext {
 // Supplied by the trusted launcher, never by a tool argument. Runtime is not a
 // process ownership key: a later authorized Runtime can manage the same Session.
 export interface ProcessConfig {
-  runtime_directory?: string;
   activity_source?: ActivitySource;
   workspace_id: string;
   session_id: string;
   environment_instance_id: string;
   executor_boot_id: string;
   state_directory: string;
+  runtime_directory: string;
   cwd: string;
   max_runtime_ms: number;
   allow_force: boolean;

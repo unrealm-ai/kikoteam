@@ -54,7 +54,7 @@ func TestUpstreamBuiltinHTTP(t *testing.T) {
 	}
 	token := strings.Repeat("a", 64)
 	state := filepath.Join(dir, "state")
-	args := []string{"--cwd", work, "--workspace-id", uuid(), "--session-id", uuid(), "--sandbox-instance-id", uuid(), "--runner-boot-id", uuid(), "--state-dir", state, "--connection-id", uuid(), "--binding-id", "builtin", "--config-revision", "1"}
+	args := []string{"--cwd", work, "--workspace-id", uuid(), "--session-id", uuid(), "--sandbox-instance-id", uuid(), "--runner-boot-id", uuid(), "--state-dir", state, "--runtime-dir", dir, "--connection-id", uuid(), "--binding-id", "builtin", "--config-revision", "1"}
 	config := filepath.Join(dir, "launch.json")
 	data := fixtureJSON(t, map[string]any{"host": "127.0.0.1", "port": 0, "allowed_hosts": []string{"127.0.0.1"}, "discovery_token": token, "launch_args": args})
 	if err = os.WriteFile(config, data, 0600); err != nil {
@@ -113,7 +113,7 @@ func TestUpstreamBuiltinHTTP(t *testing.T) {
 		t.Fatal(ctx.Err())
 	}
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", filepath.Join(state, "management.sock"))
+		return (&net.Dialer{}).DialContext(ctx, "unix", filepath.Join(dir, "m.sock"))
 	}}
 	defer transport.CloseIdleConnections()
 	management := &http.Client{Transport: transport, Timeout: 10 * time.Second}

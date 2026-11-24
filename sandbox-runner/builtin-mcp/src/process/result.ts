@@ -39,3 +39,10 @@ export class ProcessFailure extends Error {
     super(code);
   }
 }
+
+// Only for failures known to precede command execution.
+export class SpawnFailure extends Error {
+  constructor(readonly code = 'spawn_failed') {
+    super(code);
+  }
+}

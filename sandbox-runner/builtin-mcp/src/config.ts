@@ -1,4 +1,5 @@
-import { isAbsolute } from 'node:path';
+import { lstatSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import type { ProcessConfig } from './process/model.js';
 import type { ActivitySource } from './process/activity.js';
 
@@ -15,6 +16,20 @@ const FLAGS = new Set([
   '--config-revision',
 ]);
 const RESOURCE_ID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+export class RuntimeDirectoryError extends Error {}
+
+function runtimeDirectory(path: string | undefined): string {
+  if (!path || !isAbsolute(path))
+    throw new RuntimeDirectoryError('--runtime-dir requires an absolute path.');
+  // The Bash socket has the longest name. Check bytes before starting either listener.
+  if (Buffer.byteLength(join(path, 'c-00000000')) > 100)
+    throw new RuntimeDirectoryError('--runtime-dir is too long for Unix sockets.');
+  const dir = lstatSync(path, { throwIfNoEntry: false });
+  if (!dir?.isDirectory() || dir.uid !== process.getuid?.() || (dir.mode & 0o077) !== 0)
+    throw new RuntimeDirectoryError('--runtime-dir must be an existing private directory.');
+  return path;
+}
 
 // Only launch configuration may choose the child environment. In particular,
 // platform tokens, NODE_OPTIONS, BASH_ENV and injected loaders are not inherited.
@@ -55,6 +70,7 @@ export function configuration(args: string[], env: NodeJS.ProcessEnv) {
     environment_instance_id: required('--sandbox-instance-id'),
     executor_boot_id: required('--runner-boot-id'),
     state_directory: required('--state-dir'),
+    runtime_directory: runtimeDirectory(flags.get('--runtime-dir')),
     cwd,
     max_runtime_ms: 86_400_000,
     allow_force: true,
@@ -66,11 +82,6 @@ export function configuration(args: string[], env: NodeJS.ProcessEnv) {
     if (!RESOURCE_ID.test(id)) throw new Error('Invalid process launch identity.');
   }
   process.activity_source = activitySource(flags, process);
-  const runtime = flags.get('--runtime-dir');
-  if (runtime !== undefined) {
-    if (!isAbsolute(runtime)) throw new Error('Invalid runtime directory.');
-    process.runtime_directory = runtime;
-  }
   if (
     !isAbsolute(process.state_directory) ||
     !/^[a-zA-Z0-9_-]{1,128}$/.test(process.executor_boot_id)

@@ -8,7 +8,8 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { control } from '../dist/process/control.js';
 import { groupMembers } from '../dist/process/group.js';
-import { spawnPipe, SpawnFailure } from '../dist/process/driver.js';
+import { spawnPipe } from '../dist/process/driver.js';
+import { SpawnFailure } from '../dist/process/result.js';
 
 const events = () => ({
   attached() {},
@@ -84,7 +85,7 @@ test('failure to persist attachment prevents command effects', async (t) => {
   await assert.rejects(
     spawnPipe(
       { command: 'touch executed', cwd: root, stdin_open: false, max_runtime_ms: 60000 },
-      { cwd: root, state_directory: root, environment: { PATH: process.env.PATH } },
+      { cwd: root, runtime_directory: root, environment: { PATH: process.env.PATH } },
       {
         ...events(),
         attached() {
@@ -105,7 +106,7 @@ test('cancellation after attachment but before release has no command effects', 
   await assert.rejects(
     spawnPipe(
       { command: 'touch executed', cwd: root, stdin_open: false, max_runtime_ms: 60000 },
-      { cwd: root, state_directory: root, environment: { PATH: process.env.PATH } },
+      { cwd: root, runtime_directory: root, environment: { PATH: process.env.PATH } },
       {
         ...events(),
         attached() {
@@ -126,7 +127,7 @@ test('closing the execution gate during attachment prevents release', async (t) 
   await assert.rejects(
     spawnPipe(
       { command: 'touch executed', cwd: root, stdin_open: false, max_runtime_ms: 60000 },
-      { cwd: root, state_directory: root, environment: { PATH: process.env.PATH } },
+      { cwd: root, runtime_directory: root, environment: { PATH: process.env.PATH } },
       {
         ...events(),
         attached() {

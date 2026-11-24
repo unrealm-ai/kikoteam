@@ -4,7 +4,13 @@ import type { CallToolResult } from '@modelcontextprotocol/server';
 import type { Logger } from '../logging.js';
 import { CursorCodec, processId, requestDigest } from './identity.js';
 import { OutputDecoder, ProcessOutput } from './output.js';
-import { ProcessFailure, processError, processResult, resultObject } from './result.js';
+import {
+  ProcessFailure,
+  SpawnFailure,
+  processError,
+  processResult,
+  resultObject,
+} from './result.js';
 import { ProcessStore, StoreFailure } from './store.js';
 import {
   ActivityControl,
@@ -12,13 +18,7 @@ import {
   type ActivityRequest,
   type ActivityResult,
 } from './activity.js';
-import {
-  spawnPipe,
-  spawnPty,
-  SpawnFailure,
-  type ProcessEvents,
-  type ProcessHandle,
-} from './driver.js';
+import { spawnPipe, spawnPty, type ProcessEvents, type ProcessHandle } from './driver.js';
 import {
   OUTPUT_BYTES,
   OUTPUT_RETENTION_MS,

@@ -1,9 +1,9 @@
 import { readFile, stat, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, isAbsolute } from 'node:path';
+import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { configuration } from './config.js';
+import { configuration, RuntimeDirectoryError } from './config.js';
 import { createLogger } from './logging.js';
 
 const log = createLogger();
@@ -39,11 +39,6 @@ try {
     !/^[A-Za-z0-9_-]{32,256}$/.test(fields.discovery_token)
   )
     throw new Error('Invalid runtime configuration.');
-  if (
-    fields.management_socket !== undefined &&
-    (typeof fields.management_socket !== 'string' || !isAbsolute(fields.management_socket))
-  )
-    throw new Error('Invalid management socket.');
   const parsed = configuration(fields.launch_args, process.env);
   const config = parsed.process;
   if (!config?.activity_source)
@@ -87,9 +82,6 @@ try {
       port: Number(fields.port),
       allowedHosts: fields.allowed_hosts,
       discoveryToken: fields.discovery_token,
-      ...(typeof fields.management_socket === 'string'
-        ? { managementSocket: fields.management_socket }
-        : {}),
     });
     process.once('SIGTERM', stop);
     process.once('SIGINT', stop);
@@ -106,11 +98,14 @@ try {
     processes.close();
     await worker?.close();
   }
-} catch {
+} catch (error) {
   log(
     'server.failed',
     'Builtin HTTP MCP failed',
-    { error_code: 'builtin_failure', reason: phase },
+    {
+      error_code: 'builtin_failure',
+      reason: error instanceof RuntimeDirectoryError ? error.message : phase,
+    },
     'ERROR',
   );
   process.exitCode = 1;

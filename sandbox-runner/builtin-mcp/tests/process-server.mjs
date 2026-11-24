@@ -16,6 +16,7 @@ const config = {
   executor_boot_id: 'fixture',
   cwd: join(root, 'work'),
   state_directory: join(root, 'state'),
+  runtime_directory: root,
   max_runtime_ms: 86400000,
   allow_force: true,
   environment: { PATH: process.env.PATH, HOME: join(root, 'work') },

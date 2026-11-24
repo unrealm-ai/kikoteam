@@ -80,6 +80,8 @@ node --disable-warning=ExperimentalWarning dist/http-main.js --config /run/built
     "44444444-4444-4444-8444-444444444444",
     "--state-dir",
     "/run/builtin-state",
+    "--runtime-dir",
+    "/tmp/kr-example/b-example",
     "--connection-id",
     "55555555-5555-4555-8555-555555555555",
     "--binding-id",
@@ -90,7 +92,7 @@ node --disable-warning=ExperimentalWarning dist/http-main.js --config /run/built
 }
 ```
 
-工作目录必须已存在并允许 Runner 的运行账号使用。状态目录归当前账号所有，保持 0700，文件为 0600，并与工作目录分开；这些权限用于排除其他账号，不隔离同 UID 的 Bash。文件工具仍拒绝直接操作状态目录，以避免误修改。目录路径保持较短以容纳 Unix socket，Node、包代码、搜索工具及依赖须对该账号可读/执行。旧 `--child-uid / --child-gid` 参数已删除，继续传入会导致配置校验失败。当前工作目录省略时仍默认 `/workspace`；后续本地编排必须显式传入稳定 project 绝对路径，示例不是 Mac/Linux 的目标默认布局。工具省略 cwd 时使用实际启动目录。
+工作目录必须已存在并允许 Runner 的运行账号使用。状态目录归当前账号所有，保持 0700，文件为 0600，并与工作目录分开；这些权限用于排除其他账号，不隔离同 UID 的 Bash。文件工具仍拒绝直接操作状态目录，以避免误修改。Node、包代码、搜索工具及依赖须对该账号可读/执行。旧 `--child-uid / --child-gid` 参数已删除，继续传入会导致配置校验失败。当前工作目录省略时仍默认 `/workspace`；后续本地编排必须显式传入稳定 project 绝对路径，示例不是 Mac/Linux 的目标默认布局。工具省略 cwd 时使用实际启动目录。
 
 唯一 HTTP MCP 路径是 `/mcp`，要求 `Authorization: Bearer <token>`，只接受 allowlist 中的 Host，拒绝浏览器 Origin，默认 loopback。HTTP 同时支持 2026-07-28 和 Pi 1.5.2 使用的 2025-11-25，通过 SDK 自带 stateless HTTP 兼容层执行相同工具；stdio/FileWorker 仍固定 2026-07-28。实际 Pi ACP/Pi、Go Runner 与 Backend 回归已通过，供应商为确定性协议服务，真实供应商仍待配置验收。
 
@@ -100,7 +102,7 @@ node --disable-warning=ExperimentalWarning dist/http-main.js --config /run/built
 
 ## 私有管理协议
 
-管理 HTTP 默认监听 `<state-dir>/management.sock`，可在私有 HTTP 启动配置中通过 management_socket 指定短绝对路径；socket 权限 0600。可选 --runtime-dir 为命令监督 socket 指定短临时目录，SQLite 仍在 --state-dir。Go Runner 使用私有 /tmp 目录避免业务层级路径超过 Unix socket 上限。这些管理字段不注册成工具。契约见[management.openapi.yaml](contracts/management.openapi.yaml)。
+启用受管 Bash 的 HTTP 和 stdio 入口都要求 `--runtime-dir`。启动者为每个实例创建独占的本机临时目录（0700），传入绝对路径，在实例退出后回收。Go Runner 使用 `/tmp/kr-*/b-*/`。管理 HTTP 监听目录下的 `m.sock`（0600），每个 Bash 使用同目录下的 `c-<8 位十六进制数>`。完整 socket 路径最长 100 字节。SQLite 保存在 `--state-dir`。契约见[management.openapi.yaml](contracts/management.openapi.yaml)。
 
 | 方法与路径             | 作用                                                                                       |
 | ---------------------- | ------------------------------------------------------------------------------------------ |
@@ -125,7 +127,7 @@ node --disable-warning=ExperimentalWarning dist/http-main.js --config /run/built
 初始关闭修订为 1，首次设置窗口从 2 开始，之后单调递增。相同修订同内容可重复同步；相同修订不同内容或旧修订返回 409。切轮前排空前轮 RPC、在途调用及未知结果；同一归属、代次和 Harness 可在后续 Turn 继续管理已确认的后台进程，origin_turn_id 保留创建时的 Turn。更换运行实例或停止后重开须确认原进程收尾，否则返回 409。stop 使用更大的修订关闭窗口，后续开启窗口再增加修订，继续使用固定 Token；不增加平台公开 control_id 或幂等 key。
 
 ```sh
-curl --unix-socket /run/builtin-state/management.sock http://localhost/state
+curl --unix-socket /tmp/kr-example/b-example/m.sock http://localhost/state
 ```
 
 SIGTERM / SIGINT 同样先关闭准入、终止进程组和排空，再退出；若 12 秒内不能完成则失败退出并保留未决账本。直接 SIGKILL 无法确认收尾，重启保持 lost / unknown，不能清库或重复启动原命令来“恢复”。
@@ -133,6 +135,8 @@ SIGTERM / SIGINT 同样先关闭准入、终止进程组和排空，再退出；
 ## TS 启动与停止
 
 每条命令由 TS supervisor 监督。builtin 先写入 starting 记录，启动尚未运行 Bash 的 supervisor；收到 ready 后保存监督身份，再经受控连接发送 start。supervisor 使用 Node spawn 启动 Bash，分别报告启动错误、启动成功和实际退出结果。记录失败或放行前取消不会执行命令；start 已送达但结果未知时不自动重试。
+
+创建命令控制 socket 失败时，`bash_start` 返回 `control_socket_unavailable` 并释放预占的进程名额。操作回执保留该错误，后续新调用可在目录恢复后执行。此前已经记录的 `lost` 保留原状。
 
 supervisor 与 Bash 使用同一进程组。停止时 supervisor 向自身进程组发 TERM，并保持运行以执行固定 5 秒宽限期；强制停止先通过存活的直接子进程句柄取得 Bash 实际退出结果，再向自身进程组发 KILL 收尾，包括终止 supervisor 自身。无法确认退出时保留未知，不能从“信号已发送”猜测命令结果。管理连接断开时 supervisor 同样自行收尾。
 

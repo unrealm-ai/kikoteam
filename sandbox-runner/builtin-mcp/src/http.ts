@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { chmod, lstat, unlink } from 'node:fs/promises';
+import { chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -108,7 +108,6 @@ export async function startHttp(options: {
   port: number;
   allowedHosts: string[];
   discoveryToken: string;
-  managementSocket?: string;
 }) {
   const { config, processes, tools, guard, worker, log } = options;
   const source = config.activity_source;
@@ -118,7 +117,7 @@ export async function startHttp(options: {
   let closing = false;
   let managing = false;
   let admissions = 0;
-  const socket = options.managementSocket ?? join(config.state_directory, 'management.sock');
+  const socket = join(config.runtime_directory, 'm.sock');
   const activity = () =>
     processes.activity({
       source,
@@ -311,16 +310,6 @@ export async function startHttp(options: {
   http.requestTimeout = 30_000;
   control.requestTimeout = 10_000;
   try {
-    // ProcessManager already holds the exclusive store lock. A stale socket
-    // after a crash may be removed; a non-socket or symlink must not be erased.
-    const existing = await lstat(socket).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error;
-      return undefined;
-    });
-    if (existing) {
-      if (!existing.isSocket()) throw new Error('Invalid management socket path.');
-      await unlink(socket);
-    }
     await new Promise<void>((resolve, reject) => {
       control.once('error', reject);
       control.listen(socket, resolve);

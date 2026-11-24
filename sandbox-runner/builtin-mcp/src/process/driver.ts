@@ -6,7 +6,7 @@ import type { Readable, Writable } from 'node:stream';
 import type { ProcessConfig, StartInput, Stream } from './model.js';
 import { ProcessGroup } from './group.js';
 import { ptyFork, ptyIdentity } from './pty-native.js';
-import { ProcessFailure } from './result.js';
+import { ProcessFailure, SpawnFailure } from './result.js';
 import { control } from './control.js';
 
 export interface InputReceipt {
@@ -31,12 +31,6 @@ export interface ProcessHandle {
   group: ProcessGroup;
   write(text: string, close: boolean): Promise<InputReceipt>;
   detach(): void;
-}
-
-export class SpawnFailure extends Error {
-  constructor(readonly code = 'spawn_failed') {
-    super(code);
-  }
 }
 
 function commandArgs(input: StartInput, path: string): string[] {
@@ -113,7 +107,7 @@ export async function spawnPipe(
   canStart: () => boolean = () => true,
 ): Promise<ProcessHandle> {
   if (signal.aborted) throw new SpawnFailure('cancelled');
-  const bridge = await control(config.runtime_directory ?? config.state_directory, events);
+  const bridge = await control(config.runtime_directory, events);
   if (signal.aborted) {
     bridge.close();
     throw new SpawnFailure('cancelled');
@@ -209,7 +203,7 @@ export async function spawnPty(
 ): Promise<ProcessHandle> {
   const native = ptyFork();
   if (signal.aborted) throw new SpawnFailure('cancelled');
-  const bridge = await control(config.runtime_directory ?? config.state_directory, events);
+  const bridge = await control(config.runtime_directory, events);
   if (signal.aborted) {
     bridge.close();
     throw new SpawnFailure('cancelled');

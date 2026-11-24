@@ -30,6 +30,7 @@ async function fixture(t, managed = false) {
     environment_instance_id: 'ceb40783-4b1b-5ed9-9b10-7b3711def584',
     executor_boot_id: 'test-boot',
     state_directory: join(root, 'private'),
+    runtime_directory: root,
     max_runtime_ms: 86400000,
     allow_force: true,
     environment: { PATH: process.env.PATH, HOME: cwd },
@@ -120,6 +121,28 @@ async function fixture(t, managed = false) {
     },
   };
 }
+
+test('four socket bind failures leave the next Bash slot available across restart', async (t) => {
+  const f = await fixture(t, true);
+  await f.activity();
+  f.config.runtime_directory = join(f.root, 'missing');
+  for (const tty of [false, true, false, true]) {
+    const result = await f.start('touch unexpected', { tty });
+    assert.equal(result.structuredContent.error.code, 'control_socket_unavailable');
+    assert.equal(result.structuredContent.process_id, undefined);
+  }
+  await assert.rejects(readFile(join(f.cwd, 'unexpected')), { code: 'ENOENT' });
+  const state = await f.activity();
+  assert.equal(state.verified, true);
+  assert.equal(state.active + state.unknown + state.pending_writes, 0);
+  assert.deepEqual((await f.call('bash_list', {})).structuredContent.items, []);
+  f.config.runtime_directory = f.root;
+  f.restart();
+  await f.activity();
+  const started = await f.start('printf recovered');
+  const done = await f.until(started.structuredContent.process_id);
+  assert.equal(done.chunks.map((chunk) => chunk.text).join(''), 'recovered');
+});
 
 test('management gate is initially closed and ordered independently of process activity', async (t) => {
   const f = await fixture(t, true);

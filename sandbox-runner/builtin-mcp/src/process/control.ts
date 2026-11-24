@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { unlink } from 'node:fs/promises';
 import type { ProcessEvents } from './driver.js';
-import { ProcessFailure } from './result.js';
+import { ProcessFailure, SpawnFailure } from './result.js';
 
 function exitMessage(
   value: object,
@@ -23,8 +23,6 @@ function exitMessage(
 // from management files; the permissions here only exclude other accounts.
 export async function control(directory: string, events: ProcessEvents) {
   const path = join(directory, `c-${randomBytes(4).toString('hex')}`);
-  if (Buffer.byteLength(path) > 100)
-    throw new Error('Process state path is too long for local supervision.');
   let socket: Socket | undefined;
   let exited = false;
   let closing = false;
@@ -104,10 +102,10 @@ export async function control(directory: string, events: ProcessEvents) {
       server.once('error', reject);
       server.listen(path, resolve);
     });
-  } catch (error) {
+  } catch {
     clearTimeout(timer);
     server.close();
-    throw error;
+    throw new SpawnFailure('control_socket_unavailable');
   }
   server.on('error', () => {});
   const send = (command: string) =>

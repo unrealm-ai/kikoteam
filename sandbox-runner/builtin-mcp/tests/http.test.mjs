@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID, randomBytes } from 'node:crypto';
-import { mkdtemp, mkdir, chmod, writeFile, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { request } from 'node:http';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -31,23 +30,11 @@ function manage(socketPath, method, path, value) {
   });
 }
 
-async function fixture(t, staleSocket = false) {
-  const root = await mkdtemp(join(tmpdir(), 'builtin-http-'));
-  await chmod(root, 0o755);
+async function fixture(t) {
+  const root = await mkdtemp('/tmp/builtin-http-');
   const cwd = join(root, 'work');
   await mkdir(cwd);
-  const state = join(root, 'state');
-  if (staleSocket) {
-    await mkdir(state, { mode: 0o700 });
-    const stale = spawn(process.execPath, [
-      '-e',
-      'require("node:net").createServer().listen(process.argv[1],()=>console.log("ready"))',
-      join(state, 'management.sock'),
-    ]);
-    await once(stale.stdout, 'data');
-    stale.kill('SIGKILL');
-    await once(stale, 'exit');
-  }
+  const state = join(root, 'state-'.repeat(20));
   const args = [
     '--cwd',
     cwd,
@@ -61,6 +48,8 @@ async function fixture(t, staleSocket = false) {
     randomUUID(),
     '--state-dir',
     state,
+    '--runtime-dir',
+    root,
     '--connection-id',
     randomUUID(),
     '--binding-id',
@@ -113,7 +102,7 @@ async function fixture(t, staleSocket = false) {
   }
   assert.ok(port, 'HTTP did not become ready: ' + logs);
   const url = new URL(`http://127.0.0.1:${port}/mcp`);
-  const socket = join(state, 'management.sock');
+  const socket = join(root, 'm.sock');
   async function client(token) {
     const result = new Client(
       { name: 'builtin-http-test', version: '1' },
@@ -152,10 +141,40 @@ async function fixture(t, staleSocket = false) {
 
 const supported = { skip: !['linux', 'darwin'].includes(process.platform) };
 test(
+  'launch rejects a missing, overlong or occupied runtime directory and preserves the live socket',
+  supported,
+  async (t) => {
+    const f = await fixture(t);
+    const config = JSON.parse(await readFile(join(f.root, 'launch.json'), 'utf8'));
+    const args = config.launch_args;
+    args[args.indexOf('--state-dir') + 1] = join(f.root, 'other-state');
+    args.splice(args.indexOf('--runtime-dir'), 2);
+    const second = join(f.root, 'second.json');
+    for (const [flags, reason] of [
+      [[], /--runtime-dir requires an absolute path/],
+      [['--runtime-dir', join(f.root, '路'.repeat(32))], /too long for Unix sockets/],
+      [['--runtime-dir', f.root], /initialization/],
+    ]) {
+      await writeFile(second, JSON.stringify({ ...config, launch_args: [...args, ...flags] }), {
+        mode: 0o600,
+      });
+      const child = spawnSync(process.execPath, ['dist/http-main.js', '--config', second], {
+        cwd: new URL('..', import.meta.url),
+        encoding: 'utf8',
+        timeout: 10000,
+      });
+      assert.equal(child.status, 1);
+      assert.match(child.stderr, reason);
+      assert.equal((await f.manage('GET', '/state')).status, 200);
+    }
+  },
+);
+
+test(
   'a later Turn of the same runtime can manage background work after HTTP disconnect',
   supported,
   async (t) => {
-    const f = await fixture(t, true);
+    const f = await fixture(t);
     assert.equal((await f.manage('POST', '/execution-window', f.window)).status, 200);
     const first = await f.client(f.window.access_token);
     const started = await first.callTool({

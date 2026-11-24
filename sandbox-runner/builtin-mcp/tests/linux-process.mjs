@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -17,7 +17,6 @@ const main = fileURLToPath(new URL('../dist/main.js', import.meta.url));
 
 async function fixture(t) {
   const root = await mkdtemp('/tmp/builtin-linux-');
-  await chmod(root, 0o755);
   const cwd = join(root, 'work');
   await mkdir(cwd);
   const state = join(root, 'private');
@@ -41,6 +40,8 @@ async function fixture(t) {
       'linux-acceptance',
       '--state-dir',
       state,
+      '--runtime-dir',
+      root,
     ],
     env: {
       PATH: process.env.PATH,

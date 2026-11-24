@@ -86,10 +86,9 @@ func (s *server) startBuiltin(ctx context.Context, id string) (*binding, error) 
 		}
 	}()
 	socket := filepath.Join(socketDir, "m.sock")
-	args := []string{"--cwd", s.project, "--workspace-id", s.scope.WorkspaceID, "--session-id", id, "--sandbox-instance-id", s.scope.ID, "--runner-boot-id", s.boot, "--state-dir", filepath.Join(dir, "processes"), "--connection-id", uuid(), "--binding-id", "builtin", "--config-revision", "1"}
-	args = append(args, "--runtime-dir", socketDir)
+	args := []string{"--cwd", s.project, "--workspace-id", s.scope.WorkspaceID, "--session-id", id, "--sandbox-instance-id", s.scope.ID, "--runner-boot-id", s.boot, "--state-dir", filepath.Join(dir, "processes"), "--runtime-dir", socketDir, "--connection-id", uuid(), "--binding-id", "builtin", "--config-revision", "1"}
 	path := filepath.Join(socketDir, "launch.json")
-	if err = writePrivate(path, map[string]any{"host": "127.0.0.1", "port": 0, "allowed_hosts": []string{"127.0.0.1"}, "discovery_token": string(data), "launch_args": args, "management_socket": socket}); err != nil {
+	if err = writePrivate(path, map[string]any{"host": "127.0.0.1", "port": 0, "allowed_hosts": []string{"127.0.0.1"}, "discovery_token": string(data), "launch_args": args}); err != nil {
 		return nil, err
 	}
 	// Child lifetime is the Runner, not this management HTTP request.

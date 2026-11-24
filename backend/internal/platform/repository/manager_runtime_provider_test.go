@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	manager "github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
+
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
 
@@ -221,9 +223,20 @@ func runtimeDelegationReply(t *testing.T, w http.ResponseWriter, body runtimeReq
 			raw := fmt.Sprint(m.Content)
 			var out map[string]any
 			if json.Unmarshal([]byte(raw), &out) == nil {
+				if results == 1 && strings.Contains(text, "delegate-create") &&
+					(len(out) != 4 || out["accepted"] != true || !manager.ValidID(fmt.Sprint(out["task_id"])) ||
+						!manager.ValidID(fmt.Sprint(out["session_id"])) || !manager.ValidID(fmt.Sprint(out["input_id"]))) {
+					t.Errorf("provider received non-acceptance create tool text: %q", raw)
+				}
+				if results == 1 && strings.Contains(text, "delegate-query") &&
+					(out["execution"] == nil || out["summary"] == nil || out["accepted"] != nil) {
+					t.Errorf("provider did not receive a detailed progress tool result: %q", raw)
+				}
 				if id, ok := out["session_id"].(string); ok {
 					target = id
 				}
+			} else if results == 1 && (strings.Contains(text, "delegate-create") || strings.Contains(text, "delegate-query")) {
+				t.Errorf("provider tool text is not a JSON receipt: %q", raw)
 			}
 		}
 	}

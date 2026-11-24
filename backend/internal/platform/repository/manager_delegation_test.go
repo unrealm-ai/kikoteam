@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -168,9 +170,9 @@ func TestDelegationScopeAtomicDedupAndRunnerGrants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	callCreate := func(rpcID, args string) *httptest.ResponseRecorder {
+	callTool := func(rpcID, name, args string) *httptest.ResponseRecorder {
 		t.Helper()
-		request := httptest.NewRequest("POST", "http://localhost/mcp/task-delegation", strings.NewReader(`{"jsonrpc":"2.0","id":`+rpcID+`,"method":"tools/call","params":{"name":"task_delegation_create_session","arguments":`+args+`}}`))
+		request := httptest.NewRequest("POST", "http://localhost/mcp/task-delegation", strings.NewReader(`{"jsonrpc":"2.0","id":`+rpcID+`,"method":"tools/call","params":{"name":"`+name+`","arguments":`+args+`}}`))
 		request.Header.Set("Authorization", "Bearer "+token)
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Accept", "application/json, text/event-stream")
@@ -179,24 +181,75 @@ func TestDelegationScopeAtomicDedupAndRunnerGrants(t *testing.T) {
 		h.ServeHTTP(out, request)
 		return out
 	}
+	var original map[string]any
 	for _, rpcID := range []string{"1", "2"} {
-		out := callCreate(rpcID, `{"instruction":"one task"}`)
+		out := callTool(rpcID, "task_delegation_create_session", `{"instruction":"one task"}`)
 		var receipt struct {
 			Result struct {
-				Content struct {
-					SessionID string `json:"session_id"`
-				} `json:"structuredContent"`
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+				Structured map[string]any `json:"structuredContent"`
+				IsError    bool           `json:"isError"`
 			} `json:"result"`
 		}
-		if err := json.Unmarshal(out.Body.Bytes(), &receipt); err != nil || out.Code != 200 || receipt.Result.Content.SessionID != target {
-			t.Fatalf("MCP retry did not return original task: %d %s", out.Code, out.Body.String())
+		if err := json.Unmarshal(out.Body.Bytes(), &receipt); err != nil || out.Code != 200 || receipt.Result.IsError {
+			t.Fatalf("MCP retry failed: %d %s", out.Code, out.Body.String())
+		}
+		v := receipt.Result.Structured
+		if len(v) != 4 || v["accepted"] != true || v["session_id"] != target ||
+			!manager.ValidID(fmt.Sprint(v["task_id"])) || !manager.ValidID(fmt.Sprint(v["input_id"])) {
+			t.Fatalf("invalid MCP acceptance payload: %v", v)
+		}
+		var text map[string]any
+		if len(receipt.Result.Content) != 1 || receipt.Result.Content[0].Type != "text" ||
+			json.Unmarshal([]byte(receipt.Result.Content[0].Text), &text) != nil || !reflect.DeepEqual(v, text) {
+			t.Fatalf("MCP model text diverged from the accepted receipt: %s", out.Body.String())
+		}
+		if original == nil {
+			original = v
+		} else if !reflect.DeepEqual(original, v) {
+			t.Fatalf("MCP replay changed accepted IDs: %v, %v", original, v)
 		}
 	}
 	for _, field := range []string{`"workspace_id":"forged"`, `"employee_id":"` + agent + `"`, `"request_key":"caller-supplied"`} {
-		response = callCreate("3", `{"instruction":"x",`+field+`}`)
-		if response.Code != 200 || !strings.Contains(response.Body.String(), `"isError":true`) {
+		response = callTool("3", "task_delegation_create_session", `{"instruction":"x",`+field+`}`)
+		if response.Code != 200 || !strings.Contains(response.Body.String(), `"isError":true`) ||
+			strings.Contains(response.Body.String(), `"accepted":true`) {
 			t.Fatalf("unexpected field %s accepted: %d %s", field, response.Code, response.Body.String())
 		}
+	}
+	// Failed lookups must retain scoped recovery arguments in the actual MCP text.
+	missingTurn := manager.NewID()
+	response = callTool("4", "task_delegation_get_session", `{"session_id":"`+target+`","turn_id":"`+missingTurn+`"}`)
+	var failed struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err = json.Unmarshal(response.Body.Bytes(), &failed); err != nil || response.Code != 200 ||
+		!failed.Result.IsError || len(failed.Result.Content) != 1 {
+		t.Fatalf("missing MCP lookup error: %d %s", response.Code, response.Body.String())
+	}
+	var lookup struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+		Recovery struct {
+			Tool         string            `json:"tool"`
+			Arguments    map[string]string `json:"arguments"`
+			Instructions string            `json:"instructions"`
+		} `json:"recovery"`
+	}
+	if err = json.Unmarshal([]byte(failed.Result.Content[0].Text), &lookup); err != nil ||
+		lookup.Error.Code != "resource_not_found" || lookup.Recovery.Tool != "task_delegation_get_session" ||
+		len(lookup.Recovery.Arguments) != 1 || lookup.Recovery.Arguments["session_id"] != target ||
+		!strings.Contains(lookup.Recovery.Instructions, "去掉 turn_id 和 cursor") {
+		t.Fatalf("missing exact recovery in MCP text: %s", failed.Result.Content[0].Text)
 	}
 	if err = store.Dispatch(ctx); err != nil {
 		t.Fatal(err)

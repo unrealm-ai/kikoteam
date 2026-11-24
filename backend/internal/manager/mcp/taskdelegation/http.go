@@ -5,13 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	contract "github.com/unrealm-ai/kikoteam/backend/contracts/taskdelegation"
-	manager "github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	contract "github.com/unrealm-ai/kikoteam/backend/contracts/taskdelegation"
+	manager "github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 )
 
 type scopeKey struct{}
@@ -33,6 +34,9 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 				return nil, nil, errors.New("unauthenticated")
 			}
 			out, err := d.Call(ctx, scope, name, args)
+			if err == nil && name == "create_session" {
+				out, err = acceptedCreation(out)
+			}
 			if err == nil {
 				return nil, chatResult(out), nil
 			}
@@ -84,4 +88,16 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		transport.ServeHTTP(w, r.WithContext(context.WithValue(ctx, scopeKey{}, scope)))
 	}), nil
+}
+
+// Only an immediately created task with durable IDs gets this acceptance receipt.
+func acceptedCreation(out any) (any, error) {
+	v, _ := out.(map[string]any)
+	task, _ := v["task_id"].(*string)
+	session, _ := v["session_id"].(string)
+	input, _ := v["input_id"].(*string)
+	if task == nil || input == nil || !manager.ValidID(*task) || !manager.ValidID(session) || !manager.ValidID(*input) {
+		return nil, manager.Fail("dependency_unavailable", 503, "暂未确认任务的受理回执")
+	}
+	return map[string]any{"accepted": true, "task_id": *task, "session_id": session, "input_id": *input}, nil
 }

@@ -8,7 +8,7 @@
 | 本地启动器 | [无宿主机 Python 的 Compose 启停与安装引导](local-launcher.md) | macOS 真机 Compose；macOS/Linux CLI 黑盒（含模拟 Docker 安装） |
 | 镜像发布 | [主分支与版本标签的 AMD64 镜像发布](tagged-multiarch-release.md) | 推送到主分支后构建三个服务镜像，通过 AMD64 验收后更新部署指针 |
 | 渠道接收反应 | [飞书、钉钉原消息接收反应](channel-receipt-reactions.md) | 隔离 PostgreSQL、供应商 HTTP 夹具与钉钉实测通过；飞书真实贴表情待验 |
-| 主对话与任务提示词 | [委派回话、员工身份与能力包文案](task-package-prompt.md) | 主对话回话规则单测；身份与能力包文案经隔离 PostgreSQL 与 Engine/Pi 测试模型端到端验证 |
+| 主对话与任务提示词 | [委派回话与受理回执、员工身份和能力包文案](task-package-prompt.md) | 主对话规则单测、受理回执的隔离 PostgreSQL 与原生 Pi 协议集成验证；身份与能力包文案经测试模型端到端验证 |
 | 钉钉回复 | [原会话回复、主动投递与缺权限提示](dingtalk-session-reply.md) | 本地渠道协议夹具、隔离 PostgreSQL；真实账号待验 |
 | 入站附件 | [四入口异步准备与任务按需读取](async-inbound-attachments.md) | 隔离 PostgreSQL、Engine/Pi 端到端及 100 MiB 边界测试通过；真实渠道尚未全部通过 |
 | 主对话工具恢复 | [任务状态、写入回执和回复产物](chat-tool-recovery.md) | MCP 错误负载、任务规则和隔离 PostgreSQL 的候选授权回归；未用真实 IM 交付验收 |

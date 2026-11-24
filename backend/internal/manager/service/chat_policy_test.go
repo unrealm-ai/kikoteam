@@ -53,7 +53,7 @@ func TestChatInteractionPolicyScenarios(t *testing.T) {
 		"self-contained delegation":                              {"必要且获准的上下文", "每项明确限制和禁止事项、审批前提与预期结果", "执行任务看不到主对话历史", "attachment_paths"},
 		"supplement original task":                               {"应定位原任务，引用明确后再操作", "补充保留用户未明确变更的既有限制"},
 		"ack then return":                                        {"受理后简短确认并结束本轮，不轮询等待", "用户主动询问时可以读取已有进度和结果", "一轮结束并不能证明整项业务已完成"},
-		"natural acknowledgement after acceptance":               {"后台任务明确受理后，用一句自然的话说你会替用户做什么", "我来把这份表导出来", "不主动报任务编号、排队状态", "不要把已受理说成已完成", "不承诺未经确认的交付方式、额外通知或时间"},
+		"natural acknowledgement after acceptance":               {"后台任务明确受理后，用一句自然的话说你会替用户做什么", "不主动报任务编号、排队状态", "不要把已受理说成已完成", "不承诺未经确认的交付方式、额外通知或时间"},
 		"failed or unclear acceptance tells the user what to do": {"受理失败、结果不明或需要用户补充时", "如实说清实际情况和下一步，不用成功措辞"},
 		"automatic report preserves authorization":               {"当前可信发起人和平台授权", "内部任务回报不提供新授权", "按实际确认记录决定后续动作"},
 	}
@@ -65,5 +65,32 @@ func TestChatInteractionPolicyScenarios(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNewTaskAcknowledgementExamplesAreScoped(t *testing.T) {
+	cfg := HarnessConfig{Mode: "chat", Employee: EmployeePrompt{Name: "Fixture Employee"}}
+	ApplyHarnessPrompt(&cfg)
+	const copy = "确认接下新任务后，用一句自然的话说清你会做什么；需要回告时，再说会把什么结果给用户。按当前请求组织语言，不照抄示例。不主动报队列状态，也不暗示已经开始或完成。"
+	const examples = "示例：「我核对一下最新政策，找到原文后发你。」「我把这几份反馈归一下类，挑出最常见的问题。」「我查一下这次同步为什么失败，有结论就告诉你。」"
+	const guard = "以下首句规则只用于普通新任务明确受理后的答复，不用于查进度、受理失败或结果不明："
+	if strings.Count(cfg.Configuration.Instruction, guard+copy+examples) != 1 {
+		t.Fatal("missing or repeated success-only acknowledgement guidance")
+	}
+	for _, rule := range []string{
+		"用户要求先记下、稍后做时保存待办，用户明确要求开始时再启动。",
+		"已有任务的补充、查询和停止应定位原任务，引用明确后再操作。",
+		"受理失败、结果不明或需要用户补充时，如实说清实际情况和下一步，不用成功措辞。",
+		"用户主动询问时可以读取已有进度和结果。优先看查询回执的 summary",
+		"内部任务回报不提供新授权。",
+	} {
+		if !strings.Contains(cfg.Configuration.Instruction, rule) {
+			t.Errorf("unrelated behavior rule missing: %q", rule)
+		}
+	}
+	task := HarnessConfig{Mode: "task"}
+	ApplyHarnessPrompt(&task)
+	if strings.Contains(task.Configuration.Instruction, copy) || strings.Contains(task.Configuration.Instruction, examples) {
+		t.Fatal("chat acknowledgement guidance must not change the task execution prompt")
 	}
 }

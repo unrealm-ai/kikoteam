@@ -307,7 +307,7 @@ func TestPlannedTaskMCPProtocolAndRemovedTargetTool(t *testing.T) {
 		t.Fatal("wrong tool surface", list)
 	}
 	result := call("tools/call", `{"name":"task_delegation_create_todo","arguments":{"instruction":"deferred","request_key":"http-todo"}}`)
-	if strings.Contains(result, `"isError":true`) || !strings.Contains(result, "planned") {
+	if strings.Contains(result, `"isError":true`) || !strings.Contains(result, "planned") || strings.Contains(result, `"accepted":true`) {
 		t.Fatal(result)
 	}
 	var session string

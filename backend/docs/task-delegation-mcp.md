@@ -89,7 +89,7 @@ list_targets 已移除，主对话只能操作当前员工。list_sessions 只�
 
 | 工具 | 参数候选 | 业务结果 |
 | --- | --- | --- |
-| `task_delegation_create_session` | instruction、title?、attachment_paths? | Task / Session / 首条 Input 的已受理身份及当前执行概况 |
+| `task_delegation_create_session` | instruction、title?、attachment_ids?、attachment_paths? | `accepted: true` 与原 Task / Session / 首条 Input 的已受理身份 |
 | `task_delegation_list_sessions` | cursor?、limit?、planning_state?、execution_state?、latest_turn_status? | 当前主会话委派的 Task / Session 摘要，{items, next_cursor} |
 | `task_delegation_get_session` | session_id、turn_id?、cursor?、limit?、input_id? | 简明状态及结果摘要、当前执行事实、所选轮次的正式回复分页与输入回执 |
 | `task_delegation_send_message` | session_id、可选 text、有序 attachment_paths，文字和附件至少提供一项 | 原 Session 新 Input 的身份及当前状态 |
@@ -117,24 +117,18 @@ instruction / text 沿用[Input 文本校验](session-api.md#1-路径身份与�
 }
 ```
 
-典型创建回执：
+立即创建成功的 MCP 回执（立即查询仍返回完整执行概况）：
 
 ```json
 {
+  "accepted": true,
   "task_id": "55555555-5555-4555-8555-555555555555",
   "session_id": "33333333-3333-4333-8333-333333333333",
-  "input_id": "44444444-4444-4444-8444-444444444444",
-  "execution": {
-    "state": "queued",
-    "active_turn_id": null,
-    "queued_input_count": 1,
-    "background_process_count": 0,
-    "block_reason": null
-  }
+  "input_id": "44444444-4444-4444-8444-444444444444"
 }
 ```
 
-回执表示原子受理成功，不表示模型已启动或工作已完成；实际返回读取时的当前状态，不保证始终 queued。事务提交后才唤醒既有分配机制，通知丢失可由 Backend 重新发现待办，不重新创建 Task。环境在首次执行时由现有生命周期用例取得，不在 MCP 受理事务内启动 Pi / Runner。
+回执只表示已持久受理，不表示模型已启动或工作完成。不会返回瞬时执行状态，请在需要时使用查询工具。相同来源输入和相同参数的获准重放仍返回原三个 ID。已保存但未启动的待办、失败和未知结果不使用此回执。事务提交后才唤醒既有分配机制，通知丢失可由 Backend 重新发现待办，不重新创建 Task。环境在首次执行时由现有生命周期用例取得，不在 MCP 受理事务内启动 Pi / Runner。
 
 send_message 将补充文字、有序 attachment_paths 或二者作为原任务的新 Input，沿用 steer。Manager 按当前已授权来源输入、目标和内容去重，并在提交事务内核对版本。补充问题、停止后继续和故障后“继续”均不创建新 Task / Session，故障后按原生加载机制执行新 Turn。另起一件工作才再次调用 create_session。
 
@@ -156,11 +150,11 @@ stop_session 不带 request_key，每次覆盖当时目标 Session 已受理的�
 
 ## 5. 原子受理、去重与并发
 
-立即建任务只接收 instruction、可选 title 和有序 attachment_paths。Manager 以服务端核验的来源 chat 和当次 Input、创建参数的规范序列生成稳定去重键。同一来源 Input 和相同参数复用原 Task、Session 和首条 Input；不同参数或后续用户输入可创建新任务。已进入 Backend 的请求绑定其当时授权的 Input，写入事务持锁复核来源，避免请求处理跨轮授权。
+立即建任务只接收 instruction、可选 title 和有序的 attachment_ids、attachment_paths。Manager 以服务端核验的来源 chat 和当次 Input、创建参数的规范序列生成稳定去重键。同一来源 Input 和相同参数复用原 Task、Session 和首条 Input；不同参数或后续用户输入可创建新任务。已进入 Backend 的请求绑定其当时授权的 Input，写入事务持锁复核来源，避免请求处理跨轮授权。
 
 立即建任务沿用[Input 必要去重](session-api.md#input-提交的必要去重)及其持久化边界。已启动任务的追加同样由 Manager 生成去重键。待办和事项补充保留各自工具约定的 request_key。JSON-RPC id、MCP 连接身份和公开 tool_use_id 不作为去重依据。
 
-同键同内容复用原 Task / Session / Input 并返回当前可见状态；同键不同内容报告 idempotency_conflict。含首条 Input 的 Task、Session、来源关联及轻量去重引用一起提交，任一步失败整体回滚，不留孤立 Task。权限在去重返回时仍重验；已受理工作后来归档或停用不允许被重建成另一份。
+同键同内容复用原 Task / Session / Input 并返回对应工具的回执；同键不同内容报告 idempotency_conflict。含首条 Input 的 Task、Session、来源关联及轻量去重引用一起提交，任一步失败整体回滚，不留孤立 Task。权限在去重返回时仍重验；已受理工作后来归档或停用不允许被重建成另一份。
 
 创建、追加、领取与父 Conversation 归档按现有 Manager 事务及锁顺序互斥，不能仅在 MCP 请求入口检查一次再无条件写入。父级先关闭准入时拒绝新建 / 新输入；创建先受理则纳入父级收尾。并发委派产生独立 Task/Session，但首次环境创建仍只登记同一 Conversation 的一个共享环境；首版固定在其管理 Engine / 宿主，容量不足排队。
 

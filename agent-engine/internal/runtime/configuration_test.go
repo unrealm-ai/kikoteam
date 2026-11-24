@@ -150,3 +150,65 @@ func TestChatPassesAttachmentReferencesToTaskWithoutExposingReader(t *testing.T)
 		t.Fatal("chat should delegate references without being granted an attachment reader", err)
 	}
 }
+
+func TestStableChatCatalogKeepsCredentialsSeparate(t *testing.T) {
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
+	w := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
+	chat := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "w", AgentID: "a", ConversationID: "conv", Mode: "chat"}
+	cfg := integration.HarnessConfig{WorkspaceID: "w", AgentID: "a", SessionID: chat.SessionID, ConversationID: "conv", Mode: "chat",
+		ChatDelegationCatalogToken: "delegate-catalog", DelegationToken: "delegate-live",
+		ChatHumanCatalogToken: "human-catalog", HumanMCPToken: "human-live", HumanToolsToken: "human-local"}
+	turn := repository.Turn{Input: repository.Input{ID: "this-input"}}
+	for _, tc := range []struct {
+		name, delegation, human string
+		report, private         bool
+	}{
+		{name: "private", delegation: "delegate-live", human: "human-live", private: true},
+		{name: "report", delegation: "delegate-live", human: "human-catalog", report: true, private: true},
+		{name: "confirmation-only", delegation: "delegate-catalog", human: "human-live", private: true},
+		{name: "group", delegation: "delegate-live"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := cfg
+			c.ReportOnly = tc.report
+			if tc.name == "confirmation-only" {
+				c.DelegationToken = ""
+			}
+			if !tc.private {
+				c.ChatHumanCatalogToken, c.HumanMCPToken, c.HumanToolsToken = "", "", ""
+			}
+			out, _, err := w.prepareConfiguration(t.Context(), chat, turn, c, integration.Endpoint{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			delegation := out.MCP["task_delegation"].(map[string]any)
+			expect := "http://manager.invalid/mcp/task-delegation?catalog=stable"
+			if tc.report {
+				expect += "&mode=report"
+			}
+			if delegation["url"] != expect {
+				t.Fatal("stable catalog did not retain report routing restriction")
+			}
+			assertCatalogHeaders(t, delegation, tc.delegation, turn.Input.ID)
+			human, exists := out.MCP[humanMCPServer].(map[string]any)
+			if exists != tc.private {
+				t.Fatal("human tool family depends on conversation, not current turn")
+			}
+			if exists {
+				assertCatalogHeaders(t, human, tc.human, turn.Input.ID)
+			}
+		})
+	}
+}
+
+func assertCatalogHeaders(t *testing.T, m map[string]any, token, input string) {
+	t.Helper()
+	h := m["headers"].(map[string]string)
+	if strings.HasSuffix(token, "-catalog") {
+		if h["X-Kiko-Chat-Catalog"] != token || h["X-Kiko-Catalog-Input"] != input || h["Authorization"] != "" {
+			t.Fatal("schema-only credential was used as callable authorization")
+		}
+	} else if h["Authorization"] != "Bearer "+token || h["X-Kiko-Chat-Catalog"] != "" {
+		t.Fatal("existing authorization was not kept separate from catalog")
+	}
+}

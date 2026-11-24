@@ -411,7 +411,15 @@ func testManagerRuntime(t *testing.T, mode string) {
 	base := "/api/v1/workspaces/" + workspace
 	var conversation, session string
 	if mode != "events" {
-		conversation = call("POST", base+"/conversations", map[string]any{"agent_id": agent.ID}, "")["id"].(string)
+		conversationPath := base + "/conversations"
+		if mode == "report" {
+			conversationPath += "/web-direct"
+			// Ordinary turns use the existing callable confirmation credential;
+			// the report advertises exactly those schemas without that credential.
+			ref := service.SelectionRef{Kind: "user", Provider: "web", WorkspaceID: workspace, AgentID: agent.ID, ExternalID: actor}
+			call("PATCH", base+"/agents/"+agent.ID+"/human-recipients", manager.HumanRecipients{Recipients: []manager.HumanRecipient{{Ref: ref, IsDefault: true}}}, "")
+		}
+		conversation = call("POST", conversationPath, map[string]any{"agent_id": agent.ID}, "")["id"].(string)
 		session = call("POST", base+"/sessions", map[string]any{"conversation_id": conversation, "mode": "chat", "input": map[string]string{"text": "remember amber"}}, "first")["id"].(string)
 	}
 	sessionPath := base + "/sessions/" + session

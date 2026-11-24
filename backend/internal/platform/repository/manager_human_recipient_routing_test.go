@@ -377,8 +377,8 @@ func TestHumanRecipientsAcrossChannels(t *testing.T) {
 			wrong := openChat(t, other, "查看当前任务")
 			identity := wrong.Identity
 			config, _, err := store.HarnessConfig(ctx, identity.EngineID, identity.SessionID, identity.AssignmentID, identity.Generation, wrong.InputID)
-			if err != nil || config.HumanTools {
-				t.Fatal("confirmation tools exposed to an unconfigured sender", err)
+			if err != nil || config.HumanTools || !config.ChatCatalogPrivate || !config.ChatCatalogChannel {
+				t.Fatal("unconfigured private sender must have only the structural confirmation catalog, never callable authority", err)
 			}
 			if _, err = store.HumanChatTool(ctx, wrong, "answer", request.ID, &answer); err == nil {
 				t.Fatal("another authenticated sender approved the request")
@@ -425,7 +425,7 @@ func TestHumanRecipientsAcrossChannels(t *testing.T) {
 			chat = openChat(t, recipient.Ref, "同意", quoted...)
 			identity = chat.Identity
 			config, _, err = store.HarnessConfig(ctx, identity.EngineID, identity.SessionID, identity.AssignmentID, identity.Generation, chat.InputID)
-			if err != nil || !config.HumanTools || !config.ConfirmationOnly {
+			if err != nil || !config.HumanTools || !config.ConfirmationOnly || !config.ChatCatalogPrivate || !config.ChatCatalogChannel {
 				t.Fatal("restricted confirmation harness unavailable", config.ConfirmationOnly, err)
 			}
 			if _, err := store.DelegationSource(ctx, chat.Identity); err == nil {

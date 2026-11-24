@@ -366,7 +366,9 @@ paths:
                   task_id: {type: string, format: uuid}
                   mode: {enum: [chat, task]}
                   api_key: {type: string, description: Sensitive runtime value.}
-                  report_only: {type: boolean, description: Pure task report chat round with restricted tool exposure.}
+                  report_only: {type: boolean, description: Pure task report chat round with restricted callable authority.}
+                  chat_delegation_catalog_token: {type: string, description: Sensitive chat-only schema-discovery grant for the delegation family. Does not authorize any tool execution.}
+                  chat_human_catalog_token: {type: string, description: Sensitive schema-discovery grant for the confirmation family in supported private chats. Does not authorize any tool execution.}
                   delegation_token: {type: string, description: Sensitive chat-only assignment-bound MCP credential. Source actor is resolved from the current started Input for every call; no task recursion.}
                   group_history_token: {type: string, description: Sensitive task-only purpose-bound group-history MCP credential; current input and direct sharing grants are revalidated per call. No TaskSpace or system result authority.}
                   task_space_history_token: {type: string, description: Sensitive TaskSpace summary MCP credential bound to the current execution assignment and Input. Issued only for TaskSpace task sessions.}

@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -94,8 +96,18 @@ func (c *reportReminderCalls) assertProviderRequests(t *testing.T, persisted, qu
 	if system == "" || strings.Contains(system, "<system-reminder>") || system != runtimeSystemPrompt(report) || system != runtimeSystemPrompt(quoted) {
 		t.Fatal("provider top-level system instruction differs between ordinary and report mode")
 	}
-	if len(c.ordinary[0].Tools) == 0 || len(quoted.Tools) == 0 || len(report.Tools) != 0 {
-		t.Fatal("report scope changed ordinary chat tools or exposed a tool in pure Web report")
+	definitions := reportToolCatalog(c.ordinary[0])
+	if len(definitions) != 14 || !maps.Equal(definitions, reportToolCatalog(quoted)) || !maps.Equal(definitions, reportToolCatalog(report)) {
+		t.Fatalf("private Web chat catalog disagreed: ordinary=%v report=%v quoted=%v",
+			slices.Sorted(maps.Keys(definitions)), slices.Sorted(maps.Keys(reportToolCatalog(report))), slices.Sorted(maps.Keys(reportToolCatalog(quoted))))
+	}
+	for _, name := range []string{"mcp__task_delegation__task_delegation_list_sessions", "mcp__human_confirmation__list_pending_human_confirmations"} {
+		if definitions[name] == "" {
+			t.Fatalf("missing existing chat tool %s", name)
+		}
+	}
+	if definitions["mcp__task_delegation__artifact_select"] != "" {
+		t.Fatal("Web chat should not advertise the IM-only artifact selection tool")
 	}
 	reportUser := reminderText(report.Messages[len(report.Messages)-1].Content)
 	prefix, body, ok := strings.Cut(reportUser, "\n\n")
@@ -122,4 +134,12 @@ func (c *reportReminderCalls) assertProviderRequests(t *testing.T, persisted, qu
 	if historicalReport != 1 || earlierUser != 1 {
 		t.Fatalf("native history was not replayed intact: report=%d earlier=%d", historicalReport, earlierUser)
 	}
+}
+
+func reportToolCatalog(req runtimeRequest) map[string]string {
+	out := make(map[string]string, len(req.Tools))
+	for _, t := range req.Tools {
+		out[t.Function.Name] = t.Function.Description + "\x00" + string(t.Function.Parameters)
+	}
+	return out
 }

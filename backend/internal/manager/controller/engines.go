@@ -156,8 +156,8 @@ func (s *Server) harnessConfig(r *http.Request) (any, int, error) {
 	if err == nil && v.Mode == "task" {
 		err = s.signTaskContextCredentials(&v, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
 	}
-	if err == nil && v.Mode == "chat" && !v.ConfirmationOnly {
-		v.DelegationToken, err = service.SignDelegation(s.EngineToken, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
+	if err == nil && v.Mode == "chat" {
+		err = s.signChatCredentials(&v, q.Get("input_id"), service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
 	}
 	if err == nil && v.HumanTools {
 		err = s.signHumanToolCredentials(&v, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
@@ -169,6 +169,23 @@ func (s *Server) harnessConfig(r *http.Request) (any, int, error) {
 		service.ApplyHarnessPrompt(&v)
 	}
 	return v, 200, err
+}
+
+func (s *Server) signChatCredentials(v *service.HarnessConfig, input string, id service.DelegationIdentity) error {
+	var err error
+	if !v.ConfirmationOnly {
+		v.DelegationToken, err = service.SignDelegation(s.EngineToken, id)
+		if err != nil {
+			return err
+		}
+	}
+	grant := service.ChatToolCatalogGrant{Identity: id, InputID: input, Family: service.ChatToolCatalogDelegation, Channel: v.ChatCatalogChannel}
+	v.ChatDelegationCatalogToken, err = service.SignChatToolCatalog(s.EngineToken, grant)
+	if err == nil && v.ChatCatalogPrivate {
+		grant.Family = service.ChatToolCatalogHuman
+		v.ChatHumanCatalogToken, err = service.SignChatToolCatalog(s.EngineToken, grant)
+	}
+	return err
 }
 
 func (s *Server) signTaskContextCredentials(v *service.HarnessConfig, id service.DelegationIdentity) error {

@@ -65,16 +65,7 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 		cfg.HumanMCPToken = ""
 		cfg.HumanToolsToken = ""
 	}
-	if cfg.HumanMCPToken != "" {
-		out.MCP[humanMCPServer] = map[string]any{
-			"url": w.Backend.URL + "/mcp/human-confirmations/" + current.Mode,
-			"headers": map[string]string{
-				"Authorization":      "Bearer " + cfg.HumanMCPToken,
-				"X-Kiko-Human-Input": turn.Input.ID,
-			},
-			"exposure": "direct",
-		}
-	}
+	w.configureHumanMCP(&out, current.Mode, turn.Input.ID, cfg)
 	if cfg.HumanToolsToken != "" && (current.Mode == "task" || cfg.HumanMCPToken == "") {
 		w.configureHumanTools(&out, turn, cfg, cfg.HumanMCPToken != "")
 	}
@@ -95,13 +86,8 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 	if current.Mode == "chat" || cfg.HumanToolsToken != "" || cfg.WorkLocalToken != "" {
 		out.ReceiptExtension = filepath.Join(filepath.Dir(filepath.Dir(w.Launcher)), "extensions/context-receipt.mjs")
 	}
-	if current.Mode == "chat" && cfg.DelegationToken != "" {
-		route := w.Backend.URL + "/mcp/task-delegation"
-		if cfg.ReportOnly {
-			route += "?mode=report"
-		}
-		out.Instruction += "\n主对话只知道用户上传了什么文件（有名称时才显示），不会获得原文件或下载状态。仅在实际用户要求读取或处理附件且当前有权委派时，用任务委派工具的 attachment_ids 传入原始引用 ID；已有项目文件路径仍用 attachment_paths。委派成功后可告知已交给后台处理，不要猜测下载状态或称系统阻塞。"
-		out.MCP["task_delegation"] = map[string]any{"url": route, "headers": map[string]string{"Authorization": "Bearer " + cfg.DelegationToken}, "exposure": "direct"}
+	if current.Mode == "chat" && (cfg.DelegationToken != "" || cfg.ChatDelegationCatalogToken != "") {
+		w.configureChatDelegation(&out, turn.Input.ID, cfg)
 	}
 	if current.Mode == "task" && endpoint.URL != "" {
 		out.MCP["builtin"] = map[string]any{"url": endpoint.URL, "headers": map[string]string{"Authorization": "Bearer " + endpoint.Token}, "exposure": "direct"}
@@ -127,6 +113,49 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 		}
 	}
 	return configurationSignature(out, cfg.APIKey, cfg.Resources.Skills...)
+}
+
+func (w *Worker) configureHumanMCP(out *pi.Config, mode, input string, cfg integration.HarnessConfig) {
+	if mode == "chat" && cfg.ChatHumanCatalogToken != "" {
+		headers := chatCatalogHeaders(cfg.ChatHumanCatalogToken, input)
+		if cfg.HumanMCPToken != "" {
+			headers = map[string]string{"Authorization": "Bearer " + cfg.HumanMCPToken, "X-Kiko-Human-Input": input}
+		}
+		out.MCP[humanMCPServer] = map[string]any{
+			"url": w.Backend.URL + "/mcp/human-confirmations/chat?catalog=stable", "headers": headers, "exposure": "direct",
+		}
+	} else if cfg.HumanMCPToken != "" {
+		out.MCP[humanMCPServer] = map[string]any{
+			"url": w.Backend.URL + "/mcp/human-confirmations/" + mode,
+			"headers": map[string]string{
+				"Authorization":      "Bearer " + cfg.HumanMCPToken,
+				"X-Kiko-Human-Input": input,
+			},
+			"exposure": "direct",
+		}
+	}
+}
+
+func chatCatalogHeaders(token, input string) map[string]string {
+	return map[string]string{"X-Kiko-Chat-Catalog": token, "X-Kiko-Catalog-Input": input}
+}
+
+func (w *Worker) configureChatDelegation(out *pi.Config, input string, cfg integration.HarnessConfig) {
+	route := w.Backend.URL + "/mcp/task-delegation"
+	headers := map[string]string{"Authorization": "Bearer " + cfg.DelegationToken}
+	if cfg.ChatDelegationCatalogToken != "" {
+		route += "?catalog=stable"
+		if cfg.ReportOnly {
+			route += "&mode=report"
+		}
+		if cfg.DelegationToken == "" {
+			headers = chatCatalogHeaders(cfg.ChatDelegationCatalogToken, input)
+		}
+	} else if cfg.ReportOnly {
+		route += "?mode=report"
+	}
+	out.Instruction += "\n主对话只知道用户上传了什么文件（有名称时才显示），不会获得原文件或下载状态。仅在实际用户要求读取或处理附件且当前有权委派时，用任务委派工具的 attachment_ids 传入原始引用 ID；已有项目文件路径仍用 attachment_paths。委派成功后可告知已交给后台处理，不要猜测下载状态或称系统阻塞。"
+	out.MCP["task_delegation"] = map[string]any{"url": route, "headers": headers, "exposure": "direct"}
 }
 
 func (w *Worker) configureTaskResources(ctx context.Context, out *pi.Config, current repository.Work, cfg integration.HarnessConfig) error {

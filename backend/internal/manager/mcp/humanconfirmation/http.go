@@ -21,6 +21,7 @@ type Store interface {
 }
 
 type scopeKey struct{}
+type catalogOnlyKey struct{}
 
 func Register(mux *http.ServeMux, store Store, secret string) error {
 	var specs map[string][]sdk.Tool
@@ -78,6 +79,11 @@ func registerTool(server *sdk.Server, spec *sdk.Tool, store Store) error {
 
 func addTool[Args any](server *sdk.Server, spec *sdk.Tool, call func(context.Context, service.HumanRuntimeScope, Args) (any, error)) {
 	sdk.AddTool(server, spec, func(ctx context.Context, _ *sdk.CallToolRequest, args Args) (*sdk.CallToolResult, any, error) {
+		if ctx.Value(catalogOnlyKey{}) == true {
+			return &sdk.CallToolResult{IsError: true}, map[string]any{"error": map[string]string{
+				"code": "human_tool_forbidden", "message": "当前消息无权使用人工确认工具",
+			}}, nil
+		}
 		scope, ok := ctx.Value(scopeKey{}).(service.HumanRuntimeScope)
 		if !ok {
 			return nil, nil, errors.New("unauthenticated")
@@ -100,21 +106,47 @@ func handler(server *sdk.Server, secret, mode string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Request-ID", service.NewID())
-		token, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !bearer || r.Header.Get("Origin") != "" || r.Header.Get("Cookie") != "" {
+		if r.Header.Get("Origin") != "" || r.Header.Get("Cookie") != "" {
 			http.Error(w, "unauthenticated", http.StatusUnauthorized)
 			return
 		}
-		input := r.Header.Get("X-Kiko-Human-Input")
-		identity, err := service.VerifyHumanMCP(secret, mode, input, token)
-		if err != nil {
+		scope, catalogOnly, ok := requestScope(r, secret, mode)
+		if !ok {
 			http.Error(w, "unauthenticated", http.StatusUnauthorized)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
+		if catalogOnly {
+			ctx = context.WithValue(ctx, catalogOnlyKey{}, true)
+		} else {
+			ctx = context.WithValue(ctx, scopeKey{}, scope)
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		scope := service.HumanRuntimeScope{Identity: identity, InputID: input}
-		transport.ServeHTTP(w, r.WithContext(context.WithValue(ctx, scopeKey{}, scope)))
+		transport.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func requestScope(r *http.Request, secret, mode string) (scope service.HumanRuntimeScope, catalogOnly, ok bool) {
+	if auth := r.Header.Values("Authorization"); len(auth) != 0 {
+		token, bearer := strings.CutPrefix(auth[0], "Bearer ")
+		if !bearer || len(auth) != 1 {
+			return scope, false, false
+		}
+		input := r.Header.Get("X-Kiko-Human-Input")
+		identity, err := service.VerifyHumanMCP(secret, mode, input, token)
+		if err != nil {
+			return scope, false, false
+		}
+		return service.HumanRuntimeScope{Identity: identity, InputID: input}, false, true
+	}
+	if mode != "chat" || r.URL.Query().Get("catalog") != "stable" {
+		return scope, false, false
+	}
+	grant, err := service.VerifyChatToolCatalog(secret, r.Header.Get("X-Kiko-Catalog-Input"), r.Header.Get("X-Kiko-Chat-Catalog"))
+	if err != nil || grant.Family != service.ChatToolCatalogHuman {
+		return scope, false, false
+	}
+	// Advertise the normal schemas without creating an execution scope.
+	return scope, true, true
 }

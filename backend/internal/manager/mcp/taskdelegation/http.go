@@ -17,6 +17,11 @@ import (
 
 type scopeKey struct{}
 
+type toolAccess struct {
+	scope                               manager.DelegationScope
+	schemaOnly, channel, report, stable bool
+}
+
 func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 	var specs []sdk.Tool
 	if err := json.Unmarshal(contract.Tools, &specs); err != nil {
@@ -29,9 +34,13 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 	for _, spec := range specs {
 		name := strings.TrimPrefix(spec.Name, "task_delegation_")
 		call := func(ctx context.Context, _ *sdk.CallToolRequest, args manager.DelegationArgs) (*sdk.CallToolResult, any, error) {
-			scope, ok := ctx.Value(scopeKey{}).(manager.DelegationScope)
+			access, ok := ctx.Value(scopeKey{}).(toolAccess)
 			if !ok {
 				return nil, nil, errors.New("unauthenticated")
+			}
+			scope := access.scope
+			if access.schemaOnly || access.report && (name != "artifact_select" || !access.channel) {
+				return &sdk.CallToolResult{IsError: true}, failedToolResult(name, "user_authorization_required", "当前输入没有调用此工具的授权", args, nil), nil
 			}
 			out, err := d.Call(ctx, scope, name, args)
 			if err == nil && name == "create_session" {
@@ -59,14 +68,14 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 		}
 	}
 	transport := sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
-		scope, _ := r.Context().Value(scopeKey{}).(manager.DelegationScope)
-		if scope.ReportOnly || r.URL.Query().Get("mode") == "report" {
-			if scope.Channel != nil {
+		a, _ := r.Context().Value(scopeKey{}).(toolAccess)
+		if a.report && !a.stable {
+			if a.channel {
 				return report
 			}
 			return empty
 		}
-		if scope.Channel == nil {
+		if !a.channel {
 			return web
 		}
 		return server
@@ -74,20 +83,45 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Request-ID", manager.NewID())
-		if r.Header.Get("Origin") != "" || r.Header.Get("Cookie") != "" || !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		if r.Header.Get("Origin") != "" || r.Header.Get("Cookie") != "" {
 			http.Error(w, "unauthenticated", http.StatusUnauthorized)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 		defer cancel()
-		scope, err := d.Authorize(ctx, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		access, err := authorizeToolAccess(ctx, r, d)
 		if err != nil {
 			http.Error(w, "execution authority unavailable", http.StatusUnauthorized)
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		transport.ServeHTTP(w, r.WithContext(context.WithValue(ctx, scopeKey{}, scope)))
+		transport.ServeHTTP(w, r.WithContext(context.WithValue(ctx, scopeKey{}, access)))
 	}), nil
+}
+
+func authorizeToolAccess(ctx context.Context, r *http.Request, d *manager.Delegation) (toolAccess, error) {
+	a := toolAccess{stable: r.URL.Query().Get("catalog") == "stable", report: r.URL.Query().Get("mode") == "report"}
+	if auth := r.Header.Values("Authorization"); len(auth) != 0 {
+		token, bearer := strings.CutPrefix(auth[0], "Bearer ")
+		if !bearer || len(auth) != 1 {
+			return a, errors.New("unauthenticated")
+		}
+		var err error
+		a.scope, err = d.Authorize(ctx, token)
+		a.report = a.report || a.scope.ReportOnly
+		a.channel = a.scope.Channel != nil
+		return a, err
+	}
+	if !a.stable {
+		return a, errors.New("unauthenticated")
+	}
+	grant, err := manager.VerifyChatToolCatalog(d.Secret, r.Header.Get("X-Kiko-Catalog-Input"), r.Header.Get("X-Kiko-Chat-Catalog"))
+	if err != nil || grant.Family != manager.ChatToolCatalogDelegation {
+		return a, errors.New("unauthenticated")
+	}
+	a.schemaOnly = true
+	a.channel = grant.Channel
+	return a, nil
 }
 
 // Only an immediately created task with durable IDs gets this acceptance receipt.

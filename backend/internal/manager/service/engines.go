@@ -54,6 +54,11 @@ type HarnessConfig struct {
 	Mode                  string                    `json:"mode"`
 	Configuration         Configuration             `json:"configuration"`
 	APIKey                string                    `json:"api_key"`
+
+	ChatDelegationCatalogToken string `json:"chat_delegation_catalog_token,omitempty"`
+	ChatHumanCatalogToken      string `json:"chat_human_catalog_token,omitempty"`
+	ChatCatalogChannel         bool   `json:"-"`
+	ChatCatalogPrivate         bool   `json:"-"`
 }
 type WebhookFile struct {
 	EventID string `json:"event_id"`

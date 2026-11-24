@@ -48,6 +48,9 @@ type HarnessConfig struct {
 		ModelID     string `json:"model_id"`
 		Instruction string `json:"instruction"`
 	} `json:"configuration"`
+
+	ChatDelegationCatalogToken string `json:"chat_delegation_catalog_token"`
+	ChatHumanCatalogToken      string `json:"chat_human_catalog_token"`
 }
 type WebhookFile struct {
 	EventID string `json:"event_id"`

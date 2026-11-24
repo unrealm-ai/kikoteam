@@ -20,7 +20,9 @@ type runtimeRequest struct {
 	} `json:"messages"`
 	Tools []struct {
 		Function struct {
-			Name string `json:"name"`
+			Name        string          `json:"name"`
+			Description string          `json:"description"`
+			Parameters  json.RawMessage `json:"parameters"`
 		} `json:"function"`
 	} `json:"tools"`
 }

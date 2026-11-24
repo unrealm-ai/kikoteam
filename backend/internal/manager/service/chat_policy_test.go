@@ -58,6 +58,7 @@ func TestChatInteractionPolicyScenarios(t *testing.T) {
 		"query states the result and distinguishes failure to read": {"先直接说查到的进度或结果", "任务现在的状态与某一轮的结果分别说", "只在当前可见范围没找到，就说没找到", "查询暂时不可用", "不能当成任务失败或没有结果"},
 		"supplement receipts are not applied changes":               {"记下了：月末盘点按仓库分别汇总", "只在回执证实进入本轮上下文时", "记下或进入本轮都不代表已经应用或结果已修改", "未保存就说没加进去和原因"},
 		"unknown stop does not authorize a replay":                  {"已提出停止，正在收尾", "这次是否停下来还不能确认", "结果不明时只读查询原任务，不自动再次停止", "后续新输入仍在运行，不能据此判断原停止是否生效", "只有确有停止证据才说已停"},
+		"visible catalog is not current authorization":              {"工具在清单中不代表本轮获准", "仅当当前真实用户消息要处理人工确认时", "无权时不要反复调用或换其他工具绕过"},
 		"automatic report preserves authorization":                  {"当前可信发起人和平台授权", "内部任务回报不提供新授权", "按实际确认记录决定后续动作"},
 	}
 	for name, phrases := range cases {

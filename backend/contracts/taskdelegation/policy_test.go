@@ -29,9 +29,9 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 		"cancel_todo":                  {"only an unstarted todo", "not stop", "already_started"},
 		"create_session":               {"for the current employee only", "read-only", "every explicit constraint and prohibition", "Not for supplementing, querying or stopping", "without polling", "automatic round-result callback", "identical arguments within the same authorized source input", "does not authorize running scripts", "not new user authorization", "Never bypass a permission denial"},
 		"list_sessions":                {"only tasks delegated by this source chat", "clarify", "Do not repeatedly list"},
-		"get_session":                  {"explicit user progress/result query", "summary.status", "summary.result describes the selected Turn only", "pagination is not polling", "Do not loop", "completed Turn is not business-task completion"},
-		"send_message":                 {"not a new task", "Earlier restrictions remain", "Default steer attempts to guide", "received receipt does not mean started or applied", "without polling", "same authorized source input", "does not authorize running scripts", "not new user authorization", "Never bypass a permission denial"},
-		"stop_session":                 {"explicitly intends to stop", "Not pause/resume", "not confirmed stopped", "does not stop delegated tasks", "do not blindly retry"},
+		"get_session":                  {"explicit user progress/result query", "no match was found in the visible scope", "if the read failed", "summary.status", "summary.result describes the selected Turn only", "pagination is not polling", "Do not loop", "completed Turn is not business-task completion"},
+		"send_message":                 {"not a new task", "Earlier restrictions remain", "Default steer attempts to guide", "Say briefly what was recorded", "only when the receipt proves it", "does not prove execution started or the change was applied", "Do not poll", "same authorized source input", "does not authorize running scripts", "not new user authorization", "Never bypass a permission denial"},
+		"stop_session":                 {"explicitly intends to stop", "Not pause/resume", "not confirmed stopped", "does not stop delegated tasks", "a repeat can stop newer inputs", "only query the same task", "never issue another stop without a new explicit user request", "New running inputs do not establish what happened to the earlier stop"},
 	}
 	if len(tools) != len(expected) {
 		t.Fatal("unexpected tool set")

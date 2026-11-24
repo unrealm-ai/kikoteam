@@ -8,7 +8,9 @@
 
 steer 忙时通过原生 RPC 引导当前 Turn，空闲时启动新 Turn；不会强制终止正在运行的工具或撤销副作用。queue 保留在数据库，当前平台 Turn 终结后才领取，原生 follow_up 队列不承担平台持久队列。一个 Turn 可处理多条同主体输入，始终最多一个活动 Turn。Turn.input_id 表示起始输入，各 Input.turn_id 保存关联。显式 queue 不会被回报提前消费。
 
-运行期间每 250ms 检查待引导项；相同主体、渠道代次和当前权限才允许加入。跨主体用户 steer 返回 409 steer_actor_conflict，调用方可明确改用 queue；已经入队但当前轮主体不同的 steer 留到下一轮。任务回报若暂时与当前主体冲突，由补偿在可受理后再次尝试，不借用当前主体权限。
+运行期间每 250ms 检查待引导项；相同主体、渠道代次和当前权限才允许加入。跨主体用户 steer 返回 409 steer_actor_conflict，调用方可明确改用 queue。已有排队回报或正在执行回报时，用户消息可直接排在后面，保留原 delivery_mode。已经入队但当前轮主体不同的 steer 留到下一轮。
+
+普通任务回报使用 queue，每条独立开启一个主 chat Turn。Engine 按可信 source_kind 处理存量 steer 回报，回报与用户输入或其他回报分别成轮。在同一主体提交 `用户 A → 回报 R → 用户 B → 用户 C` 时，执行顺序为 `A｜R｜B + C`，B 开轮期间 C 仍可在满足原生消费条件时 steer。
 
 沿用已有 context-receipt 扩展，每次只保持一个尚未确认消费的输入意图，不修改扩展。上一条输入有原生消费证据后才发送下一条；原生 ACK 不等于消费。正常 settled 后清除原生待处理队列，对明确由 clear_queue 移除且未消费的引导输入退回原数据库队列，保留身份；结果不明不自动重发。停止清队列并 abort，停止范围内输入不退回执行。每个已归属输入都保存终态事件，context_state 独立表达上下文证据。
 
@@ -20,7 +22,7 @@ Engine 在 task Turn 正式消息、执行终态和输入事实提交成功后�
 
 携带 Engine 内部 Bearer，拒绝 Cookie/Origin。正文 `{ "turn_id": "UUID" }`；未开始即取消/拒绝的输入使用 `{ "input_id": "UUID" }`，两者互斥。不接受结果正文、成功标志或目标地址。Engine 有限重试两次，每次最多 2s；失败保留原任务结果并记录 task.report_pending，通知不触发任务重跑。
 
-Manager 从数据库读取已经提交的终态与可信 source_chat_session_id，在目标准入事务中去重、重新鉴权，原子创建 manager_task_reports 和内部 steer Input，以及可靠 input.updated。没有常驻 Manager worker，不调用模型或外部服务于数据库事务内。多 backend 实例由目标 Session 锁、来源 Input/Turn 唯一约束与 report_id 唯一约束裁决；响应丢失或与补偿并发都返回原身份。
+Manager 从数据库读取已经提交的终态与可信 source_chat_session_id，在目标准入事务中去重、重新鉴权，原子创建 manager_task_reports 和内部 queue Input，以及可靠 input.updated。没有常驻 Manager worker，不调用模型或外部服务于数据库事务内。多 backend 实例由目标 Session 锁、来源 Input/Turn 唯一约束与 report_id 唯一约束裁决；响应丢失或与补偿并发都返回原身份。
 
 回报每个 task Turn 一次，正常结束、待确认回复、无文本、失败、中断、取消均覆盖；无 Turn 的拒绝/取消单独按 Input 去重。来源结果固定到原轮次，不取后续轮次替代。预览最多 16000 字符并标识截断，保留 Task/Session/Turn/Input 引用供 get_session 查询。正常回复保留原文；非成功终态明确说明状态，不把过程回复当成最终成功。
 
@@ -28,9 +30,9 @@ Manager 从数据库读取已经提交的终态与可信 source_chat_session_id�
 
 ## 原生上下文与权限
 
-用户明确选择：使用 Pi 原生 prompt/steer 承载带明确标记的内部任务回报。原生传输角色仍是 user，平台事实 source_kind=task_report；这不是真实用户新发言，不新增自定义角色扩展或消息桥。正文固定平台说明加 JSON 引用结果，指示结果资料不构成授权，需要确认时询问用户。公开写接口无法伪造 source_kind 或 report_id；历史只生成输入更新，不生成 user.message，Web 左侧显示任务回报卡片。
+使用 Pi 原生 prompt 承载带明确标记的内部任务回报。原生传输角色仍是 user，平台事实 source_kind=task_report。正文固定平台说明加 JSON 引用结果，指示结果资料不构成授权，需要确认时询问用户。公开写接口无法伪造 source_kind 或 report_id；历史只生成输入更新，不生成 user.message，Web 左侧显示任务回报卡片。
 
-纯回报启动主 chat 新轮时，Engine 按 Backend 为已领取输入返回的可信 `ReportOnly`，在同一条 Pi user prompt 的正文前加 `<system-reminder>`；不改 Input、回报原文（含现有来源标签）、顶层 system 指令或发送权限，也不另发消息来触发。提醒要求先说可核实结果，再说明未完成部分和必要的下一步；产物选择不等于送达。普通用户正文、历史回放，以及运行中加入非回报轮的 steer 不新加提醒。Pi 原生历史保留当初提交的内容，恢复时不重写；平台公开消息与 Input 记录不注入提醒。
+回报启动主 chat 新轮时，Engine 按 Backend 为已领取输入返回的可信 `ReportOnly`，在同一条 Pi user prompt 的正文前加 `<system-reminder>`；不改 Input、回报原文（含现有来源标签）、顶层 system 指令或发送权限，也不另发消息来触发。提醒要求先说可核实结果，再说明未完成部分和必要的下一步；产物选择不等于送达。普通用户正文和历史回放沿用原有内容。
 
 同一主 chat 在通常的模型请求中声明同一组任务工具定义。Web 不声明渠道产物选择；有渠道的会话保留 `artifact_select`。仅支持直接答复确认的主私聊声明三个人工确认工具，群和话题不声明。这个目录只包含静态名称、描述与参数结构；调用仍以每轮真实授权为准，没有可调用凭据时同名工具返回不可用，不读取业务数据。Pi 冷启动的发现顺序或不可用时的结果不承诺固定，不因此承诺提供方缓存命中。
 
@@ -50,7 +52,11 @@ Manager 查找终结超过 10s、启用回报且尚无回报记录的 Input/Turn
 
 ## 渠道与发布
 
-任务创建时保存来源主 chat Input，固定关联原 Inbox。纯回报触发的主会话回复以原可信 Inbox 创建 task_reply:<chat_turn_id> Delivery；同轮合并多个回报只生成一次。每个选中附件独立生成 Delivery，引用所属回报的原 Inbox。合并文字回复仍只发一次，附件保持各自原会话和话题。普通渠道用户轮可通过 get_session 取得同主体获准的历史候选，主动重发时绑定当前用户消息。发送前照常鉴权，提供方发送未知仍保持 unknown。升级前任务缺少来源 Inbox 时不猜测外部目标，内部回报仍可追踪。
+任务创建时保存来源主 chat Input，固定关联原 Inbox。回报轮以原可信 Inbox 创建 `task_reply:<chat_turn_id>` Delivery，每个选中附件独立生成 Delivery，引用所属回报的原 Inbox。普通渠道用户轮可通过 get_session 取得同主体获准的历史候选，主动重发时绑定当前用户消息。发送前照常鉴权，提供方发送未知仍保持 unknown。升级前任务缺少来源 Inbox 时保留内部回报。升级前由回报启动的已结束轮次继续使用回报投递路径。
+
+普通渠道用户轮按 Turn 读取正式正文，为每轮生成一条 `reply`。锚点选同一渠道会话中该轮结束前已经确认进入原生上下文的最后一条真实用户输入，只有起始输入符合时回复起始消息。较早的合并输入由同一条回复覆盖。轮次结束后补记的原生回执不会改变锚点，重复扫描复用已建投递。未执行就被拒绝或取消的入站消息仍分别生成状态提示。
+
+回归覆盖回报排队期间和运行期间的渠道受理、两个连续回报独立成轮、兼容存量 steer 回报、回报之后普通用户恢复 steer，以及三渠道合并轮的正文、锚点和并发去重。升级时先让旧 Engine 停稳，再启用新 Backend 和 Engine 的隔离规则。
 
 迁移 15 与新 Backend/Engine 同代部署，先停旧 Engine 并确认 Pi 停稳；旧消费者不理解输入方式，禁止混跑。迁移遇已有 steer 或回报数据拒绝 Down，不丢弃已受理输入。历史与原生目录保留。没有真实飞书凭据时不声称完成提供方线上收发。
 

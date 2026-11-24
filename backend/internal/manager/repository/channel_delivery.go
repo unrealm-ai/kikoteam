@@ -5,28 +5,52 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 	"slices"
 	"strings"
+
+	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 )
 
 func (s *Store) MaterializeChannelReplies(ctx context.Context) error {
 	if err := s.materializeTaskReplies(ctx); err != nil {
 		return err
 	}
-	rows, e := s.DB.QueryContext(ctx, `SELECT n.id,n.binding_id,n.connection_generation,i.id,i.status,COALESCE(t.status,''),b.provider,s.id,COALESCE(t.id::text,'') FROM manager_channel_inbox n JOIN platform_channel_bindings b ON b.id=n.binding_id JOIN manager_inputs i ON i.id=n.input_id JOIN manager_sessions s ON s.id=i.session_id LEFT JOIN manager_turns t ON t.id=i.turn_id WHERE n.status='accepted' AND s.mode='chat' AND (i.status IN ('rejected','canceled') OR t.status IN ('completed','failed','canceled','interrupted')) AND NOT EXISTS(SELECT 1 FROM manager_channel_deliveries d WHERE d.inbox_id=n.id AND d.kind='reply') ORDER BY n.created_at LIMIT 50`)
+	// Start at the Turn's original Inbox. Choose the last user message admitted
+	// into its native context before completion. An existing reply covers the
+	// Turn, even if an older Backend delivered it to another Inbox.
+	rows, e := s.DB.QueryContext(ctx, `SELECT COALESCE(reply.id,n.id),n.binding_id,n.connection_generation,COALESCE(reply.input_id,i.id),i.id,i.status,COALESCE(t.status,''),b.provider,s.id,COALESCE(t.id::text,'')
+ FROM manager_channel_inbox n JOIN platform_channel_bindings b ON b.id=n.binding_id
+ JOIN manager_inputs i ON i.id=n.input_id JOIN manager_sessions s ON s.id=i.session_id
+ LEFT JOIN manager_turns t ON t.id=i.turn_id
+ LEFT JOIN LATERAL (
+   SELECT dest.id, dest.input_id, d.id AS delivery_id
+   FROM manager_inputs target JOIN manager_channel_inbox dest ON dest.input_id=target.id
+   LEFT JOIN manager_channel_deliveries d ON d.inbox_id=dest.id AND d.kind='reply'
+   WHERE target.session_id=i.session_id AND target.turn_id=t.id AND target.seq>i.seq AND dest.status='accepted'
+   AND dest.binding_id=n.binding_id AND dest.connection_generation=n.connection_generation
+   AND dest.conversation_id=n.conversation_id AND target.channel_principal_id=i.channel_principal_id
+   AND target.source_kind='user' AND target.trigger_agent_loop
+   AND (d.id IS NOT NULL OR (target.context_state='committed'
+     AND (target.context_committed_at IS NULL OR target.context_committed_at<=t.finished_at)))
+   ORDER BY (d.id IS NOT NULL) DESC,target.seq DESC,dest.id LIMIT 1
+ ) reply ON true
+ WHERE n.status='accepted' AND s.mode='chat' AND i.source_kind<>'task_report' AND reply.delivery_id IS NULL
+ AND ((i.turn_id IS NULL AND i.status IN ('rejected','canceled'))
+   OR (i.id=t.input_id AND t.status IN ('completed','failed','canceled','interrupted')))
+ AND NOT EXISTS(SELECT FROM manager_channel_deliveries d WHERE d.inbox_id=n.id AND d.kind='reply')
+ ORDER BY n.created_at,n.id LIMIT 50`)
 	if e != nil {
 		return e
 	}
 	defer func() { _ = rows.Close() }() //nolint:errcheck // Explicit closes report iteration/close failures.
 	type item struct {
-		id, binding, input, status, turn, provider, sessionID, turnID string
-		generation                                                    int64
+		id, binding, input, rootInput, status, turn, provider, sessionID, turnID string
+		generation                                                               int64
 	}
 	items := []item{}
 	for rows.Next() {
 		var v item
-		if e = rows.Scan(&v.id, &v.binding, &v.generation, &v.input, &v.status, &v.turn, &v.provider, &v.sessionID, &v.turnID); e != nil {
+		if e = rows.Scan(&v.id, &v.binding, &v.generation, &v.input, &v.rootInput, &v.status, &v.turn, &v.provider, &v.sessionID, &v.turnID); e != nil {
 			return errors.Join(e, rows.Close())
 		}
 		items = append(items, v)
@@ -38,7 +62,9 @@ func (s *Store) MaterializeChannelReplies(ctx context.Context) error {
 		return e
 	}
 	for _, v := range items {
-		evs, e := s.DB.QueryContext(ctx, `SELECT event FROM manager_session_events WHERE event->>'input_id'=$1 AND event->>'type'='agent.message' ORDER BY seq`, v.input)
+		evs, e := s.DB.QueryContext(ctx, `SELECT event FROM manager_session_events
+ WHERE session_id=$1 AND event->>'type'='agent.message'
+ AND (event->>'turn_id'=$2 OR (event->>'turn_id' IS NULL AND event->>'input_id'=$3)) ORDER BY seq`, v.sessionID, v.turnID, v.rootInput)
 		if e != nil {
 			return e
 		}

@@ -1,6 +1,6 @@
 # 对话与任务 Session、Pi 扩展
 
-**输入与回报增量设计（2026-11-17，已接入，验收范围见专项设计）**：输入默认 steer，可选 queue；任务回报引导来源主 chat，空闲时主动唤醒，见[引导输入与任务轮次回报](../../backend/docs/session-input-and-task-report.md)。本文静默 append_assistant 仍为独立的零模型调用能力，不承担主动回报。引导不强制取消当前请求或并发执行第二轮，原生 RPC 控制已接通，业务多输入消费证据仍已接入，验收范围见专项设计。
+**输入与回报增量设计（2026-11-17，已接入，验收范围见专项设计）**：用户输入默认 steer，可选 queue；任务回报在来源主 chat 排队单独成轮，空闲时主动唤醒，见[引导输入与任务轮次回报](../../backend/docs/session-input-and-task-report.md)。本文静默 append_assistant 仍为独立的零模型调用能力，不承担主动回报。引导不强制取消当前请求或并发执行第二轮，原生 RPC 控制已接通，业务多输入消费证据仍已接入，验收范围见专项设计。
 
 > **2026-11-16 关系与生命周期已确认**：一 Task 一 task Session，共享环境归 Conversation；创建、停止、归档、首版放置及三层回收按[业务会话与共享环境生命周期](../../docs/architecture/conversation-lifecycle.md)。本页已同步目标设计，执行编排及相关机器契约仍待实现。
 

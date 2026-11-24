@@ -90,7 +90,7 @@ func TestTaskReportsAtomicCallbackRecoveryAndSuppression(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(values.Items) != 1 || values.Items[0].SourceKind != "task_report" || values.Items[0].DeliveryMode != "steer" || !strings.Contains(values.Items[0].Text, "是否确认继续修改") {
+	if len(values.Items) != 1 || values.Items[0].SourceKind != "task_report" || values.Items[0].DeliveryMode != "queue" || !strings.Contains(values.Items[0].Text, "是否确认继续修改") {
 		t.Fatal(values)
 	}
 	if dir := os.Getenv("KIKO_REPORT_BROWSER_DIR"); dir != "" {
@@ -133,6 +133,68 @@ func TestTaskReportsAtomicCallbackRecoveryAndSuppression(t *testing.T) {
 	if code, result := call("/api/internal/v1/task-results/callback", `{"turn_id":"`+suppressed+`"}`, secret); code != 200 || result["status"] != "suppressed" {
 		t.Fatal(code, result)
 	}
+}
+
+func TestChannelUsersWaitBehindQueuedOrActiveTaskReport(t *testing.T) {
+	db, sessions, store, workspace, _, _, binding := channelManagerFixture(t)
+	ctx := t.Context()
+	intake := func(message, sender string) string {
+		t.Helper()
+		in := inboundFixture(binding, message, sender)
+		in.ChatType, in.ExternalChatID, in.BotMentioned = "group", "group-chat", true
+		box, err := store.ReceiveChannel(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = store.ProcessChannelInbox(ctx, sessions); err != nil {
+			t.Fatal(err)
+		}
+		return box.ID
+	}
+	original := intake("original", "first-user")
+	var first, chat string
+	if err := db.QueryRowContext(ctx, `SELECT i.id,i.session_id FROM manager_channel_inbox n JOIN manager_inputs i ON i.id=n.input_id WHERE n.id=$1`, original).Scan(&first, &chat); err != nil {
+		t.Fatal(err)
+	}
+	identity := manager.DelegationIdentity{SessionID: chat, EngineID: manager.NewID(), AssignmentID: manager.NewID(), Generation: 1}
+	reviewExec(t, db, `UPDATE manager_sessions SET engine_id=$2,assignment_id=$3,generation=1 WHERE id=$1`, chat, identity.EngineID, identity.AssignmentID)
+	firstTurn := reviewStartTurn(t, db, workspace, chat, first, identity.AssignmentID, 1)
+	rejected := intake("before-report", "second-user")
+	var code string
+	if err := db.QueryRowContext(ctx, `SELECT error_code FROM manager_channel_inbox WHERE id=$1`, rejected).Scan(&code); err != nil || code != "steer_actor_conflict" {
+		t.Fatal(code, err)
+	}
+
+	scope, err := store.DelegationSource(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegate := manager.Delegation{Manager: sessions, Store: store}
+	result, err := delegate.Call(ctx, scope, "create_session", manager.DelegationArgs{RequestKey: "report", Instruction: "整理结果"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := result.(map[string]any)
+	taskSession, taskInput := task["session_id"].(string), *task["input_id"].(*string)
+	taskTurn := reviewStartTurn(t, db, workspace, taskSession, taskInput, manager.NewID(), 1)
+	reviewFinishTurn(t, db, taskSession, taskInput, taskTurn)
+	report, err := store.ReportTaskResult(ctx, manager.TaskResult{TurnID: taskTurn})
+	if err != nil || report.TargetInputID == nil {
+		t.Fatal(report, err)
+	}
+	queuedUser := intake("while-queued", "second-user")
+	reviewFinishTurn(t, db, chat, first, firstTurn)
+	reportTurn := reviewStartTurn(t, db, workspace, chat, *report.TargetInputID, identity.AssignmentID, 1)
+	activeUser := intake("while-active", "third-user")
+	for _, box := range []string{queuedUser, activeUser} {
+		var queued bool
+		err = db.QueryRowContext(ctx, `SELECT n.status='accepted' AND i.status='queued' AND i.session_id=$2 AND i.seq>r.seq AND i.turn_id IS NULL AND i.delivery_mode='steer'
+ FROM manager_channel_inbox n JOIN manager_inputs i ON i.id=n.input_id JOIN manager_inputs r ON r.id=$3 WHERE n.id=$1`, box, chat, *report.TargetInputID).Scan(&queued)
+		if err != nil || !queued {
+			t.Fatal(box, queued, err)
+		}
+	}
+	reviewFinishTurn(t, db, chat, *report.TargetInputID, reportTurn)
 }
 
 // Optional real-browser fixture serves the production component against the

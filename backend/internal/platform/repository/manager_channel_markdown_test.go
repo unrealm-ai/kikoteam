@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	managercontroller "github.com/unrealm-ai/kikoteam/backend/internal/manager/controller"
@@ -117,6 +118,78 @@ func TestManagerChannelMarkdownDeliveryOverHTTP(t *testing.T) {
 
 }
 
+func TestChannelReplyForSteeredInputsUsesLatestConsumedMessage(t *testing.T) {
+	for _, provider := range []string{"dingtalk", "feishu", "wecom"} {
+		t.Run(provider, func(t *testing.T) {
+			db, sessions, store, workspace, _, _, binding := channelManagerFixture(t)
+			ctx := t.Context()
+			switch provider {
+			case "dingtalk":
+				reviewExec(t, db, `UPDATE platform_channel_bindings SET provider='dingtalk' WHERE id=$1`, binding)
+			case "wecom":
+				reviewExec(t, db, `UPDATE platform_channel_bindings SET provider='wecom',app_id='bot',bot_open_id='bot',external_tenant_id='bot' WHERE id=$1`, binding)
+			}
+			intake := func(message string) (input, session string) {
+				t.Helper()
+				in := inboundFixture(binding, message, "sender")
+				switch provider {
+				case "dingtalk":
+					in.BotID, in.SenderIDType, in.SenderTenant = "bot", "user_id", in.ExternalTenantID
+				case "wecom":
+					in.ExternalChatID, in.ExternalTenantID, in.BotID, in.SenderIDType = in.SenderID, "bot", "bot", "user_id"
+				}
+				box, err := store.ReceiveChannel(ctx, in)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = store.ProcessChannelInbox(ctx, sessions); err != nil {
+					t.Fatal(err)
+				}
+				if err = db.QueryRowContext(ctx, `SELECT i.id,i.session_id FROM manager_channel_inbox n JOIN manager_inputs i ON i.id=n.input_id WHERE n.id=$1`, box.ID).Scan(&input, &session); err != nil {
+					t.Fatal(err)
+				}
+				return input, session
+			}
+			root, chat := intake("root")
+			turn := reviewStartTurn(t, db, workspace, chat, root, manager.NewID(), 1)
+			earlier, _ := intake("earlier")
+			latest, _ := intake("latest")
+			lateReceipt, _ := intake("late-receipt")
+			reviewExec(t, db, `UPDATE manager_inputs SET turn_id=$1,batch_input_id=id,status='started',started_at=now(),context_state='committed',context_committed_at=now()
+ WHERE id IN ($2,$3)`, turn, earlier, latest)
+			reviewExec(t, db, `UPDATE manager_inputs SET turn_id=$1,batch_input_id=id,status='started',started_at=now(),context_state='unknown' WHERE id=$2`, turn, lateReceipt)
+			for _, body := range []string{"已受理。", "已整理三项。"} {
+				// Assistant events still use the starting input for history.
+				reviewExec(t, db, `WITH next AS (UPDATE manager_sessions SET last_event_seq=last_event_seq+1 WHERE id=$1 RETURNING last_event_seq)
+ INSERT INTO manager_session_events(workspace_id,session_id,seq,event)
+ SELECT $2,$1,last_event_seq,jsonb_build_object('type','agent.message','input_id',$3::text,'turn_id',$4::text,'content',jsonb_build_array(jsonb_build_object('type','text','text',$5::text))) FROM next`, chat, workspace, root, turn, body)
+			}
+			reviewFinishTurn(t, db, chat, root, turn)
+			reviewExec(t, db, `UPDATE manager_inputs SET status='processed',finished_at=now() WHERE turn_id=$1 AND status='started'`, turn)
+			reviewExec(t, db, `UPDATE manager_inputs SET context_state='committed',context_committed_at=now() WHERE id=$1`, lateReceipt)
+
+			var scans sync.WaitGroup
+			for range 3 {
+				scans.Go(func() {
+					if err := store.MaterializeChannelReplies(ctx); err != nil {
+						t.Error(err)
+					}
+				})
+			}
+			scans.Wait()
+			batch, err := store.ClaimChannelDeliveries(ctx, 5, true)
+			if err != nil || len(batch) != 1 {
+				t.Fatal(batch, err)
+			}
+			delivery, err := store.AuthorizeChannelDelivery(ctx, batch[0].ID, batch[0].LeaseToken)
+			if err != nil || !delivery.Allowed || delivery.ReplyToMessageID != "latest" || delivery.Text != "已受理。\n已整理三项。" ||
+				delivery.SessionWebhookEligible != (provider == "dingtalk") {
+				t.Fatal(delivery, err)
+			}
+		})
+	}
+}
+
 func TestTaskReportChannelReplyFormat(t *testing.T) {
 	const reportBody = "## 结果\n\n**已完成**"
 	for _, tc := range []struct{ name, provider, status, summary, text, format string }{
@@ -128,6 +201,7 @@ func TestTaskReportChannelReplyFormat(t *testing.T) {
 		{"failed", "feishu", "failed", reportBody, "任务结果已到达，但主会话回复未成功完成，请查看任务详情。", "text"},
 		{"canceled", "dingtalk", "canceled", reportBody, "任务结果已到达，但主会话回复未成功完成，请查看任务详情。", "text"},
 		{"existing-delivery", "feishu", "completed", reportBody, reportBody, "text"},
+		{"legacy-mixed-turn", "feishu", "completed", reportBody, reportBody, "markdown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, sessions, store, workspace, _, _, binding := channelManagerFixture(t)
@@ -172,6 +246,22 @@ func TestTaskReportChannelReplyFormat(t *testing.T) {
 				t.Fatal(report, err)
 			}
 			reportTurn := reviewStartTurn(t, db, workspace, chat, *report.TargetInputID, identity.AssignmentID, 1)
+			if tc.name == "legacy-mixed-turn" {
+				message := in
+				message.ProviderEventID, message.ProviderMessageID, message.Text = "followup", "followup", "怎么样了"
+				followup, e := store.ReceiveChannel(ctx, message)
+				if e != nil {
+					t.Fatal(e)
+				}
+				if e = store.ProcessChannelInbox(ctx, sessions); e != nil {
+					t.Fatal(e)
+				}
+				var inputID string
+				if e = db.QueryRowContext(ctx, `SELECT input_id FROM manager_channel_inbox WHERE id=$1`, followup.ID).Scan(&inputID); e != nil {
+					t.Fatal(e)
+				}
+				reviewExec(t, db, `UPDATE manager_inputs SET turn_id=$1,batch_input_id=id,status='processed',context_state='committed' WHERE id=$2`, reportTurn, inputID)
+			}
 			reviewFinishTurn(t, db, chat, *report.TargetInputID, reportTurn)
 			reviewExec(t, db, `UPDATE manager_turns SET status=$2,result_summary=$3 WHERE id=$1`, reportTurn, tc.status, tc.summary)
 			if tc.name == "existing-delivery" {

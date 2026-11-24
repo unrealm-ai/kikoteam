@@ -1,6 +1,6 @@
 # Session 运行时与 Pi 原生 RPC 接入
 
-**输入调度增量（2026-11-17，已接入，验收范围见专项设计）**：默认 steer 输入可在安全边界加入活动 Turn，queue 继续按后续轮次执行；任务结果回报也使用 steer，空闲主 chat 自动唤醒。单 Session 单活动 Turn 保持，一轮可消费多条输入，见[输入、回报与原生交付设计](../../backend/docs/session-input-and-task-report.md)。下文逐条领取的实现已切换，存量输入保留 queue，普通 prompt 不能直接视为引导能力。
+**输入调度增量（2026-11-17，已接入，验收范围见专项设计）**：默认 steer 的用户输入可在安全边界加入活动 Turn，queue 按后续轮次执行；任务结果回报单独排队，空闲主 chat 自动唤醒。单 Session 单活动 Turn 保持，普通用户轮可消费多条输入，见[输入、回报与原生交付设计](../../backend/docs/session-input-and-task-report.md)。下文逐条领取的实现已切换，普通 prompt 不能直接视为引导能力。
 
 > **2026-11-16 关系与生命周期已确认**：一 Task 一 task Session，共享环境归 Conversation；创建、停止、归档、首版放置及三层回收按[业务会话与共享环境生命周期](../../docs/architecture/conversation-lifecycle.md)。下文保留完整目标范围；当前最小实现与限制见仓库运行说明和实施计划。
 

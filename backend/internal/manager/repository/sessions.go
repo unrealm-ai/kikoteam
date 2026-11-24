@@ -354,7 +354,12 @@ func (t *sessionTx) InsertInput(v service.Input) (service.Input, error) {
 	}
 	if *v.TriggerAgentLoop && v.DeliveryMode == "steer" && t.state.Session.Execution.ActiveTurnID != nil {
 		var compatible bool
-		if err := t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(i.submitted_by::text,i.channel_principal_id::text)=$2 FROM manager_turns t JOIN manager_inputs i ON i.id=t.input_id WHERE t.id=$1`, *t.state.Session.Execution.ActiveTurnID, t.target.Actor).Scan(&compatible); err != nil {
+		// An active or queued report already forces this input to wait for a
+		// later Turn. Keep its steer mode for subsequent ordinary chat inputs.
+		if err := t.tx.QueryRowContext(t.ctx, `SELECT i.source_kind='task_report'
+ OR COALESCE(i.submitted_by::text,i.channel_principal_id::text)=$2
+ OR EXISTS(SELECT FROM manager_inputs r WHERE r.session_id=t.session_id AND r.status='queued' AND r.trigger_agent_loop AND r.source_kind='task_report')
+ FROM manager_turns t JOIN manager_inputs i ON i.id=t.input_id WHERE t.id=$1`, *t.state.Session.Execution.ActiveTurnID, t.target.Actor).Scan(&compatible); err != nil {
 			return v, err
 		}
 		if !compatible {

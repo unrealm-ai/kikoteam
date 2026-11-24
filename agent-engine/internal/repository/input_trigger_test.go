@@ -144,6 +144,65 @@ func TestSteeringDoesNotOvertakeEarlierQueuedTrigger(t *testing.T) {
 	}
 }
 
+func TestTaskReportsSplitSteeringQueue(t *testing.T) {
+	db, store, work := triggerFixture(t)
+	ctx := t.Context()
+	first, legacyReport, report, followup, supplement := fixtureID(20), fixtureID(21), fixtureID(22), fixtureID(23), fixtureID(24)
+	triggerInsert(t, db, first, 1, true, "user")
+	claim := func(input string, turnID int) *Turn {
+		t.Helper()
+		turn, err := store.Claim(ctx, work, fixtureID(turnID))
+		if err != nil || turn == nil || turn.Input.ID != input {
+			t.Fatal("unexpected turn", turn, err)
+		}
+		return turn
+	}
+	assertSteer := func(turn *Turn, want string) {
+		t.Helper()
+		input, err := store.ClaimSteering(ctx, work, *turn)
+		if err != nil || (input == nil && want != "") || (input != nil && input.ID != want) {
+			t.Fatal("unexpected steer", input, err)
+		}
+	}
+	finish := func(turn *Turn) {
+		t.Helper()
+		if err := store.Complete(ctx, work, *turn, "completed", "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	turn := claim(first, 30)
+	task, taskSession := fixtureID(40), fixtureID(41)
+	claimExec(t, db, `INSERT INTO manager_tasks(id,workspace_id,conversation_id,agent_id,source_chat_session_id,source_chat_input_id)
+ VALUES($1,$2,$3,$4,$5,$6)`, task, work.WorkspaceID, work.ConversationID, work.AgentID, work.SessionID, first)
+	claimExec(t, db, `INSERT INTO manager_sessions(id,workspace_id,agent_id,conversation_id,created_by,task_id,mode,configuration)
+ VALUES($1,$2,$3,$4,$5,$6,'task','{}')`, taskSession, work.WorkspaceID, work.AgentID, work.ConversationID, fixtureID(2), task)
+	for _, tc := range []struct {
+		target, mode string
+		seq          int
+	}{{legacyReport, "steer", 2}, {report, "queue", 3}} {
+		source, reportID := fixtureID(42+tc.seq), fixtureID(46+tc.seq)
+		claimExec(t, db, `INSERT INTO manager_inputs(id,workspace_id,session_id,submitted_by,admission_epoch,seq,text,status)
+ VALUES($1,$2,$3,$4,1,$5,'task input','processed')`, source, work.WorkspaceID, taskSession, fixtureID(2), tc.seq)
+		claimExec(t, db, `WITH report_input AS (
+ INSERT INTO manager_inputs(id,workspace_id,session_id,submitted_by,admission_epoch,seq,text,source_kind,report_id,delivery_mode)
+ VALUES($1,$2,$3,$4,1,$5,'report','task_report',$6,$7) RETURNING id)
+ INSERT INTO manager_task_reports(id,workspace_id,source_input_id,target_session_id,status,target_input_id)
+ SELECT $6,$2,$8,$3,'admitted',id FROM report_input`, tc.target, work.WorkspaceID, work.SessionID, fixtureID(2), tc.seq, reportID, tc.mode, source)
+	}
+	triggerInsert(t, db, followup, 4, true, "user")
+	triggerInsert(t, db, supplement, 5, true, "user")
+	assertSteer(turn, "")
+	finish(turn)
+
+	for index, reportInput := range []string{legacyReport, report} {
+		turn = claim(reportInput, 31+index)
+		assertSteer(turn, "")
+		finish(turn)
+	}
+	turn = claim(followup, 33)
+	assertSteer(turn, supplement)
+}
+
 func TestInputTriggerDefaultsAndSourceConstraints(t *testing.T) {
 	db, _, _ := triggerFixture(t)
 	id := fixtureID(40)

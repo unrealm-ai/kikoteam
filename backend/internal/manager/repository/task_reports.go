@@ -81,7 +81,7 @@ func (s *Store) ReportTaskResult(ctx context.Context, r service.TaskResult) (ser
 				}
 			}
 			text := taskReportText(src, r)
-			i, e := tx.InsertInput(service.Input{ID: service.NewID(), SessionID: src.target, SubmittedBy: src.actor, Text: text, Status: "queued", DeliveryMode: "steer", SourceKind: "task_report", ReportID: &out.ID, CreatedAt: time.Now().UTC()})
+			i, e := tx.InsertInput(service.Input{ID: service.NewID(), SessionID: src.target, SubmittedBy: src.actor, Text: text, Status: "queued", DeliveryMode: "queue", SourceKind: "task_report", ReportID: &out.ID, CreatedAt: time.Now().UTC()})
 			if e != nil {
 				return e
 			}

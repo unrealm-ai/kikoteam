@@ -10,7 +10,8 @@ import TaskDetailPanel from '../components/TaskDetailPanel.vue';
 import { activeWorkspaceId, D2ApiError } from '../api/client';
 import { agentsApi, type Agent } from '../api/agents';
 import { managerApi, type Conversation, type ManagerSession } from '../api/manager';
-import { sessionStatus, workItemProgress } from '../utils/session-presentation';
+import { taskApi } from '../api/tasks';
+import { sessionStatus, workItemProgress, type TaskNavigationTarget } from '../utils/session-presentation';
 const props = defineProps<{ selectedEmployeeId?: string | undefined; selectedConversationId?: string | undefined }>();
 const agents = ref<Agent[]>([]), selected = ref(''), search = ref(''), listError = ref(''), loading = ref(false);
 const conversation = ref<Conversation | null>(null), chatID = ref(''), taskID = ref(''), tasks = ref<ManagerSession[]>([]), taskCursor = ref<string | null>(null);
@@ -98,13 +99,24 @@ async function firstSend() {
   finally { if (g === generation) sending.value = false; }
 }
 function visibility() { if (!document.hidden) void refreshTasks(); }
-async function openTask(id: string, turn = '') {
+async function locateTask(target: TaskNavigationTarget, w: string, signal: AbortSignal) {
+  const known = tasks.value.find(task => (target.kind === 'task' ? task.task_id : task.id) === target.id);
+  if (known) return { taskID: known.task_id, sessionID: known.id, conversationID: known.conversation_id, taskMode: known.mode === 'task' };
+  if (target.kind === 'task') {
+    const v = await taskApi.detail(w, target.id, signal);
+    return { taskID: v.task_id, sessionID: v.session_id, conversationID: v.conversation_id, taskMode: v.task_id === target.id };
+  }
+  const v = await managerApi.session(w, target.id, signal);
+  return { taskID: v.task_id, sessionID: v.id, conversationID: v.conversation_id, taskMode: v.mode === 'task' && v.id === target.id };
+}
+async function openTask(target: TaskNavigationTarget, turn = '') {
   const g = generation, w = activeWorkspaceId.value, attempt = ++taskOpenGeneration;
+  if (!conversation.value) return;
   try {
-    const task = tasks.value.find(t => t.id === id) || await managerApi.session(w, id, controller.signal);
-    if (g !== generation || attempt !== taskOpenGeneration || task.conversation_id !== conversation.value?.id || task.mode !== 'task' || !task.task_id) return;
-    taskID.value = id; detailTaskID.value = task.task_id; detailTurnID.value = turn; showTasks.value = true;showFiles.value=false;
-  } catch (e) { if (g === generation) tasksError.value = e instanceof Error ? e.message : '任务详情不可读取'; }
+    const task = await locateTask(target, w, controller.signal);
+    if (g !== generation || attempt !== taskOpenGeneration || task.conversationID !== conversation.value?.id || !task.taskMode || !task.taskID || !task.sessionID) return;
+    taskID.value = task.sessionID; detailTaskID.value = task.taskID; detailTurnID.value = turn; showTasks.value = true; showFiles.value = false;
+  } catch (e) { if (g === generation && attempt === taskOpenGeneration) tasksError.value = e instanceof Error ? e.message : '任务详情不可读取'; }
 }
 watch(selected, () => { void open(); });
 watch(showTasks, visible => { if (!visible) taskOpenGeneration++; });
@@ -127,7 +139,7 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
         <section v-else-if="conversation.lifecycle === 'active'" class="new-chat"><p>暂无历史消息，请向「{{ employee?.name }}」发送工作需求。</p><ProjectDraftFiles v-if="filesAvailable" :draft="draft" :disabled="locked"/><NInput v-model:value="firstText" type="textarea" :disabled="sending || !employee?.enabled" placeholder="输入消息" @keydown.enter.exact="onFirstEnter" /><NButton type="primary" :loading="sending" :disabled="draft.unreserved.value || (!firstText.trim() && !draft.paths.value.length && !draft.attachmentIds.value.length) || sending || !employee?.enabled" @click="firstSend">{{ error ? '重试发送' : '发送' }}</NButton></section>
         <div v-if="dragDepth>0" class="drop-hint" role="status"><span>↑</span><strong>松开以添加附件</strong><small>支持文件和图片</small></div></div>
         <ProjectFileTree v-if="treeMounted&&filesAvailable" v-show="showFiles" ref="tree" :key="conversation.id" :workspace="activeWorkspaceId" :conversation="conversation.id" :read-only="locked" @close="showFiles=false" @reference="draft.reference"/>
-        <aside v-if="showTasks" class="tasks" :class="{ 'has-detail': taskID }"><div class="task-list-heading"><h3>本会话任务 <span>{{ tasks.length }}</span></h3><p class="muted">任务可并行运行，本轮结束后仍可继续。</p><p v-if="tasksError" class="error">{{ tasksError }}</p></div><div class="task-list"><button v-for="task in tasks" :key="task.id" :class="['task', { selected: taskID === task.id }]" @click="openTask(task.id)"><strong>{{ task.title || '任务' }}</strong><small>{{ workItemProgress(task.execution) || (task.execution.required_actions?.length ? '待确认' : sessionStatus(task.execution.state)) }} · {{ sessionStatus(task.lifecycle) }}</small></button><p v-if="!tasks.length" class="muted">尚未触发任务</p><NButton v-if="taskCursor" size="small" @click="refreshTasks(true)">加载更多任务</NButton></div><div v-if="taskID && detailTaskID" class="task-detail"><TaskDetailPanel :key="detailTaskID" :workspace-id="activeWorkspaceId" :task-id="detailTaskID" :initial-turn-id="detailTurnID" presentation="sidebar" @task-changed="refreshTasks()" @close="taskID = ''" @open-source-conversation="taskID = ''; showTasks = false" /></div></aside>
+        <aside v-if="showTasks" class="tasks" :class="{ 'has-detail': taskID }"><div class="task-list-heading"><h3>本会话任务 <span>{{ tasks.length }}</span></h3><p class="muted">任务可并行运行，本轮结束后仍可继续。</p><p v-if="tasksError" class="error">{{ tasksError }}</p></div><div class="task-list"><button v-for="task in tasks" :key="task.id" :class="['task', { selected: taskID === task.id }]" @click="openTask(task.task_id ? {kind:'task',id:task.task_id} : {kind:'session',id:task.id})"><strong>{{ task.title || '任务' }}</strong><small>{{ workItemProgress(task.execution) || (task.execution.required_actions?.length ? '待确认' : sessionStatus(task.execution.state)) }} · {{ sessionStatus(task.lifecycle) }}</small></button><p v-if="!tasks.length" class="muted">尚未触发任务</p><NButton v-if="taskCursor" size="small" @click="refreshTasks(true)">加载更多任务</NButton></div><div v-if="taskID && detailTaskID" class="task-detail"><TaskDetailPanel :key="detailTaskID" :workspace-id="activeWorkspaceId" :task-id="detailTaskID" :initial-turn-id="detailTurnID" presentation="sidebar" @task-changed="refreshTasks()" @close="taskID = ''" @open-source-conversation="taskID = ''; showTasks = false" /></div></aside>
       </div>
     </main>
   </div>

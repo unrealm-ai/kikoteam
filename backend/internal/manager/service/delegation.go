@@ -146,17 +146,21 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 		return artifacts.SelectArtifacts(ctx, scope, args.ArtifactIDs)
 	case "work_item_get_current", "work_item_amend_requirements":
 		return d.callWorkItem(ctx, scope, name, args)
-	case "create_todo", "start_todo", "cancel_todo", "supplement_todo":
+	case "create_todo":
+		return d.planned(ctx, scope, name, args)
+	case "start_todo", "cancel_todo", "supplement_todo":
+		v, e := d.delegatedTaskTarget(ctx, scope, args)
+		if e != nil {
+			return nil, e
+		}
+		args.SessionID = v.ID
 		return d.planned(ctx, scope, name, args)
 	case "create_session":
 		return d.createTask(ctx, scope, args)
 	case "list_sessions":
 		return d.Manager.ListSessions(ctx, scope.WorkspaceID, scope.ActorID, args.Cursor, SessionFilter{Conversation: scope.ConversationID, Mode: "task", SourceChat: scope.Identity.SessionID, Limit: args.Limit, PlanningState: args.PlanningState, ExecutionState: args.ExecutionState, LatestTurnStatus: args.LatestTurnStatus})
 	}
-	if !ValidID(args.SessionID) {
-		return nil, Fail("invalid_argument", 400, "session_id 无效")
-	}
-	v, err := d.Store.DelegatedSession(ctx, scope, args.SessionID)
+	v, err := d.delegatedTaskTarget(ctx, scope, args)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +185,28 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 	default:
 		return nil, Fail("invalid_argument", 400, "未知委派操作")
 	}
+}
+
+type delegatedTaskResolver interface {
+	DelegatedTaskSession(context.Context, DelegationScope, string) (Session, error)
+}
+
+func (d *Delegation) delegatedTaskTarget(ctx context.Context, scope DelegationScope, args DelegationArgs) (Session, error) {
+	if args.TaskID != "" {
+		if args.SessionID != "" || !ValidID(args.TaskID) {
+			return Session{}, Fail("invalid_argument", 400, "task_id 无效或不能同时指定多个任务标识")
+		}
+		resolver, ok := d.Store.(delegatedTaskResolver)
+		if !ok {
+			return Session{}, Fail("dependency_unavailable", 503, "暂时无法查找任务")
+		}
+		return resolver.DelegatedTaskSession(ctx, scope, args.TaskID)
+	}
+	// Existing internal clients can still resolve their known execution session.
+	if ValidID(args.SessionID) {
+		return d.Store.DelegatedSession(ctx, scope, args.SessionID)
+	}
+	return Session{}, Fail("invalid_argument", 400, "task_id 无效")
 }
 
 func pinsDelegationInput(name string, args DelegationArgs) bool {

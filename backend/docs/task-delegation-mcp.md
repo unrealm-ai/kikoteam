@@ -14,7 +14,7 @@
 | --- | --- |
 | 现有上下文可回答的聊天/解释/讨论 | 直接回答，不创建任务 |
 | 需检索、读文件、业务工具、项目操作或长处理 | 新建任务，携带目标、必要且获准的上下文、所有限制/禁止事项及预期结果；只读请求不升级为修改/发送/发布授权；禁止创建或缺必要信息时不擅自执行 |
-| 补充已有任务 | 查明真实 session_id，追加到原任务；只传新增/修订要求及必要上下文，保留旧限制；歧义先澄清，不另建任务 |
+| 补充已有任务 | 查明业务 task_id，追加到原任务；只传新增/修订要求及必要上下文，保留旧限制；歧义先澄清，不另建任务 |
 | 主动问进度/结果 | 允许查询及相关结果分页，如实报告；Turn 结束不等于业务任务完成 |
 | 停止已有任务 | 明确停止意图后停止指定 Session，检查权威状态；受理不等于停稳，不假称支持暂停/恢复 |
 
@@ -63,7 +63,7 @@ Engine 从可信运行配置取得地址和专用凭据，按当前 Pi 的原生
 - 使用 Backend 委派 MCP 专用运行凭据，不复用 Sandbox MCP Token、浏览器 Cookie 或第三方 PluginAuth。Sandbox 固定 Token 的既有生命周期不因本设计改变。
 - 认证记录或经核验的声明关联原始主体、工作区、员工、Conversation、来源 chat Session 和有效运行范围；每次操作重新核验当前权限与运行归属。具体签发、撤销和配置更新由既有平台 / Engine 接入契约落实，不在工具参数中新增一套登录流程。
 
-工具参数只表达业务意图。workspace_id、提交主体、source_chat_session_id、conversation_id、运行身份及回报地址均从可信上下文取得，不能由模型自报或改投。提供某个 session_id 只定位资源，不能授予访问权。
+工具参数只表达业务意图。workspace_id、提交主体、source_chat_session_id、conversation_id、运行身份及回报地址均从可信上下文取得，不能由模型自报或改投。提供某个 task_id 只定位资源，不能授予访问权。
 
 ## 3. 对象关系、目标与授权
 
@@ -87,27 +87,30 @@ list_targets 已移除，主对话只能操作当前员工。list_sessions 只�
 
 ## 4. 主对话工具
 
-| 工具 | 参数候选 | 业务结果 |
+| 工具 | 模型可见参数 | 业务结果 |
 | --- | --- | --- |
-| `task_delegation_create_session` | instruction、title?、attachment_ids?、attachment_paths? | `accepted: true` 与原 Task / Session / 首条 Input 的已受理身份 |
-| `task_delegation_list_sessions` | cursor?、limit?、planning_state?、execution_state?、latest_turn_status? | 当前主会话委派的 Task / Session 摘要，{items, next_cursor} |
-| `task_delegation_get_session` | session_id、turn_id?、cursor?、limit?、input_id? | 简明状态及结果摘要、当前执行事实、所选轮次的正式回复分页与输入回执 |
+| `task_delegation_create_session` | instruction、title?、attachment_ids?、attachment_paths? | `accepted: true` 与原 Task / 首条 Input 的已受理身份 |
+| `task_delegation_list_sessions` | cursor?、limit?、planning_state?、execution_state?、latest_turn_status? | 当前主会话委派的 Task 摘要，{items, next_cursor} |
+| `task_delegation_get_session` | task_id、turn_id?、cursor?、limit?、input_id? | 简明状态及结果摘要、当前执行事实、所选轮次的正式回复分页与输入回执 |
 | `trigger_task_get_result` | notification_id? 或 cursor? | [同一目的群已送达的定时任务和 Hook 执行记录](trigger-notifications.md#在群里追问一次执行) |
-| `task_delegation_send_message` | session_id、可选 text、有序 attachment_paths，文字和附件至少提供一项 | 原 Session 新 Input 的身份及当前状态 |
+| `task_delegation_send_message` | task_id、可选 text、有序 attachment_paths，文字和附件至少提供一项 | 原 Session 新 Input 的身份及当前状态 |
+| `send_task_detail_card` | task_id | 按当前外部渠道和平台配置请求发卡；返回投递状态，不返回链接 |
 | `artifact_select` | 有序 artifact_ids | 将获准版本绑定到本轮回复和各自原渠道目标 |
-| `task_delegation_supplement_todo` | session_id、instruction、request_key、expected_version、attachment_paths? | 补充未启动待办 |
-| `task_delegation_stop_session` | session_id | 目标 Session 当前执行概况，沿现有 stop 语义受理与收尾 |
+| `task_delegation_supplement_todo` | task_id、instruction、request_key、expected_version、attachment_paths? | 补充未启动待办 |
+| `task_delegation_stop_session` | task_id | 目标 Session 当前执行概况，沿现有 stop 语义受理与收尾 |
 | `task_delegation_create_todo` | instruction、request_key、title? | 保存未启动待办，无执行Input |
-| `task_delegation_start_todo` | session_id、expected_version、request_key | 显式启动，重验模型及权限，唯一首Input |
-| `task_delegation_cancel_todo` | session_id、expected_version、request_key | 只取消未启动待办，不停止运行任务 |
+| `task_delegation_start_todo` | task_id、expected_version、request_key | 显式启动，重验模型及权限，唯一首Input |
+| `task_delegation_cancel_todo` | task_id、expected_version、request_key | 只取消未启动待办，不停止运行任务 |
 
 状态筛选、输入版本CAS和事实回执以[最新待办与回执规范](chat-planned-tasks.md)为准。执行中任务的版本核对与去重均由 Manager 完成；待办补充使用 task_delegation_supplement_todo。
+
+主对话工具以 `task_id` 识别同一业务任务。创建、列表、查询、补充、停止、发详情和内部任务回告沿用同一值；Manager 按来源身份与上下文映射到执行 Session。执行 Session 不再出现在新工具清单或模型回执中；平台内部、登录态 Web REST 仍保持 Session 契约。
 
 工具名称与输入格式见机器契约，后文说明行为时省略统一前缀。调用遵循标准 MCP tools/list、tools/call 和工具结果结构；业务结果按实际兼容版本以结构化内容交付，并提供必要文本摘要供 Harness 理解。下面 JSON 只表示业务参数和结果，不是自行定义 JSON-RPC 外层。[MCP 工具规范](https://modelcontextprotocol.io/specification/latest/server/tools)
 
 ### 创建与追加
 
-instruction / text 沿用[Input 文本校验](session-api.md#1-路径身份与共同约定)，title 沿用 Session 标题约束；session_id / turn_id 为 UUID，未知参数拒绝。mode 固定 task，不接收临时模型、岗位指令、指定 Skill、插件账号、Sandbox 或回报地址覆盖。
+instruction / text 沿用[Input 文本校验](session-api.md#1-路径身份与共同约定)，title 沿用 Session 标题约束；task_id / turn_id 为 UUID，未知参数拒绝。mode 固定 task，不接收临时模型、岗位指令、指定 Skill、插件账号、Sandbox 或回报地址覆盖。
 
 调用 task_delegation_create_session 的参数示例：
 
@@ -124,20 +127,19 @@ instruction / text 沿用[Input 文本校验](session-api.md#1-路径身份与�
 {
   "accepted": true,
   "task_id": "55555555-5555-4555-8555-555555555555",
-  "session_id": "33333333-3333-4333-8333-333333333333",
   "input_id": "44444444-4444-4444-8444-444444444444"
 }
 ```
 
-回执只表示已持久受理，不表示模型已启动或工作完成。不会返回瞬时执行状态，请在需要时使用查询工具。相同来源输入和相同参数的获准重放仍返回原三个 ID。已保存但未启动的待办、失败和未知结果不使用此回执。事务提交后才唤醒既有分配机制，通知丢失可由 Backend 重新发现待办，不重新创建 Task。环境在首次执行时由现有生命周期用例取得，不在 MCP 受理事务内启动 Pi / Runner。
+回执只表示已持久受理，不表示模型已启动或工作完成。不会返回瞬时执行状态，请在需要时使用查询工具。相同来源输入和相同参数的获准重放仍返回原 task_id 与 input_id。已保存但未启动的待办、失败和未知结果不使用此回执。事务提交后才唤醒既有分配机制，通知丢失可由 Backend 重新发现待办，不重新创建 Task。环境在首次执行时由现有生命周期用例取得，不在 MCP 受理事务内启动 Pi / Runner。
 
 send_message 将补充文字、有序 attachment_paths 或二者作为原任务的新 Input，沿用 steer。Manager 按当前已授权来源输入、目标和内容去重，并在提交事务内核对版本。补充问题、停止后继续和故障后“继续”均不创建新 Task / Session，故障后按原生加载机制执行新 Turn。另起一件工作才再次调用 create_session。
 
 ### 查询与分页
 
-list_sessions 的摘要包含 task_id、session_id、title、Session lifecycle、execution、最近轮次及活动时间，不新增 session_completed 状态或推测性进度百分比。Task 业务完成由 Manager 的业务规则确认，不从最后一次 Turn completed 推断。
+list_sessions 的摘要包含 task_id、title、Session lifecycle、execution、最近轮次及活动时间，不新增 session_completed 状态或推测性进度百分比。Task 业务完成由 Manager 的业务规则确认，不从最后一次 Turn completed 推断。
 
-get_session 返回 task_id / session_id、Session lifecycle 和 execution、所选 Turn 的状态 / 错误 / 已有摘要，以及该轮正式 agent.message 内容及 next_cursor。默认选择最近的已开始 Turn；没有 Turn 时返回 null 和空消息，Input 排队事实仍可见。显式 turn_id 必须属于该目标 Session。工具状态只能附已有的安全摘要，不另调用模型总结进度，不默认返回完整工具参数、思考正文或无限日志。
+get_session 返回 task_id、Session lifecycle 和 execution、所选 Turn 的状态 / 错误 / 已有摘要，以及该轮正式 agent.message 内容及 next_cursor。默认选择最近的已开始 Turn；没有 Turn 时返回 null 和空消息，Input 排队事实仍可见。显式 turn_id 必须属于该目标 Session。工具状态只能附已有的安全摘要，不另调用模型总结进度，不默认返回完整工具参数、思考正文或无限日志。
 
 `summary.status` 与 `summary.status_text` 概括当前执行、排队、待处理动作、后台进程或停止状态，以及未启动待办的状态。`summary.result` 只对应所选轮次，包含 `turn_id`、`turn_status` 及可能的未知工具结果标记。仅已结束且状态为 `completed`、没有未知工具结果的轮次可附 `preview`，从已有结果取最多 1200 字符，截断时标记 `preview_truncated`。无所选轮次时 `result` 为 null。历史结果和当前状态可同时出现，交付状态和业务完成需各自的事实。
 
@@ -169,7 +171,7 @@ MCP 的创建响应与异步执行结果是两次不同事实。create_session �
 
 1. 创建时持久记录来源 chat Session 与目标 Task / task Session。
 2. Manager 观察已提交的 Input / Turn 和正式消息事实；正常轮次结束可产生“本轮已处理”的回报，不自动宣称业务 Task 已完成。
-3. 回报保存来源 chat、目标 task_id / session_id / input_id / turn_id、可靠结果引用及回报类别。Task 业务完成事实须由所属业务规则另行确认，不能借工具 RPC 或一次 Turn 的 completed 判定。
+3. 回报内部持久化来源 chat、目标 Task/Session/Input/Turn、可靠结果引用及回报类别；新模型回告 JSON 只提供业务 task_id 及具体 Turn/Input 引用，不提供底层 session_id。Task 业务完成事实须由所属业务规则另行确认，不能借工具 RPC 或一次 Turn 的 completed 判定。
 4. Manager 通过整体对话模块的可信回报入口投递到原主会话；如何进入原生上下文、是否唤醒总结和如何展示，与整体会话设计对齐，不在本模块伪造用户 Input、system 指令或工具执行结果。
 
 回报按来源 chat、目标 Turn 和回报类别保存稳定去重身份，重复事件、断流或投递重试不重复追加 / 唤醒。后续追加 Input 有自己的 Turn 和回报，不复用首条输入的完成标记。未知工具结果后来查清属于核对更新，不再次伪装成同一轮的首次完成。高频工具进展、思考与 delta 不逐条触发主会话模型调用。

@@ -37,6 +37,7 @@ const taskActions: Record<string, string> = {
   task_delegation_create_session: '触发任务', task_delegation_list_targets: '查看可用员工',
   task_delegation_list_sessions: '查看任务列表', task_delegation_get_session: '查看任务进展',
   task_delegation_send_message: '补充任务要求', task_delegation_stop_session: '停止任务',
+  send_task_detail_card: '发送任务详情卡片',
 };
 export function taskAction(event: SessionEvent): string { return taskActions[event.name || ''] || ''; }
 export function toolName(event: SessionEvent): string {
@@ -60,8 +61,11 @@ export function toolStatus(event: SessionEvent): string {
   if (event.status !== 'completed') return sessionStatus(event.status);
   if (event.output_state !== 'available') return '调用结束';
   const output = record(toolOutput(event));
-  if (event.name === 'task_delegation_create_session') return text(output.session_id) ? '已触发' : '调用结束';
+  if (event.name === 'task_delegation_create_session') return output.accepted === true || text(output.session_id) ? '已触发' : '调用结束';
   if (['task_delegation_send_message', 'task_delegation_stop_session'].includes(event.name || '')) return '已受理';
+  if (event.name === 'send_task_detail_card') {
+    return ({ queued: '已提交投递', sent: '已发送', already_sent: '此前已发送', not_sent: '未发送', delivery_unconfirmed: '送达待核对' } as Record<string, string>)[text(output.status)] || '调用结束';
+  }
   if (output.state === 'running') return '后台运行中';
   return '执行成功';
 }
@@ -83,10 +87,18 @@ export function outputText(event: SessionEvent): string {
   if (Array.isArray(object.content)) return object.content.filter(c => record(c).type === 'text').map(c => text(record(c).text)).join('\n');
   return jsonText(output);
 }
-export function taskSessionID(event: SessionEvent): string {
-  if (!taskAction(event) || toolFailed(event)) return '';
-  const output = record(toolOutput(event));
-  return text(output.session_id) || (event.input_state === 'available' ? text(record(event.input).session_id) : '');
+// A business task ID is not a Session ID. Use the origin-documented namespace
+// so a stale event cannot accidentally navigate to a different resource.
+export type TaskNavigationTarget = { kind: 'task' | 'session'; id: string };
+function taskNavigationTarget(value: Record<string, unknown>, input: Record<string, unknown> = {}): TaskNavigationTarget | null {
+  const task = text(value.task_id) || text(input.task_id);
+  if (task) return { kind: 'task', id: task };
+  const session = text(value.session_id) || text(input.session_id);
+  return session ? { kind: 'session', id: session } : null;
+}
+export function toolTaskTarget(event: SessionEvent): TaskNavigationTarget | null {
+  if (!taskAction(event) || toolFailed(event)) return null;
+  return taskNavigationTarget(record(toolOutput(event)), event.input_state === 'available' ? record(event.input) : {});
 }
 export function taskReport(event: SessionEvent) {
   if (event.source_kind !== 'task_report') return null;
@@ -95,8 +107,9 @@ export function taskReport(event: SessionEvent) {
     const start = body.indexOf('{');
     if (start < 0) return null;
     const value = record(JSON.parse(body.slice(start)));
-    if (typeof value.result !== 'string' || typeof value.outcome !== 'string' || typeof value.session_id !== 'string') return null;
-    return { sessionID: value.session_id, turnID: text(value.turn_id), outcome: value.outcome, result: value.result, unknown: value.has_unknown_tool_results === true, background: typeof value.background_process_count === 'number' ? value.background_process_count : null, queued: typeof value.queued_input_count === 'number' ? value.queued_input_count : 0 };
+    const task = taskNavigationTarget(value);
+    if (typeof value.result !== 'string' || typeof value.outcome !== 'string' || !task) return null;
+    return { task, turnID: text(value.turn_id), outcome: value.outcome, result: value.result, unknown: value.has_unknown_tool_results === true, background: typeof value.background_process_count === 'number' ? value.background_process_count : null, queued: typeof value.queued_input_count === 'number' ? value.queued_input_count : 0 };
   } catch { return null; }
 }
 export function clockTime(value: string): string {

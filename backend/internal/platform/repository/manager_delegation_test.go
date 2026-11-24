@@ -198,7 +198,7 @@ func TestDelegationScopeAtomicDedupAndRunnerGrants(t *testing.T) {
 			t.Fatalf("MCP retry failed: %d %s", out.Code, out.Body.String())
 		}
 		v := receipt.Result.Structured
-		if len(v) != 4 || v["accepted"] != true || v["session_id"] != target ||
+		if len(v) != 3 || v["accepted"] != true || v["session_id"] != nil || v["task_id"] != webTasks.Items[0].TaskID ||
 			!manager.ValidID(fmt.Sprint(v["task_id"])) || !manager.ValidID(fmt.Sprint(v["input_id"])) {
 			t.Fatalf("invalid MCP acceptance payload: %v", v)
 		}
@@ -220,9 +220,14 @@ func TestDelegationScopeAtomicDedupAndRunnerGrants(t *testing.T) {
 			t.Fatalf("unexpected field %s accepted: %d %s", field, response.Code, response.Body.String())
 		}
 	}
+	// An old in-flight selector is accepted, but even its result only exposes the task ID.
+	legacy := callTool("4", "task_delegation_get_session", `{"session_id":"`+target+`"}`)
+	if legacy.Code != 200 || strings.Contains(legacy.Body.String(), target) || !strings.Contains(legacy.Body.String(), webTasks.Items[0].TaskID) {
+		t.Fatalf("legacy call failed or reflected Session identity: %d %s", legacy.Code, legacy.Body.String())
+	}
 	// Failed lookups must retain scoped recovery arguments in the actual MCP text.
 	missingTurn := manager.NewID()
-	response = callTool("4", "task_delegation_get_session", `{"session_id":"`+target+`","turn_id":"`+missingTurn+`"}`)
+	response = callTool("5", "task_delegation_get_session", `{"task_id":"`+webTasks.Items[0].TaskID+`","turn_id":"`+missingTurn+`"}`)
 	var failed struct {
 		Result struct {
 			IsError bool `json:"isError"`
@@ -247,7 +252,7 @@ func TestDelegationScopeAtomicDedupAndRunnerGrants(t *testing.T) {
 	}
 	if err = json.Unmarshal([]byte(failed.Result.Content[0].Text), &lookup); err != nil ||
 		lookup.Error.Code != "resource_not_found" || lookup.Recovery.Tool != "task_delegation_get_session" ||
-		len(lookup.Recovery.Arguments) != 1 || lookup.Recovery.Arguments["session_id"] != target ||
+		len(lookup.Recovery.Arguments) != 1 || lookup.Recovery.Arguments["task_id"] != webTasks.Items[0].TaskID ||
 		!strings.Contains(lookup.Recovery.Instructions, "去掉 turn_id 和 cursor") {
 		t.Fatalf("missing exact recovery in MCP text: %s", failed.Result.Content[0].Text)
 	}

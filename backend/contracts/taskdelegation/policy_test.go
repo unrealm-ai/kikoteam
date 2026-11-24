@@ -70,7 +70,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 			}
 		}
 		if name == "send_message" {
-			wantFields := []string{"session_id", "text", "attachment_paths", "attachment_ids"}
+			wantFields := []string{"task_id", "text", "attachment_paths", "attachment_ids"}
 			if len(tool.Schema.Properties) != len(wantFields) {
 				t.Errorf("unexpected append tool fields: %v", tool.Schema.Properties)
 			}
@@ -79,7 +79,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 					t.Errorf("append tool missing property %s", field)
 				}
 			}
-			if len(tool.Schema.Required) != 1 || tool.Schema.Required[0] != "session_id" {
+			if len(tool.Schema.Required) != 1 || tool.Schema.Required[0] != "task_id" {
 				t.Errorf("unexpected append tool required fields: %v", tool.Schema.Required)
 			}
 		}
@@ -91,7 +91,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 				}
 			}
 		}
-		for _, forbidden := range []string{"workspace_id", "employee_id", "conversation_id", "source_chat_session_id", "run_id"} {
+		for _, forbidden := range []string{"workspace_id", "employee_id", "conversation_id", "session_id", "source_chat_session_id", "run_id"} {
 			if _, ok := tool.Schema.Properties[forbidden]; ok {
 				t.Errorf("%s exposes %s", name, forbidden)
 			}

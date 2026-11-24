@@ -206,10 +206,10 @@ func TestManagerRuntimeLiveDeepSeek(t *testing.T) {
 	if err = db.QueryRowContext(ctx, `SELECT count(*) FROM manager_session_events WHERE session_id=$1 AND event->>'type'='agent.tool_result' AND event->>'status'='completed' AND event->>'name' IN ('write','bash_start')`, task).Scan(&calls); err != nil || calls < 2 {
 		t.Fatal("real model did not complete both file and Bash tool calls")
 	}
-	call("POST", chatPath+"/inputs", map[string]string{"text": "请立即调用 task_delegation_create_session 委派当前员工，instruction 为：实际使用 write 工具在项目根目录创建 delegated-proof.txt，内容为 " + nonce + "，完成后回复 LIVE_DELEGATED_OK。创建成功后立刻返回委派的 session_id，不要等待或轮询，不要直接操作文件。"}, "live-delegation")
+	call("POST", chatPath+"/inputs", map[string]string{"text": "请立即调用 task_delegation_create_session 委派当前员工，instruction 为：实际使用 write 工具在项目根目录创建 delegated-proof.txt，内容为 " + nonce + "，完成后回复 LIVE_DELEGATED_OK。创建成功后立刻返回委派的 task_id，不要等待或轮询，不要直接操作文件。"}, "live-delegation")
 	await(chatPath, 3)
-	var delegated string
-	if err = db.QueryRowContext(ctx, `SELECT s.id FROM manager_sessions s JOIN manager_tasks t ON t.id=s.task_id WHERE t.source_chat_session_id=$1`, chat).Scan(&delegated); err != nil {
+	var delegated, delegatedTask string
+	if err = db.QueryRowContext(ctx, `SELECT s.id,t.id FROM manager_sessions s JOIN manager_tasks t ON t.id=s.task_id WHERE t.source_chat_session_id=$1`, chat).Scan(&delegated, &delegatedTask); err != nil {
 		t.Fatal("real chat did not create a delegated task through MCP")
 	}
 	await(base+"/sessions/"+delegated, 1)
@@ -217,7 +217,7 @@ func TestManagerRuntimeLiveDeepSeek(t *testing.T) {
 	if err != nil || strings.TrimSpace(string(proof)) != nonce {
 		t.Fatal("real delegated task did not write the shared project")
 	}
-	call("POST", chatPath+"/inputs", map[string]string{"text": "请调用 task_delegation_get_session 查询刚才委派的任务 " + delegated + " 的实际结果，确认后简短回复，不创建新任务。"}, "live-query")
+	call("POST", chatPath+"/inputs", map[string]string{"text": "请调用 task_delegation_get_session 查询刚才委派的任务 " + delegatedTask + " 的实际结果，确认后简短回复，不创建新任务。"}, "live-query")
 	await(chatPath, 4)
 	if err = db.QueryRowContext(ctx, `SELECT count(*) FROM manager_session_events WHERE session_id=$1 AND event->>'type'='agent.tool_result' AND event->>'name'='task_delegation_get_session' AND event->>'status'='completed'`, chat).Scan(&calls); err != nil || calls < 1 {
 		t.Fatal("real chat did not query the delegated task through MCP")

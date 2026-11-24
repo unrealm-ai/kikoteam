@@ -45,6 +45,6 @@
 }
 ```
 
-续聊向 `POST /sessions/{chat_session_id}/inputs` 发送上例的 `input` 对象。主 chat 调用 `task_delegation_create_session` 时，将任务要求写入 `instruction`，两条路径按原顺序写入 `attachment_paths`。给已启动的同一 task 追加文件时，使用 `task_delegation_send_message`，携带 `session_id` 和本次有序的 `attachment_paths`。补充文字可省略，文字和附件至少提供一项。Manager 按来源用户 Input、目标任务、文字和附件顺序去重，在会话事务内检查输入版本。
+续聊向 `POST /sessions/{chat_session_id}/inputs` 发送上例的 `input` 对象。主 chat 调用 `task_delegation_create_session` 时，将任务要求写入 `instruction`，两条路径按原顺序写入 `attachment_paths`。给已启动的同一 task 追加文件时，使用 `task_delegation_send_message`，携带 `task_id` 和本次有序的 `attachment_paths`。补充文字可省略，文字和附件至少提供一项。Manager 按来源用户 Input、目标任务、文字和附件顺序去重，在会话事务内检查输入版本。
 
 飞书、钉钉和企微收件经 Manager 鉴权后，按 Inbox 与附件序号复用项目上传回执。任务通过 `artifact_publish(path)` 发布固定版本；Manager 在任务回报里提供本轮 `artifact_candidates`。主对话可调用 `artifact_select(artifact_ids)` 为本轮回复选择候选。每项选择绑定自身的来源 Inbox，回复完成后逐文件独立投递和记录回执。

@@ -9,9 +9,9 @@ import {downloadProjectFile,getChatAttachment,type ProjectAttachment,type Sessio
 import SessionMarkdown from './SessionMarkdown.vue';
 import SessionToolCall from './SessionToolCall.vue';
 import SessionTaskReport from './SessionTaskReport.vue';
-import { clockTime, eventText, presentationRows, sessionStatus as status, taskReport, taskSessionID } from '../utils/session-presentation';
+import { clockTime, eventText, presentationRows, sessionStatus as status, taskReport, toolTaskTarget, type TaskNavigationTarget } from '../utils/session-presentation';
 const props = defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined }>();
-const emit = defineEmits<{ changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [id: string, turn?: string] }>();
+const emit = defineEmits<{ changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [target: TaskNavigationTarget, turn?: string] }>();
 const flow = useSessionEvents(toRef(props, 'workspace'), toRef(props, 'sessionId'), () => emit('changed'), toRef(props, 'turnId'));
 const { session, loading, loadingOlder, error, connection, olderCursor } = flow;
 const shared = computed(() => props.publicDetail?.task.value);
@@ -83,7 +83,10 @@ const messages = computed(() => {
   const pending = new Set(session.value?.execution.required_actions?.map(action => action.request_id));
   return presentationRows(rows.value).filter(({ event }) => !event.action || !pending.has(event.action.request_id));
 });
-function linkedTask(event: SessionEvent) { const id = taskReport(event)?.sessionID || taskSessionID(event); return props.tasks?.find(task => task.id === id); }
+function linkedTask(event: SessionEvent) {
+  const target = taskReport(event)?.task || toolTaskTarget(event);
+  return target && props.tasks?.find(task => (target.kind === 'task' ? task.task_id : task.id) === target.id);
+}
 function isUser(event: SessionEvent) { return event.source_kind !== 'task_report' && event.source_kind !== 'work_item_amendment' && (event.type === 'user.message' || event.type === 'input.updated'); }
 function onEnter(event: KeyboardEvent) { if (event.isComposing || event.keyCode === 229 || continuing.value) return; event.preventDefault(); void send(); }
 async function send() {
@@ -152,8 +155,8 @@ watch(rows, async () => { const el = scroll.value; const bottom = !el || el.scro
       <p v-if="!loading && !rows.length" class="empty muted">{{ taskCenter || task ? '暂无执行记录。' : '暂无消息，发送工作需求开始协作。' }}</p>
       <article v-for="{ event: row, replies } in messages" :key="row.action?.request_id || row.message_id || row.tool_use_id || row.turn_id || row.seq" :class="['event', { user: isUser(row), tool: !!row.tool_use_id, report: row.source_kind === 'task_report', 'turn-event': row.type === 'turn.updated', 'error-event': row.type === 'session.error' }]">
         <template v-if="row.action"><strong>{{ row.action.title }}</strong><p class="body">{{ row.action.message }}</p></template>
-        <SessionToolCall v-else-if="row.tool_use_id" :event="row" :task-title="linkedTask(row)?.title || undefined" :can-open-task="!!taskSessionID(row)" @open-task="emit('openTask', $event)" />
-        <SessionTaskReport v-else-if="row.source_kind === 'task_report'" :event="row" :reply="replies" :title="linkedTask(row)?.title || undefined" :can-open-task="!!taskReport(row)?.sessionID" @open-task="emit('openTask', $event, taskReport(row)?.turnID)" />
+        <SessionToolCall v-else-if="row.tool_use_id" :event="row" :task-title="linkedTask(row)?.title || undefined" :can-open-task="!!toolTaskTarget(row)" @open-task="emit('openTask', $event)" />
+        <SessionTaskReport v-else-if="row.source_kind === 'task_report'" :event="row" :reply="replies" :title="linkedTask(row)?.title || undefined" :can-open-task="!!taskReport(row)?.task" @open-task="emit('openTask', $event, taskReport(row)?.turnID)" />
         <template v-else-if="row.type === 'turn.updated'"><span class="muted">本轮：{{ status(row.status) }}</span><p v-if="row.error" class="error">{{ row.error.message }}</p></template>
         <template v-else>
           <div class="message-meta"><strong>{{ row.source_kind === 'work_item_amendment' ? '事项要求更新' : row.source_kind === 'work_item_notice' || row.source_kind === 'work_item_assignment' || row.source_kind === 'work_item_result' ? '事项交接' : isUser(row) ? (publicDetail ? '任务输入' : '你') : row.type === 'session.error' ? '会话提示' : title }}</strong><time v-if="row.occurred_at" :datetime="row.occurred_at">{{ clockTime(row.occurred_at) }}</time><span v-if="row.type === 'agent.thinking'">思考过程</span></div>

@@ -24,7 +24,7 @@ Engine 在 task Turn 正式消息、执行终态和输入事实提交成功后�
 
 Manager 从数据库读取已经提交的终态与可信 source_chat_session_id，在目标准入事务中去重、重新鉴权，原子创建 manager_task_reports 和内部 queue Input，以及可靠 input.updated。没有常驻 Manager worker，不调用模型或外部服务于数据库事务内。多 backend 实例由目标 Session 锁、来源 Input/Turn 唯一约束与 report_id 唯一约束裁决；响应丢失或与补偿并发都返回原身份。
 
-回报每个 task Turn 一次，正常结束、待确认回复、无文本、失败、中断、取消均覆盖；无 Turn 的拒绝/取消单独按 Input 去重。来源结果固定到原轮次，不取后续轮次替代。预览最多 16000 字符并标识截断，保留 Task/Session/Turn/Input 引用供 get_session 查询。正常回复保留原文；非成功终态明确说明状态，不把过程回复当成最终成功。
+回报每个 task Turn 一次，正常结束、待确认回复、无文本、失败、中断、取消均覆盖；无 Turn 的拒绝/取消单独按 Input 去重。来源结果固定到原轮次，不取后续轮次替代。预览最多 16000 字符并标识截断，内部保留 Task/Session/Turn/Input 关系；传给模型的新回告只提供业务 task_id 和具体 Turn/Input 引用，使用 task_id 调用 get_session。正常回复保留原文；非成功终态明确说明状态，不把过程回复当成最终成功。
 
 主会话已归档或原权限已失效，登记 suppressed，不恢复或替换会话。队列暂满等临时错误回滚，后续补偿。主会话无 Engine 时复用既有分配；活跃 Engine 在本轮检查输入，空闲 Engine 启动新轮。
 

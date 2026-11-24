@@ -50,8 +50,20 @@ func (s *Store) checkDelegationTx(ctx context.Context, tx *sql.Tx, target servic
 	return visibleError(err)
 }
 func (s *Store) DelegatedSession(ctx context.Context, scope service.DelegationScope, id string) (service.Session, error) {
+	return s.delegatedSessionByIdentity(ctx, scope, id, false)
+}
+
+func (s *Store) DelegatedTaskSession(ctx context.Context, scope service.DelegationScope, id string) (service.Session, error) {
+	return s.delegatedSessionByIdentity(ctx, scope, id, true)
+}
+
+func (s *Store) delegatedSessionByIdentity(ctx context.Context, scope service.DelegationScope, id string, taskID bool) (service.Session, error) {
 	var found string
-	err := s.DB.QueryRowContext(ctx, `SELECT s.id FROM manager_sessions s JOIN manager_tasks t ON t.id=s.task_id WHERE s.workspace_id=$1 AND s.conversation_id=$2 AND s.id=$3 AND s.mode='task' AND t.source_chat_session_id=$4`, scope.WorkspaceID, scope.ConversationID, id, scope.Identity.SessionID).Scan(&found)
+	column := "s.id"
+	if taskID {
+		column = "t.id"
+	}
+	err := s.DB.QueryRowContext(ctx, `SELECT s.id FROM manager_sessions s JOIN manager_tasks t ON t.id=s.task_id WHERE s.workspace_id=$1 AND s.conversation_id=$2 AND s.mode='task' AND t.source_chat_session_id=$4 AND `+column+`=$3`, scope.WorkspaceID, scope.ConversationID, id, scope.Identity.SessionID).Scan(&found)
 	if err != nil {
 		return service.Session{}, visibleError(err)
 	}

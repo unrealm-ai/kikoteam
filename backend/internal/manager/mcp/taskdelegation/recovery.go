@@ -34,15 +34,15 @@ func failedToolResult(op, code, message string, args manager.DelegationArgs, err
 }
 
 func recoveryForTask(op, code string, args manager.DelegationArgs, err error) *recoveryHint {
-	if op != "send_message" && op != "stop_session" && op != "supplement_todo" && op != "cancel_todo" && op != "get_session" {
+	if op != "send_message" && op != "stop_session" && op != "supplement_todo" && op != "cancel_todo" && op != "start_todo" && op != "get_session" && op != "send_task_detail_card" {
 		return nil
 	}
-	if code == "resource_not_found" && op == "get_session" && manager.ValidID(args.SessionID) && args.TurnID != "" {
+	if code == "resource_not_found" && op == "get_session" && manager.ValidID(args.TaskID) && args.TurnID != "" {
 		return queryTask(args, "", "所查任务或执行轮次不可用。先去掉 turn_id 和 cursor 查这条任务，再按最新轮次核对；不要猜轮次。")
 	}
-	if code == "resource_not_found" || (code == "invalid_argument" && !manager.ValidID(args.SessionID)) {
+	if code == "resource_not_found" || (code == "invalid_argument" && !manager.ValidID(args.TaskID)) {
 		return &recoveryHint{Action: "query", Tool: "task_delegation_list_sessions",
-			Instructions: "仅查当前对话的任务，用列表每项的 id 填 session_id，不要用 task_id 替代；多个匹配请用户确认，不猜最近一条。"}
+			Instructions: "仅查当前对话的任务，用列表每项的 task_id；多个匹配请用户确认，不猜最近一条。"}
 	}
 	if code == "task_not_started" {
 		var canceled manager.CanceledTodoError
@@ -73,8 +73,8 @@ func recoveryForTask(op, code string, args manager.DelegationArgs, err error) *r
 
 func queryTask(args manager.DelegationArgs, outcome, instructions string) *recoveryHint {
 	hint := &recoveryHint{Action: "query", Outcome: outcome, Tool: "task_delegation_get_session", Instructions: instructions}
-	if manager.ValidID(args.SessionID) {
-		hint.Arguments = map[string]string{"session_id": args.SessionID}
+	if manager.ValidID(args.TaskID) {
+		hint.Arguments = map[string]string{"task_id": args.TaskID}
 	}
 	return hint
 }

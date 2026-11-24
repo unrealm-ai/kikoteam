@@ -36,7 +36,7 @@ type PlannedTaskStore interface {
 }
 
 func (d *Delegation) planned(ctx context.Context, scope DelegationScope, name string, args DelegationArgs) (any, error) {
-	if name == "create_todo" && (args.SessionID != "" || args.ExpectedVersion != 0) {
+	if name == "create_todo" && (args.TaskID != "" || args.SessionID != "" || args.ExpectedVersion != 0) {
 		return nil, Fail("invalid_argument", 400, "新待办不能指定已有会话或版本")
 	}
 	if !validKey(args.RequestKey) || name != "create_todo" && (!ValidID(args.SessionID) || args.ExpectedVersion < 1) || (name == "create_todo" || name == "supplement_todo") && !validText(args.Instruction) || !validAttachmentSelection(args.AttachmentPaths, args.AttachmentIDs, true) || !validTitle(args.Title) {

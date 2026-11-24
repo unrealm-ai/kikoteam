@@ -303,18 +303,18 @@ func TestPlannedTaskMCPProtocolAndRemovedTargetTool(t *testing.T) {
 		return w.Body.String()
 	}
 	list := call("tools/list", `{}`)
-	if strings.Contains(list, "task_delegation_list_targets") || !strings.Contains(list, "task_delegation_cancel_todo") {
+	if strings.Contains(list, "task_delegation_list_targets") || strings.Contains(list, `"session_id"`) || !strings.Contains(list, "task_delegation_cancel_todo") {
 		t.Fatal("wrong tool surface", list)
 	}
 	result := call("tools/call", `{"name":"task_delegation_create_todo","arguments":{"instruction":"deferred","request_key":"http-todo"}}`)
 	if strings.Contains(result, `"isError":true`) || !strings.Contains(result, "planned") || strings.Contains(result, `"accepted":true`) {
 		t.Fatal(result)
 	}
-	var session string
-	if err = db.QueryRow(`SELECT s.id FROM manager_sessions s JOIN manager_tasks t ON t.id=s.task_id WHERE t.source_chat_session_id=$1`, scope.Identity.SessionID).Scan(&session); err != nil {
+	var task string
+	if err = db.QueryRow(`SELECT id FROM manager_tasks WHERE source_chat_session_id=$1`, scope.Identity.SessionID).Scan(&task); err != nil {
 		t.Fatal(err)
 	}
-	result = call("tools/call", `{"name":"task_delegation_start_todo","arguments":{"session_id":"`+session+`","request_key":"http-start","expected_version":"1"}}`)
+	result = call("tools/call", `{"name":"task_delegation_start_todo","arguments":{"task_id":"`+task+`","request_key":"http-start","expected_version":"1"}}`)
 	if strings.Contains(result, `"isError":true`) || !strings.Contains(result, "started") {
 		t.Fatal(result)
 	}

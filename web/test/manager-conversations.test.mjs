@@ -378,3 +378,76 @@ test('authenticated conversation task detail keeps its own write path and disabl
    assert.ok(!m.calls.some(c=>c.url.startsWith('/api/v1/public/')));
  } finally { await m.cleanup(); }
 });
+
+test('creation with only task_id opens off-list task using business lookup, not a same-valued Session ID', async () => {
+ const created = toolEvent({output:{structuredContent:{accepted:true,task_id:'task1',input_id:'new-input'}}});
+ const actual = {...taskDetail('task1'),session_id:'actual-session',title:'正确业务任务'};
+ const m = await mount({override:url => {
+   if (url.includes('/chat/events?')) return Response.json({items:[created],next_cursor:null,resume_cursor:'H'});
+   if (url.endsWith('/tasks/task1')) return Response.json(actual);
+   return null;
+ }});
+ try {
+   assert.match(m.host.querySelector('.task-action').textContent,/已触发|任务已受理/);
+   button('查看任务 ↗').click(); await pause();
+   assert.match(m.host.querySelector('.task-detail-panel').textContent,/正确业务任务/);
+   assert.ok(m.calls.some(c=>c.url.endsWith('/tasks/task1')));
+   assert.ok(!m.calls.some(c=>c.url.endsWith('/sessions/task1')));
+   assert.ok(FakeSource.all.find(s=>s.url.includes('/actual-session/')));
+ } finally { await m.cleanup(); }
+});
+
+test('task_id-only report preserves the source execution turn and channel card receipt is not falsely delivered', async () => {
+ const task_id='business-task2';
+ const report = reportEvent({content:[{type:'text',text:'平台任务回报\n'+JSON.stringify({
+   task_id,turn_id:'source-turn',outcome:'completed',result:'# 新回报正文',background_process_count:0,queued_input_count:0,
+ })}]});
+ const card = toolEvent({seq:'11',name:'send_task_detail_card',input:{task_id},output:{structuredContent:{status:'queued'}}});
+ const m = await mount({override:url=>url.includes('/chat/events?')?Response.json({items:[card,report],next_cursor:null,resume_cursor:'H'}):null});
+ try {
+   const receipt=m.host.querySelector('.task-action');
+   assert.match(receipt.textContent,/已提交投递/);
+   assert.match(receipt.textContent,/尚未确认送达/);
+   assert.doesNotMatch(receipt.textContent,/已发送/);
+   assert.equal(m.host.querySelector('.report-original h1').textContent,'新回报正文');
+   assert.match(m.host.querySelector('.report-card h3').textContent,/task2/);
+   button('查看任务与执行过程 ↗').click(); await pause();
+   assert.ok(FakeSource.all.find(s=>s.url.includes('/task2/')&&s.url.includes('turn_id=source-turn')));
+   assert.ok(!m.calls.some(c=>c.url.endsWith('/sessions/'+task_id)));
+ } finally { await m.cleanup(); }
+});
+
+test('task locator rejects a valid task from another conversation without opening its execution history', async () => {
+ const created=toolEvent({output:{structuredContent:{accepted:true,task_id:'different-task'}}});
+ const m=await mount({override:url=>{
+   if (url.includes('/chat/events?')) return Response.json({items:[created],next_cursor:null,resume_cursor:'H'});
+   if (url.endsWith('/tasks/different-task')) return Response.json({...taskDetail('different-task'),session_id:'different-session',conversation_id:'other-chat'});
+   return null;
+ }});
+ try {
+   button('查看任务 ↗').click(); await pause();
+   assert.ok(m.calls.some(c=>c.url.endsWith('/tasks/different-task')));
+   assert.equal(m.host.querySelector('.task-detail-panel'),null);
+   assert.equal(FakeSource.all.filter(s=>!s.closed).length,1);
+   assert.ok(!m.calls.some(c=>c.url.includes('/different-session/')));
+ } finally { await m.cleanup(); }
+});
+
+test('query, supplement and stop tool outputs use task_id without depending on hidden Session IDs', async () => {
+ const names = ['task_delegation_get_session','task_delegation_send_message','task_delegation_stop_session'];
+ const items = names.map((name,index)=>toolEvent({name,seq:String(20+index),tool_use_id:'only-task-id-'+index,
+   input:{task_id:'business-task2'},output:{structuredContent:{task_id:'business-task2'}}}));
+ const m=await mount({override:url=>url.includes('/chat/events?')?Response.json({items,next_cursor:null,resume_cursor:'H'}):null});
+ try {
+   const cards=[...m.host.querySelectorAll('.task-action')];
+   assert.equal(cards.length,3);
+   assert.match(cards[0].textContent,/查看任务进展/);
+   assert.match(cards[1].textContent,/补充任务要求.*已受理/);
+   assert.match(cards[2].textContent,/停止任务.*已受理/);
+   assert.ok(cards.every(card=>card.querySelector('.task-link')));
+   cards[2].querySelector('.task-link').click(); await pause();
+   assert.ok(FakeSource.all.find(s=>s.url.includes('/task2/')));
+   assert.ok(!m.calls.some(c=>c.url.endsWith('/sessions/business-task2')));
+   assert.ok(!m.calls.some(c=>c.url.endsWith('/stop')), 'viewing a stop receipt does not issue a second stop');
+ } finally { await m.cleanup(); }
+});

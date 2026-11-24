@@ -54,7 +54,10 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 				out, err = acceptedCreation(out)
 			}
 			if err == nil {
-				return nil, chatResult(out), nil
+				out, err = modelTaskResult(out, args.TaskID)
+			}
+			if err == nil {
+				return nil, out, nil
 			}
 			code, message := "dependency_unavailable", "委派服务暂时不可用"
 			var e *manager.Error
@@ -102,7 +105,12 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		transport.ServeHTTP(w, r.WithContext(context.WithValue(ctx, scopeKey{}, access)))
+		r = r.WithContext(context.WithValue(ctx, scopeKey{}, access))
+		if err = translateLegacyTaskSelector(r, d, access); err != nil {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			return
+		}
+		transport.ServeHTTP(w, r)
 	}), nil
 }
 
@@ -141,5 +149,5 @@ func acceptedCreation(out any) (any, error) {
 	if task == nil || input == nil || !manager.ValidID(*task) || !manager.ValidID(session) || !manager.ValidID(*input) {
 		return nil, manager.Fail("dependency_unavailable", 503, "暂未确认任务的受理回执")
 	}
-	return map[string]any{"accepted": true, "task_id": *task, "session_id": session, "input_id": *input}, nil
+	return map[string]any{"accepted": true, "task_id": *task, "input_id": *input}, nil
 }

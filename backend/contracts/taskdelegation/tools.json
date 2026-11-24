@@ -116,7 +116,7 @@
   },
   {
     "name": "task_delegation_list_sessions",
-    "description": "List only tasks delegated by this source chat to resolve an existing-task reference or answer an explicit progress query. If multiple tasks match, clarify with the user before mutating anything. Never invent session IDs. A completed Turn does not prove the business task is complete. Do not repeatedly list while waiting for completion. Optional independent filters planning_state, execution_state and latest_turn_status combine with AND. Turn completion is not business completion.",
+    "description": "List only tasks delegated by this source chat to resolve an existing-task reference or answer an explicit progress query. If multiple tasks match, clarify with the user before mutating anything. Use task_id from this list; never invent task IDs. A completed Turn does not prove the business task is complete. Do not repeatedly list while waiting for completion. Optional independent filters planning_state, execution_state and latest_turn_status combine with AND. Turn completion is not business completion.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -168,10 +168,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "session_id"
+        "task_id"
       ],
       "properties": {
-        "session_id": {
+        "task_id": {
           "type": "string",
           "format": "uuid"
         },
@@ -222,10 +222,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "session_id"
+        "task_id"
       ],
       "properties": {
-        "session_id": {
+        "task_id": {
           "type": "string",
           "format": "uuid"
         },
@@ -304,15 +304,15 @@
   },
   {
     "name": "task_delegation_stop_session",
-    "description": "Stop currently accepted work and owned background commands in this delegated Session only, and only when the user explicitly intends to stop that exact existing task. Clarify ambiguous task or intent first. Not pause/resume. Inspect authoritative execution state: accepted stopping is not confirmed stopped, and unknown/background work must not be reported as stopped. Do not loop waiting for stopping to complete. Closing a page, canceling an HTTP request or stopping the source chat does not stop delegated tasks. No request_key: a repeat can stop newer inputs. If the outcome is unknown, only query the same task; never issue another stop without a new explicit user request. New running inputs do not establish what happened to the earlier stop.",
+    "description": "Stop currently accepted work and owned background commands in this delegated task only, and only when the user explicitly intends to stop that exact existing task. Clarify ambiguous task or intent first. Not pause/resume. Inspect authoritative execution state: accepted stopping is not confirmed stopped, and unknown/background work must not be reported as stopped. Do not loop waiting for stopping to complete. Closing a page, canceling an HTTP request or stopping the source chat does not stop delegated tasks. No request_key: a repeat can stop newer inputs. If the outcome is unknown, only query the same task; never issue another stop without a new explicit user request. New running inputs do not establish what happened to the earlier stop.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "session_id"
+        "task_id"
       ],
       "properties": {
-        "session_id": {
+        "task_id": {
           "type": "string",
           "format": "uuid"
         }
@@ -381,7 +381,7 @@
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{1,128}$"
         },
-        "session_id": {
+        "task_id": {
           "type": "string",
           "format": "uuid"
         },
@@ -391,7 +391,7 @@
         }
       },
       "required": [
-        "session_id",
+        "task_id",
         "expected_version",
         "request_key"
       ]
@@ -408,7 +408,7 @@
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{1,128}$"
         },
-        "session_id": {
+        "task_id": {
           "type": "string",
           "format": "uuid"
         },
@@ -418,7 +418,7 @@
         }
       },
       "required": [
-        "session_id",
+        "task_id",
         "expected_version",
         "request_key"
       ]
@@ -431,7 +431,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "session_id": {
+        "task_id": {
           "type": "string",
           "format": "uuid"
         },
@@ -475,7 +475,7 @@
         }
       },
       "required": [
-        "session_id",
+        "task_id",
         "instruction",
         "request_key",
         "expected_version"

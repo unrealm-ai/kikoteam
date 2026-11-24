@@ -226,15 +226,15 @@ func runtimeDelegationReply(t *testing.T, w http.ResponseWriter, body runtimeReq
 			var out map[string]any
 			if json.Unmarshal([]byte(raw), &out) == nil {
 				if results == 1 && strings.Contains(text, "delegate-create") &&
-					(len(out) != 4 || out["accepted"] != true || !manager.ValidID(fmt.Sprint(out["task_id"])) ||
-						!manager.ValidID(fmt.Sprint(out["session_id"])) || !manager.ValidID(fmt.Sprint(out["input_id"]))) {
+					(len(out) != 3 || out["accepted"] != true || !manager.ValidID(fmt.Sprint(out["task_id"])) ||
+						out["session_id"] != nil || !manager.ValidID(fmt.Sprint(out["input_id"]))) {
 					t.Errorf("provider received non-acceptance create tool text: %q", raw)
 				}
 				if results == 1 && strings.Contains(text, "delegate-query") &&
 					(out["execution"] == nil || out["summary"] == nil || out["accepted"] != nil) {
 					t.Errorf("provider did not receive a detailed progress tool result: %q", raw)
 				}
-				if id, ok := out["session_id"].(string); ok {
+				if id, ok := out["task_id"].(string); ok {
 					target = id
 				}
 			} else if results == 1 && (strings.Contains(text, "delegate-create") || strings.Contains(text, "delegate-query")) {
@@ -256,13 +256,13 @@ func runtimeDelegationReply(t *testing.T, w http.ResponseWriter, body runtimeReq
 			args = map[string]any{}
 		case strings.Contains(text, "delegate-query"):
 			suffix = "task_delegation_get_session"
-			args = map[string]any{"session_id": target}
+			args = map[string]any{"task_id": target}
 		case strings.Contains(text, "delegate-send"):
 			suffix = "task_delegation_send_message"
-			args = map[string]any{"session_id": target, "text": "task-delegated followup"}
+			args = map[string]any{"task_id": target, "text": "task-delegated followup"}
 		case strings.Contains(text, "delegate-stop"):
 			suffix = "task_delegation_stop_session"
-			args = map[string]any{"session_id": target}
+			args = map[string]any{"task_id": target}
 		}
 		name := ""
 		for _, v := range body.Tools {

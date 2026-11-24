@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { SessionEvent } from '../api/manager';
-import { eventText, sessionStatus, taskReport } from '../utils/session-presentation';
+import { eventText, sessionStatus, taskReport, type TaskNavigationTarget } from '../utils/session-presentation';
 import SessionMarkdown from './SessionMarkdown.vue';
 const props = defineProps<{ event: SessionEvent; title?: string | undefined; canOpenTask?: boolean | undefined; reply?: SessionEvent[] | undefined }>();
-const emit = defineEmits<{ openTask: [id: string] }>();
+const emit = defineEmits<{ openTask: [target: TaskNavigationTarget] }>();
 const report = computed(() => taskReport(props.event));
 const successful = computed(() => report.value?.outcome === 'completed' && !report.value.unknown);
 </script>
@@ -18,7 +18,7 @@ const successful = computed(() => report.value?.outcome === 'completed' && !repo
       <p v-if="report.background === null || report.background > 0 || report.queued > 0" class="report-warning">{{ report.background === null ? '后台进程状态待确认。' : report.background > 0 ? `仍有 ${report.background} 个后台进程。` : '' }}{{ report.queued > 0 ? `仍有 ${report.queued} 条排队输入。` : '' }}</p>
       <div v-if="reply?.length" class="report-answer"><SessionMarkdown v-for="message in reply" :key="message.message_id || message.seq" :text="eventText(message)" /></div>
       <details class="report-original" :open="!reply?.length"><summary>{{ reply?.length ? '查看原始任务回报' : '查看本轮结果' }}</summary><SessionMarkdown :text="report.result || '本轮没有返回文本结果。'" /></details>
-      <footer><span>本轮结束不代表整个任务已完成</span><button v-if="canOpenTask" type="button" @click="emit('openTask', report.sessionID)">查看任务与执行过程 ↗</button></footer>
+      <footer><span>本轮结束不代表整个任务已完成</span><button v-if="canOpenTask" type="button" @click="emit('openTask', report.task)">查看任务与执行过程 ↗</button></footer>
     </template>
   </section>
 </template>

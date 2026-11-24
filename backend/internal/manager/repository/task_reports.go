@@ -25,15 +25,15 @@ type reportSource struct {
 	unknown    bool
 	queued     int
 
-	workspace, conversation, target, input, session, task, actor, status, text string
-	channel                                                                    *string
-	generation                                                                 int64
-	allowed                                                                    bool
+	workspace, conversation, target, input, task, actor, status, text string
+	channel                                                           *string
+	generation                                                        int64
+	allowed                                                           bool
 }
 
 func (s *Store) ReportTaskResult(ctx context.Context, r service.TaskResult) (service.TaskReport, error) {
 	var src reportSource
-	err := s.DB.QueryRowContext(ctx, `SELECT i.workspace_id,s.conversation_id,k.source_chat_session_id,i.id,s.id,k.id,COALESCE(i.submitted_by::text,i.channel_principal_id::text),i.channel_principal_id,COALESCE(i.channel_generation,0),CASE WHEN t.error->>'code'='awaiting_confirmation' THEN 'awaiting_confirmation' ELSE COALESCE(t.status,i.status) END,COALESCE(t.result_summary,''),s.background_process_count,COALESCE(t.has_unknown_tool_results,false),(SELECT count(*) FROM manager_inputs pending WHERE pending.session_id=s.id AND pending.status='queued'),manager_input_actor_allowed(i.id) AND i.admission_epoch=a.admission_epoch AND a.enabled FROM manager_inputs i JOIN manager_sessions s ON s.id=i.session_id JOIN manager_tasks k ON k.id=s.task_id JOIN platform_agents a ON a.id=s.agent_id LEFT JOIN manager_turns t ON t.input_id=i.id WHERE s.mode='task' AND k.source_chat_session_id IS NOT NULL AND i.report_enabled AND `+ordinaryTaskResult+` AND (($1::uuid IS NOT NULL AND t.id=$1 AND t.status IN ('completed','failed','canceled','interrupted')) OR ($2::uuid IS NOT NULL AND i.id=$2 AND i.turn_id IS NULL AND i.status IN ('rejected','canceled')))`, nullID(r.TurnID), nullID(r.InputID)).Scan(&src.workspace, &src.conversation, &src.target, &src.input, &src.session, &src.task, &src.actor, &src.channel, &src.generation, &src.status, &src.text, &src.background, &src.unknown, &src.queued, &src.allowed)
+	err := s.DB.QueryRowContext(ctx, `SELECT i.workspace_id,s.conversation_id,k.source_chat_session_id,i.id,k.id,COALESCE(i.submitted_by::text,i.channel_principal_id::text),i.channel_principal_id,COALESCE(i.channel_generation,0),CASE WHEN t.error->>'code'='awaiting_confirmation' THEN 'awaiting_confirmation' ELSE COALESCE(t.status,i.status) END,COALESCE(t.result_summary,''),s.background_process_count,COALESCE(t.has_unknown_tool_results,false),(SELECT count(*) FROM manager_inputs pending WHERE pending.session_id=s.id AND pending.status='queued'),manager_input_actor_allowed(i.id) AND i.admission_epoch=a.admission_epoch AND a.enabled FROM manager_inputs i JOIN manager_sessions s ON s.id=i.session_id JOIN manager_tasks k ON k.id=s.task_id JOIN platform_agents a ON a.id=s.agent_id LEFT JOIN manager_turns t ON t.input_id=i.id WHERE s.mode='task' AND k.source_chat_session_id IS NOT NULL AND i.report_enabled AND `+ordinaryTaskResult+` AND (($1::uuid IS NOT NULL AND t.id=$1 AND t.status IN ('completed','failed','canceled','interrupted')) OR ($2::uuid IS NOT NULL AND i.id=$2 AND i.turn_id IS NULL AND i.status IN ('rejected','canceled')))`, nullID(r.TurnID), nullID(r.InputID)).Scan(&src.workspace, &src.conversation, &src.target, &src.input, &src.task, &src.actor, &src.channel, &src.generation, &src.status, &src.text, &src.background, &src.unknown, &src.queued, &src.allowed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.TaskReport{}, service.Fail("result_not_ready", 409, "任务结果尚未提交或没有可回报来源")
 	}
@@ -123,7 +123,7 @@ func taskReportText(src reportSource, r service.TaskResult) string {
 	if len(chars) > 16000 {
 		text = string(chars[:16000]) + "\n[结果预览不完整，请按来源轮次查询详情]"
 	}
-	body, err := json.Marshal(map[string]any{"background_process_count": src.background, "has_unknown_tool_results": src.unknown, "queued_input_count": src.queued, "task_id": src.task, "session_id": src.session, "turn_id": r.TurnID, "input_id": src.input, "outcome": src.status, "result": text, "artifact_candidates": src.artifacts})
+	body, err := json.Marshal(map[string]any{"background_process_count": src.background, "has_unknown_tool_results": src.unknown, "queued_input_count": src.queued, "task_id": src.task, "turn_id": r.TurnID, "input_id": src.input, "outcome": src.status, "result": text, "artifact_candidates": src.artifacts})
 	if err != nil {
 		return "平台任务结果暂不可编码，请按任务身份查询。"
 	}

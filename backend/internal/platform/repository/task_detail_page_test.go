@@ -93,7 +93,7 @@ func TestTaskDetailPageTokenLifecycleAndSilentInput(t *testing.T) {
 	// The accepted input and note preserve their roles and original route.
 	var inputs, notes int
 	err = db.QueryRowContext(ctx, `SELECT count(*) FILTER(WHERE i.session_id=$1 AND i.trigger_agent_loop AND i.delivery_mode='queue' AND i.channel_principal_id=$3 AND i.submitted_by IS NULL),
- count(*) FILTER(WHERE i.session_id=$2 AND i.source_kind='system' AND NOT i.trigger_agent_loop AND strpos(i.text,'session_id='||$1::text)>0 AND strpos(i.text,'task_id='||$4::text)>0)
+ count(*) FILTER(WHERE i.session_id=$2 AND i.source_kind='system' AND NOT i.trigger_agent_loop AND strpos(i.text,'session_id=')=0 AND strpos(i.text,'task_id='||$4::text)>0 AND strpos(i.text,$1::text)=0)
  FROM manager_inputs i WHERE i.text LIKE '%review details%'`, task, chat, issue.Source.ActorID, grant.Grant.TaskID).Scan(&inputs, &notes)
 	if err != nil || inputs != 2 || notes != 2 {
 		t.Fatalf("expected two authorized task inputs and two silent source notes: %d %d %v", inputs, notes, err)
@@ -118,6 +118,13 @@ func TestTaskDetailPageTokenLifecycleAndSilentInput(t *testing.T) {
 	cont := `{"text":"explicit","stop_version":"` + view.StopVersion + `"}`
 	client.request(t, "POST", "/continue", "resume", cont, "", 200)
 	client.request(t, "POST", "/continue", "resume", cont, "", 200)
+	var restartNote string
+	err = db.QueryRowContext(ctx, `SELECT text FROM manager_inputs WHERE session_id=$1 AND source_kind='system' AND NOT trigger_agent_loop
+ AND text LIKE '%已提交新一轮%' ORDER BY seq DESC LIMIT 1`, chat).Scan(&restartNote)
+	if err != nil || !strings.Contains(restartNote, "task_id="+grant.Grant.TaskID) || !strings.HasSuffix(restartNote, `"explicit"`) ||
+		strings.Contains(restartNote, "session_id=") || strings.Contains(restartNote, task) {
+		t.Fatalf("restart note must contain only task identity and quoted original text: %q %v", restartNote, err)
+	}
 	client.request(t, "POST", "/continue", "different-tab", cont, "", 409)
 	client.request(t, "POST", "/stop", "stop-once", "{}", "", 200)
 	if view = read(); view.Status != "queued" {

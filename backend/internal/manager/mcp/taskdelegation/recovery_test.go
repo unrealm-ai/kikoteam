@@ -11,11 +11,11 @@ import (
 
 func TestDelegationRecoveryUsesScopedReadBeforeWrite(t *testing.T) {
 	const id = "123e4567-e89b-42d3-a456-426614174000"
-	args := manager.DelegationArgs{SessionID: id}
+	args := manager.DelegationArgs{TaskID: id}
 	for _, tc := range []struct {
 		op, code, action, tool, outcome, hintText string
 	}{
-		{"get_session", "resource_not_found", "query", "task_delegation_list_sessions", "", "列表每项的 id"},
+		{"get_session", "resource_not_found", "query", "task_delegation_list_sessions", "", "列表每项的 task_id"},
 		{"send_message", "task_not_started", "query", "task_delegation_get_session", "not_applied", "supplement_todo"},
 		{"stop_session", "task_not_started", "query", "task_delegation_get_session", "not_applied", "不能把停止自动当成取消"},
 		{"supplement_todo", "version_conflict", "query", "task_delegation_get_session", "not_applied", "planning_version"},
@@ -29,7 +29,7 @@ func TestDelegationRecoveryUsesScopedReadBeforeWrite(t *testing.T) {
 			if hint == nil || hint.Action != tc.action || hint.Tool != tc.tool || hint.Outcome != tc.outcome || !strings.Contains(hint.Instructions, tc.hintText) {
 				t.Fatalf("unexpected recovery: %#v", hint)
 			}
-			if hint.Tool == "task_delegation_get_session" && hint.Arguments["session_id"] != id {
+			if hint.Tool == "task_delegation_get_session" && hint.Arguments["task_id"] != id {
 				t.Fatal("expected exact lookup arguments")
 			}
 			if hint.Tool != "task_delegation_get_session" && len(hint.Arguments) != 0 {
@@ -59,7 +59,7 @@ func TestDelegationRecoveryOmitsUntrustedValuesAndUnrelatedTools(t *testing.T) {
 			t.Fatalf("%s: scope creep: %#v", op, hint)
 		}
 	}
-	hint := recoveryForTask("send_message", "invalid_argument", manager.DelegationArgs{SessionID: "private-fake-id"}, nil)
+	hint := recoveryForTask("send_message", "invalid_argument", manager.DelegationArgs{TaskID: "private-fake-id"}, nil)
 	payload, err := json.Marshal(hint)
 	if err != nil || hint == nil || strings.Contains(string(payload), "private-fake-id") || hint.Tool != "task_delegation_list_sessions" {
 		t.Fatalf("unexpected payload: %s, %v", payload, err)
@@ -85,10 +85,10 @@ func TestArtifactRecoveryProjectsOnlyCurrentCandidates(t *testing.T) {
 	}
 }
 
-func TestMissingSpecificTurnRecoversWithSessionOnly(t *testing.T) {
+func TestMissingSpecificTurnRecoversWithTaskOnly(t *testing.T) {
 	const id = "123e4567-e89b-42d3-a456-426614174000"
-	hint := recoveryForTask("get_session", "resource_not_found", manager.DelegationArgs{SessionID: id, TurnID: id, Cursor: "old"}, nil)
-	if hint == nil || hint.Tool != "task_delegation_get_session" || len(hint.Arguments) != 1 || hint.Arguments["session_id"] != id {
+	hint := recoveryForTask("get_session", "resource_not_found", manager.DelegationArgs{TaskID: id, TurnID: id, Cursor: "old"}, nil)
+	if hint == nil || hint.Tool != "task_delegation_get_session" || len(hint.Arguments) != 1 || hint.Arguments["task_id"] != id {
 		t.Fatalf("unexpected recovery: %#v", hint)
 	}
 }

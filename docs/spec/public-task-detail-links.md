@@ -10,9 +10,10 @@
 | TDL-04 产物与实时 | 私聊仅授权主体的已完成且结果明确的轮次产物可读；群须有该会话、绑定、代次和话题一致的已确认发送证据，不以 artifact ID 本身授权。下载复验同一投影资格。公开 SSE 以 Authorization 请求头和 grant 绑定的快照游标续接；推送是新的有界快照，不保证补齐断线期间的逐条事件。过期或撤销停止流并拒绝新读写。 |
 | TDL-05 两种写入主体 | 登录态补充和停止以当前登录账号及既有会话、工作区和 Web 使用权限裁定；保持既有 TaskSpace 授权规则，不为停止增加能力包检查。可写 token 使用原任务发起人的原渠道身份，不使用访问者身份或投递目标；每次核验 grant、来源及当前授权。只读 token 隐藏写控件，直接调用亦拒绝。 |
 | TDL-06 挂起、停止、继续 | 人工确认或事项交接挂起时，两类详情均按各自权限接收排队补充，不代答、不撤回或解除挂起；在同一 Session 锁内拒绝从两类页面停止（`task_waiting_for_action`），登录态 Web 的直接任务归档同样受该保护，避免借其内部停止取消挂起工作；token 不提供归档入口。不改变普通 IM MCP 停止和上层会话生命周期编排。普通 token 补充默认 steer。停止后须有停稳证据、匹配停止版本并显式继续，才可在原任务新开轮次；迟到普通补充、陈旧双标签及未知停止或工具副作用不自动继续。幂等重试不重复追加或二次停止。 |
-| TDL-07 上下文与回告 | 成功接受网页追加或继续后，以真实 Input 关联原来源主对话的非触发系统记录；未受理不记为成功。原任务真正回告按原来源路由，并按源 Input 幂等，不因网页提交者或卡片收件目标改路由。记录分别标明 `task_id` 与 `session_id`，附 JSON 引用的原文；显式继续会注明已提交新一轮。无 bearer，不独立开轮，也不改变回告轮工具权限。 |
+| TDL-07 上下文与回告 | 成功接受网页追加或继续后，以真实 Input 关联原来源主对话的非触发系统记录；未受理不记为成功。原任务真正回告按原来源路由，并按源 Input 幂等，不因网页提交者或卡片收件目标改路由。记录只标明统一业务 `task_id`，附 JSON 引用的原文；显式继续注明已提交新一轮。新主动回告同样只以 `task_id` 定位业务任务。无 bearer，不独立开轮，也不改变回告轮工具权限。 |
 | TDL-08 发卡与降级 | 普通外部渠道轮次在有效配置下按确切 `task_id` 使用 `send_task_detail_card`，不传目标、范围或 URL；Manager 再核对可信触发根、来源、目标和设置。主动回告轮、登录态 Web 对话均不可调用。卡片用原渠道既有投递；只有明确未被渠道受理的可降级拒绝才尝试普通链接，未知不补发。工具回执不返 URL；已确认投递后才记一条独立非触发卡片或链接系统记录。 |
 | TDL-09 混版与触发 | 新 Hub 在领取普通投递、授权触发通知时声明支持任务详情；旧 Hub 不领取新卡片类型，也不会收到触发通知链接。普通卡片的待发链接加密短期保存、在已授权的发送阶段交付，终态清理。符合条件的已完成 Hook/定时结果可在同一外部通知附只读链接；不可配置、签发失败或链接过长时保留原通知，不新发、不阻断原通知。 |
+| TDL-10 主对话任务编号 | 从创建回执、列表、查询、发卡、补充/停止到静默记录及回告，统一使用业务 `task_id`。Manager 在原授权范围映射到执行 Session；不要求模型选择执行 Session ID。Engine、Runner、内部路由与登录态 Web API 继续使用原有执行 Session，轮次和输入标识仍各自独立。 |
 
 ## 部署与验证
 
@@ -20,3 +21,4 @@
 - [外部详情 OpenAPI](../../backend/contracts/modules/manager/public-task-detail.yaml) · [管理员设置 OpenAPI](../../backend/contracts/modules/platform/task-link-settings.yaml) · [工具契约](../../backend/contracts/taskdelegation/tools.json)。
 - 隔离 PostgreSQL 与 HTTP/SSE 夹具：[设置权限和并发](../../backend/internal/platform/repository/task_link_settings_test.go)、[实例、有效期、来源与触发目标](../../backend/internal/platform/repository/task_detail_grants_test.go)、[详情、挂起禁停、原渠道补充和撤销续接](../../backend/internal/platform/repository/task_detail_page_test.go)、[外部投递和非触发同步](../../backend/internal/platform/repository/task_detail_delivery_test.go) 已通过针对性验证。
 - [渠道协议及混版](../../event-hub/internal/channel/task_detail_delivery_test.go) 的供应商夹具覆盖三家卡片编码、确认拒绝后的降级、结果未知不重发及旧 Hub 兼容；Event Hub 隔离全量竞态、lint、构建通过。Web [共享入口、只读控件、快照恢复](../../web/test/public-task-detail.test.mjs)、[模型工具清单隔离](../../backend/internal/manager/mcp/taskdelegation/catalog_test.go) 的针对性测试及 Web 构建通过。[应用首屏安全头](../../backend/internal/app/task_detail_landing_test.go) 有专门用例。已用 Chrome 在纯 HTTP 的本地浏览器夹具验证只读隐藏、Bearer 与文件下载、SSE 更新、普通补充、挂起时可补充但不可停止，以及停稳后的显式继续按钮。该夹具不连接真实 Manager 或 IM；真实渠道客户端打开详情 URL、目标部署的外部代理日志配置尚未验收。
+- 统一任务 ID 验证：[MCP 参数、结果和旧选择器兼容](../../backend/internal/manager/mcp/taskdelegation/task_identity_test.go)、[真实 PostgreSQL 委派](../../backend/internal/platform/repository/manager_delegation_test.go)、[回告任务标识](../../backend/internal/manager/repository/task_report_identity_test.go)及[登录态历史与现行编号导航](../../web/test/manager-conversations.test.mjs)。旧存量历史不改写，历史事件仍可打开原任务。

@@ -99,10 +99,8 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 		route := w.Backend.URL + "/mcp/task-delegation"
 		if cfg.ReportOnly {
 			route += "?mode=report"
-			out.Instruction += "\n从本轮任务回报的候选清单中选取需要交付的产物。没有候选时只回复文字。"
-		} else {
-			out.Instruction += "\n主对话只知道用户上传了什么文件（有名称时才显示），不会获得原文件或下载状态。用户要求读取或处理附件时，用任务委派工具的 attachment_ids 传入原始引用 ID；已有项目文件路径仍用 attachment_paths。委派成功后可告知已交给后台处理，不要猜测下载状态或称系统阻塞。"
 		}
+		out.Instruction += "\n主对话只知道用户上传了什么文件（有名称时才显示），不会获得原文件或下载状态。仅在实际用户要求读取或处理附件且当前有权委派时，用任务委派工具的 attachment_ids 传入原始引用 ID；已有项目文件路径仍用 attachment_paths。委派成功后可告知已交给后台处理，不要猜测下载状态或称系统阻塞。"
 		out.MCP["task_delegation"] = map[string]any{"url": route, "headers": map[string]string{"Authorization": "Bearer " + cfg.DelegationToken}, "exposure": "direct"}
 	}
 	if current.Mode == "task" && endpoint.URL != "" {

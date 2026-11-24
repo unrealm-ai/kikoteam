@@ -44,6 +44,8 @@ func TestManagerRuntimeChatEndToEnd(t *testing.T) {
 	testManagerRuntime(t, "chat")
 }
 
+func TestManagerRuntimeTaskReportReminderEndToEnd(t *testing.T) { testManagerRuntime(t, "report") }
+
 func TestManagerRuntimeEmployeePromptsEndToEnd(t *testing.T) {
 	testManagerRuntime(t, "prompts")
 }
@@ -83,6 +85,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	crashRequest := make(chan struct{}, 1)
 	taskBModelReady, resumeTaskBModel := make(chan struct{}), make(chan struct{})
 	var pauseTaskBModel sync.Once
+	var reportCalls reportReminderCalls
 	var eventRepo eventTestRepo
 	if mode == "events" {
 		eventRepo = newEventTestRepo(t)
@@ -92,6 +95,9 @@ func testManagerRuntime(t *testing.T, mode string) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 			return
+		}
+		if mode == "report" {
+			reportCalls.capture(body)
 		}
 		if mode == "prompts" && employeePromptModelReply(t, w, body) {
 			return
@@ -421,7 +427,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	q.Set("search_path", schema)
 	dsn.RawQuery = q.Encode()
 	fixtureRoot := root
-	if mode != "events" {
+	if mode != "events" && mode != "report" {
 		fixtureRoot = confirmationRuntimeRoot(t, root, temp)
 	}
 	binary := os.Getenv("KIKO_TEST_ENGINE_BINARY")
@@ -527,6 +533,10 @@ func testManagerRuntime(t *testing.T, mode string) {
 		return
 	}
 	waitStatus("completed")
+	if mode == "report" {
+		verifyRuntimeReportReminder(t, ctx, db, session, sessionPath, call, wait, &reportCalls)
+		return
+	}
 	if mode == "capabilities" {
 		runtimeCapabilityAcceptance(t, ctx, db, capabilities, workspace, actor, agent.ID, temp, call, wait, func() { stopEngine(); stopEngine = startEngine() })
 		return

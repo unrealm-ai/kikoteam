@@ -80,6 +80,14 @@ func TestReportChatOnlyUsesSelectionEndpoint(t *testing.T) {
 	if !ok || len(out.MCP) != 1 || server["url"] != "http://manager.invalid/mcp/task-delegation?mode=report" || out.HumanToolsExtension != "" {
 		t.Fatal("report exposed other tools", out.MCP)
 	}
+	cfg.ReportOnly = false
+	ordinary, _, err := w.prepareConfiguration(t.Context(), chat, turn, cfg, integration.Endpoint{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Instruction != ordinary.Instruction || strings.Contains(out.Instruction, "<system-reminder>") {
+		t.Fatal("task report changed the stable system instruction")
+	}
 }
 
 func TestAttachmentToolUsesStableAssignmentCredentialForConversationTasks(t *testing.T) {

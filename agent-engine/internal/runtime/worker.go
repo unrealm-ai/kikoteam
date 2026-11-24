@@ -281,7 +281,7 @@ func (w *Worker) execute(ctx context.Context, current repository.Work, turn repo
 	}
 	if err == nil {
 		contextState = "unknown"
-		status, code, summary = w.prompt(ctx, current, turn, client, runner, prepared.HumanTools.Token != "", prepared.HumanTools.WorkToken != "", current.Mode == "chat" && cfg.HumanMCPToken != "")
+		status, code, summary = w.prompt(ctx, current, turn, client, runner, renderPromptInput(current, cfg, turn.Input.Text), prepared.HumanTools.Token != "", prepared.HumanTools.WorkToken != "", current.Mode == "chat" && cfg.HumanMCPToken != "")
 		if turn.Input.NeedsContextReceipt {
 			contextState = pi.NativeInputState(w.nativeDirectory(current), client.SessionID(), turn.Input.ID)
 		}
@@ -346,7 +346,7 @@ func wait(ctx context.Context, t *time.Ticker) bool {
 	}
 }
 
-func (w *Worker) prompt(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, runner *integration.Runner, humanEnabled, workEnabled, humanReplyEnabled bool) (string, string, string) {
+func (w *Worker) prompt(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, runner *integration.Runner, inputText string, humanEnabled, workEnabled, humanReplyEnabled bool) (string, string, string) {
 	latest, err := w.Store.Refresh(ctx, work.Assignment)
 	if err != nil {
 		return "failed", "execution_state_unavailable", ""
@@ -362,7 +362,7 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 	}
 	var promptText string
 	{
-		promptText, err = pi.PrepareInputReceipt(w.nativeDirectory(work), client.SessionID(), turn.Input.ID, turn.Input.Text)
+		promptText, err = pi.PrepareInputReceipt(w.nativeDirectory(work), client.SessionID(), turn.Input.ID, inputText)
 		if err != nil {
 			return "failed", "context_receipt_unavailable", ""
 		}

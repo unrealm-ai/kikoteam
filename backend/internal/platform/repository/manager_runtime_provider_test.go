@@ -153,7 +153,7 @@ func runtimeTaskReply(t *testing.T, w http.ResponseWriter, body runtimeRequest) 
 		suffix := "__bash_start"
 		arguments := map[string]any{"command": "sleep 120", "yield_time_ms": 1000}
 		if strings.Contains(text, "task-A") {
-			arguments["command"] = "printf shared-value > shared.txt; sleep 120"
+			arguments["command"] = `printf shared-value > shared.txt; printf '%s' "$TMPDIR" > task-a-tmpdir.txt; sleep 120`
 			arguments["tty"] = true
 		}
 		if strings.Contains(text, "task-read") {

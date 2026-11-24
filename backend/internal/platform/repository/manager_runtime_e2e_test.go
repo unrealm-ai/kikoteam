@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -301,17 +300,8 @@ func testManagerRuntime(t *testing.T, mode string) {
 	store := &managerrepo.Store{DB: db, SnapshotCapabilities: SnapshotCapabilities, TriggerSecret: []byte(strings.Repeat("t", 32))}
 	temp := t.TempDir()
 	t.Setenv("KIKO_CONTEXT_ROOT", filepath.Join(temp, "context"))
-	// Keep the Unix socket path below the macOS sockaddr_un limit.
-	private, err := os.MkdirTemp("/tmp", "kiko-runtime-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(private); err != nil {
-			t.Error(err)
-		}
-	})
-	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", private)
+	// Runner sockets must work even when Engine's temp root alone exceeds the Unix socket limit.
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", filepath.Join(temp, strings.Repeat("long-runtime-", 9)))
 	store.RuntimeRoot = filepath.Join(temp, "state")
 	capabilities := runtimeCapabilityServicesAt(t, db, store.RuntimeRoot)
 	var eventCommitTool string
@@ -707,30 +697,13 @@ func testManagerRuntime(t *testing.T, mode string) {
 	if err != nil || string(data) != "shared-value" {
 		t.Fatalf("shared project file %q %v", data, err)
 	}
-	// Find A's live control socket before release. Its launch ticket lives on
-	// node-local disk, whereas the token survives a new Runner binding.
-	launches, err := filepath.Glob(filepath.Join(private, "e-*", "r-*", "b-*", "launch.json"))
+	// Task A's Bash command reports its own binding directory; B uses a separate one.
+	bindingDir, err := os.ReadFile(filepath.Join(project, "task-a-tmpdir.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var aSocket string
-	for _, launch := range launches {
-		data, err := os.ReadFile(launch)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var ticket struct {
-			Socket string   `json:"management_socket"`
-			Args   []string `json:"launch_args"`
-		}
-		if err := json.Unmarshal(data, &ticket); err != nil {
-			t.Fatal(err)
-		}
-		if slices.Contains(ticket.Args, filepath.Base(a)) {
-			aSocket = ticket.Socket
-		}
-	}
-	if _, err := os.Stat(aSocket); err != nil {
+	aSocket := filepath.Join(string(bindingDir), "m.sock")
+	if info, err := os.Stat(aSocket); err != nil || info.Mode()&os.ModeSocket == 0 {
 		t.Fatal("missing live socket for task A", err)
 	}
 	call("POST", a+"/stop", map[string]any{}, "")

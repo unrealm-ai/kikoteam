@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -61,7 +60,8 @@ func Run(ctx context.Context, path string) error {
 	if err = os.MkdirAll(s.project, 0700); err != nil {
 		return err
 	}
-	s.temp, err = os.MkdirTemp(filepath.Dir(path), "r-")
+	// Unix socket paths include this directory and must fit even with a long Engine temp root.
+	s.temp, err = os.MkdirTemp("/tmp", "kr-")
 	if err != nil {
 		return err
 	}

@@ -29,13 +29,13 @@ Workspace
 
 `<root>` 表示进程看到的 `KIKO_STORAGE_LOCAL_ROOT`，`W` 是工作区 ID，`P` 是项目标识，`sid` 是平台执行 Session ID。各启动方式的默认值如下。
 
-| 启动方式 | 持久化根 `<root>` | Session Skill 入口 | 进程私有临时目录 |
+| 启动方式 | 持久化根 `<root>` | Session Skill 入口 | Engine 私有临时目录 |
 | --- | --- | --- | --- |
 | Mac 原生 Engine | `~/.kiko` | `~/Library/Caches/Kiko/context/<sid>/skills/` | `~/Library/Caches/Kiko/temp/` |
 | Mac 通过 `./start.sh` 跑容器 | 容器内 `/mnt/kikoteam`，宿主机默认绑定 `~/.kiko` | `/mnt/context/<sid>/skills/` | `/var/tmp/kikoteam/temp/` |
 | Linux 容器部署 | `/mnt/kikoteam`，绑定宿主机本地磁盘 | `/mnt/context/<sid>/skills/` | `/var/tmp/kikoteam/temp/` |
 
-Mac 原生进程使用展开的绝对路径。Backend、Engine 和 Runner 按同一个持久化根解析其负责的文件。容器的 `/mnt/kikoteam/temp/` 位于挂载盘，存有跨进程使用的上传回执和实例锁。`launch.json`、控制 socket、Pi 运行配置和执行凭据写入节点临时盘。Pi 将 cwd 写进历史，因此每次恢复都在节点临时盘上重建相同的 Session 工作目录。镜像通过 `KIKO_CONTEXT_ROOT` 和 `KIKO_RUNTIME_TEMP_ROOT` 指定表中两处节点路径。
+Mac 原生进程使用展开的绝对路径。Backend、Engine 和 Runner 按同一个持久化根解析其负责的文件。容器的 `/mnt/kikoteam/temp/` 位于挂载盘，存有跨进程使用的上传回执和实例锁。Engine 将 `runner.json`、Pi 运行配置和执行凭据写入节点临时盘。Runner 在本机 `/tmp` 下创建权限为 `0700` 的 `kr-…` 目录，在各 Session 的 `b-…` 子目录存放 `launch.json`、管理 socket 和 Bash 控制 socket。这样 Engine 临时目录的长度不会影响 Unix socket。Pi 将 cwd 写进历史，因此每次恢复都在节点临时盘上重建相同的 Session 工作目录。镜像通过 `KIKO_CONTEXT_ROOT` 和 `KIKO_RUNTIME_TEMP_ROOT` 指定表中两处节点路径。
 
 ```text
 <root>/

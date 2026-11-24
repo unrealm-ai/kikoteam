@@ -358,7 +358,19 @@ func (s *Service) WithdrawInput(ctx context.Context, w, actor, id, input string)
 func (s *Service) ControlSession(ctx context.Context, w, actor, id string, archive bool) (Session, error) {
 	return s.controlSession(ctx, w, actor, id, archive, nil)
 }
+
+// ControlTaskFromWeb is the authenticated direct Session control entry. A
+// pending workflow cannot be canceled through either stop or archive here.
+// Main-chat delegation and broader orchestration retain their own semantics.
+func (s *Service) ControlTaskFromWeb(ctx context.Context, w, actor, id string, archive bool) (Session, error) {
+	return s.controlSessionMode(ctx, w, actor, id, archive, nil, true)
+}
+
 func (s *Service) controlSession(ctx context.Context, w, actor, id string, archive bool, source *DelegationIdentity) (Session, error) {
+	return s.controlSessionMode(ctx, w, actor, id, archive, source, false)
+}
+
+func (s *Service) controlSessionMode(ctx context.Context, w, actor, id string, archive bool, source *DelegationIdentity, web bool) (Session, error) {
 	err := s.Store.WithSession(ctx, Target{Workspace: w, Actor: actor, Session: id, Source: source, Control: true}, func(tx SessionTx) error {
 		st := tx.State()
 		if source != nil && !archive && st.Session.PlanningState == "canceled" {
@@ -369,6 +381,9 @@ func (s *Service) controlSession(ctx context.Context, w, actor, id string, archi
 		}
 		if archive && st.Session.Lifecycle == "archived" {
 			return nil
+		}
+		if err := guardTaskDetailControl(st, web); err != nil {
+			return err
 		}
 		if archive && ownerLifecycle(st) != "archived" && (st.Session.Execution.ActiveTurnID != nil || st.Session.Execution.QueuedInputCount > 0 || st.Session.Execution.BackgroundProcessCount == nil || *st.Session.Execution.BackgroundProcessCount != 0 || (st.Session.Execution.BlockReason != nil && *st.Session.Execution.BlockReason != "remote_tool_outcome_unknown") || st.StopRevision > st.AppliedStopRevision) {
 			return Fail("session_busy", 409, "执行会话仍在运行、排队或等待停止确认，请先停止并等待收尾；存在未知活动时须先核对处理后再归档")

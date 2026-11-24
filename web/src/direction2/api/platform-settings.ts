@@ -40,6 +40,9 @@ export interface ChannelDownloadSettings {
 }
 type ChannelDownloadSettingsWrite = Omit<ChannelDownloadSettings, 'version'> & { expected_version: number };
 
+export interface TaskLinkSettings { version: number; origin: string; enabled: boolean }
+type TaskLinkSettingsWrite = Omit<TaskLinkSettings, 'version'> & { expected_version: number };
+const taskLinkPath = '/platform/task-link-settings';
 const mailPath = '/platform/mail-settings';
 const githubPath = '/platform/oauth-apps/github';
 const channelDownloadPath = '/platform/channel-download-settings';
@@ -54,6 +57,8 @@ export const platformSettings = {
     platformRequest<{ok: true; test_receipt: string}>(mailPath + '/test', { ...post(data), signal: bounded(signal) }),
   github: (signal: AbortSignal) => platformRequest<GithubOAuthApp>(githubPath, { signal: bounded(signal) }),
   saveGithub: (data: GithubOAuthWrite, signal: AbortSignal) => update<GithubOAuthApp>(githubPath, data, signal),
+  taskLinks: (signal: AbortSignal) => platformRequest<TaskLinkSettings>(taskLinkPath, { signal: bounded(signal) }),
+  saveTaskLinks: (data: TaskLinkSettingsWrite, signal: AbortSignal) => update<TaskLinkSettings>(taskLinkPath, data, signal),
   channelDownloads: (signal: AbortSignal) => platformRequest<ChannelDownloadSettings>(channelDownloadPath, { signal: bounded(signal) }),
   saveChannelDownloads: (data: ChannelDownloadSettingsWrite, signal: AbortSignal) =>
     update<ChannelDownloadSettings>(channelDownloadPath, data, signal),

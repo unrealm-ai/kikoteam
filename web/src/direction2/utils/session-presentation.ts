@@ -12,7 +12,7 @@ export function workItemProgress(execution?: { required_actions?: { type: string
 }
 
 export function sessionStatus(value?: string): string {
-  return ({ engine_recovery_pending: '正在恢复执行环境，等待旧引擎交还执行权', awaiting_confirmation: '等待用户确认', queued: '已排队', started: '处理中', processed: '已处理', canceled: '已取消', rejected: '已拒绝', running: '运行中', stopping: '正在停止', completed: '本轮完成', failed: '失败', interrupted: '已中断', idle: '等待输入', blocked: '受阻', unknown: '结果未知', active: '可继续', archived: '已归档' } as Record<string, string>)[value || ''] || value || '等待状态';
+  return ({ engine_recovery_pending: '正在恢复执行环境，等待旧引擎交还执行权', awaiting_confirmation: '等待用户确认', queued: '已排队', started: '处理中', processed: '已处理', canceled: '已取消', rejected: '已拒绝', running: '运行中', stopping: '正在停止', stopped: '已停止', waiting_for_action: '等待确认或交接', waiting_for_confirmation: '等待确认', waiting_for_handoff: '等待交接结果', input_applied: '执行轮已接收', completed: '本轮完成', failed: '失败', interrupted: '已中断', idle: '等待输入', blocked: '受阻', unknown: '结果未知', active: '可继续', planned: '待办', todo_canceled: '待办已取消', background_active: '后台仍在运行', archived: '已归档' } as Record<string, string>)[value || ''] || value || '等待状态';
 }
 export function availability(value?: string): string {
   return ({ pending: '尚未提供', unavailable: '暂不可用', forbidden: '无权查看', redacted: '内容已隐藏', omitted: '内容未提供', truncated: '内容过大，未完整提供' } as Record<string, string>)[value || ''] || '暂不可用';

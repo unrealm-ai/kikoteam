@@ -39,9 +39,9 @@ func (t *sessionTx) insertChannelHistory(current service.Input) (int, error) {
 			}
 			mentions = nil
 		}
-		text := renderSystemMessage(item.Text, mentions)
+		text := renderSystemMessage(redactTaskDetailBearer(item.Text), mentions)
 		if isUser {
-			text = renderGroupMessage(name, item.Text, mentions)
+			text = renderGroupMessage(name, redactTaskDetailBearer(item.Text), mentions)
 		}
 		disabled := false
 		input := service.Input{ID: service.NewID(), SessionID: current.SessionID, Text: text, Status: "queued", DeliveryMode: "queue", SourceKind: "user", TriggerAgentLoop: &disabled, CreatedAt: current.CreatedAt, ChannelPrincipalID: &actor.ID, PrincipalType: "channel"}
@@ -63,6 +63,7 @@ func (t *sessionTx) insertChannelHistory(current service.Input) (int, error) {
 }
 
 func channelHistoryInputText(item service.ChannelHistoryItem) string {
+	item.Text = redactTaskDetailBearer(item.Text)
 	if item.RecordKey != "" {
 		name := channelLabel(item.SenderName)
 		if name == "" {
@@ -95,7 +96,7 @@ func (t *sessionTx) channelInputText(input service.Input) (string, error) {
 	if err := json.Unmarshal(raw, &metadata); err != nil {
 		return "", err
 	}
-	text := input.Text
+	text := redactTaskDetailBearer(input.Text)
 	if kind == "group" {
 		name, mentions, err := t.channelPresentation(sender, metadata, true)
 		if err != nil {
@@ -104,7 +105,7 @@ func (t *sessionTx) channelInputText(input service.Input) (string, error) {
 		text = renderGroupMessage(name, text, mentions)
 	}
 	if metadata.QuotedText != "" {
-		text += "\n\n[用户引用的内容，原始身份未核验]\n" + metadata.QuotedText
+		text += "\n\n[用户引用的内容，原始身份未核验]\n" + redactTaskDetailBearer(metadata.QuotedText)
 	}
 	return text, nil
 }

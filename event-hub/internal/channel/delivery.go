@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/url"
 	"strconv"
 	"time"
@@ -14,28 +15,32 @@ import (
 
 // Delivery targets are returned by Manager, never inferred from message text.
 type Delivery struct {
-	SessionWebhookEligible bool           `json:"session_webhook_eligible,omitempty"`
-	ArtifactID             string         `json:"artifact_id,omitempty"`
-	Media                  *deliveryMedia `json:"-"`
-	BeforeDispatch         func() error   `json:"-"`
-	Provider               string         `json:"provider"`
-	TenantID               string         `json:"external_tenant_id"`
-	ChatType               string         `json:"chat_type"`
-	RecipientID            string         `json:"recipient_id"`
-	ProviderRequestID      string         `json:"provider_request_id,omitempty"`
-	TargetDigest           string         `json:"target_digest"`
-	QueryToken             string         `json:"query_token,omitempty"`
-	ID                     string         `json:"id"`
-	LeaseToken             string         `json:"lease_token"`
-	BindingID              string         `json:"binding_id"`
-	Generation             int64          `json:"connection_generation"`
-	ConfigRevision         int64          `json:"config_revision,omitempty"`
-	ChatID                 string         `json:"chat_id"`
-	ReplyToMessageID       string         `json:"reply_to_message_id"`
-	ThreadID               string         `json:"thread_id"`
-	Text                   string         `json:"text"`
-	Format                 string         `json:"format,omitempty"`
-	IdempotencyKey         string         `json:"idempotency_key"`
+	taskDetailDispatch     bool
+	TaskDetailCard         *taskDetailCard `json:"task_detail_card,omitempty"`
+	TaskDetailURL          string          `json:"task_detail_url,omitempty"`
+	Presentation           string          `json:"presentation,omitempty"`
+	SessionWebhookEligible bool            `json:"session_webhook_eligible,omitempty"`
+	ArtifactID             string          `json:"artifact_id,omitempty"`
+	Media                  *deliveryMedia  `json:"-"`
+	BeforeDispatch         func() error    `json:"-"`
+	Provider               string          `json:"provider"`
+	TenantID               string          `json:"external_tenant_id"`
+	ChatType               string          `json:"chat_type"`
+	RecipientID            string          `json:"recipient_id"`
+	ProviderRequestID      string          `json:"provider_request_id,omitempty"`
+	TargetDigest           string          `json:"target_digest"`
+	QueryToken             string          `json:"query_token,omitempty"`
+	ID                     string          `json:"id"`
+	LeaseToken             string          `json:"lease_token"`
+	BindingID              string          `json:"binding_id"`
+	Generation             int64           `json:"connection_generation"`
+	ConfigRevision         int64           `json:"config_revision,omitempty"`
+	ChatID                 string          `json:"chat_id"`
+	ReplyToMessageID       string          `json:"reply_to_message_id"`
+	ThreadID               string          `json:"thread_id"`
+	Text                   string          `json:"text"`
+	Format                 string          `json:"format,omitempty"`
+	IdempotencyKey         string          `json:"idempotency_key"`
 }
 
 func (d Delivery) contentFormat() string {
@@ -46,6 +51,7 @@ func (d Delivery) contentFormat() string {
 }
 
 type deliveryReceipt struct {
+	Presentation        string `json:"presentation,omitempty"`
 	ProviderCreatedAtMS int64  `json:"provider_created_at_ms,string,omitempty"`
 	ProviderChatID      string `json:"provider_chat_id,omitempty"`
 	ProviderThreadID    string `json:"provider_thread_id,omitempty"`
@@ -149,7 +155,7 @@ func deliver(ctx context.Context, b *Backend, lookup func(string) (Binding, bool
 		return submitDeliveryReceipt(ctx, b, path, deliveryReceipt{LeaseToken: d.LeaseToken, TargetDigest: current.TargetDigest, Status: "failed", EvidenceType: "not_dispatched", ErrorCode: "cancelled_before_send"})
 	}
 	current.BeforeDispatch = func() error {
-		if b.humanNoticeDelivery || current.ArtifactID != "" {
+		if b.humanNoticeDelivery || current.ArtifactID != "" || current.TaskDetailCard != nil {
 			if err := b.request(ctx, "POST", path+"/dispatch-check", map[string]string{"lease_token": d.LeaseToken}, nil); err != nil {
 				return err
 			}
@@ -168,7 +174,7 @@ func deliver(ctx context.Context, b *Backend, lookup func(string) (Binding, bool
 		current.Media = media
 	}
 
-	receipt := send(ctx, binding, current)
+	receipt := sendWithTaskDetail(ctx, binding, current, b.notificationDelivery, send)
 	b.traceDelivery(ctx, "channel.delivery.send_result", current, receipt.Status)
 	b.trace(ctx, "channel.delivery.provider_receipt", "delivery_id", traceID(d.ID), "provider", binding.Provider, "provider_message_id", traceID(receipt.MessageID), "provider_request_id", traceID(receipt.ProviderRequestID), "status", traceID(receipt.Status), "error_code", traceID(receipt.ErrorCode))
 	receipt.LeaseToken = d.LeaseToken
@@ -184,17 +190,39 @@ func sameDeliveryTarget(claimed, authorized Delivery) bool {
 		authorized.ArtifactID == claimed.ArtifactID && authorized.ThreadID == claimed.ThreadID && authorized.Text == claimed.Text &&
 		authorized.contentFormat() == claimed.contentFormat() && authorized.Provider == claimed.Provider &&
 		authorized.TenantID == claimed.TenantID && authorized.ChatType == claimed.ChatType &&
-		authorized.RecipientID == claimed.RecipientID && authorized.TargetDigest != ""
+		authorized.RecipientID == claimed.RecipientID && authorized.TargetDigest != "" &&
+		claimed.TaskDetailURL == "" && sameTaskDetailTarget(claimed, authorized)
 }
 
 func sendFeishuDelivery(ctx context.Context, b Binding, d Delivery) deliveryReceipt {
-	api := lark.NewClient(b.Credentials.AppID, b.Credentials.AppSecret, lark.WithLogger(quietLogger{}), lark.WithReqTimeout(10*time.Second))
+	options := []lark.ClientOptionFunc{lark.WithLogger(quietLogger{}), lark.WithReqTimeout(10 * time.Second)}
+	if d.taskDetailDispatch {
+		// Never replay a bearer-containing message POST following an HTTP
+		// 307/308 (even to the same host) or send it to another destination.
+		options = append(options, lark.WithHttpClient(noRedirectTaskDetailHTTP()))
+	}
+	api := lark.NewClient(b.Credentials.AppID, b.Credentials.AppSecret, options...)
 	return sendFeishuWithClient(ctx, api, d)
 }
+func noRedirectTaskDetailHTTP() *http.Client {
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
 func sendFeishuWithClient(ctx context.Context, api *lark.Client, d Delivery) deliveryReceipt {
 	var kind string
 	var bodyContent any
 	switch d.contentFormat() {
+	case taskDetailCardFormat:
+		if d.TaskDetailCard == nil {
+			return deliveryReceipt{Status: "failed", EvidenceType: "not_dispatched", ErrorCode: "invalid_task_detail_card"}
+		}
+		kind = "interactive"
+		bodyContent = feishuTaskDetailContent(d)
 	case "text":
 		kind = "text"
 		bodyContent = map[string]string{"text": d.Text}
@@ -241,7 +269,7 @@ func sendFeishuWithClient(ctx context.Context, api *lark.Client, d Delivery) del
 			return deliveryReceipt{Status: "unknown", ErrorCode: "provider_result_unknown"}
 		}
 		if !resp.Success() {
-			return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: "provider_rejected"}
+			return feishuMessageRejected(d.taskDetailDispatch, kind, resp.Code, resp.StatusCode, resp.Data != nil && value(resp.Data.MessageId) != "")
 		}
 		if resp.Data != nil && value(resp.Data.MessageId) != "" {
 			return feishuSentReceipt(d, value(resp.Data.MessageId), value(resp.Data.CreateTime), value(resp.Data.ChatId), value(resp.Data.ThreadId))
@@ -256,13 +284,27 @@ func sendFeishuWithClient(ctx context.Context, api *lark.Client, d Delivery) del
 			return deliveryReceipt{Status: "unknown", ErrorCode: "provider_result_unknown"}
 		}
 		if !resp.Success() {
-			return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: "provider_rejected"}
+			return feishuMessageRejected(d.taskDetailDispatch, kind, resp.Code, resp.StatusCode, resp.Data != nil && value(resp.Data.MessageId) != "")
 		}
 		if resp.Data != nil && value(resp.Data.MessageId) != "" {
 			return feishuSentReceipt(d, value(resp.Data.MessageId), value(resp.Data.CreateTime), value(resp.Data.ChatId), value(resp.Data.ThreadId))
 		}
 	}
 	return deliveryReceipt{Status: "unknown", ErrorCode: "provider_receipt_missing"}
+}
+
+func feishuMessageRejected(taskDetailDispatch bool, kind string, code, status int, hasMessageID bool) deliveryReceipt {
+	// Documented card validation failure; do not fall back on generic errors,
+	// contrary message evidence, or server/proxy failures.
+	if taskDetailDispatch && (hasMessageID || status >= http.StatusMultipleChoices && status < http.StatusBadRequest || status >= http.StatusInternalServerError) {
+		return deliveryReceipt{Status: "unknown", ErrorCode: "provider_result_unknown"}
+	}
+	if kind == "interactive" {
+		if code == 230099 && (status == http.StatusOK || status == http.StatusBadRequest) {
+			return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: taskDetailRejected}
+		}
+	}
+	return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: "provider_rejected"}
 }
 
 func checkFeishuTopicSource(ctx context.Context, api *lark.Client, d Delivery) string {

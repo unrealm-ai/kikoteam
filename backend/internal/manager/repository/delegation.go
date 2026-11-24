@@ -7,7 +7,9 @@ import (
 	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 )
 
-const delegationFrom = ` FROM manager_sessions s JOIN manager_conversations c ON c.id=s.conversation_id JOIN platform_agents a ON a.id=s.agent_id JOIN manager_turns t ON t.id=s.active_turn_id JOIN manager_inputs i ON i.id=t.input_id WHERE manager_input_actor_allowed(i.id) AND NOT EXISTS(SELECT FROM manager_human_chat_inputs h WHERE h.input_id=i.id) AND s.id=$1 AND s.engine_id=$2 AND s.assignment_id=$3 AND s.generation=$4 AND s.mode='chat' AND s.lifecycle='active' AND c.lifecycle='active' AND a.enabled AND i.status='started' AND i.admission_epoch=a.admission_epoch AND (s.stop_revision=s.applied_stop_revision OR i.seq>s.stop_input_seq)`
+const delegationTables = ` FROM manager_sessions s JOIN manager_conversations c ON c.id=s.conversation_id JOIN platform_agents a ON a.id=s.agent_id JOIN manager_turns t ON t.id=s.active_turn_id JOIN manager_inputs i ON i.id=t.input_id`
+const delegationFrom = delegationTables + delegationFilter
+const delegationFilter = ` WHERE manager_input_actor_allowed(i.id) AND NOT EXISTS(SELECT FROM manager_human_chat_inputs h WHERE h.input_id=i.id) AND s.id=$1 AND s.engine_id=$2 AND s.assignment_id=$3 AND s.generation=$4 AND s.mode='chat' AND s.lifecycle='active' AND c.lifecycle='active' AND a.enabled AND i.status='started' AND i.admission_epoch=a.admission_epoch AND (s.stop_revision=s.applied_stop_revision OR i.seq>s.stop_input_seq)`
 
 const effectiveDelegatingInput = `COALESCE((SELECT u.id FROM manager_inputs u WHERE u.turn_id=t.id AND u.source_kind='user' AND u.trigger_agent_loop AND u.context_state='committed' ORDER BY u.seq DESC LIMIT 1),i.id)`
 

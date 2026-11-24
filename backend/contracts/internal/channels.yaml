@@ -443,6 +443,26 @@
         "query_token": {
           "type": "string"
         },
+        "task_detail_card": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title", "state"],
+          "properties": {
+            "title": {"type": "string"},
+            "state": {"type": "string"},
+            "url": {"type": "string", "format": "uri", "description": "Sensitive scoped link; present only after dispatch authorization. Do not log or add to context."}
+          }
+        },
+        "task_detail_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Sensitive read-only result link on an authorized external trigger notification. Never add to shared group history."
+        },
+        "presentation": {
+          "type": "string",
+          "enum": ["task_detail_card", "task_detail_link"],
+          "description": "Sanitized confirmation of which task detail presentation was sent."
+        },
         "artifact_id": {
           "type": "string",
           "format": "uuid"
@@ -560,6 +580,12 @@
       "operationId": "claimChannelDelivery",
       "description": "Lease durable pending work. History is authorized before provider fetch; sending delivery lease expiry becomes unknown and is not blindly retried.",
       "parameters": [
+        {
+          "name": "X-Kiko-Delivery-Task-Detail",
+          "in": "header",
+          "description": "Value 1 opts a compatible Hub into task detail deliveries and secret separation.",
+          "schema": {"type": "string", "const": "1"}
+        },
         {
           "name": "X-Kiko-Delivery-Markdown",
           "in": "header",
@@ -885,6 +911,11 @@
                 "target_digest"
               ],
               "properties": {
+                "presentation": {
+                  "type": "string",
+                  "enum": ["task_detail_card", "task_detail_link"],
+                  "description": "Actual task-detail presentation; required for a newly confirmed or accepted card."
+                },
                 "lease_token": {
                   "type": "string",
                   "format": "uuid"
@@ -1561,7 +1592,7 @@
   "mediaDispatch": {
     "post": {
       "operationId": "checkArtifactDispatch",
-      "description": "Recheck the original target immediately before sending.",
+      "description": "Recheck the original target immediately before sending an artifact or task detail card/fallback.",
       "security": [
         {
           "hubBearer": []

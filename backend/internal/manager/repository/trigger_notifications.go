@@ -12,6 +12,14 @@ import (
 
 var noticeThink = regexp.MustCompile(`(?is)<think\b[^>]*>.*?(?:</think>|$)`)
 var noticeSecret = regexp.MustCompile(`(?i)(?:Bearer\s+|(?:api[_-]?key|password|secret|token)\s*[:=]\s*)[^\s,;]+`)
+
+// Channel timelines and quoted messages may include a link the system sent.
+var taskDetailBearerURL = regexp.MustCompile(`(?i)https?://[^\s<>/"']+/tasks/[A-Za-z0-9_-]{43}([^A-Za-z0-9_-]|$)`)
+
+func redactTaskDetailBearer(text string) string {
+	return taskDetailBearerURL.ReplaceAllString(text, "[任务详情链接]${1}")
+}
+
 var noticePath = regexp.MustCompile(`(?:file://\S+|/(?:Users|home|private|tmp|var)/[^\s<>"']+)`)
 
 func noticeSummary(status, text string) (string, []string) {
@@ -35,7 +43,7 @@ func noticeSummary(status, text string) (string, []string) {
 }
 
 func redactNoticeText(text string) string {
-	text = noticeThink.ReplaceAllString(text, "")
+	text = noticeThink.ReplaceAllString(redactTaskDetailBearer(text), "")
 	text = noticeSecret.ReplaceAllString(text, "[已隐藏]")
 	return noticePath.ReplaceAllString(text, "[文件引用]")
 }

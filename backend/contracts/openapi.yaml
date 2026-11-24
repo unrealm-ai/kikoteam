@@ -2,11 +2,23 @@ openapi: 3.1.0
 info:
   title: Kiko Platform API
   version: 1.0.0
-  description: 'Platform identity and workspace API. Cookie credentials only; all writes require
-    X-CSRF-Protection: 1 and same-origin requests. Google OAuth is not implemented. Registration
+  description: 'Platform identity and workspace API. Platform session writes require cookie credentials,
+    X-CSRF-Protection: 1 and same-origin requests. Public task detail routes use a separate scoped bearer grant. Google OAuth is not implemented. Registration
     atomically creates an account, a personal workspace and a session; invitation acceptance is a separate authenticated step.
     Unexpected database errors fail only the current request.'
 paths:
+  /api/v1/public/task-detail:
+    $ref: ./modules/manager/public-task-detail.yaml#/snapshot
+  /api/v1/public/task-detail/events:
+    $ref: ./modules/manager/public-task-detail.yaml#/events
+  /api/v1/public/task-detail/append:
+    $ref: ./modules/manager/public-task-detail.yaml#/append
+  /api/v1/public/task-detail/stop:
+    $ref: ./modules/manager/public-task-detail.yaml#/stop
+  /api/v1/public/task-detail/continue:
+    $ref: ./modules/manager/public-task-detail.yaml#/continue
+  /api/v1/public/task-detail/artifacts/{artifact_id}:
+    $ref: ./modules/manager/public-task-detail.yaml#/artifact
   /api/v1/workspaces/{workspace_id}/agents/{agent_id}/human-recovery:
     $ref: ./modules/manager/human-recovery.yaml#/list
   /api/v1/workspaces/{workspace_id}/agents/{agent_id}/human-recovery/{request_id}:
@@ -275,6 +287,8 @@ paths:
     $ref: ./modules/platform/invitations-token-accept.yaml
   /api/v1/auth/options:
     $ref: ./modules/platform/auth-options.yaml
+  /api/v1/platform/task-link-settings:
+    $ref: ./modules/platform/task-link-settings.yaml#/settings
   /api/v1/platform/mail-settings:
     $ref: ./modules/platform/mail-settings.yaml#/settings
   /api/v1/platform/mail-settings/test:
@@ -367,6 +381,9 @@ paths:
     $ref: './modules/platform/plugin-catalog.yaml#/copy'
 components:
   securitySchemes:
+    taskDetailBearer:
+      type: http
+      scheme: bearer
     githubWebhookSignature:
       type: apiKey
       in: header

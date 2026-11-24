@@ -187,6 +187,9 @@ func (s *Store) CompleteNotificationContext(ctx context.Context, id string, v se
 	if t.state.Session.Execution.QueuedInputCount+len(v.Snapshot.Items)+1 > 100 {
 		return service.Fail("conflict", 409, "上下文队列已满")
 	}
+	for i := range v.Snapshot.Items {
+		v.Snapshot.Items[i].Text = redactTaskDetailBearer(v.Snapshot.Items[i].Text)
+	}
 	for _, item := range v.Snapshot.Items {
 		user := item.SenderType == "" || item.SenderType == "user"
 		name, mentions, e := t.channelPresentation(item.SenderID, service.ChannelMessageMetadata{SenderName: item.SenderName, SenderTenant: item.SenderTenant, SenderIDType: item.SenderIDType, Mentions: item.Mentions}, user)

@@ -32,6 +32,7 @@ func (s *Store) ClaimChannelDeliveryQueries(ctx context.Context, limit int) ([]s
 			return nil, e
 		}
 		v.Text = ""
+		v.TaskDetailCard = nil
 		out = append(out, v)
 	}
 	if e = errors.Join(rows.Err(), rows.Close()); e != nil {

@@ -1,0 +1,57 @@
+settings:
+  get:
+    operationId: getPlatformTaskLinkSettings
+    summary: Read task detail link settings as a platform administrator
+    security:
+    - sessionCookie: []
+    responses:
+      '200':
+        $ref: '#/settingsResponse'
+      default:
+        $ref: '#/error'
+  patch:
+    operationId: updatePlatformTaskLinkSettings
+    summary: Save task detail link settings as a platform administrator
+    description: A stale expected version returns 409. A valid HTTP or HTTPS origin and enabled true are both required for new links. Saving the origin as empty does not clear the enabled preference or revoke previously issued grants.
+    security:
+    - sessionCookie: []
+    parameters:
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema: { type: string, const: '1' }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [expected_version, origin, enabled]
+            properties:
+              expected_version: { type: integer, minimum: 0 }
+              origin: { type: string, maxLength: 270, description: Empty or an explicit HTTP or HTTPS origin with DNS name or IP, optional port, and optional trailing slash. No credentials or non-root path. }
+              enabled: { type: boolean }
+    responses:
+      '200':
+        $ref: '#/settingsResponse'
+      default:
+        $ref: '#/error'
+settingsResponse:
+  description: Effective stored settings. Version zero is the unconfigured default.
+  content:
+    application/json:
+      schema:
+        type: object
+        additionalProperties: false
+        required: [version, origin, enabled]
+        properties:
+          version: { type: integer, minimum: 0 }
+          origin: { type: string, default: '', description: HTTP or HTTPS origin normalized without trailing slash. }
+          enabled: { type: boolean, default: true }
+error:
+  description: Structured error
+  content:
+    application/json:
+      schema:
+        $ref: ../../openapi.yaml#/components/schemas/Error

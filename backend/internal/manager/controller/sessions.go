@@ -196,14 +196,14 @@ func (s *Server) stopSession(r *http.Request, a string) (any, int, error) {
 	if err := empty(r); err != nil {
 		return nil, 400, err
 	}
-	v, err := s.Service.ControlSession(r.Context(), workspace(r), a, sessionID(r), false)
+	v, err := s.Service.ControlTaskFromWeb(r.Context(), workspace(r), a, sessionID(r), false)
 	return v, controlStatus(v), err
 }
 func (s *Server) archiveSession(r *http.Request, a string) (any, int, error) {
 	if err := empty(r); err != nil {
 		return nil, 400, err
 	}
-	v, err := s.Service.ControlSession(r.Context(), workspace(r), a, sessionID(r), true)
+	v, err := s.Service.ControlTaskFromWeb(r.Context(), workspace(r), a, sessionID(r), true)
 	return v, controlStatus(v), err
 }
 func (s *Server) archiveConversation(r *http.Request, a string) (any, int, error) {

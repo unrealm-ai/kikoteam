@@ -289,3 +289,29 @@ test('work board and task detail open the same paginated, read-only timeline', a
   try {button('事项时间线').click(); await wait();assert.match(detail.host.textContent,/已附修订件/);}
   finally {await detail.cleanup();}
 });
+
+
+test('authenticated task detail queues supplements but cannot stop during human confirmation or handoff', async () => {
+  for (const type of ['human_confirmation', 'work_item']) {
+    const m = await mount(Detail, (url) => {
+      if (url.endsWith('/sessions/s-one')) {
+        const d = task();
+        return Response.json({ ...d, id: 's-one', execution: {
+          ...d.execution, required_actions: [{ type, request_id: 'holding', title:'挂起中', message:'等待人工确认或交接结果' }],
+        }});
+      }
+      return null;
+    });
+    try {
+      assert.ok(button('停止此任务').disabled);
+      assert.match(m.host.textContent, /补充会先排队，暂不能停止/);
+      const box = m.host.querySelector('textarea');
+      assert.ok(box && !box.disabled);
+      box.value = '挂起时的补充要求';
+      box.dispatchEvent(new window.Event('input', {bubbles:true})); await nextTick();
+      button('发送').click(); await wait();
+      const writes = m.calls.filter(c=>c.init.method==='POST').map(c=>c.url);
+      assert.deepEqual(writes, ['/api/v1/workspaces/w/sessions/s-one/inputs']);
+    } finally { await m.cleanup(); }
+  }
+});

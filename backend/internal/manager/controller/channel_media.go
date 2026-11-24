@@ -72,6 +72,16 @@ func (s *ChannelServer) mediaRoutes(mux *http.ServeMux) {
 			if e := decode(r, &q); e != nil {
 				return nil, e
 			}
+			if suffix == "dispatch-check" {
+				if checker, ok := s.Store.(interface {
+					CheckTaskDetailDispatch(context.Context, string, string) (bool, error)
+				}); ok {
+					handled, e := checker.CheckTaskDetailDispatch(r.Context(), r.PathValue("id"), q.Lease)
+					if handled || e != nil {
+						return map[string]bool{"allowed": e == nil}, e
+					}
+				}
+			}
 			a, data, e := store.ReadDeliveryArtifact(r.Context(), r.PathValue("id"), q.Lease, suffix == "content")
 			if e != nil {
 				return nil, e

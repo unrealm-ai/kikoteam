@@ -17,6 +17,12 @@ func deliveryTargetDigest(d service.ChannelDelivery) string {
 	// An opaque digest binds one authorization attempt to its exact immutable
 	// destination, identity, operation and content. It is never inferred from text.
 	raw := strings.Join([]string{d.ID, d.LeaseToken, d.BindingID, strconv.FormatInt(d.ConnectionGeneration, 10), d.Provider, d.ExternalTenantID, d.ChatType, d.ChatID, d.RecipientID, d.ThreadID, d.ReplyToMessageID, d.IdempotencyKey, d.Text}, "\x00")
+	if d.TaskDetailCard != nil {
+		raw += "\x00task-detail:" + d.TaskDetailCard.Title + "\x00" + d.TaskDetailCard.State + "\x00" + d.TaskDetailCard.URL
+	}
+	if d.TaskDetailURL != "" {
+		raw += "\x00task-detail-link:" + d.TaskDetailURL
+	}
 	if d.ArtifactID != "" {
 		raw += "\x00artifact:" + d.ArtifactID
 	}
@@ -30,6 +36,9 @@ func deliveryTargetDigest(d service.ChannelDelivery) string {
 	return hex.EncodeToString(sum[:])
 }
 func validateDeliveryReceipt(v service.DeliveryCompletion) error {
+	if v.Presentation != "" && v.Presentation != service.TaskDetailCardPresentation && v.Presentation != service.TaskDetailLinkPresentation {
+		return service.Fail("invalid_argument", 400, "投递呈现回执无效")
+	}
 	if !service.ValidID(v.LeaseToken) || len(v.TargetDigest) != 64 {
 		return service.Fail("invalid_argument", 400, "投递回执身份无效")
 	}
@@ -141,6 +150,9 @@ func (s *Store) CompleteChannelDelivery(ctx context.Context, id string, v servic
 	} else if !deliveryEvidence(provider, v) {
 		return service.Fail("receipt_evidence_required", 400, "缺少可信供应商证据")
 	}
+	if e = checkTaskDetailReceipt(ctx, tx, id, kind, &v); e != nil {
+		return e
+	}
 	if request != "" && v.ProviderRequestID != "" && request != v.ProviderRequestID {
 		return service.Fail("receipt_mismatch", 409, "供应商请求标识不符")
 	}
@@ -176,16 +188,25 @@ func (s *Store) CompleteChannelDelivery(ctx context.Context, id string, v servic
 	if err := recordDingProactiveSend(ctx, tx, provider, dingChannelAttempt, id, v); err != nil {
 		return err
 	}
-	if v.Status == "sent" && kind == "human_confirmation" {
-		if e = captureLegacyHumanReplyContext(ctx, tx, id); e != nil {
-			return e
-		}
+	if e = handleChannelReceiptSideEffects(ctx, tx, id, kind, v); e != nil {
+		return e
 	}
 	e = tx.Commit()
 	if e == nil {
 		s.channelLog(ctx, "channel.outbox_receipt_persisted", "provider", provider, "binding_id", binding, "inbox_id", inbox, "delivery_id", id, "previous_status", state, "status", v.Status, "receipt_kind", v.EvidenceType)
 	}
 	return e
+}
+
+func handleChannelReceiptSideEffects(ctx context.Context, tx *sql.Tx, id, kind string, v service.DeliveryCompletion) error {
+	switch {
+	case strings.HasPrefix(kind, "task_detail:"):
+		return saveTaskDetailDeliveryReceipt(ctx, tx, id, v)
+	case v.Status == "sent" && kind == "human_confirmation":
+		return captureLegacyHumanReplyContext(ctx, tx, id)
+	default:
+		return nil
+	}
 }
 
 func matchesDeliveryAttempt(state, lease, digest string, v service.DeliveryCompletion) bool {
@@ -281,4 +302,38 @@ func deliveryReceiptBytes(v service.DeliveryCompletion) ([]byte, string, error) 
 	}
 	sum := sha256.Sum256(raw)
 	return raw, hex.EncodeToString(sum[:]), nil
+}
+
+// A known DingTalk query may be resumed by an older Hub which ignores
+// presentation on the claim. Only inherit the already committed immutable value.
+func checkTaskDetailReceipt(ctx context.Context, tx *sql.Tx, id, kind string, v *service.DeliveryCompletion) error {
+	if !strings.HasPrefix(kind, "task_detail:") {
+		if v.Presentation == "" {
+			return nil
+		}
+		return service.Fail("receipt_mismatch", 409, "投递类型不匹配")
+	}
+	if v.QueryToken != "" {
+		var presentation string
+		err := tx.QueryRowContext(ctx, `SELECT COALESCE(presentation,'') FROM manager_task_detail_deliveries WHERE delivery_id=$1`, id).Scan(&presentation)
+		if err != nil {
+			return err
+		}
+		switch {
+		case v.Presentation == "":
+			v.Presentation = presentation
+		case presentation != "" && v.Presentation != presentation:
+			return service.Fail("receipt_mismatch", 409, "任务详情投递呈现不匹配")
+		}
+	}
+	if (v.Status == "sent" || v.Status == "accepted") && v.Presentation == "" {
+		return service.Fail("receipt_evidence_required", 400, "任务详情投递缺少呈现证据")
+	}
+	return nil
+}
+
+func saveTaskDetailDeliveryReceipt(ctx context.Context, tx *sql.Tx, id string, v service.DeliveryCompletion) error {
+	_, err := tx.ExecContext(ctx, `UPDATE manager_task_detail_deliveries
+ SET presentation=COALESCE(presentation,NULLIF($2,'')), sealed_url=NULL WHERE delivery_id=$1`, id, v.Presentation)
+	return err
 }

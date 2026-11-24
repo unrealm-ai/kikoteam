@@ -74,6 +74,9 @@ func reconcileDeliveryQueries(ctx context.Context, b *Backend, lookup func(strin
 		receipt.LeaseToken = d.LeaseToken
 		receipt.TargetDigest = d.TargetDigest
 		receipt.QueryToken = d.QueryToken
+		if d.Presentation == taskDetailCardFormat || d.Presentation == taskDetailLinkFormat {
+			receipt.Presentation = d.Presentation
+		}
 		if err := submitDeliveryReceipt(ctx, b, b.deliveryPath()+"/"+url.PathEscape(d.ID), receipt); err != nil {
 			return err
 		}

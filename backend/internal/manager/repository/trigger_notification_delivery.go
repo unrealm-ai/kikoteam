@@ -14,7 +14,7 @@ import (
 const noticeDeliverySelect = `n.id,COALESCE(n.lease_token::text,''),n.target->>'binding_id',
     (n.target->>'generation')::bigint,n.target->>'chat_id','',n.target->>'thread_id',n.text,n.content_format,
     n.target->>'provider',n.target->>'tenant_id','group','',COALESCE(n.provider_request_id,''),
-    COALESCE(n.attempt_target_digest,''),COALESCE(n.query_token::text,''),'trigger_notification' AS kind,'' AS artifact_id`
+    COALESCE(n.attempt_target_digest,''),COALESCE(n.query_token::text,''),'trigger_notification' AS kind,'' AS artifact_id,'','',''`
 
 func noticeBatchValid(limit int) error {
 	if limit < 1 || limit > 50 {
@@ -57,6 +57,12 @@ func (s *Store) ClaimTriggerNotifications(ctx context.Context, limit int) ([]ser
 	return out, tx.Commit()
 }
 func (s *Store) AuthorizeTriggerNotification(ctx context.Context, id, lease string) (service.ChannelDelivery, error) {
+	return s.authorizeTriggerNotification(ctx, id, lease, false)
+}
+func (s *Store) AuthorizeTriggerNotificationWithDetail(ctx context.Context, id, lease string) (service.ChannelDelivery, error) {
+	return s.authorizeTriggerNotification(ctx, id, lease, true)
+}
+func (s *Store) authorizeTriggerNotification(ctx context.Context, id, lease string, detail bool) (service.ChannelDelivery, error) {
 	var out service.ChannelDelivery
 	if !service.ValidID(id) || !service.ValidID(lease) {
 		return out, service.Fail("invalid_argument", 400, "投递身份无效")
@@ -95,6 +101,12 @@ func (s *Store) AuthorizeTriggerNotification(ctx context.Context, id, lease stri
 	out, err = scanDelivery(tx.QueryRowContext(ctx, `SELECT `+noticeDeliverySelect+` FROM manager_trigger_notifications n WHERE id=$1`, id))
 	if err != nil {
 		return out, err
+	}
+	if detail {
+		out.TaskDetailURL, err = s.optionalTriggerTaskDetailURL(ctx, tx, out)
+		if err != nil {
+			return service.ChannelDelivery{}, err
+		}
 	}
 	out.Allowed = true
 	out.TargetDigest = deliveryTargetDigest(out)

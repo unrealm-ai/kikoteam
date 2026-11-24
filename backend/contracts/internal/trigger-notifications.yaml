@@ -71,6 +71,12 @@
     "post": {
       "operationId": "triggerNotificationAuthorize",
       "description": "Independent trigger result/reminder notification ledger, not an Inbox reply. Recheck current binding generation and scope immediately before I/O; return immutable canonical target. History repeats this before each page. Browser identity is never a channel principal.",
+      "parameters": [{
+        "name": "X-Kiko-Delivery-Task-Detail",
+        "in": "header",
+        "description": "Value 1 opts into the optional read-only result link, separate from notification history text.",
+        "schema": {"type": "string", "const": "1"}
+      }],
       "security": [
         {
           "hubBearer": []
@@ -172,6 +178,11 @@
                 "target_digest"
               ],
               "properties": {
+                "presentation": {
+                  "type": "string",
+                  "enum": ["task_detail_link"],
+                  "description": "Optional annotation of the result notice presentation; never contains the link."
+                },
                 "lease_token": {
                   "type": "string",
                   "format": "uuid"

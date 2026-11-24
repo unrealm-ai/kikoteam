@@ -99,30 +99,34 @@ type ChannelReceipt struct {
 	ControlReply WecomControlReply `json:"control_reply,omitempty"`
 }
 type ChannelDelivery struct {
-	ArtifactID           string `json:"artifact_id,omitempty"`
-	ConfigRevision       int64  `json:"config_revision,omitempty"`
-	Provider             string `json:"provider"`
-	ExternalTenantID     string `json:"external_tenant_id"`
-	ChatType             string `json:"chat_type"`
-	RecipientID          string `json:"recipient_id"`
-	ProviderRequestID    string `json:"provider_request_id,omitempty"`
-	TargetDigest         string `json:"target_digest"`
-	QueryToken           string `json:"query_token,omitempty"`
-	ID                   string `json:"id"`
-	LeaseToken           string `json:"lease_token"`
-	BindingID            string `json:"binding_id"`
-	ConnectionGeneration int64  `json:"connection_generation"`
-	ChatID               string `json:"chat_id"`
-	ReplyToMessageID     string `json:"reply_to_message_id"`
-	ThreadID             string `json:"thread_id"`
-	Text                 string `json:"text"`
-	Format               string `json:"format,omitempty"`
-	IdempotencyKey       string `json:"idempotency_key"`
-	Allowed              bool   `json:"allowed"`
+	TaskDetailCard       *TaskDetailCard `json:"task_detail_card,omitempty"`
+	TaskDetailURL        string          `json:"task_detail_url,omitempty"`
+	Presentation         string          `json:"presentation,omitempty"`
+	ArtifactID           string          `json:"artifact_id,omitempty"`
+	ConfigRevision       int64           `json:"config_revision,omitempty"`
+	Provider             string          `json:"provider"`
+	ExternalTenantID     string          `json:"external_tenant_id"`
+	ChatType             string          `json:"chat_type"`
+	RecipientID          string          `json:"recipient_id"`
+	ProviderRequestID    string          `json:"provider_request_id,omitempty"`
+	TargetDigest         string          `json:"target_digest"`
+	QueryToken           string          `json:"query_token,omitempty"`
+	ID                   string          `json:"id"`
+	LeaseToken           string          `json:"lease_token"`
+	BindingID            string          `json:"binding_id"`
+	ConnectionGeneration int64           `json:"connection_generation"`
+	ChatID               string          `json:"chat_id"`
+	ReplyToMessageID     string          `json:"reply_to_message_id"`
+	ThreadID             string          `json:"thread_id"`
+	Text                 string          `json:"text"`
+	Format               string          `json:"format,omitempty"`
+	IdempotencyKey       string          `json:"idempotency_key"`
+	Allowed              bool            `json:"allowed"`
 
 	SessionWebhookEligible bool `json:"session_webhook_eligible,omitempty"`
 }
 type DeliveryCompletion struct {
+	Presentation        string `json:"presentation,omitempty"`
 	ProviderCreatedAtMS int64  `json:"provider_created_at_ms,string,omitempty"`
 	ProviderChatID      string `json:"provider_chat_id,omitempty"`
 	ProviderThreadID    string `json:"provider_thread_id,omitempty"`

@@ -38,6 +38,13 @@ func (s *ChannelServer) TriggerNotificationRoutes(mux *http.ServeMux) {
 		if e := decode(r, &v); e != nil {
 			return nil, e
 		}
+		if r.Header.Get("X-Kiko-Delivery-Task-Detail") == "1" {
+			if detail, ok := store.(interface {
+				AuthorizeTriggerNotificationWithDetail(context.Context, string, string) (service.ChannelDelivery, error)
+			}); ok {
+				return detail.AuthorizeTriggerNotificationWithDetail(r.Context(), r.PathValue("id"), v.LeaseToken)
+			}
+		}
 		return store.AuthorizeTriggerNotification(r.Context(), r.PathValue("id"), v.LeaseToken)
 	}))
 	mux.HandleFunc("POST /api/internal/v1/trigger-notifications/{id}/complete", s.wrap(func(r *http.Request) (any, error) {

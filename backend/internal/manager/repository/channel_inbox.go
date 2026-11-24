@@ -55,7 +55,7 @@ func (s *Store) ReceiveChannel(ctx context.Context, v service.ChannelInbound) (o
 		return out, service.Fail("invalid_argument", 400, "渠道消息元数据无效")
 	}
 	metadata.ReplyMessageID = v.ReplyMessageID
-	metadata.QuotedText = strings.TrimSpace(v.QuotedText)
+	metadata.QuotedText = strings.TrimSpace(redactTaskDetailBearer(v.QuotedText))
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return out, err
@@ -108,7 +108,7 @@ func (s *Store) ReceiveChannel(ctx context.Context, v service.ChannelInbound) (o
 }
 
 func persistChannelInbound(ctx context.Context, tx *sql.Tx, v service.ChannelInbound, provider string, identityEpoch int64, metadataJSON []byte, fingerprint string, out *service.ChannelReceipt) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO manager_channel_inbox(id,binding_id,connection_generation,config_revision,rules_version,provider_event_id,provider_message_id,fingerprint,external_tenant_id,external_chat_id,chat_type,sender_id,text,message_type,bot_mentioned,thread_id,trigger_created_at_ms,identity_epoch,message_metadata,provider_directed) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) ON CONFLICT DO NOTHING`, out.ID, v.BindingID, v.ConnectionGeneration, v.ConfigRevision, v.RulesVersion, v.ProviderEventID, v.ProviderMessageID, fingerprint, v.ExternalTenantID, v.ExternalChatID, v.ChatType, v.SenderID, v.Text, v.MessageType, v.BotMentioned, v.ThreadID, v.CreatedAtMS, identityEpoch, metadataJSON, v.ProviderDirected)
+	_, err := tx.ExecContext(ctx, `INSERT INTO manager_channel_inbox(id,binding_id,connection_generation,config_revision,rules_version,provider_event_id,provider_message_id,fingerprint,external_tenant_id,external_chat_id,chat_type,sender_id,text,message_type,bot_mentioned,thread_id,trigger_created_at_ms,identity_epoch,message_metadata,provider_directed) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) ON CONFLICT DO NOTHING`, out.ID, v.BindingID, v.ConnectionGeneration, v.ConfigRevision, v.RulesVersion, v.ProviderEventID, v.ProviderMessageID, fingerprint, v.ExternalTenantID, v.ExternalChatID, v.ChatType, v.SenderID, redactTaskDetailBearer(v.Text), v.MessageType, v.BotMentioned, v.ThreadID, v.CreatedAtMS, identityEpoch, metadataJSON, v.ProviderDirected)
 	if err != nil {
 		return err
 	}

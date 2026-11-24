@@ -72,10 +72,15 @@ func scanTask(row scanner) (service.Task, error) {
 		renameReason = "task_space_access_revoked"
 	}
 	stopReason := "session_archived"
+	canStop := mutable && v.PlanningState == "started"
 	if v.PlanningState != "started" {
 		stopReason = "task_not_started"
 	}
-	out.Actions = map[string]service.TaskAction{"rename": taskAction(rename, renameReason), "stop": taskAction(mutable && v.PlanningState == "started", stopReason), "archive": taskAction(archive, archiveReason)}
+	if mutable && service.TaskDetailWaiting(st) {
+		canStop, archive = false, false
+		stopReason, archiveReason = "task_waiting_for_action", "task_waiting_for_action"
+	}
+	out.Actions = map[string]service.TaskAction{"rename": taskAction(rename, renameReason), "stop": taskAction(canStop, stopReason), "archive": taskAction(archive, archiveReason)}
 	return out, nil
 }
 func taskAction(allowed bool, reason string) service.TaskAction {

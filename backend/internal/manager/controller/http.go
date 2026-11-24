@@ -47,6 +47,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	s.triggerRoutes(mux)
 	s.triggerGroupCandidateRoutes(mux)
 	s.TriggerNotificationReadRoutes(mux)
+	s.publicTaskDetailRoutes(mux)
 	base := "/api/v1/workspaces/{workspace_id}/conversations"
 	mux.HandleFunc("POST "+base+"/web-direct", s.wrap("resolveWebConversation", s.resolveWebConversation))
 	mux.HandleFunc("POST "+base, s.wrap("createConversation", s.createConversation))

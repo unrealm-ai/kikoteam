@@ -173,3 +173,43 @@ func TestStableDelegationCatalogRejectsExplicitAmbiguousAuthorization(t *testing
 		}
 	}
 }
+
+func TestTaskDetailToolOnlyInSelectedOrdinaryChannelCatalog(t *testing.T) {
+	secret := strings.Repeat("s", 32)
+	id := manager.DelegationIdentity{SessionID: manager.NewID(), EngineID: manager.NewID(), AssignmentID: manager.NewID(), Generation: 1}
+	token, err := manager.SignDelegation(secret, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &catalogDelegationStore{}
+	h, err := Handler(&manager.Delegation{Store: store, Secret: secret}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, query            string
+		channel, report, shown bool
+	}{
+		{"enabled channel", "?catalog=stable&task_detail=enabled", true, false, true},
+		{"settings off at harness fetch", "?catalog=stable", true, false, false},
+		{"report flag despite steered input", "?catalog=stable&mode=report&task_detail=enabled", true, false, false},
+		{"report detected in Manager", "?catalog=stable&task_detail=enabled", true, true, false},
+		{"web cannot issue an external card", "?catalog=stable&task_detail=enabled", false, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store.scope = manager.DelegationScope{InputID: manager.NewID(), ReportOnly: tc.report}
+			if tc.channel {
+				store.scope.Channel = &manager.ChannelActor{ID: manager.NewID(), Generation: 1}
+			}
+			r := httptest.NewRequest(http.MethodPost, "/mcp/task-delegation"+tc.query, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+			r.Header.Set("Accept", "application/json, text/event-stream")
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("Authorization", "Bearer "+token)
+			out := httptest.NewRecorder()
+			h.ServeHTTP(out, r)
+			if out.Code != http.StatusOK || strings.Contains(out.Body.String(), `"name":"send_task_detail_card"`) != tc.shown {
+				t.Fatalf("task detail catalog mismatch: %d", out.Code)
+			}
+		})
+	}
+}

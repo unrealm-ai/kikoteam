@@ -23,7 +23,7 @@ import { activeWorkspaceId, pendingApprovalsCount, clearAuthToken, D2ApiError } 
 import { authApi, dashboardApi } from './api';
 import type { UserProfile, WorkspaceInfo, GlobalSearchResultItem, AuthSessionResponse } from './types';
 import { productName, productDescriptor } from './product-brand';
-import './styles/design-tokens.css';
+import { d2ThemeOverrides } from './styles/theme-overrides';
 
 // 导航视图状态
 type RailView = 'home' | 'chat' | 'employees' | 'tasks' | 'resources' | 'settings' | 'market' | 'platform-admin' | 'credits';
@@ -656,47 +656,6 @@ function openApproval(id: string) {
   navigate('tasks', 'approvals', id, 'approval');
 }
 
-// 主题覆盖：严格对齐 docs/DESIGN_SYSTEM.md 规范与 Design Tokens
-const d2ThemeOverrides = {
-  common: {
-    primaryColor: '#2563EB',
-    primaryColorHover: '#1D4ED8',
-    primaryColorPressed: '#1E40AF',
-    primaryColorSuppl: '#3B82F6',
-    textColorBase: '#09090B',
-    textColor1: '#09090B',
-    textColor2: '#52525B',
-    textColor3: '#71717A',
-    placeholderColor: '#A1A1AA',
-    bodyColor: '#FAFAFA',
-    cardColor: '#FFFFFF',
-    modalColor: '#FFFFFF',
-    popoverColor: '#FFFFFF',
-    borderColor: '#E4E4E7',
-    dividerColor: '#F4F4F5',
-    borderRadius: '6px',
-    fontFamily: 'Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system, sans-serif'
-  },
-  Card: {
-    borderRadius: '8px',
-    borderColor: '#E4E4E7'
-  },
-  Drawer: {
-    bodyPadding: '20px 24px',
-    headerPadding: '16px 24px',
-    borderColor: '#E4E4E7'
-  },
-  Tabs: {
-    barColor: '#09090B',
-    tabTextColorLine: '#71717A',
-    tabTextColorHoverLine: '#09090B',
-    tabTextColorActiveLine: '#09090B',
-    tabFontWeightActive: '600',
-    tabTextColorSegment: '#52525B',
-    tabTextColorActiveSegment: '#09090B',
-    colorSegment: '#F4F4F5'
-  }
-};
 </script>
 
 <template>

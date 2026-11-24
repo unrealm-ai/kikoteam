@@ -57,6 +57,7 @@ type HarnessConfig struct {
 
 	ChatDelegationCatalogToken string `json:"chat_delegation_catalog_token,omitempty"`
 	ChatHumanCatalogToken      string `json:"chat_human_catalog_token,omitempty"`
+	TaskDetailCardEnabled      bool   `json:"task_detail_card_enabled,omitempty"`
 	ChatCatalogChannel         bool   `json:"-"`
 	ChatCatalogPrivate         bool   `json:"-"`
 	ChatCatalogGroup           bool   `json:"-"`

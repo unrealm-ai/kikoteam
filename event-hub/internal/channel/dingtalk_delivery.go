@@ -97,6 +97,12 @@ func sendDingTalkWithHTTP(ctx context.Context, b Binding, d Delivery, h dingHTTP
 	var msgKey string
 	var fields map[string]string
 	switch d.contentFormat() {
+	case taskDetailCardFormat:
+		if d.TaskDetailCard == nil {
+			return deliveryReceipt{Status: "failed", EvidenceType: "not_dispatched", ErrorCode: "invalid_task_detail_card"}
+		}
+		msgKey = "sampleActionCard"
+		fields = map[string]string{"title": taskDetailTitle(d.TaskDetailCard.Title), "text": d.Text, "singleTitle": taskDetailLabel, "singleURL": d.TaskDetailCard.URL}
 	case "image", "file":
 		if d.Media == nil {
 			return mediaUploadFailure()
@@ -148,7 +154,10 @@ func sendDingTalkWithHTTP(ctx context.Context, b Binding, d Delivery, h dingHTTP
 	} else {
 		body["openConversationId"] = d.ChatID
 	}
-	result, rejection := h.proactiveSend(ctx, path, token, body)
+	result, rejection := h.proactiveSend(ctx, path, token, body, msgKey == "sampleActionCard", d.taskDetailDispatch)
+	if rejection == taskDetailRejected {
+		return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: rejection}
+	}
 	if rejection != "" {
 		// Diagnostic refinement only. Keep the conservative delivery state,
 		// with no new confirmation evidence or permission to retry.
@@ -191,7 +200,7 @@ type dingActiveSendResponse struct {
 	ErrCode json.RawMessage `json:"errcode"`
 }
 
-func (h dingHTTP) proactiveSend(ctx context.Context, path, token string, body any) (dingActiveSendResponse, string) {
+func (h dingHTTP) proactiveSend(ctx context.Context, path, token string, body any, card, taskDetailDispatch bool) (dingActiveSendResponse, string) {
 	var result dingActiveSendResponse
 	resp, err := h.do(ctx, http.MethodPost, path, token, body)
 	if err != nil {
@@ -199,6 +208,12 @@ func (h dingHTTP) proactiveSend(ctx context.Context, path, token string, body an
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // Read-only response cleanup.
 	status := resp.StatusCode
+	if card && status == http.StatusBadRequest {
+		if decodeDingResponse(resp.Body, &result) == nil && result.Key == "" && (result.hasCode("invalidParameter.msgKey.invalid") || result.hasCode("sendMessage.model.notMatch")) {
+			return result, taskDetailRejected
+		}
+		return result, dingSendUnknown
+	}
 	if status < http.StatusOK || status >= http.StatusMultipleChoices {
 		if status == http.StatusForbidden && decodeDingResponse(resp.Body, &result) == nil && result.Key == "" && result.permissionDenied() {
 			return result, dingProactivePermissionDenied
@@ -208,11 +223,20 @@ func (h dingHTTP) proactiveSend(ctx context.Context, path, token string, body an
 	if decodeDingResponse(resp.Body, &result) != nil {
 		return result, dingSendUnknown
 	}
+	if card && (result.hasCode("invalidParameter.msgKey.invalid") || result.hasCode("sendMessage.model.notMatch")) {
+		if result.Key != "" {
+			return result, dingSendUnknown
+		}
+		return result, taskDetailRejected
+	}
 	if result.permissionDenied() {
 		if result.Key != "" {
 			return result, dingSendUnknown // Contradictory provider evidence; do not confirm this send.
 		}
 		return result, dingProactivePermissionDenied
+	}
+	if taskDetailDispatch && len(result.Code) != 0 && string(result.Code) != "0" {
+		return result, dingSendUnknown
 	}
 	if len(result.ErrCode) != 0 && string(result.ErrCode) != "0" {
 		return result, "dingtalk_send_rejected"
@@ -220,10 +244,12 @@ func (h dingHTTP) proactiveSend(ctx context.Context, path, token string, body an
 	return result, ""
 }
 
-func (v dingActiveSendResponse) permissionDenied() bool {
+func (v dingActiveSendResponse) permissionDenied() bool { return v.hasCode(dingPermissionDeniedCode) }
+
+func (v dingActiveSendResponse) hasCode(want string) bool {
 	for _, raw := range []json.RawMessage{v.Code, v.ErrCode} {
 		var code string
-		if json.Unmarshal(raw, &code) == nil && code == dingPermissionDeniedCode {
+		if json.Unmarshal(raw, &code) == nil && code == want {
 			return true
 		}
 	}

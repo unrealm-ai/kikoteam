@@ -346,3 +346,35 @@ test('historical attachment without a path can check current status using its ID
     assert.ok(!m.calls.some(c=>c.url.includes('/files/content')));
   } finally { await m.cleanup(); }
 });
+
+test('authenticated conversation task detail keeps its own write path and disables stop while held', async () => {
+ const taskPath = '/api/v1/workspaces/w/sessions/task1';
+ let holding = true;
+ const m = await mount({override:(url, init) => {
+   if (url !== taskPath || init.method) return null;
+   const current = resource('task1');
+   if (holding) current.execution.required_actions = [{type:'human_confirmation', request_id:'confirm-1', title:'待人工确认', message:'等待批准'}];
+   return Response.json(current);
+ }});
+ try {
+   button('会话任务 (2)').click(); await pause();
+   [...document.querySelectorAll('button')].find(b=>b.textContent.includes('task1')).click(); await pause();
+   const panel = m.host.querySelector('.task-detail-panel');
+   const action = label => [...panel.querySelectorAll('button')].find(b=>b.textContent.trim()===label);
+   const stop = action('停止此任务');
+   assert.ok(stop.disabled);
+   const input = panel.querySelector('textarea');
+   assert.ok(!input.disabled);
+   input.value = '来自对话内任务详情的补充'; input.dispatchEvent(new window.Event('input',{bubbles:true})); await pause();
+   action('发送').click(); await pause();
+   holding = false;
+   FakeSource.all.find(s=>!s.closed && s.url.includes('/task1/')).emit({type:'session.updated', session_id:'task1', seq:'11'});
+   await pause();
+   assert.ok(!stop.disabled);
+   stop.click(); await pause();
+   const taskWrites = m.calls.filter(c=>c.init.method==='POST' && c.url.startsWith(taskPath));
+   assert.deepEqual(taskWrites.map(c=>c.url), [taskPath+'/inputs',taskPath+'/stop']);
+   assert.ok(taskWrites.every(c=>c.init.credentials==='include' && !c.init.headers.has('Authorization')));
+   assert.ok(!m.calls.some(c=>c.url.startsWith('/api/v1/public/')));
+ } finally { await m.cleanup(); }
+});

@@ -18,7 +18,7 @@ import (
 type scopeKey struct{}
 
 type chatAudience struct {
-	channel, group bool
+	channel, group, taskDetail bool
 }
 
 type toolAccess struct {
@@ -33,7 +33,7 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 		return nil, err
 	}
 	catalogs := make(map[chatAudience]*sdk.Server)
-	for _, audience := range []chatAudience{{}, {channel: true}, {group: true}, {channel: true, group: true}} {
+	for _, audience := range []chatAudience{{}, {channel: true}, {group: true}, {channel: true, group: true}, {channel: true, taskDetail: true}, {channel: true, group: true, taskDetail: true}} {
 		catalogs[audience] = sdk.NewServer(&sdk.Implementation{Name: "task_delegation", Version: "1.0.0"}, nil)
 	}
 	report := sdk.NewServer(&sdk.Implementation{Name: "task_report", Version: "1.0.0"}, nil)
@@ -46,7 +46,7 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 				return nil, nil, errors.New("unauthenticated")
 			}
 			scope := access.scope
-			if access.schemaOnly || access.report && (name != "artifact_select" || !access.channel) {
+			if access.schemaOnly || access.report && (name != "artifact_select" || !access.channel) || name == "send_task_detail_card" && !access.taskDetail {
 				return &sdk.CallToolResult{IsError: true}, failedToolResult(name, "user_authorization_required", "当前输入没有调用此工具的授权", args, nil), nil
 			}
 			out, err := d.Call(ctx, scope, name, args)
@@ -71,7 +71,7 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 			sdk.AddTool[manager.DelegationArgs, any](report, &spec, call)
 		}
 		for audience, server := range catalogs {
-			if name == "artifact_select" && !audience.channel || name == "trigger_task_get_result" && !audience.group {
+			if name == "artifact_select" && !audience.channel || name == "trigger_task_get_result" && !audience.group || name == "send_task_detail_card" && !audience.taskDetail {
 				continue
 			}
 			sdk.AddTool[manager.DelegationArgs, any](server, &spec, call)
@@ -117,6 +117,7 @@ func authorizeToolAccess(ctx context.Context, r *http.Request, d *manager.Delega
 		a.scope, err = d.Authorize(ctx, token)
 		a.report = a.report || a.scope.ReportOnly
 		a.chatAudience = chatAudience{channel: a.scope.Channel != nil, group: a.scope.Group}
+		a.taskDetail = a.channel && !a.report && a.stable && r.URL.Query().Get("task_detail") == "enabled" && a.scope.InputID != ""
 		return a, err
 	}
 	if !a.stable {

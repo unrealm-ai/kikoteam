@@ -47,6 +47,10 @@ flowchart LR
 
 ### Nginx 反向代理配置示例
 
+任务详情链接启用前须检查所有入口。初次访问的 `/tasks/<token>` 路径自身含有效 bearer；不在 CDN、WAF、Ingress、反向代理、APM、访问/错误日志、追踪或分析系统记录原路径、查询串或 Authorization。下例关闭该路径的 Nginx 访问日志并丢弃该 location 的错误日志；其他层仍需独立关闭、清洗或只记录固定路由名，并用合成令牌核对各层日志。应用的 `no-store` 和 `no-referrer` 响应头不能替代代理日志配置。
+
+任务详情的独立地址可以配置为 HTTP/HTTPS 的域名或 IP 加端口。公网使用 HTTPS；只有可信内网单机才使用纯 HTTP，HTTP 不保护链接或请求凭证。是否能打开由点击设备的实际网络和 IM 客户端决定，保存设置不探测可达性。此地址不会替换 `KIKO_PUBLIC_ORIGIN`。
+
 ```nginx
 server {
     listen 443 ssl http2;
@@ -59,7 +63,37 @@ server {
         return 403;
     }
 
-    # SSE 实时事件流关闭缓冲
+    # 任务详情入口 URI 包含 bearer；不要记录原始 URI 或这些请求的错误详情。
+    location ^~ /tasks/ {
+        access_log off;
+        error_log /dev/null crit;
+        proxy_pass http://kiko_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache off;
+    }
+
+    # 匿名任务详情 API 的本身路径不含 bearer，仍不得记录 Authorization。
+    location ^~ /api/v1/public/task-detail {
+        access_log off;
+        error_log /dev/null crit;
+        proxy_pass http://kiko_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Authorization $http_authorization;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+    }
+
+    # 现有登录态 SSE 实时事件流关闭缓冲
     location ~ ^/api/v1/.*/events/stream$ {
         proxy_pass http://kiko_backend;
         proxy_http_version 1.1;

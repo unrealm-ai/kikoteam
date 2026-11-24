@@ -20,6 +20,7 @@ type Backend struct {
 	HTTP                 *http.Client
 }
 type HarnessConfig struct {
+	TaskDetailCardEnabled bool         `json:"task_detail_card_enabled,omitempty"`
 	ReportOnly            bool         `json:"report_only,omitempty"`
 	WorkRole              string       `json:"work_role"`
 	WorkLocalToken        string       `json:"work_local_token"`

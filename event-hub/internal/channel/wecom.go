@@ -462,6 +462,12 @@ func (s *wecomSession) sendBound(ctx context.Context, d Delivery, requiredCallba
 	id := wireID("send_")
 	cmd := "aibot_send_msg"
 	body := map[string]any{"chatid": d.ChatID, "msgtype": "markdown", "markdown": map[string]string{"content": d.Text}}
+	if d.contentFormat() == taskDetailCardFormat {
+		if d.TaskDetailCard == nil || d.ReplyToMessageID != "" || mediaID != "" {
+			return deliveryReceipt{Status: "failed", EvidenceType: "not_dispatched", ErrorCode: "invalid_task_detail_card"}
+		}
+		body = map[string]any{"chatid": d.ChatID, "msgtype": "template_card", "template_card": wecomTaskDetailContent(d)}
+	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -505,8 +511,15 @@ func (s *wecomSession) sendBound(ctx context.Context, d Delivery, requiredCallba
 		s.mu.Lock()
 		closed := s.closed
 		s.mu.Unlock()
-		if !closed && ack.Headers.ReqID == id && ack.ErrorCode != nil && *ack.ErrorCode == 0 {
-			return deliveryReceipt{Status: "sent", ProviderRequestID: id, EvidenceType: "business_ack", EvidenceID: id, ProviderSessionID: s.id}
+		if !closed && ack.Headers.ReqID == id && ack.ErrorCode != nil {
+			if *ack.ErrorCode == 0 {
+				return deliveryReceipt{Status: "sent", ProviderRequestID: id, EvidenceType: "business_ack", EvidenceID: id, ProviderSessionID: s.id}
+			}
+			// Documented invalid message type: the correlated active card was
+			// rejected before posting. Other errors stay unknown.
+			if d.contentFormat() == taskDetailCardFormat && *ack.ErrorCode == 40008 {
+				return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: taskDetailRejected}
+			}
 		}
 	case <-ctx.Done():
 	case <-s.done:

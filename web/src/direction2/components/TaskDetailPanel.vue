@@ -9,9 +9,15 @@ import { D2ApiError } from '../api/client';
 import ManagerSessionPanel from './ManagerSessionPanel.vue';
 import SessionMarkdown from './SessionMarkdown.vue';
 import TaskSupplementReceipts from './TaskSupplementReceipts.vue';
+import { usePublicTaskDetail } from '../composables/usePublicTaskDetail';
 import { sessionStatus, workItemProgress } from '../utils/session-presentation';
-const props = defineProps<{ workspaceId: string; taskId: string; taskCenter?: boolean; taskRecordActions?: boolean; initialTurnId?: string | undefined; presentation?: 'sidebar' | 'drawer' | 'page' }>();
+const props = withDefaults(defineProps<{ workspaceId?: string; taskId?: string; publicToken?: string; taskCenter?: boolean; taskRecordActions?: boolean; initialTurnId?: string | undefined; presentation?: 'sidebar' | 'drawer' | 'page' }>(), { workspaceId: '', taskId: '', publicToken: '' });
 const emit = defineEmits<{ close: []; taskChanged: []; openWork: [id: string]; openSourceConversation: [agent: string, conversation: string] }>();
+const guest = props.publicToken ? usePublicTaskDetail(props.publicToken) : undefined;
+const guestTask = computed(() => guest?.task.value);
+const visibleError = computed(() => guest ? guest.error.value : error.value);
+const visibleLoading = computed(() => guest ? guest.loading.value : loading.value);
+function reload() { return guest ? guest.load() : load(); }
 const detail = ref<TaskDetail | null>(null), loading = ref(false), error = ref(''), actionError = ref(''), notice = ref('');
 const tab = ref('process'), turn = ref(props.initialTurnId || ''), inputs = ref<TaskInput[]>([]), turns = ref<TaskTurn[]>([]), reports = ref<TaskReport[]>([]);
 const historicalReport = ref<TaskReport | null>(null);
@@ -106,6 +112,7 @@ async function action(kind: 'rename' | 'archive' | 'withdraw', input = '') {
   catch (e) { if (g === generation) { actionError.value = fail(e); await refresh(); } } finally { if (g === generation) busy.value = false; }
 }
 async function commandAccepted() {
+  if (guest) return;
   emit('taskChanged');
   if (refreshing.value) refreshAfterWrite = true;
   else await refresh();
@@ -113,33 +120,40 @@ async function commandAccepted() {
 function changed() { emit('taskChanged'); if (Date.now() - lastEventRefresh > 1000) { lastEventRefresh = Date.now(); void refresh(); } }
 async function copyID() { try { await copyText(props.taskId); notice.value = '任务 ID 已复制'; } catch { actionError.value = '复制失败'; } }
 function visible() { if (!document.hidden) void refresh(); }
-watch(() => [props.workspaceId, props.taskId], () => { busy.value = false; void load(); }, { immediate: true });
+if (!guest) watch(() => [props.workspaceId, props.taskId], () => { busy.value = false; void load(); }, { immediate: true });
 watch(() => props.initialTurnId, v => { turn.value = v || ''; });
 watch(turn, () => { historicalRevision++; historicalReport.value = null; void refreshHistoricalReport(); });
-onMounted(() => { timer = setInterval(() => { void refresh(); }, 5000); document.addEventListener('visibilitychange', visible); });
+onMounted(() => { if (guest) return; timer = setInterval(() => { void refresh(); }, 5000); document.addEventListener('visibilitychange', visible); });
 onUnmounted(() => { generation++; controller.abort(); if (timer) clearInterval(timer); document.removeEventListener('visibilitychange', visible); });
 </script>
 <template>
   <section class="task-detail-panel" :class="[presentation, {'task-drawer-body':taskCenter}]" aria-label="任务详情">
-    <header><span class="eyebrow">{{ taskCenter ? "任务执行记录" : "任务详情" }}</span><NButton size="small" @click="emit('close')">关闭任务详情</NButton></header>
-    <p v-if="error" class="error" role="alert">{{ error }} <NButton size="small" @click="load">重新加载</NButton></p><NSkeleton v-if="loading" text :repeat="4" />
-    <template v-if="detail">
-      <div class="task-summary" :class="{'t-summary-card': taskCenter}"><h2>{{ detail.title || '未命名任务' }}</h2><p>{{ detail.agent.name }} · {{ detail.task_space_id ? '任务空间中的独立任务' : detail.source.kind === 'chat_delegation' ? '由主对话触发' : '来源未指定' }}</p><div class="facts ts-row"><span>{{ executionLabel }}</span><span>{{ sessionStatus(detail.lifecycle) }}</span><span v-if="detail.latest_turn">最近：{{ sessionStatus(detail.latest_turn.status) }}</span><span v-if="duration">本轮用时 {{ duration }}</span></div>
-        <p v-if="detail.execution.queued_input_count">{{ detail.execution.queued_input_count }} 条输入排队中</p><p v-if="detail.execution.background_process_count === null || detail.execution.background_process_count">{{ detail.execution.background_process_count === null ? '后台活动待核对' : `${detail.execution.background_process_count} 个后台进程仍在运行` }}</p><p v-if="detail.latest_turn?.has_unknown_tool_results" class="warning">存在结果未知的工具调用，请查看执行过程。</p>
-        <details><summary>任务要求与标识</summary><SessionMarkdown :text="detail.initial_input?.text || '尚无任务输入'" /><p class="muted">任务 {{ detail.task_id }}<br>创建于 {{ new Date(detail.created_at).toLocaleString('zh-CN') }}</p><NButton size="tiny" @click="copyID">复制任务 ID</NButton></details>
-        <div class="meta-actions"><NButton v-if="detail.source.chat_session_id && detail.conversation_id" size="tiny" @click="emit('openSourceConversation', detail.agent.id, detail.conversation_id)">返回来源对话</NButton><NButton v-if="recordsEditable" size="tiny" :disabled="!canRename || busy" @click="toggleRename">修改标题</NButton><NButton size="tiny" :disabled="!canArchive || busy" @click="action('archive')">归档任务</NButton></div><div v-if="renameOpen && recordsEditable" class="rename"><NInput v-model:value="title" maxlength="200" placeholder="任务标题" /><NButton size="small" :disabled="!canRename || !title.trim() || busy" @click="action('rename')">保存标题</NButton></div>
+
+    <header><span class="eyebrow">{{ taskCenter ? "任务执行记录" : "任务详情" }}</span><NButton v-if="!guest" size="small" @click="emit('close')">关闭任务详情</NButton></header>
+    <p v-if="visibleError" class="error" role="alert">{{ visibleError }} <NButton size="small" @click="reload">重新加载</NButton></p><NSkeleton v-if="visibleLoading" text :repeat="4" />
+    <template v-if="detail || guestTask">
+      <div class="task-summary" :class="{'t-summary-card': taskCenter}">
+        <h2>{{ (detail?.title ?? guestTask?.title) || '未命名任务' }}</h2>
+        <p v-if="detail">{{ detail.agent.name }} · {{ detail.task_space_id ? '任务空间中的独立任务' : detail.source.kind === 'chat_delegation' ? '由主对话触发' : '来源未指定' }}</p>
+        <div class="facts ts-row"><span>{{ guestTask ? sessionStatus(guestTask.status) : executionLabel }}</span><span v-if="guestTask?.permission === 'read'">只读</span><span v-if="guestTask">{{ guest?.connection.value || '正在连接' }}</span><template v-if="detail"><span>{{ sessionStatus(detail.lifecycle) }}</span><span v-if="detail.latest_turn">最近：{{ sessionStatus(detail.latest_turn.status) }}</span><span v-if="duration">本轮用时 {{ duration }}</span></template></div>
+        <template v-if="detail">
+          <p v-if="detail.execution.queued_input_count">{{ detail.execution.queued_input_count }} 条输入排队中</p><p v-if="detail.execution.background_process_count === null || detail.execution.background_process_count">{{ detail.execution.background_process_count === null ? '后台活动待核对' : `${detail.execution.background_process_count} 个后台进程仍在运行` }}</p><p v-if="detail.latest_turn?.has_unknown_tool_results" class="warning">存在结果未知的工具调用，请查看执行过程。</p>
+          <details><summary>任务要求与标识</summary><SessionMarkdown :text="detail.initial_input?.text || '尚无任务输入'" /><p class="muted">任务 {{ detail.task_id }}<br>创建于 {{ new Date(detail.created_at).toLocaleString('zh-CN') }}</p><NButton size="tiny" @click="copyID">复制任务 ID</NButton></details>
+          <div class="meta-actions"><NButton v-if="detail.source.chat_session_id && detail.conversation_id" size="tiny" @click="emit('openSourceConversation', detail.agent.id, detail.conversation_id)">返回来源对话</NButton><NButton v-if="recordsEditable" size="tiny" :disabled="!canRename || busy" @click="toggleRename">修改标题</NButton><NButton size="tiny" :disabled="!canArchive || busy" @click="action('archive')">归档任务</NButton></div><div v-if="renameOpen && recordsEditable" class="rename"><NInput v-model:value="title" maxlength="200" placeholder="任务标题" /><NButton size="small" :disabled="!canRename || !title.trim() || busy" @click="action('rename')">保存标题</NButton></div>
+        </template>
       </div>
-      <details v-if="taskCenter && detail.latest_result?.text" class="result-preview"><summary>最近一轮结果{{detail.latest_result.truncated?'（摘要）':''}}</summary><SessionMarkdown :text="detail.latest_result.text"/></details>
+      <details v-if="taskCenter && detail?.latest_result?.text" class="result-preview"><summary>最近一轮结果{{detail.latest_result.truncated?'（摘要）':''}}</summary><SessionMarkdown :text="detail.latest_result.text"/></details>
       <p v-if="actionError" class="error" role="alert">{{ actionError }}</p><p v-if="notice" class="muted" role="status">{{ notice }}</p>
-      <p v-if="planned" role="status">{{ detail.planning_state === 'planned' ? '仅保存了待办，没有执行输入或模型运行。请返回来源主对话查询、补充、启动或取消待办；这里不能直接发送执行输入。' : '此待办在启动前已取消，没有执行结果，也不能继续或恢复。' }}</p>
-      <nav aria-label="任务详情视图"><button v-for="t in [{id:'process',label:'执行过程'},{id:'inputs',label:'输入记录'},{id:'reports',label:'主会话回报'}]" :key="t.id" :aria-current="tab === t.id ? 'page' : undefined" @click="tab = t.id">{{ t.label }}</button><button v-if="detail.work_item_id" :aria-current="tab==='work' ? 'page' : undefined" @click="tab='work'">事项时间线</button></nav>
-      <div v-if="tab==='work' && detail.work_item_id" class="records"><NButton v-if="taskCenter" size="tiny" @click="emit('openWork', detail.work_item_id)">前往事项看板</NButton><WorkItemTimeline :workspace="workspaceId" :item-id="detail.work_item_id"/></div>
-      <div v-show="tab === 'process'" class="process"><div class="turn-select"><NSelect v-model:value="turn" :options="turnOptions" aria-label="选择执行轮次" /><NButton v-if="turnCursor" size="tiny" @click="more('turns')">加载更多轮次</NButton></div><TaskSupplementReceipts :report="selectedReport" />
-        <p v-if="taskCenter && !turn && detail.actions.supplement?.reason === 'system_managed_input'" class="muted">此任务的输入由系统派发。</p>
-        <ManagerSessionPanel v-if="!planned" :key="detail.session_id" :workspace="workspaceId" :session-id="detail.session_id" :title="detail.agent.name" :turn-id="turn" :read-only="!!turn || (taskCenter && !canSupplement)" :task-center="taskCenter"
-          :stop-disabled="!detail.actions.stop.allowed" task embedded @changed="changed" @sent="commandAccepted" @stopped="commandAccepted" /></div>
+      <p v-if="detail && planned" role="status">{{ detail.planning_state === 'planned' ? '仅保存了待办，没有执行输入或模型运行。请返回来源主对话查询、补充、启动或取消待办；这里不能直接发送执行输入。' : '此待办在启动前已取消，没有执行结果，也不能继续或恢复。' }}</p>
+      <nav aria-label="任务详情视图"><button v-for="t in (guest ? [{id:'process',label:'执行过程'}] : [{id:'process',label:'执行过程'},{id:'inputs',label:'输入记录'},{id:'reports',label:'主会话回报'}])" :key="t.id" :aria-current="tab === t.id ? 'page' : undefined" @click="tab = t.id">{{ t.label }}</button><button v-if="detail?.work_item_id" :aria-current="tab==='work' ? 'page' : undefined" @click="tab='work'">事项时间线</button></nav>
+      <div v-if="tab==='work' && detail?.work_item_id" class="records"><NButton v-if="taskCenter" size="tiny" @click="emit('openWork', detail.work_item_id)">前往事项看板</NButton><WorkItemTimeline :workspace="workspaceId" :item-id="detail.work_item_id"/></div>
+      <div v-show="tab === 'process'" class="process">
+        <template v-if="detail"><div class="turn-select"><NSelect v-model:value="turn" :options="turnOptions" aria-label="选择执行轮次" /><NButton v-if="turnCursor" size="tiny" @click="more('turns')">加载更多轮次</NButton></div><TaskSupplementReceipts :report="selectedReport" />
+        <p v-if="taskCenter && !turn && detail.actions.supplement?.reason === 'system_managed_input'" class="muted">此任务的输入由系统派发。</p></template>
+        <ManagerSessionPanel v-if="!planned" :key="detail?.session_id || 'shared'" :workspace="workspaceId" :session-id="detail?.session_id || ''" :title="detail?.agent.name || '执行 Agent'" :turn-id="turn" :read-only="!!turn || (!guest && !canSupplement)" :task-center="taskCenter" :public-detail="guest"
+          :stop-disabled="!detail?.actions.stop.allowed" task embedded @changed="changed" @sent="commandAccepted" @stopped="commandAccepted" /></div>
       <div v-if="tab === 'inputs'" class="records"><p v-if="!inputs.length" class="muted">尚无输入记录</p><article v-for="i in inputs" :key="i.id"><strong>输入 {{ i.seq }} · {{ sessionStatus(i.status) }}</strong><small>{{ i.confirmation_request_id ? '确认答复' : i.delivery_mode === 'steer' ? '引导当前执行' : '下一轮处理' }}</small><SessionMarkdown :text="i.text" /><p v-if="i.rejection_reason || i.cancel_reason" class="muted">{{ i.rejection_reason || i.cancel_reason }}</p><NButton v-if="canWithdraw(i)" size="tiny" :disabled="busy" @click="action('withdraw', i.id)">撤回此输入</NButton><NButton v-if="i.turn_id" size="tiny" @click="turn = i.turn_id; tab = 'process'">查看关联轮次</NButton></article><NButton v-if="inputCursor" :disabled="busy" @click="more('inputs')">加载更多输入</NButton></div>
-      <div v-if="tab === 'reports'" class="records"><p v-if="detail.task_space_id" class="muted">此任务没有来源对话，不会向主会话回报。</p><p v-else class="muted">回报受理、主会话处理和回复分别确认。</p><p v-if="!reports.length" class="muted">尚无已结束轮次的回报</p><article v-for="r in reports" :key="r.source_input_id"><strong>{{ r.source_turn_id ? '轮次回报' : '未执行输入回报' }} · {{ sessionStatus(r.outcome) }}</strong><p>{{ reportStatus[r.status] || r.status }}</p><p v-if="r.reason" class="warning">{{ r.reason }}</p><p v-if="r.target" class="muted">主会话输入：{{ sessionStatus(r.target.input_status) }}<br>上下文：{{ r.target.context_state === 'committed' ? '已确认接收' : r.target.context_state || '尚无接收证据' }}<br>主会话轮次：{{ sessionStatus(r.target.turn_status || undefined) }}</p><TaskSupplementReceipts :report="r" /><NButton v-if="r.source_turn_id" size="tiny" @click="turn = r.source_turn_id; tab = 'process'">查看来源轮次</NButton></article><NButton v-if="reportCursor" :disabled="busy" @click="more('reports')">加载更多回报</NButton></div>
+      <div v-if="tab === 'reports' && detail" class="records"><p v-if="detail.task_space_id" class="muted">此任务没有来源对话，不会向主会话回报。</p><p v-else class="muted">回报受理、主会话处理和回复分别确认。</p><p v-if="!reports.length" class="muted">尚无已结束轮次的回报</p><article v-for="r in reports" :key="r.source_input_id"><strong>{{ r.source_turn_id ? '轮次回报' : '未执行输入回报' }} · {{ sessionStatus(r.outcome) }}</strong><p>{{ reportStatus[r.status] || r.status }}</p><p v-if="r.reason" class="warning">{{ r.reason }}</p><p v-if="r.target" class="muted">主会话输入：{{ sessionStatus(r.target.input_status) }}<br>上下文：{{ r.target.context_state === 'committed' ? '已确认接收' : r.target.context_state || '尚无接收证据' }}<br>主会话轮次：{{ sessionStatus(r.target.turn_status || undefined) }}</p><TaskSupplementReceipts :report="r" /><NButton v-if="r.source_turn_id" size="tiny" @click="turn = r.source_turn_id; tab = 'process'">查看来源轮次</NButton></article><NButton v-if="reportCursor" :disabled="busy" @click="more('reports')">加载更多回报</NButton></div>
     </template>
   </section>
 </template>

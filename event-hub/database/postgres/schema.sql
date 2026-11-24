@@ -2128,6 +2128,73 @@ CREATE TABLE public.manager_task_artifacts (
 
 
 --
+-- Name: manager_task_detail_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manager_task_detail_deliveries (
+    delivery_id uuid NOT NULL,
+    grant_id uuid NOT NULL,
+    source_input_id uuid NOT NULL,
+    title text NOT NULL,
+    state text NOT NULL,
+    sealed_url bytea,
+    presentation text,
+    context_settled_at timestamp with time zone,
+    CONSTRAINT manager_task_detail_deliveries_presentation_check CHECK ((presentation = ANY (ARRAY['task_detail_card'::text, 'task_detail_link'::text])))
+);
+
+
+--
+-- Name: manager_task_detail_grants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manager_task_detail_grants (
+    id uuid NOT NULL,
+    token_digest bytea NOT NULL,
+    workspace_id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    task_id uuid NOT NULL,
+    source_input_id uuid,
+    source_chat_session_id uuid,
+    trigger_notification_id uuid,
+    destination_conversation_id uuid NOT NULL,
+    destination_channel text NOT NULL,
+    destination_binding_id uuid,
+    destination_chat_type text NOT NULL,
+    destination_chat_id text NOT NULL,
+    destination_topic_id text NOT NULL,
+    destination_generation bigint NOT NULL,
+    scope text NOT NULL,
+    issued_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    revoked_at timestamp with time zone,
+    CONSTRAINT manager_task_detail_grants_check CHECK ((expires_at > issued_at)),
+    CONSTRAINT manager_task_detail_grants_check1 CHECK (((source_input_id IS NULL) = (source_chat_session_id IS NULL))),
+    CONSTRAINT manager_task_detail_grants_check2 CHECK (((trigger_notification_id IS NULL) = (source_input_id IS NOT NULL))),
+    CONSTRAINT manager_task_detail_grants_check3 CHECK (((scope <> 'write'::text) OR ((destination_chat_type = 'private'::text) AND (source_input_id IS NOT NULL)))),
+    CONSTRAINT manager_task_detail_grants_check4 CHECK ((((destination_channel = 'web'::text) AND (destination_binding_id IS NULL) AND (destination_generation = 0)) OR ((destination_channel <> 'web'::text) AND (destination_binding_id IS NOT NULL) AND (destination_generation > 0) AND (destination_chat_id <> ''::text)))),
+    CONSTRAINT manager_task_detail_grants_destination_channel_check CHECK ((destination_channel = ANY (ARRAY['feishu'::text, 'dingtalk'::text, 'wecom'::text, 'web'::text]))),
+    CONSTRAINT manager_task_detail_grants_destination_chat_type_check CHECK ((destination_chat_type = ANY (ARRAY['private'::text, 'group'::text]))),
+    CONSTRAINT manager_task_detail_grants_scope_check CHECK ((scope = ANY (ARRAY['read'::text, 'write'::text]))),
+    CONSTRAINT manager_task_detail_grants_token_digest_check CHECK ((octet_length(token_digest) = 32))
+);
+
+
+--
+-- Name: manager_task_detail_operations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manager_task_detail_operations (
+    grant_id uuid NOT NULL,
+    action text NOT NULL,
+    request_key text NOT NULL,
+    input_id uuid,
+    outcome text DEFAULT 'accepted'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL
+);
+
+
+--
 -- Name: manager_task_plan_operations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3815,6 +3882,23 @@ CREATE TABLE public.platform_skills (
 
 
 --
+-- Name: platform_task_link_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_task_link_settings (
+    singleton boolean NOT NULL,
+    version bigint NOT NULL,
+    origin text DEFAULT ''::text NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    updated_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_task_link_settings_origin_check CHECK ((length(origin) <= 270)),
+    CONSTRAINT platform_task_link_settings_singleton_check CHECK (singleton),
+    CONSTRAINT platform_task_link_settings_version_check CHECK ((version > 0))
+);
+
+
+--
 -- Name: platform_template_catalog_state; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4577,6 +4661,46 @@ ALTER TABLE ONLY public.manager_task_artifacts
 
 ALTER TABLE ONLY public.manager_task_artifacts
     ADD CONSTRAINT manager_task_artifacts_turn_id_path_version_key UNIQUE (turn_id, path, version);
+
+
+--
+-- Name: manager_task_detail_deliveries manager_task_detail_deliveries_grant_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_deliveries
+    ADD CONSTRAINT manager_task_detail_deliveries_grant_id_key UNIQUE (grant_id);
+
+
+--
+-- Name: manager_task_detail_deliveries manager_task_detail_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_deliveries
+    ADD CONSTRAINT manager_task_detail_deliveries_pkey PRIMARY KEY (delivery_id);
+
+
+--
+-- Name: manager_task_detail_grants manager_task_detail_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_grants
+    ADD CONSTRAINT manager_task_detail_grants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: manager_task_detail_grants manager_task_detail_grants_token_digest_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_grants
+    ADD CONSTRAINT manager_task_detail_grants_token_digest_key UNIQUE (token_digest);
+
+
+--
+-- Name: manager_task_detail_operations manager_task_detail_operations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_operations
+    ADD CONSTRAINT manager_task_detail_operations_pkey PRIMARY KEY (grant_id, action, request_key);
 
 
 --
@@ -5724,6 +5848,14 @@ ALTER TABLE ONLY public.platform_skills
 
 
 --
+-- Name: platform_task_link_settings platform_task_link_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_task_link_settings
+    ADD CONSTRAINT platform_task_link_settings_pkey PRIMARY KEY (singleton);
+
+
+--
 -- Name: platform_template_catalog_state platform_template_catalog_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6046,6 +6178,34 @@ CREATE INDEX manager_sessions_list ON public.manager_sessions USING btree (works
 --
 
 CREATE INDEX manager_sessions_waiting ON public.manager_sessions USING btree (id) WHERE (required_actions <> '[]'::jsonb);
+
+
+--
+-- Name: manager_task_detail_delivery_context; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_task_detail_delivery_context ON public.manager_task_detail_deliveries USING btree (delivery_id) WHERE (context_settled_at IS NULL);
+
+
+--
+-- Name: manager_task_detail_delivery_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_task_detail_delivery_source ON public.manager_task_detail_deliveries USING btree (source_input_id);
+
+
+--
+-- Name: manager_task_detail_grants_expiry_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_task_detail_grants_expiry_idx ON public.manager_task_detail_grants USING btree (expires_at) WHERE (revoked_at IS NULL);
+
+
+--
+-- Name: manager_task_detail_grants_session_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_task_detail_grants_session_idx ON public.manager_task_detail_grants USING btree (session_id, expires_at);
 
 
 --
@@ -7458,6 +7618,110 @@ ALTER TABLE ONLY public.manager_sessions
 
 ALTER TABLE ONLY public.manager_task_artifacts
     ADD CONSTRAINT manager_task_artifacts_turn_id_fkey FOREIGN KEY (turn_id) REFERENCES public.manager_turns(id);
+
+
+--
+-- Name: manager_task_detail_deliveries manager_task_detail_deliveries_delivery_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_deliveries
+    ADD CONSTRAINT manager_task_detail_deliveries_delivery_id_fkey FOREIGN KEY (delivery_id) REFERENCES public.manager_channel_deliveries(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_deliveries manager_task_detail_deliveries_grant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_deliveries
+    ADD CONSTRAINT manager_task_detail_deliveries_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES public.manager_task_detail_grants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_deliveries manager_task_detail_deliveries_source_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_deliveries
+    ADD CONSTRAINT manager_task_detail_deliveries_source_input_id_fkey FOREIGN KEY (source_input_id) REFERENCES public.manager_inputs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_grants manager_task_detail_grants_destination_binding_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_grants
+    ADD CONSTRAINT manager_task_detail_grants_destination_binding_id_fkey FOREIGN KEY (destination_binding_id) REFERENCES public.platform_channel_bindings(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_grants manager_task_detail_grants_destination_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_grants
+    ADD CONSTRAINT manager_task_detail_grants_destination_conversation_id_fkey FOREIGN KEY (destination_conversation_id) REFERENCES public.manager_conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_grants manager_task_detail_grants_source_chat_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_grants
+    ADD CONSTRAINT manager_task_detail_grants_source_chat_session_id_fkey FOREIGN KEY (source_chat_session_id) REFERENCES public.manager_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_grants manager_task_detail_grants_source_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_grants
+    ADD CONSTRAINT manager_task_detail_grants_source_input_id_fkey FOREIGN KEY (source_input_id) REFERENCES public.manager_inputs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_grants manager_task_detail_grants_trigger_notification_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_grants
+    ADD CONSTRAINT manager_task_detail_grants_trigger_notification_id_fkey FOREIGN KEY (trigger_notification_id) REFERENCES public.manager_trigger_notifications(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_grants manager_task_detail_grants_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_grants
+    ADD CONSTRAINT manager_task_detail_grants_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.platform_workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_grants manager_task_detail_grants_workspace_id_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_grants
+    ADD CONSTRAINT manager_task_detail_grants_workspace_id_session_id_fkey FOREIGN KEY (workspace_id, session_id) REFERENCES public.manager_sessions(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_grants manager_task_detail_grants_workspace_id_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_grants
+    ADD CONSTRAINT manager_task_detail_grants_workspace_id_task_id_fkey FOREIGN KEY (workspace_id, task_id) REFERENCES public.manager_tasks(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_operations manager_task_detail_operations_grant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_operations
+    ADD CONSTRAINT manager_task_detail_operations_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES public.manager_task_detail_grants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_task_detail_operations manager_task_detail_operations_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_task_detail_operations
+    ADD CONSTRAINT manager_task_detail_operations_input_id_fkey FOREIGN KEY (input_id) REFERENCES public.manager_inputs(id) ON DELETE SET NULL;
 
 
 --
@@ -9050,6 +9314,14 @@ ALTER TABLE ONLY public.platform_skills
 
 ALTER TABLE ONLY public.platform_skills
     ADD CONSTRAINT platform_skills_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.platform_workspaces(id);
+
+
+--
+-- Name: platform_task_link_settings platform_task_link_settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_task_link_settings
+    ADD CONSTRAINT platform_task_link_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.platform_accounts(id) ON DELETE SET NULL;
 
 
 --

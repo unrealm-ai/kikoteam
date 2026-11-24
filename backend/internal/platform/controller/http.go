@@ -37,6 +37,7 @@ type Server struct {
 	MailSettings     *service.MailSettingsService
 	OAuthApps        *service.OAuthAppService
 	ChannelDownloads *service.ChannelDownloadSettingsService
+	TaskLinks        *service.TaskLinkSettingsService
 	Channels         *service.ChannelService
 	Skills           *service.SkillService
 	Plugins          *service.PluginService
@@ -64,6 +65,7 @@ func (s *Server) Handler() http.Handler {
 	s.mailSettingsRoutes(m)
 	s.oauthAppRoutes(m)
 	s.channelDownloadSettingsRoutes(m)
+	s.taskLinkSettingsRoutes(m)
 	s.channelRoutes(m)
 	s.wecomContactRoutes(m)
 	s.feishuSetupRoutes(m)

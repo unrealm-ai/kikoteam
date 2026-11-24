@@ -1,0 +1,177 @@
+snapshot:
+  get:
+    operationId: getPublicTaskDetail
+    summary: Read a token-scoped execution Session snapshot
+    security:
+    - taskDetailBearer: []
+    responses:
+      '200':
+        $ref: '#/taskResponse'
+      default:
+        $ref: '#/error'
+events:
+  get:
+    operationId: streamPublicTaskDetail
+    summary: Follow a token-scoped execution Session
+    description: Server-sent task.updated events contain the current filtered snapshot. Resume with the last applied cursor issued for the same grant. An older valid cursor receives the current snapshot. On stream.error the server sends a structured error and closes the stream.
+    security:
+    - taskDetailBearer: []
+    parameters:
+    - name: Last-Event-ID
+      in: header
+      schema: { type: string }
+    responses:
+      '200':
+        description: Server-sent events with opaque event IDs and JSON snapshot data.
+        content:
+          text/event-stream:
+            schema: { type: string }
+      default:
+        $ref: '#/error'
+append:
+  post:
+    operationId: appendPublicTaskInput
+    summary: Supplement the existing Task Session with a writable grant
+    description: Defaults to steer. While awaiting human confirmation or a handoff result, the input waits without clearing the execution gate.
+    security:
+    - taskDetailBearer: []
+    parameters:
+    - $ref: '#/idempotency'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [text]
+            properties:
+              text: { type: string, minLength: 1, maxLength: 10000, description: At most 10000 UTF-8 bytes. }
+              delivery_mode: { type: string, enum: [steer, queue], default: steer }
+    responses:
+      '200':
+        $ref: '#/taskResponse'
+      default:
+        $ref: '#/error'
+stop:
+  post:
+    operationId: stopPublicTask
+    summary: Stop the scoped Task Session with a writable grant
+    description: A suspended task cannot be stopped from the public page. The snapshot distinguishes stopping from settled stop.
+    security:
+    - taskDetailBearer: []
+    parameters:
+    - $ref: '#/idempotency'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: false }
+    responses:
+      '200':
+        $ref: '#/taskResponse'
+      default:
+        $ref: '#/error'
+continue:
+  post:
+    operationId: continuePublicTask
+    summary: Explicitly start a new turn in a previously stopped Task Session
+    description: The stopped version must still match, and the earlier execution must be confirmed settled.
+    security:
+    - taskDetailBearer: []
+    parameters:
+    - $ref: '#/idempotency'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [text, stop_version]
+            properties:
+              text: { type: string, minLength: 1, maxLength: 10000, description: At most 10000 UTF-8 bytes. }
+              stop_version: { type: string, minLength: 1 }
+    responses:
+      '200':
+        $ref: '#/taskResponse'
+      default:
+        $ref: '#/error'
+artifact:
+  get:
+    operationId: downloadPublicTaskArtifact
+    summary: Download an artifact exposed by this grant's projection
+    security:
+    - taskDetailBearer: []
+    parameters:
+    - name: artifact_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    responses:
+      '200':
+        description: Authorized artifact content.
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      default:
+        $ref: '#/error'
+idempotency:
+  name: Idempotency-Key
+  in: header
+  required: true
+  schema: { type: string, minLength: 1 }
+taskResponse:
+  description: Public-safe task detail snapshot. This does not expose a workspace, Task, Session or principal ID.
+  content:
+    application/json:
+      schema:
+        $ref: '#/taskSchema'
+taskSchema:
+  type: object
+  additionalProperties: false
+  required: [title, status, permission, can_append, can_stop, can_continue, cursor, activities, activity_truncated, artifacts]
+  properties:
+    title: { type: string }
+    status: { type: string }
+    permission: { type: string, enum: [read, write] }
+    can_append: { type: boolean }
+    can_stop: { type: boolean }
+    can_continue: { type: boolean }
+    stop_version: { type: string }
+    cursor: { type: string }
+    activity_truncated: { type: boolean, description: Older activity was omitted. }
+    activities:
+      type: array
+      maxItems: 120
+      items:
+        type: object
+        additionalProperties: false
+        required: [kind, text, occurred_at]
+        properties:
+          kind: { type: string }
+          text: { type: string }
+          occurred_at: { type: string, format: date-time }
+    artifacts:
+      type: array
+      maxItems: 100
+      items:
+        type: object
+        additionalProperties: false
+        required: [id, name, size]
+        properties:
+          id: { type: string, format: uuid }
+          name: { type: string }
+          size: { type: integer, minimum: 0 }
+    input_receipt:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { type: string, enum: [accepted, queued, admitted] }
+error:
+  description: Structured error. Invalid or expired grants do not reveal whether the task exists.
+  content:
+    application/json:
+      schema:
+        $ref: ../../openapi.yaml#/components/schemas/Error

@@ -169,6 +169,8 @@ func (s *Store) CompleteSharedHistory(ctx context.Context, id string, v service.
 		}
 		seen[m.ID] = true
 	}
+	redactSharedHistoryTaskLinks(v.Page.Items)
+	redactSharedHistoryTaskLinks(v.Page.PendingItems)
 	raw, e := json.Marshal(v.Page)
 	if e != nil {
 		return e
@@ -233,6 +235,7 @@ func (s *Store) ReadSharedGroupHistory(ctx context.Context, id, inputID string) 
 		if e = json.Unmarshal(raw, &page); e != nil {
 			return service.SharedHistoryResult{}, e
 		}
+		redactSharedHistoryTaskLinks(page.Items)
 		out.Items = page.Items
 		out.Coverage = page.Coverage
 	}
@@ -288,4 +291,10 @@ func (s *Store) ContinueSharedGroupHistory(ctx context.Context, id, inputID stri
 		return "", e
 	}
 	return nextID, tx.Commit()
+}
+
+func redactSharedHistoryTaskLinks(items []service.SharedHistoryItem) {
+	for i := range items {
+		items[i].Text = redactTaskDetailBearer(items[i].Text)
+	}
 }

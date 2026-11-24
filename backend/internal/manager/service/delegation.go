@@ -134,6 +134,8 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 		ctx = WithChannelActor(ctx, *scope.Channel)
 	}
 	switch name {
+	case "send_task_detail_card":
+		return d.taskDetailDispatch(ctx, scope, args.TaskID)
 	case "trigger_task_get_result":
 		return d.triggerTaskResults(ctx, scope, args)
 	case "artifact_select":
@@ -182,7 +184,7 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 }
 
 func pinsDelegationInput(name string, args DelegationArgs) bool {
-	return len(args.AttachmentIDs) > 0 || name == "create_session" || name == "send_message" || name == "artifact_select" || name == "trigger_task_get_result"
+	return len(args.AttachmentIDs) > 0 || name == "create_session" || name == "send_message" || name == "artifact_select" || name == "trigger_task_get_result" || name == "send_task_detail_card"
 }
 
 func (d *Delegation) sendTaskMessage(ctx context.Context, scope DelegationScope, v Session, args DelegationArgs) (any, error) {

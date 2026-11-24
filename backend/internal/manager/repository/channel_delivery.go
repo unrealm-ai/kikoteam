@@ -12,6 +12,9 @@ import (
 )
 
 func (s *Store) MaterializeChannelReplies(ctx context.Context) error {
+	if err := s.materializeTaskDetailContexts(ctx); err != nil {
+		return err
+	}
 	if err := s.materializeTaskReplies(ctx); err != nil {
 		return err
 	}
@@ -145,7 +148,10 @@ func markdownReplyProviders(turnStatus, text string) []string {
 	return []string{"feishu", "dingtalk"}
 }
 
-const deliverySelect = `d.id,d.lease_token,d.binding_id,d.connection_generation,n.external_chat_id,n.provider_message_id,n.thread_id,d.text,d.content_format,CASE WHEN d.authorized_at IS NULL THEN (SELECT provider FROM platform_channel_bindings WHERE id=d.binding_id) ELSE d.provider END,n.external_tenant_id,n.chat_type,CASE WHEN n.chat_type='direct' THEN n.sender_id ELSE '' END,COALESCE(d.provider_request_id,''),COALESCE(d.attempt_target_digest,''),COALESCE(d.query_token::text,''),d.kind,COALESCE(d.artifact_id::text,'')`
+const deliverySelect = `d.id,d.lease_token,d.binding_id,d.connection_generation,n.external_chat_id,n.provider_message_id,n.thread_id,d.text,d.content_format,CASE WHEN d.authorized_at IS NULL THEN (SELECT provider FROM platform_channel_bindings WHERE id=d.binding_id) ELSE d.provider END,n.external_tenant_id,n.chat_type,CASE WHEN n.chat_type='direct' THEN n.sender_id ELSE '' END,COALESCE(d.provider_request_id,''),COALESCE(d.attempt_target_digest,''),COALESCE(d.query_token::text,''),d.kind,COALESCE(d.artifact_id::text,''),
+ COALESCE((SELECT x.title FROM manager_task_detail_deliveries x WHERE x.delivery_id=d.id),''),
+ COALESCE((SELECT x.state FROM manager_task_detail_deliveries x WHERE x.delivery_id=d.id),''),
+ COALESCE((SELECT x.presentation FROM manager_task_detail_deliveries x WHERE x.delivery_id=d.id),'')`
 
 func scanDelivery(row scanner) (service.ChannelDelivery, error) {
 	return scanDeliveryLease(row, false)
@@ -153,11 +159,14 @@ func scanDelivery(row scanner) (service.ChannelDelivery, error) {
 
 func scanDeliveryLease(row scanner, authorized bool) (service.ChannelDelivery, error) {
 	var v service.ChannelDelivery
-	var kind string
-	e := row.Scan(&v.ID, &v.LeaseToken, &v.BindingID, &v.ConnectionGeneration, &v.ChatID, &v.ReplyToMessageID, &v.ThreadID, &v.Text, &v.Format, &v.Provider, &v.ExternalTenantID, &v.ChatType, &v.RecipientID, &v.ProviderRequestID, &v.TargetDigest, &v.QueryToken, &kind, &v.ArtifactID)
+	var kind, cardTitle, cardState string
+	e := row.Scan(&v.ID, &v.LeaseToken, &v.BindingID, &v.ConnectionGeneration, &v.ChatID, &v.ReplyToMessageID, &v.ThreadID, &v.Text, &v.Format, &v.Provider, &v.ExternalTenantID, &v.ChatType, &v.RecipientID, &v.ProviderRequestID, &v.TargetDigest, &v.QueryToken, &kind, &v.ArtifactID, &cardTitle, &cardState, &v.Presentation)
+	if cardTitle != "" {
+		v.TaskDetailCard = &service.TaskDetailCard{Title: cardTitle, State: cardState}
+	}
 	// A private task result has its own authorized outbox operation. Address
 	// the original user even if the interactive callback socket has expired.
-	if v.Provider == "wecom" && v.ChatType == "direct" && v.ThreadID == "" && v.ChatID == v.RecipientID && (strings.HasPrefix(kind, "task_reply:") || v.ArtifactID != "") {
+	if v.Provider == "wecom" && v.ChatType == "direct" && v.ThreadID == "" && v.ChatID == v.RecipientID && (strings.HasPrefix(kind, "task_reply:") || strings.HasPrefix(kind, "task_detail:") || v.ArtifactID != "") {
 		v.ReplyToMessageID = ""
 	}
 	// The inbound anchor already formed part of the destination contract.
@@ -194,12 +203,14 @@ func (s *Store) ClaimChannelDeliveries(ctx context.Context, limit int, supportsM
  AND (status='pending' OR (status='leased' AND lease_until<now()))`, maxArtifactDeliveryAttempts); e != nil {
 		return nil, e
 	}
-	media := len(supportsMedia) == 1 && supportsMedia[0]
+	media := len(supportsMedia) > 0 && supportsMedia[0]
+	taskDetail := len(supportsMedia) > 1 && supportsMedia[1]
 	rows, e := tx.QueryContext(ctx, `WITH claimed AS (
  SELECT d.id FROM manager_channel_deliveries d
  WHERE (d.content_format='text' OR ($2 AND d.content_format='markdown') OR ($3 AND d.artifact_id IS NOT NULL))
  AND (d.status='pending' OR (d.status='leased' AND d.lease_until<now()))
  AND (d.artifact_id IS NULL OR d.attempts<$4)
+ AND ($5 OR d.kind NOT LIKE 'task_detail:%')
  AND (d.artifact_id IS NULL OR NOT EXISTS(
    SELECT FROM manager_artifact_selections current JOIN manager_artifact_selections earlier USING (chat_turn_id,inbox_id)
    JOIN manager_channel_deliveries prev ON prev.inbox_id=earlier.inbox_id AND prev.kind='artifact:'||earlier.chat_turn_id||':'||earlier.artifact_id
@@ -207,7 +218,7 @@ func (s *Store) ClaimChannelDeliveries(ctx context.Context, limit int, supportsM
    AND earlier.position<current.position AND prev.status IN ('pending','leased','sending')))
  ORDER BY d.created_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT $1),
  updated AS (UPDATE manager_channel_deliveries d SET status='leased',lease_token=gen_random_uuid(),lease_until=now()+interval '30 seconds',attempts=attempts+1,updated_at=now() FROM claimed WHERE d.id=claimed.id RETURNING d.*)
- SELECT `+deliverySelect+` FROM updated d JOIN manager_channel_inbox n ON n.id=d.inbox_id ORDER BY d.created_at,d.id`, limit, supportsMarkdown, media, maxArtifactDeliveryAttempts)
+ SELECT `+deliverySelect+` FROM updated d JOIN manager_channel_inbox n ON n.id=d.inbox_id ORDER BY d.created_at,d.id`, limit, supportsMarkdown, media, maxArtifactDeliveryAttempts, taskDetail)
 	if e != nil {
 		return nil, e
 	}
@@ -273,6 +284,19 @@ func (s *Store) AuthorizeChannelDelivery(ctx context.Context, id, lease string) 
 	out, e = scanDeliveryLease(tx.QueryRowContext(ctx, `SELECT `+deliverySelect+` FROM manager_channel_deliveries d JOIN manager_channel_inbox n ON n.id=d.inbox_id WHERE d.id=$1`, id), true)
 	if e != nil {
 		return out, e
+	}
+	if e = s.populateTaskDetailCard(ctx, tx, &out, true); e != nil {
+		var issue *service.Error
+		if !errors.As(e, &issue) || issue.Status >= 500 {
+			return service.ChannelDelivery{}, e
+		}
+		if _, cleanupErr := tx.ExecContext(ctx, `UPDATE manager_channel_deliveries SET status='cancelled',error_code=$2,updated_at=now() WHERE id=$1`, id, issue.Code); cleanupErr != nil {
+			return service.ChannelDelivery{}, cleanupErr
+		}
+		if _, cleanupErr := tx.ExecContext(ctx, `UPDATE manager_task_detail_deliveries SET sealed_url=NULL WHERE delivery_id=$1`, id); cleanupErr != nil {
+			return service.ChannelDelivery{}, cleanupErr
+		}
+		return service.ChannelDelivery{}, errors.Join(e, tx.Commit())
 	}
 	out.TargetDigest = deliveryTargetDigest(out)
 	if _, e = tx.ExecContext(ctx, `UPDATE manager_channel_deliveries SET attempt_target_digest=$2 WHERE id=$1`, id, out.TargetDigest); e != nil {

@@ -145,6 +145,9 @@ func (w *Worker) configureChatDelegation(out *pi.Config, input string, cfg integ
 	headers := map[string]string{"Authorization": "Bearer " + cfg.DelegationToken}
 	if cfg.ChatDelegationCatalogToken != "" {
 		route += "?catalog=stable"
+		if cfg.TaskDetailCardEnabled && !cfg.ReportOnly {
+			route += "&task_detail=enabled"
+		}
 		if cfg.ReportOnly {
 			route += "&mode=report"
 		}

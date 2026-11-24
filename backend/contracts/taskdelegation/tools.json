@@ -1,5 +1,17 @@
 [
   {
+    "name": "send_task_detail_card",
+    "description": "Send a task detail card to this authorized channel conversation for an exact task_id from a task creation receipt or task query. Use only when the user explicitly asks for the detail link or a multi-step task benefits from live follow-up. Do not use for simple status questions or an ambiguous task reference. The platform selects recipient and access; no URL is returned. Queued means requested, not delivered.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id"],
+      "properties": {
+        "task_id": {"type": "string", "format": "uuid"}
+      }
+    }
+  },
+  {
     "name": "work_item_get_current",
     "description": "Read the linked work item for an exact task_id delegated by this conversation. Returns the current employee, goal, acceptance criteria, requirements_version and latest amendment delivery if available, plus an opaque amendment_basis for this user input. Clarify ambiguous task references. Read-only; never infer delivery or completion.",
     "inputSchema": {

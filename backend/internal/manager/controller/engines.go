@@ -157,6 +157,14 @@ func (s *Server) harnessConfig(r *http.Request) (any, int, error) {
 		err = s.signTaskContextCredentials(&v, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
 	}
 	if err == nil && v.Mode == "chat" {
+		if v.ChatCatalogChannel && !v.ReportOnly && !v.ConfirmationOnly {
+			if settings, ok := s.Service.Store.(interface {
+				TaskDetailLinksEnabled(context.Context) (bool, error)
+			}); ok {
+				enabled, settingsErr := settings.TaskDetailLinksEnabled(ctx)
+				v.TaskDetailCardEnabled = settingsErr == nil && enabled
+			}
+		}
 		err = s.signChatCredentials(&v, q.Get("input_id"), service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
 	}
 	if err == nil && v.HumanTools {

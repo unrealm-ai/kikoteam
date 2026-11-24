@@ -154,7 +154,8 @@ func Run(stderr io.Writer, version string) int {
 	templates := &service.TemplateService{Store: &repository.TemplateStore{DB: db, EnsureKey: proxySecrets.EnsureKey}, Assets: assets}
 	admins := &service.AdminService{Store: &repository.AdminStore{DB: db}}
 	wecomGroupStore := &repository.WecomGroupRefreshStore{DB: db}
-	api := (&controller.Server{Catalog: &repository.ResourceCatalog{DB: db, Assets: assets, Plugins: plugins}, SharingPolicies: &service.GroupSharingService{Store: &repository.GroupSharingStore{DB: db}}, PeopleSelectors: &service.PeopleSelectorService{Secret: []byte(secret), Channels: channels, Wecom: wecomContacts, Store: repository.NewPeopleSelectorStore(db, []byte(secret))}, GroupSelectors: &service.GroupSelectorService{Store: repository.NewGroupSelectorStore(db), Secret: []byte(secret)}, WecomGroups: &service.WecomGroupRefresh{Channels: channels, Store: wecomGroupStore}, ChannelGroups: &service.ChannelGroupDiscovery{Channels: channels, Store: &repository.ChannelGroupCache{DB: db}, Provider: &feishugroups.Client{}}, AgentUsage: &service.AgentUsageService{Store: &repository.AgentUsageStore{DB: db}}, WebGroups: &service.WebGroupService{Store: &repository.WebGroupStore{DB: db}}, WecomContacts: wecomContacts, Official: official, Templates: templates, Admin: admins, Channels: channels, FeishuSetup: feishuSetup, DingTalkSetup: dingtalkSetup, Skills: skills, Plugins: plugins, Packages: packages, Agents: &service.AgentService{Store: &repository.AgentStore{DB: db, EnsureKey: proxySecrets.EnsureKey}}, Models: models, Auth: auth, Workspaces: ws, Origin: origin, SecureCookies: u.Scheme == "https", Logger: log, TrustedProxies: proxies, MailSettings: mailSettings, OAuthApps: oauthApps, ChannelDownloads: &service.ChannelDownloadSettingsService{Store: &repository.ChannelDownloadSettingsStore{DB: db}}}).Handler()
+	taskLinks := &service.TaskLinkSettingsService{Store: &repository.TaskLinkSettingsStore{DB: db}}
+	api := (&controller.Server{TaskLinks: taskLinks, Catalog: &repository.ResourceCatalog{DB: db, Assets: assets, Plugins: plugins}, SharingPolicies: &service.GroupSharingService{Store: &repository.GroupSharingStore{DB: db}}, PeopleSelectors: &service.PeopleSelectorService{Secret: []byte(secret), Channels: channels, Wecom: wecomContacts, Store: repository.NewPeopleSelectorStore(db, []byte(secret))}, GroupSelectors: &service.GroupSelectorService{Store: repository.NewGroupSelectorStore(db), Secret: []byte(secret)}, WecomGroups: &service.WecomGroupRefresh{Channels: channels, Store: wecomGroupStore}, ChannelGroups: &service.ChannelGroupDiscovery{Channels: channels, Store: &repository.ChannelGroupCache{DB: db}, Provider: &feishugroups.Client{}}, AgentUsage: &service.AgentUsageService{Store: &repository.AgentUsageStore{DB: db}}, WebGroups: &service.WebGroupService{Store: &repository.WebGroupStore{DB: db}}, WecomContacts: wecomContacts, Official: official, Templates: templates, Admin: admins, Channels: channels, FeishuSetup: feishuSetup, DingTalkSetup: dingtalkSetup, Skills: skills, Plugins: plugins, Packages: packages, Agents: &service.AgentService{Store: &repository.AgentStore{DB: db, EnsureKey: proxySecrets.EnsureKey}}, Models: models, Auth: auth, Workspaces: ws, Origin: origin, SecureCookies: u.Scheme == "https", Logger: log, TrustedProxies: proxies, MailSettings: mailSettings, OAuthApps: oauthApps, ChannelDownloads: &service.ChannelDownloadSettingsService{Store: &repository.ChannelDownloadSettingsStore{DB: db}}}).Handler()
 	mux := http.NewServeMux()
 	controller.ChannelInternalRoutes(mux, channels, hubToken)
 	controller.WecomGroupRefreshInternalRoutes(mux, wecomGroupStore, hubToken)
@@ -331,6 +332,13 @@ func webFiles(dir string) http.Handler {
 		}
 		if strings.HasPrefix(r.URL.Path, "/webhooks/") || strings.HasPrefix(r.URL.Path, "/mcp/") {
 			http.NotFound(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/tasks/") {
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Referrer-Policy", "no-referrer")
+			w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
+			http.ServeFile(w, r, filepath.Join(dir, "index.html"))
 			return
 		}
 		path := filepath.Join(dir, filepath.Clean("/"+r.URL.Path))

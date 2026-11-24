@@ -208,6 +208,9 @@ func (s *Store) CompleteChannelHistory(ctx context.Context, id string, v service
 	if !allowed {
 		v.Snapshot = service.ChannelHistorySnapshot{Status: "unavailable", Items: []service.ChannelHistoryItem{}, ErrorCode: "access_revoked"}
 	}
+	for i := range v.Snapshot.Items {
+		v.Snapshot.Items[i].Text = redactTaskDetailBearer(v.Snapshot.Items[i].Text)
+	}
 	raw, e := json.Marshal(v.Snapshot)
 	if e != nil {
 		return e

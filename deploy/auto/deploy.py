@@ -13,8 +13,6 @@ import tempfile
 import time
 from urllib.parse import urlsplit
 
-from admission import SCHEMA, acquire_sql, busy_query, release_sql
-
 ROOT = Path("/opt/kikoteam")
 STATE = ROOT / ".deploy"
 CURRENT = STATE / "current.json"
@@ -153,8 +151,10 @@ def stage_success(metadata):
 
 
 def image_tag(revision):
+    if revision.get("source") == "mac":
+        return "mac-" + revision["sha"][:7]
     tag = revision.get("local_tag", revision["sha"][:7])
-    if tag != revision["sha"][:7] and not VERSION_TAG.fullmatch(tag):
+    if tag != revision["sha"][:7] and not VERSION_TAG.fullmatch(tag) and not re.fullmatch(r"run-[1-9][0-9]*", tag):
         raise ValueError("Invalid local deployment image tag")
     return tag
 
@@ -165,6 +165,13 @@ def image_ref(app, revision):
 
 def verified_image(app, target):
     tag = image_ref(app, target)
+    if target.get("source") == "mac":
+        # The development host also has a locally imported rollback baseline.
+        info, = json.loads(output("docker", "image", "inspect", tag))
+        digest = target["digests"][app]
+        return (info["Os"] == "linux" and info["Architecture"] == "amd64"
+                and info["Config"]["Labels"]["org.opencontainers.image.revision"] == target["sha"]
+                and (info["Id"] == digest or f"{REGISTRY}/{app}@{digest}" in (info.get("RepoDigests") or [])))
     fmt = '{{json .RepoDigests}} {{index .Config.Labels "org.opencontainers.image.revision"}}'
     proc = subprocess.run(["docker", "image", "inspect", "--format", fmt, tag],
                           capture_output=True, text=True, timeout=60)
@@ -250,69 +257,7 @@ def http_status(host, path):
         c.close()
 
 
-def engine_idle():
-    listing = output("docker", "top", container("agent-engine"), "-eo", "pid,ppid,args")
-    processes = {}
-    for line in listing.splitlines()[1:]:
-        pid, parent, args = line.split(None, 2)
-        processes[pid] = (parent, args)
-    engines = [pid for pid, (_, a) in processes.items()
-               if a.split() == ["/opt/kikoteam/agent-engine/bin/agent-engine"]]
-    if len(engines) != 1:
-        return False
-    engine = engines[0]
-    init = processes[engine][0]
-    runners = {pid for pid, (parent, a) in processes.items() if parent == engine and
-               re.fullmatch(r"/opt/kikoteam/sandbox-runner/bin/sandbox-runner --config /tmp/ke-[^ /]+/runner.json", a)}
-    for pid, (parent, args) in processes.items():
-        if pid in {engine, init} or pid in runners:
-            continue
-        if parent in runners and re.fullmatch(
-            r"node --disable-warning=ExperimentalWarning /opt/kikoteam/sandbox-runner/builtin-mcp/dist/http-main\.js --config \S+", args
-        ):
-            continue
-        if args.startswith("node -e fetch('http://127.0.0.1:8083/readyz')"):
-            continue
-        return False
-    return True
-
-
-def idle():
-    busy = sql("SET statement_timeout='8s'; " + busy_query() + ";")
-    if busy:
-        print("Deferred; active work:", ", ".join(busy.splitlines()))
-        return False
-    if not engine_idle():
-        print("Deferred; unaccounted Engine processes")
-        return False
-    return True
-
-
-def hold(host):
-    atomic(MAINTENANCE, b"")
-    if http_status(host, "/api/v1/auth/options") != 503:
-        raise RuntimeError("Nginx did not close public admission")
-    # Nginx opens a loopback upstream connection for each proxied request.
-    # An upload, callback or stream admitted before the marker must finish.
-    for _ in range(5):
-        if not output("ss", "-Htn", "state", "established", "dport", "=", ":18081"):
-            break
-        time.sleep(1)
-    else:
-        print("Deferred; open upstream requests")
-        return False
-    try:
-        fenced = sql(acquire_sql()) == "FENCED"
-    except RuntimeError as exc:
-        if "lock timeout" in str(exc) or "deadlock detected" in str(exc):
-            print("Deferred; a concurrent database transaction held the admission locks")
-            return False
-        raise
-    return fenced and engine_idle()
-
-
 def reopen():
-    sql(release_sql())
     MAINTENANCE.unlink(missing_ok=True)
     PENDING.unlink(missing_ok=True)
 
@@ -369,9 +314,9 @@ def switch_tag(old, new):
 def stop(app):
     cid = container(app)
     run(*COMPOSE, "stop", app, timeout=150)
-    state = output("docker", "inspect", "-f", "{{.State.Status}} {{.State.ExitCode}}", cid)
-    if state not in ("exited 0", "exited 143"):
-        raise RuntimeError(f"{app}: unexpected shutdown: {state}")
+    state = output("docker", "inspect", "-f", "{{.State.Status}}", cid)
+    if state != "exited":
+        raise RuntimeError(f"{app}: container did not stop: {state}")
 
 
 def start(*apps):
@@ -381,9 +326,9 @@ def start(*apps):
 
 def tick():
     if PENDING.exists():
-        if read(PENDING)["phase"] == "admission":
+        if read(PENDING)["phase"] == "preparing":
             reopen()  # Previous process died before it could stop any service.
-            print("Recovered pre-cutover admission")
+            print("Reopened ingress after interrupted preparation")
         else:
             if not MAINTENANCE.exists():
                 atomic(MAINTENANCE, b"")
@@ -397,48 +342,36 @@ def tick():
     if target["sha"] == current["sha"] and target.get("digests") == current.get("digests"):
         if "local_tag" in current:
             target = dict(target, local_tag=image_tag(current))
-        healthy(target)
-        atomic(CURRENT, target)
-        return
-    if image_tag(target) == image_tag(current):
+    elif image_tag(target) == image_tag(current):
         # Keep the running/rollback tag pinned while preparing different
         # verified content, even if the source revision is unchanged.
-        version = target.get("version")
-        if not version or not VERSION_TAG.fullmatch(version):
-            raise ValueError("Target short SHA collides with the installed version")
-        target = dict(target, local_tag=version)
+        target = dict(target, local_tag=target.get("version") or f"run-{target['run']}")
     print(f"Preparing run {target['run']} {target['sha'][:7]}")
     data, host = configuration(current)
     space_check(data)
     if shutil.disk_usage("/var/lib/docker").free < 2 * 1024**3:
         raise RuntimeError("Less than 2 GiB available for pulling images")
     pull(target)
-    healthy(current)
-    if not idle():
-        return
     space_check(data)
     if release() != published_target:
         print("Deployment pointer changed during preparation; retrying newest release next tick")
         return
-    if MAINTENANCE.exists() or sql(f"SELECT to_regnamespace('{SCHEMA}') IS NOT NULL;") != "f":
-        raise RuntimeError("Unexpected existing maintenance gate")
-    record = {"from": current, "to": target, "phase": "admission"}
+    if MAINTENANCE.exists():
+        raise RuntimeError("Unexpected existing maintenance marker")
+    record = {"from": current, "to": target, "phase": "preparing"}
     atomic(PENDING, record)
     try:
-        fenced = hold(host)
+        atomic(MAINTENANCE, b"")
+        if http_status(host, "/api/v1/auth/options") != 503:
+            raise RuntimeError("Nginx did not close public ingress")
     except Exception:
         reopen()
         raise
-    if not fenced:
-        reopen()
-        print("Deferred; final admission check did not confirm idle")
-        return
     folder = BACKUPS / f"run-{current['run']}-before-{target['run']}-{time.time_ns()}"
     record.update(phase="cutover", backup=str(folder))
     atomic(PENDING, record)
     for app in ("agent-engine", "event-hub", "backend"):
         stop(app)
-    sql(release_sql())  # All writers stopped; keep the temporary fence out of backups.
     backup(folder, data, current)
     switch_tag(current, target)
     start("backend")
@@ -481,8 +414,6 @@ def main():
         revision = pending[args.recover]
         _, host = configuration(revision)
         healthy(revision)
-        if sql(f"SELECT to_regnamespace('{SCHEMA}') IS NOT NULL;") != "f":
-            raise ValueError("Restore the database or release the old task fence before recovery")
         publish_healthy(revision, host)
         print("Resumed verified deployment", revision["run"], revision["sha"][:7])
     elif args.check:
@@ -491,7 +422,7 @@ def main():
         configuration(current)
         healthy(current)
         print("Installed:", current["run"], current["sha"][:7], "available:", target["run"], target["sha"][:7],
-              "idle:", idle(), "paused:", PENDING.exists())
+              "paused:", PENDING.exists())
     else:
         tick()
 

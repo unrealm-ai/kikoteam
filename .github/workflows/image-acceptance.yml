@@ -159,11 +159,8 @@ jobs:
           ENGINE_IMAGE_ID: ${{ steps.images.outputs.agent_engine }}
           POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: bash deploy/auto/image-smoke.sh
-      - name: Verify single-host deployment admission against the image's schema
-        run: |
-          pg_bin=$(pg_config --bindir)
-          test -x "$pg_bin/initdb" && test -x "$pg_bin/pg_ctl"
-          KIKO_TEST_POSTGRES_BIN="$pg_bin" python3 deploy/auto/test_deploy.py -v
+      - name: Verify single-host release deployment and recovery
+        run: python3 deploy/auto/test_deploy.py -v
       - name: Compile the deterministic runtime acceptance test
         working-directory: backend
         run: CGO_ENABLED=0 go test -c -o "$RUNNER_TEMP/runtime.test" ./internal/platform/repository

@@ -1,7 +1,6 @@
-"""Exercise deployment ordering and the write fence against the real schema."""
+"""Exercise release selection, deployment ordering and recovery."""
 from contextlib import ExitStack
 import json
-import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -9,7 +8,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import admission
 import deploy
 
 
@@ -24,24 +22,27 @@ class DeploymentTest(unittest.TestCase):
         self.new = {"run": 53, "sha": "2" * 40}
         deploy.atomic(deploy.CURRENT, self.old)
         self.mock = {}
-        for name in ("release", "configuration", "space_check", "pull", "healthy", "idle",
-                     "hold", "sql", "stop", "backup", "switch_tag", "start", "run", "output",
+        for name in ("release", "configuration", "space_check", "pull", "healthy",
+                     "sql", "stop", "backup", "switch_tag", "start", "run", "output",
                      "http_status"):
             self.mock[name] = stack.enter_context(patch.object(deploy, name))
         stack.enter_context(patch.object(deploy.shutil, "disk_usage", return_value=SimpleNamespace(free=8 * 1024**3)))
         self.mock["release"].return_value = self.new
         self.mock["configuration"].return_value = self.root, "test"
-        self.mock["sql"].return_value = "f"
+        self.mock["sql"].side_effect = AssertionError("unexpected database query outside backup sizing")
+        self.mock["http_status"].side_effect = [503, 200]
+        self.mock["output"].return_value = '{"phase":"running"}'
 
     def test_older_and_failed_pull_leave_service_online(self):
-        self.mock["release"].return_value = self.old
-        deploy.tick()
-        self.mock["pull"].assert_not_called()
+        for number in (50, 51):
+            self.mock["release"].return_value = dict(self.new, run=number)
+            deploy.tick()
+            self.mock["pull"].assert_not_called()
         self.mock["release"].return_value = self.new
         self.mock["pull"].side_effect = RuntimeError("registry unavailable")
         with self.assertRaises(RuntimeError):
             deploy.tick()
-        self.mock["hold"].assert_not_called()
+        self.mock["http_status"].assert_not_called()
         self.mock["stop"].assert_not_called()
         self.assertFalse(deploy.PENDING.exists())
 
@@ -102,13 +103,9 @@ class DeploymentTest(unittest.TestCase):
         deploy.atomic(deploy.CURRENT, current)
         self.mock["release"].return_value = target
         selected = dict(target, local_tag="v1.2.3")
-        self.mock["idle"].return_value = True
-        self.mock["output"].return_value = '{"phase":"running"}'
-        self.mock["http_status"].return_value = 200
         deploy.tick()
         self.mock["pull"].assert_called_once_with(selected)
-        self.assertEqual([call.args[0] for call in self.mock["healthy"].call_args_list],
-                         [current, selected])
+        self.mock["healthy"].assert_called_once_with(selected)
         self.mock["backup"].assert_called_once()
         self.assertEqual(self.mock["backup"].call_args.args[2], current)
         self.mock["switch_tag"].assert_called_once_with(current, selected)
@@ -116,19 +113,47 @@ class DeploymentTest(unittest.TestCase):
         self.assertTrue(deploy.image_ref("backend", current).endswith(":1111111"))
         self.assertTrue(deploy.image_ref("backend", selected).endswith(":v1.2.3"))
 
-    def test_busy_at_final_check_reopens(self):
-        def busy(host):
-            deploy.MAINTENANCE.touch()
-            return False
-        self.mock["hold"].side_effect = busy
+    def test_higher_run_restarts_even_with_identical_images(self):
+        self.new = dict(self.old, run=52)
+        self.mock["release"].return_value = self.new
         deploy.tick()
+        self.assertEqual([c.args[0] for c in self.mock["stop"].call_args_list],
+                         ["agent-engine", "event-hub", "backend"])
+        self.mock["backup"].assert_called_once()
+        self.mock["healthy"].assert_called_once_with(self.new)
+        self.assertEqual(deploy.read(deploy.CURRENT), self.new)
+        self.assertFalse(deploy.PENDING.exists())
+
+    def test_main_release_with_colliding_short_sha_keeps_rollback_tag(self):
+        target = dict(self.new, sha=self.old["sha"][:7] + "a" * 33)
+        self.mock["release"].return_value = target
+        deploy.tick()
+        deployed = deploy.read(deploy.CURRENT)
+        self.assertTrue(deploy.image_ref("backend", deployed).endswith(":run-53"))
+        self.mock["switch_tag"].assert_called_once_with(self.old, deployed)
+
+    def test_locally_imported_rollback_image_uses_recorded_digest(self):
+        baseline = dict(self.old, source="mac", digests={"backend": "sha256:" + "a" * 64})
+        tag = deploy.image_ref("backend", baseline)
+        self.assertTrue(tag.endswith(":mac-1111111"))
+        image = {"Os": "linux", "Architecture": "amd64", "Id": baseline["digests"]["backend"],
+                 "Config": {"Labels": {"org.opencontainers.image.revision": baseline["sha"]}}}
+        self.mock["output"].return_value = json.dumps([image])
+        self.assertTrue(deploy.verified_image("backend", baseline))
+        self.mock["output"].assert_called_once_with("docker", "image", "inspect", tag)
+        self.mock["output"].return_value = json.dumps([dict(image, Id="other")])
+        self.assertFalse(deploy.verified_image("backend", baseline))
+
+    def test_maintenance_failure_before_stop_reopens(self):
+        self.mock["http_status"].side_effect = [200]
+        with self.assertRaisesRegex(RuntimeError, "public ingress"):
+            deploy.tick()
         self.mock["stop"].assert_not_called()
         self.assertFalse(deploy.MAINTENANCE.exists())
         self.assertFalse(deploy.PENDING.exists())
         self.assertEqual(deploy.read(deploy.CURRENT), self.old)
 
     def test_failed_migration_pauses_future_attempts(self):
-        self.mock["hold"].side_effect = lambda host: deploy.MAINTENANCE.touch() or True
         self.mock["output"].return_value = '{"phase":"failed"}'
         with self.assertRaises(RuntimeError):
             deploy.tick()
@@ -145,56 +170,12 @@ class DeploymentTest(unittest.TestCase):
     def test_failed_ingress_does_not_record_success(self):
         deploy.MAINTENANCE.touch()
         deploy.PENDING.touch()
-        self.mock["http_status"].return_value = 502
+        self.mock["http_status"].side_effect = [502]
         with self.assertRaises(RuntimeError):
             deploy.publish_healthy(self.new, "test")
         self.assertTrue(deploy.PENDING.exists())
         self.assertTrue(deploy.MAINTENANCE.exists())
         self.assertEqual(deploy.read(deploy.CURRENT), self.old)
-
-
-@unittest.skipUnless(os.getenv("KIKO_TEST_POSTGRES_BIN"), "set KIKO_TEST_POSTGRES_BIN to run isolated PostgreSQL")
-class AdmissionTest(unittest.TestCase):
-    def test_concurrent_writer_and_busy_and_idle(self):
-        pg = Path(os.environ["KIKO_TEST_POSTGRES_BIN"])
-        schema = Path(__file__).resolve().parents[2] / "event-hub/database/postgres/schema.sql"
-        # macOS has a short maximum Unix socket pathname.
-        with tempfile.TemporaryDirectory(dir="/tmp") as folder:
-            cluster = Path(folder) / "pg"
-            subprocess.run([pg / "initdb", "-D", cluster, "-A", "trust", "--no-locale"],
-                           check=True, stdout=subprocess.DEVNULL)
-            subprocess.run([pg / "pg_ctl", "-D", cluster, "-l", cluster / "server.log",
-                            "-o", f"-k {folder} -c listen_addresses=''", "-w", "start"], check=True)
-            try:
-                psql = [pg / "psql", "-h", folder, "-d", "postgres", "-XqAt", "-v", "ON_ERROR_STOP=1"]
-                def sql(query):
-                    return subprocess.run(psql, input=query, capture_output=True, text=True)
-                subprocess.run([*psql, "-f", schema], check=True, stdout=subprocess.DEVNULL)
-                with subprocess.Popen(psql, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as writer:
-                    writer.stdin.write("BEGIN; LOCK public.manager_tasks IN ROW EXCLUSIVE MODE;\n\\echo READY\n")
-                    writer.stdin.flush()
-                    self.assertEqual(writer.stdout.readline().strip(), "READY")
-                    result = sql(admission.acquire_sql())
-                    writer.communicate("ROLLBACK;\n")
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("lock timeout", result.stderr)
-                insert = """INSERT INTO platform_model_probe_leases VALUES
-                    (gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),now()+interval '1 minute');"""
-                result = sql("SET session_replication_role=replica; " + insert)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(sql(admission.acquire_sql()).stdout.strip(), "BUSY")
-                self.assertEqual(sql("DELETE FROM platform_model_probe_leases").returncode, 0)
-                result = sql(admission.acquire_sql())
-                self.assertEqual(result.stdout.strip(), "FENCED", result.stderr)
-                for table in admission.TABLES:
-                    result = sql(f"INSERT INTO public.{table} DEFAULT VALUES")
-                    self.assertIn("deployment in progress", result.stderr, table)
-                result = sql(admission.release_sql())
-                self.assertEqual(result.returncode, 0, result.stderr)
-                result = sql("SET session_replication_role=replica; " + insert)
-                self.assertEqual(result.returncode, 0, result.stderr)
-            finally:
-                subprocess.run([pg / "pg_ctl", "-D", cluster, "-m", "fast", "-w", "stop"], check=True)
 
 
 if __name__ == "__main__":

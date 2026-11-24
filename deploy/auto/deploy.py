@@ -108,27 +108,27 @@ def stage_success(metadata):
                 "status": "completed", "conclusion": "success", "path": ".github/workflows/images.yml"}
     ref = metadata.get("head_branch") or ""
     version = ref.removeprefix("refs/tags/")
-    legacy = ref == "main"
+    main_push = ref == "main"
     if (any(metadata.get(k) != v for k, v in required.items())
             or metadata["head_repository"]["full_name"] != "unrealm-ai/kikoteam"
-            or (not legacy and not VERSION_TAG.fullmatch(version))):
-        raise ValueError("Expected a successful tagged image workflow from the deployment repository")
+            or (not main_push and not VERSION_TAG.fullmatch(version))):
+        raise ValueError("Expected a successful main or version-tag image workflow from the deployment repository")
     sha, number = metadata["head_sha"], metadata["run_number"]
     if type(number) is not int or number < 1 or not re.fullmatch("[0-9a-f]{40}", sha):
         raise ValueError("Invalid GitHub run metadata")
     current, available = read(CURRENT), release()
     previous_number = max(current["run"], available["run"])
-    candidate_version = () if legacy else version_order(version)
-    for state in (current, available):
-        if not legacy and state.get("version") == version and state["sha"] == sha:
+    if main_push:
+        if number <= previous_number:
             print("Accepted release already known")
             return
-        if "version" in state and candidate_version <= version_order(state["version"]):
-            raise ValueError("Cannot stage a release older than or conflicting with the accepted version")
-    if legacy and number <= previous_number:
-        print("Accepted release already known")
-        return
-    if not legacy:
+    else:
+        for state in (current, available):
+            if state.get("version") == version and state["sha"] == sha:
+                print("Accepted release already known")
+                return
+            if "version" in state and version_order(version) <= version_order(state["version"]):
+                raise ValueError("Cannot stage a release older than or conflicting with the accepted version")
         number = max(number, previous_number + 1)
     digests = {}
     for app in APPS:
@@ -136,17 +136,17 @@ def stage_success(metadata):
         def index(tag):
             return subprocess.check_output(["docker", "buildx", "imagetools", "inspect", "--raw",
                                             image + ":" + tag], timeout=90)
-        raw = index(sha[:7] if legacy else version)
+        raw = index(sha[:7] if main_push else version)
         if raw != index("latest"):
             raise ValueError(f"{app}: latest and successful release indexes differ")
-        if not legacy:
+        if not main_push:
             annotations = json.loads(raw).get("annotations", {})
             if (annotations.get("org.opencontainers.image.revision") != sha
                     or annotations.get("org.opencontainers.image.version") != version):
                 raise ValueError(f"{app}: image index does not match the successful tag and revision")
         digests[app] = "sha256:" + hashlib.sha256(raw).hexdigest()
     target = {"run": number, "sha": sha, "digests": digests}
-    if not legacy:
+    if not main_push:
         target["version"] = version
     atomic(STAGED, target)
     print("Staged verified run for normal timer processing", number, sha[:7])

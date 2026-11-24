@@ -2,6 +2,7 @@ name: Publish images
 
 on:
   push:
+    branches: [main]
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
 
 permissions:
@@ -9,6 +10,7 @@ permissions:
 
 jobs:
   qualify:
+    if: ${{ !github.event.deleted }}
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.tag.outputs.version }}
@@ -18,19 +20,23 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Require a strict release tag on main history
+      - name: Identify the pushed main commit or release tag
         id: tag
         run: |
           set -euo pipefail
-          version=$GITHUB_REF_NAME
-          if [[ ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || ${#version} -gt 128 ]]; then
-            echo "::error::Release tag must be vX.Y.Z with no leading zeros and fit the 128-character registry limit."
-            exit 1
-          fi
           sha=$(git rev-parse HEAD^{commit})
-          if ! git merge-base --is-ancestor "$sha" refs/remotes/origin/main; then
-            echo "::error::Release tag must point to a commit on main history."
-            exit 1
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            version=$sha
+          else
+            version=$GITHUB_REF_NAME
+            if [[ "$GITHUB_REF_TYPE" != tag || ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || ${#version} -gt 128 ]]; then
+              echo "::error::Expected main or a strict vX.Y.Z tag."
+              exit 1
+            fi
+            git merge-base --is-ancestor "$sha" refs/remotes/origin/main || {
+              echo "::error::Release tag must point to a commit on main history."
+              exit 1
+            }
           fi
           printf 'version=%s\ncommit_sha=%s\n' "$version" "$sha" >> "$GITHUB_OUTPUT"
 
@@ -173,7 +179,7 @@ jobs:
       candidate_digests: ${{ needs.candidate.outputs.digests }}
 
   release:
-    name: Promote accepted version, latest and deployment pointer
+    name: Publish accepted images
     needs: [qualify, candidate, acceptance]
     runs-on: ubuntu-24.04
     permissions:
@@ -201,18 +207,24 @@ jobs:
           semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           digest_pattern='^sha256:[0-9a-f]{64}$'
           apps=(backend event-hub agent-engine)
-          [[ "$VERSION" =~ $semver && "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ && "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]*$ ]]
-          # Reject a moved/deleted tag even if it changed while the tests ran.
-          remote=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq '.object | [.type, .sha] | @tsv')
-          read -r type remote_sha <<< "$remote"
-          for _ in {1..8}; do
-            if [[ "$type" != tag ]]; then break; fi
-            remote=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$remote_sha" --jq '.object | [.type, .sha] | @tsv')
+          [[ "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ && "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          aliases=("$VERSION")
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            [[ "$VERSION" == "$COMMIT_SHA" ]]
+            aliases+=("${COMMIT_SHA:0:7}")
+          else
+            [[ "$GITHUB_REF" == "refs/tags/$VERSION" && "$VERSION" =~ $semver ]]
+            remote=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq '.object | [.type, .sha] | @tsv')
             read -r type remote_sha <<< "$remote"
-          done
-          if [[ "$type" != commit || "$remote_sha" != "$COMMIT_SHA" ]]; then
-            echo "::error::Release tag no longer points to the accepted commit."
-            exit 1
+            for _ in {1..8}; do
+              if [[ "$type" != tag ]]; then break; fi
+              remote=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$remote_sha" --jq '.object | [.type, .sha] | @tsv')
+              read -r type remote_sha <<< "$remote"
+            done
+            [[ "$type" == commit && "$remote_sha" == "$COMMIT_SHA" ]] || {
+              echo "::error::Release tag no longer points to the accepted commit."
+              exit 1
+            }
           fi
 
           # Only a proven missing manifest permits creating a new alias.
@@ -237,9 +249,6 @@ jobs:
           digest_of() {
             printf 'sha256:%s\n' "$(sha256sum "$1" | cut -d' ' -f1)"
           }
-          newer_than() {
-            [[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | LC_ALL=C sort -V | tail -n 1)" == "$1" ]]
-          }
           verify_index() {
             local app=$1 digest=$2
             [[ "$digest" =~ $digest_pattern ]]
@@ -257,49 +266,23 @@ jobs:
           pointer="$RUNNER_TEMP/pointer.json"
           version_key=$(printf '%s' "$VERSION" | sha256sum | cut -d' ' -f1)
           bundle="$base/backend:accepted-$version_key"
-          write_latest=yes
           publish_run=$GITHUB_RUN_NUMBER
           gh_run=$GITHUB_RUN_NUMBER
-          if read_ref "$base/backend:verified-deploy" "$pointer"; then
+          if [[ "$GITHUB_REF" == refs/heads/main ]] && read_ref "$base/backend:verified-deploy" "$pointer"; then
             previous_run=$(jq -er '.annotations["io.kikoteam.run"]' "$pointer")
             [[ "$previous_run" =~ ^[1-9][0-9]*$ ]]
             if (( publish_run <= previous_run )); then
               publish_run=$((previous_run + 1))
             fi
-            previous=$(jq -er '.annotations["io.kikoteam.version"] // ""' "$pointer")
-            if [[ -n "$previous" ]]; then
-              [[ "$previous" =~ $semver ]]
-              if newer_than "$previous" "$VERSION"; then write_latest=no; fi
-              if [[ "$previous" == "$VERSION" && "$(revision_of "$pointer")" != "$COMMIT_SHA" ]]; then
-                echo "::error::Deployment pointer already uses a different revision for $VERSION."
-                exit 1
-              fi
-              if [[ "$previous" == "$VERSION" ]]; then
-                publish_run=$previous_run
-                gh_run=$(jq -er '.annotations["io.kikoteam.github-run"]' "$pointer")
-              fi
+            if [[ "$(version_of "$pointer")" == "$COMMIT_SHA" && "$(revision_of "$pointer")" == "$COMMIT_SHA" ]]; then
+              publish_run=$previous_run
+              gh_run=$(jq -er '.annotations["io.kikoteam.github-run"]' "$pointer")
             fi
           fi
-          # Check every latest alias: even a partial newer promotion must not
-          # be reversed by an old run. Only the initial amd64 aliases lack version.
-          for app in "${apps[@]}"; do
-            if read_ref "$base/$app:latest" "$existing"; then
-              previous=$(version_of "$existing")
-              if [[ -n "$previous" ]]; then
-                [[ "$previous" =~ $semver ]]
-                if newer_than "$previous" "$VERSION"; then write_latest=no; fi
-                if [[ "$previous" == "$VERSION" && "$(revision_of "$existing")" != "$COMMIT_SHA" ]]; then
-                  echo "::error::Existing $app:latest uses a different revision for $VERSION."
-                  exit 1
-                fi
-              fi
-            fi
-          done
           # An accepted, per-version checkpoint is written before aliases. A
           # retry recovers the original accepted digests, not rebuilt candidates.
           if read_ref "$bundle" "$existing"; then
             [[ "$(revision_of "$existing")" == "$COMMIT_SHA" && "$(version_of "$existing")" == "$VERSION" ]]
-            [[ "$(jq -er '.annotations["io.kikoteam.version"]' "$existing")" == "$VERSION" ]]
             DIGESTS=$(jq -cer '[.annotations |
               {"backend": .["io.kikoteam.backend"], "event-hub": .["io.kikoteam.event-hub"],
                "agent-engine": .["io.kikoteam.agent-engine"]}][0]' "$existing")
@@ -310,33 +293,19 @@ jobs:
           [[ "$publish_run" =~ ^[1-9][0-9]*$ && "$gh_run" =~ ^[1-9][0-9]*$ ]]
           annotations=(--annotation "index:io.kikoteam.run=$publish_run"
             --annotation "index:io.kikoteam.github-run=$gh_run"
-            --annotation "index:io.kikoteam.version=$VERSION"
+            --annotation "index:org.opencontainers.image.version=$VERSION"
             --annotation "index:org.opencontainers.image.revision=$COMMIT_SHA")
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            annotations+=(--annotation "index:io.kikoteam.version=$VERSION")
+          fi
           for app in "${apps[@]}"; do
             digest=$(jq -er --arg app "$app" '.[$app]' <<< "$DIGESTS")
             verify_index "$app" "$digest"
             annotations+=(--annotation "index:io.kikoteam.$app=$digest")
-            # Preflight immutable version aliases before any writes.
-            if read_ref "$base/$app:$VERSION" "$existing"; then
-              if [[ "$(digest_of "$existing")" != "$digest" ]]; then
-                echo "::error::Existing immutable $app:$VERSION points to different content."
-                exit 1
-              fi
-            fi
-            # Full/short revision aliases may already represent another release
-            # of this same exact commit. Never replace them or accept collisions.
-            for alias in "$COMMIT_SHA" "${COMMIT_SHA:0:7}"; do
+            for alias in "${aliases[@]}"; do
               if read_ref "$base/$app:$alias" "$existing"; then
-                revision=$(revision_of "$existing")
-                if [[ -z "$revision" && "$alias" == "${COMMIT_SHA:0:7}" ]]; then
-                  # The former main workflow only labeled the image config,
-                  # not the index. Resolve the captured digest, never the tag.
-                  existing_digest=$(digest_of "$existing")
-                  docker pull --platform linux/amd64 "$base/$app@$existing_digest"
-                  revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$base/$app@$existing_digest")
-                fi
-                if [[ "$revision" != "$COMMIT_SHA" ]]; then
-                  echo "::error::Cannot prove existing $app:$alias is this revision."
+                if [[ "$(digest_of "$existing")" != "$digest" ]]; then
+                  echo "::error::Existing immutable $app:$alias points to different content."
                   exit 1
                 fi
               fi
@@ -349,7 +318,7 @@ jobs:
             docker buildx imagetools inspect --raw "$1" > "$RUNNER_TEMP/verify-pointer.json"
             jq -e --arg run "$publish_run" --arg github_run "$gh_run" --arg version "$VERSION" --arg sha "$COMMIT_SHA" --argjson digests "$DIGESTS" '
               .annotations as $a |
-              $a["io.kikoteam.run"] == $run and $a["io.kikoteam.github-run"] == $github_run and $a["io.kikoteam.version"] == $version and
+              $a["io.kikoteam.run"] == $run and $a["io.kikoteam.github-run"] == $github_run and $a["org.opencontainers.image.version"] == $version and
               $a["org.opencontainers.image.revision"] == $sha and
               all($digests | to_entries[]; . as $d | $a["io.kikoteam." + $d.key] == $d.value)
             ' "$RUNNER_TEMP/verify-pointer.json" >/dev/null
@@ -358,7 +327,7 @@ jobs:
 
           for app in "${apps[@]}"; do
             digest=$(jq -er --arg app "$app" '.[$app]' <<< "$DIGESTS")
-            for alias in "$VERSION" "$COMMIT_SHA" "${COMMIT_SHA:0:7}"; do
+            for alias in "${aliases[@]}"; do
               ref="$base/$app:$alias"
               if ! read_ref "$ref" "$existing"; then
                 docker buildx imagetools create --tag "$ref" "$base/$app@$digest"
@@ -367,8 +336,13 @@ jobs:
               fi
             done
           done
-          if [[ "$write_latest" == no ]]; then
-            echo "Published immutable $VERSION; a newer version owns latest and verified-deploy." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "Published immutable release $VERSION ($COMMIT_SHA)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [[ "$head" != "$COMMIT_SHA" ]]; then
+            echo "Published $COMMIT_SHA; main has advanced to $head." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 

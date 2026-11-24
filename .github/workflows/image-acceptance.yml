@@ -59,7 +59,7 @@ jobs:
               if ! version=$(jq -er --arg sha "$sha" '
                 select(.annotations["org.opencontainers.image.revision"] == $sha)
                 | .annotations["org.opencontainers.image.version"] | select(type=="string")
-              ' "$raw") || [[ ! "$version" =~ $version_pattern || ${#version} -gt 128 ||
+              ' "$raw") || [[ ( "$version" != "$sha" && ! "$version" =~ $version_pattern ) || ${#version} -gt 128 ||
                              ( -n "$release_version" && "$release_version" != "$version" ) ]]; then
                 echo 'The commit aliases do not identify one accepted version. Use the verified-deploy pointer instead.'
                 exit 1

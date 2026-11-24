@@ -50,7 +50,7 @@ class DeploymentTest(unittest.TestCase):
                     "status": "completed", "conclusion": "failure", "path": ".github/workflows/images.yml",
                     "head_repository": {"full_name": "unrealm-ai/kikoteam"}, "head_sha": self.new["sha"],
                     "run_number": self.new["run"]}
-        self.mock["release"].return_value = self.old
+        self.mock["release"].return_value = dict(self.old, version="v1.9.9")
         with self.assertRaises(ValueError):
             deploy.stage_success(metadata)
         metadata["conclusion"] = "success"
@@ -90,7 +90,7 @@ class DeploymentTest(unittest.TestCase):
             refs = [call.args[0][-1].rsplit(":", 1)[1] for call in inspect.call_args_list[i:i+2]]
             self.assertEqual(refs, ["v1.10.0", "latest"])
         with patch.object(subprocess, "check_output") as inspect:
-            for version in ("v1.8.0", "main", "v01.10.0", "v2.0.0-rc.1"):
+            for version in ("v1.8.0", "v01.10.0", "v2.0.0-rc.1"):
                 with self.subTest(version=version), self.assertRaises(ValueError):
                     deploy.stage_success(dict(metadata, head_branch=version))
             inspect.assert_not_called()

@@ -1,8 +1,8 @@
 # 用版本标签发布双架构镜像
 
-状态：已实施；本地验证范围和真实发布待验项见[正式规范](../spec/tagged-multiarch-release.md)。当前基线是 [镜像工作流](../../.github/workflows/images.yml)和[镜像验收工作流](../../.github/workflows/image-acceptance.yml)；原部署指针逻辑合并进发布工作流。
+这份提案记录最初的标签发布设计。后续已恢复 `main` 推送自动构建，当前触发条件和托管部署指针的更新规则以[镜像发布规范](../spec/tagged-multiarch-release.md)为准。
 
-## 发布规则
+## 原提案的发布规则
 
 - **产品版本只认 Git 标签 `vX.Y.Z`**，例如 `v1.2.3`。目标提交必须可从 `main` 追溯；不要求是当前分支顶端。提交 SHA、候选镜像名和工作流运行号仅用于定位和验证，不能当作产品版本。普通 PR 与 `main` 提交保留现有 CI，不发布产品版本或推进部署指针。
 - 同一标签、同一提交原生构建六个镜像：`backend`、`event-hub`、`agent-engine` 各构建 `linux/amd64`、`linux/arm64`，不用跨架构模拟代替验收。沿用现有三个 GHCR 包及其名称，不新增包；官方版本引用由每个包对应的双架构 OCI 索引提供。

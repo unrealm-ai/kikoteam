@@ -149,7 +149,7 @@ func (s *Store) admitNotificationContextTx(ctx context.Context, tx *sql.Tx, id s
 	if reminder {
 		kind = "system"
 	}
-	result, err := insertNotificationContext(t, id, "[系统消息]"+strings.TrimPrefix(text, "[系统消息]"), kind, epoch)
+	result, err := insertNotificationContext(t, id, triggerNotificationContextText(text, ""), kind, epoch)
 	if err != nil {
 		return err
 	}
@@ -210,4 +210,14 @@ func insertNotificationContext(t *sessionTx, notice, body, kind string, epoch in
 		return v, err
 	}
 	return v, t.Event("input.updated", &v.ID, nil, service.InputFields(v))
+}
+
+// Shared by channel writebacks. Only authoritative delivery evidence may select
+// a linked presentation; never infer one from the original body.
+func triggerNotificationContextText(text, presentation string) string {
+	body := strings.TrimPrefix(redactTaskDetailBearer(text), "[系统消息]")
+	if presentation == service.TaskDetailCardPresentation || presentation == service.TaskDetailLinkPresentation {
+		return "[系统消息] 已发送任务结果，任务详情链接可查看。\n" + body
+	}
+	return "[系统消息]" + body
 }

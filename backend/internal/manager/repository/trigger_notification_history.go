@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
-	"strings"
 )
 
 // Jobs are immutable authorization snapshots. A changed history boundary causes
@@ -236,13 +235,4 @@ func finishFeishuNoticeContext(ctx context.Context, tx *sql.Tx, id, status, code
 		return err
 	}
 	return tx.Commit()
-}
-
-// Reflect verified task details without exposing how the notification was presented.
-func triggerNotificationContextText(text, presentation string) string {
-	body := strings.TrimPrefix(redactTaskDetailBearer(text), "[系统消息]")
-	if presentation == service.TaskDetailCardPresentation || presentation == service.TaskDetailLinkPresentation {
-		return "[系统消息] 已发送任务结果，任务详情链接可查看。\n" + body
-	}
-	return "[系统消息]" + body
 }

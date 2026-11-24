@@ -31,3 +31,19 @@ func TestTriggerResultReceiptPresentation(t *testing.T) {
 		})
 	}
 }
+
+func TestTriggerResultInputUsesOneLinkVocabulary(t *testing.T) {
+	const original = "[系统消息]巡检完成"
+	const linked = "[系统消息] 已发送任务结果，任务详情链接可查看。\n巡检完成"
+	for _, tc := range []struct{ presentation, want string }{
+		{"", original},
+		{"text", original},
+		{"markdown", original},
+		{service.TaskDetailCardPresentation, linked},
+		{service.TaskDetailLinkPresentation, linked},
+	} {
+		if got := triggerNotificationContextText(original, tc.presentation); got != tc.want {
+			t.Errorf("presentation=%q: got %q, want %q", tc.presentation, got, tc.want)
+		}
+	}
+}

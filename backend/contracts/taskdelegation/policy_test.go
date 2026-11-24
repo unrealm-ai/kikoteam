@@ -23,6 +23,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 		"artifact_select":              {"candidate IDs", "pending delivery"},
 		"supplement_todo":              {"unstarted todo", "planning_version"},
 		"work_item_get_current":        {"Read-only", "current employee"},
+		"trigger_task_get_result":      {"Read-only", "this exact destination group", "ask which one if ambiguous", "exact notified execution"},
 		"work_item_amend_requirements": {"only the user's new requirements", "queues the change", "same request_key"},
 		"create_todo":                  {"unstarted todo", "No model", "same request_key"},
 		"start_todo":                   {"Rechecks current permissions", "planning_version", "Acceptance is not completion"},

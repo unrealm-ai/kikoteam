@@ -17,9 +17,14 @@ import (
 
 type scopeKey struct{}
 
+type chatAudience struct {
+	channel, group bool
+}
+
 type toolAccess struct {
-	scope                               manager.DelegationScope
-	schemaOnly, channel, report, stable bool
+	scope manager.DelegationScope
+	chatAudience
+	schemaOnly, report, stable bool
 }
 
 func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
@@ -27,10 +32,12 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 	if err := json.Unmarshal(contract.Tools, &specs); err != nil {
 		return nil, err
 	}
-	web := sdk.NewServer(&sdk.Implementation{Name: "task_delegation", Version: "1.0.0"}, nil)
+	catalogs := make(map[chatAudience]*sdk.Server)
+	for _, audience := range []chatAudience{{}, {channel: true}, {group: true}, {channel: true, group: true}} {
+		catalogs[audience] = sdk.NewServer(&sdk.Implementation{Name: "task_delegation", Version: "1.0.0"}, nil)
+	}
 	report := sdk.NewServer(&sdk.Implementation{Name: "task_report", Version: "1.0.0"}, nil)
 	empty := sdk.NewServer(&sdk.Implementation{Name: "task_report", Version: "1.0.0"}, nil)
-	server := sdk.NewServer(&sdk.Implementation{Name: "task_delegation", Version: "1.0.0"}, nil)
 	for _, spec := range specs {
 		name := strings.TrimPrefix(spec.Name, "task_delegation_")
 		call := func(ctx context.Context, _ *sdk.CallToolRequest, args manager.DelegationArgs) (*sdk.CallToolResult, any, error) {
@@ -60,11 +67,14 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 			}
 			return &sdk.CallToolResult{IsError: true}, failedToolResult(name, code, message, args, err), nil
 		}
-		sdk.AddTool[manager.DelegationArgs, any](server, &spec, call)
 		if name == "artifact_select" {
 			sdk.AddTool[manager.DelegationArgs, any](report, &spec, call)
-		} else {
-			sdk.AddTool[manager.DelegationArgs, any](web, &spec, call)
+		}
+		for audience, server := range catalogs {
+			if name == "artifact_select" && !audience.channel || name == "trigger_task_get_result" && !audience.group {
+				continue
+			}
+			sdk.AddTool[manager.DelegationArgs, any](server, &spec, call)
 		}
 	}
 	transport := sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
@@ -75,10 +85,7 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 			}
 			return empty
 		}
-		if !a.channel {
-			return web
-		}
-		return server
+		return catalogs[a.chatAudience]
 	}, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -109,7 +116,7 @@ func authorizeToolAccess(ctx context.Context, r *http.Request, d *manager.Delega
 		var err error
 		a.scope, err = d.Authorize(ctx, token)
 		a.report = a.report || a.scope.ReportOnly
-		a.channel = a.scope.Channel != nil
+		a.chatAudience = chatAudience{channel: a.scope.Channel != nil, group: a.scope.Group}
 		return a, err
 	}
 	if !a.stable {
@@ -120,7 +127,7 @@ func authorizeToolAccess(ctx context.Context, r *http.Request, d *manager.Delega
 		return a, errors.New("unauthenticated")
 	}
 	a.schemaOnly = true
-	a.channel = grant.Channel
+	a.chatAudience = chatAudience{channel: grant.Channel, group: grant.Group}
 	return a, nil
 }
 

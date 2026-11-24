@@ -21,6 +21,7 @@ type ChatToolCatalogGrant struct {
 	InputID   string             `json:"input_id"`
 	Family    string             `json:"family"`
 	Channel   bool               `json:"channel"`
+	Group     bool               `json:"group,omitempty"`
 	ExpiresAt int64              `json:"expires_at"`
 }
 

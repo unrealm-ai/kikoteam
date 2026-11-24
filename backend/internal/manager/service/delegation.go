@@ -18,6 +18,7 @@ type DelegationIdentity struct {
 }
 type DelegationScope struct {
 	WebGroup                                                  *WebGroupExecution
+	Group                                                     bool
 	ReportOnly                                                bool
 	Channel                                                   *ChannelActor
 	InputID                                                   string
@@ -29,6 +30,7 @@ type DelegationStore interface {
 	DelegatedSession(context.Context, DelegationScope, string) (Session, error)
 	LatestTurn(context.Context, string, string, string) (*Turn, error)
 	DelegatedTurnSupplements(context.Context, DelegationScope, string, string) (TurnSupplements, error)
+	ChatTriggerTaskResults(context.Context, DelegationScope, TriggerTaskResultFilter) ([]TriggerTaskResult, error)
 	ChatWorkItem(context.Context, DelegationScope, string) (*ChatWorkItemView, error)
 	AmendChatWorkItem(context.Context, DelegationScope, string, string, string, string, int64) (any, error)
 }
@@ -83,6 +85,7 @@ type DelegationArgs struct {
 	ExecutionState      string   `json:"execution_state,omitempty"`
 	LatestTurnStatus    string   `json:"latest_turn_status,omitempty"`
 	InputID             string   `json:"input_id,omitempty"`
+	NotificationID      string   `json:"notification_id,omitempty"`
 	ExpectedVersion     int64    `json:"expected_version,string,omitempty"`
 	Instruction         string   `json:"instruction,omitempty"`
 	RequestKey          string   `json:"request_key,omitempty"`
@@ -131,6 +134,8 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 		ctx = WithChannelActor(ctx, *scope.Channel)
 	}
 	switch name {
+	case "trigger_task_get_result":
+		return d.triggerTaskResults(ctx, scope, args)
 	case "artifact_select":
 		artifacts, ok := d.Store.(ArtifactStore)
 		if !ok {
@@ -177,7 +182,7 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 }
 
 func pinsDelegationInput(name string, args DelegationArgs) bool {
-	return len(args.AttachmentIDs) > 0 || name == "create_session" || name == "send_message" || name == "artifact_select"
+	return len(args.AttachmentIDs) > 0 || name == "create_session" || name == "send_message" || name == "artifact_select" || name == "trigger_task_get_result"
 }
 
 func (d *Delegation) sendTaskMessage(ctx context.Context, scope DelegationScope, v Session, args DelegationArgs) (any, error) {

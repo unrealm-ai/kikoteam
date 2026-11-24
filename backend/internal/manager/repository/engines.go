@@ -177,6 +177,7 @@ func (s *Store) HarnessConfig(ctx context.Context, engine, session, assignment s
 	err := s.DB.QueryRowContext(ctx, `SELECT s.id,s.workspace_id,s.agent_id,COALESCE(s.conversation_id::text,''),COALESCE(s.task_space_id::text,''),COALESCE(s.task_id::text,''),s.mode,s.configuration,COALESCE(i.submitted_by::text,i.channel_principal_id::text,''),COALESCE(s.trigger_id::text,''),COALESCE(s.trigger_version,0),COALESCE(i.trigger_event_id::text,''),i.channel_principal_id,COALESCE(i.channel_generation,0),c.web_group_id IS NOT NULL,i.source_kind='task_report',
  s.mode='chat' AND c.channel_binding_id IS NOT NULL,
  s.mode='chat' AND COALESCE(c.web_user_id IS NOT NULL OR (c.channel_chat_type='direct' AND c.channel_thread_id='' AND c.channel_created_by IS NOT NULL),false),
+ s.mode='chat' AND `+chatIsGroup+`,
  CASE WHEN s.mode='task' THEN EXISTS(SELECT 1 FROM platform_agent_human_recipients h WHERE h.agent_id=s.agent_id AND h.recipients<>'[]')
  ELSE COALESCE(`+privateHumanInput+` AND (`+webHumanRecipientConfigured+` OR `+channelHumanRecipientConfigured+`),false) END,
  EXISTS(SELECT FROM manager_human_chat_inputs h WHERE h.input_id=i.id),
@@ -193,7 +194,7 @@ func (s *Store) HarnessConfig(ctx context.Context, engine, session, assignment s
  LEFT JOIN manager_webhook_payloads wf ON wf.event_id=we.id AND wf.as_file
  LEFT JOIN platform_agent_versions av ON s.mode='task' AND av.workspace_id=s.workspace_id AND av.agent_id=s.agent_id AND av.version=(s.configuration->>'agent_version')::bigint
  WHERE (manager_input_actor_allowed(i.id) OR manager_human_chat_input_allowed(i.id)) AND s.engine_id=$1 AND s.id=$2 AND s.assignment_id=$3 AND s.generation=$4 AND i.id=$5 AND i.status='started' AND i.turn_id=s.active_turn_id AND s.stop_revision=s.applied_stop_revision AND COALESCE(c.lifecycle,p.lifecycle)='active' AND s.lifecycle='active' AND a.enabled AND i.admission_epoch=a.admission_epoch`, engine, session, assignment, generation, input).
-		Scan(&cfg.SessionID, &cfg.WorkspaceID, &cfg.AgentID, &cfg.ConversationID, &cfg.TaskSpaceID, &cfg.TaskID, &cfg.Mode, &data, &actor, &cfg.TriggerID, &cfg.TriggerVersion, &cfg.TriggerEventID, &cfg.ChannelPrincipalID, &cfg.ChannelGeneration, &cfg.WebGroup, &cfg.ReportOnly, &cfg.ChatCatalogChannel, &cfg.ChatCatalogPrivate, &cfg.HumanTools, &cfg.ConfirmationOnly, &cfg.Employee.Name, &cfg.Employee.Role, &cfg.Employee.Instruction, &cfg.TodoStarted, &file.EventID, &file.SHA256, &file.Body)
+		Scan(&cfg.SessionID, &cfg.WorkspaceID, &cfg.AgentID, &cfg.ConversationID, &cfg.TaskSpaceID, &cfg.TaskID, &cfg.Mode, &data, &actor, &cfg.TriggerID, &cfg.TriggerVersion, &cfg.TriggerEventID, &cfg.ChannelPrincipalID, &cfg.ChannelGeneration, &cfg.WebGroup, &cfg.ReportOnly, &cfg.ChatCatalogChannel, &cfg.ChatCatalogPrivate, &cfg.ChatCatalogGroup, &cfg.HumanTools, &cfg.ConfirmationOnly, &cfg.Employee.Name, &cfg.Employee.Role, &cfg.Employee.Instruction, &cfg.TodoStarted, &file.EventID, &file.SHA256, &file.Body)
 	if err != nil {
 		return cfg, "", visibleError(err)
 	}

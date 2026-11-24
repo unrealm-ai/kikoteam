@@ -11,12 +11,14 @@ const delegationFrom = ` FROM manager_sessions s JOIN manager_conversations c ON
 
 const effectiveDelegatingInput = `COALESCE((SELECT u.id FROM manager_inputs u WHERE u.turn_id=t.id AND u.source_kind='user' AND u.trigger_agent_loop AND u.context_state='committed' ORDER BY u.seq DESC LIMIT 1),i.id)`
 
+const chatIsGroup = `(c.web_group_id IS NOT NULL OR COALESCE(c.channel_chat_type='group',false))`
+
 func (s *Store) DelegationSource(ctx context.Context, v service.DelegationIdentity) (service.DelegationScope, error) {
 	out := service.DelegationScope{Identity: v}
 	var principal *string
 	var generation int64
 	var webGroup bool
-	err := s.DB.QueryRowContext(ctx, `SELECT s.workspace_id,COALESCE(i.submitted_by,i.channel_principal_id),s.conversation_id,s.agent_id,a.name,a.role,i.channel_principal_id,COALESCE(i.channel_generation,0),`+effectiveDelegatingInput+`,c.web_group_id IS NOT NULL, i.source_kind='task_report' AND NOT EXISTS(SELECT 1 FROM manager_inputs u WHERE u.turn_id=t.id AND u.source_kind='user' AND u.trigger_agent_loop AND u.context_state='committed')`+delegationFrom, v.SessionID, v.EngineID, v.AssignmentID, v.Generation).Scan(&out.WorkspaceID, &out.ActorID, &out.ConversationID, &out.AgentID, &out.Name, &out.Role, &principal, &generation, &out.InputID, &webGroup, &out.ReportOnly)
+	err := s.DB.QueryRowContext(ctx, `SELECT s.workspace_id,COALESCE(i.submitted_by,i.channel_principal_id),s.conversation_id,s.agent_id,a.name,a.role,i.channel_principal_id,COALESCE(i.channel_generation,0),`+effectiveDelegatingInput+`,c.web_group_id IS NOT NULL,`+chatIsGroup+`,i.source_kind='task_report' AND NOT EXISTS(SELECT 1 FROM manager_inputs u WHERE u.turn_id=t.id AND u.source_kind='user' AND u.trigger_agent_loop AND u.context_state='committed')`+delegationFrom, v.SessionID, v.EngineID, v.AssignmentID, v.Generation).Scan(&out.WorkspaceID, &out.ActorID, &out.ConversationID, &out.AgentID, &out.Name, &out.Role, &principal, &generation, &out.InputID, &webGroup, &out.Group, &out.ReportOnly)
 	if webGroup {
 		out.WebGroup = &service.WebGroupExecution{ConversationID: out.ConversationID}
 	}

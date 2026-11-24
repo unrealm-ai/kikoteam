@@ -59,6 +59,7 @@ type HarnessConfig struct {
 	ChatHumanCatalogToken      string `json:"chat_human_catalog_token,omitempty"`
 	ChatCatalogChannel         bool   `json:"-"`
 	ChatCatalogPrivate         bool   `json:"-"`
+	ChatCatalogGroup           bool   `json:"-"`
 }
 type WebhookFile struct {
 	EventID string `json:"event_id"`

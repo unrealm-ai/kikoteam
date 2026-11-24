@@ -92,6 +92,7 @@ list_targets 已移除，主对话只能操作当前员工。list_sessions 只�
 | `task_delegation_create_session` | instruction、title?、attachment_ids?、attachment_paths? | `accepted: true` 与原 Task / Session / 首条 Input 的已受理身份 |
 | `task_delegation_list_sessions` | cursor?、limit?、planning_state?、execution_state?、latest_turn_status? | 当前主会话委派的 Task / Session 摘要，{items, next_cursor} |
 | `task_delegation_get_session` | session_id、turn_id?、cursor?、limit?、input_id? | 简明状态及结果摘要、当前执行事实、所选轮次的正式回复分页与输入回执 |
+| `trigger_task_get_result` | notification_id? 或 cursor? | [同一目的群已送达的定时任务和 Hook 执行记录](trigger-notifications.md#在群里追问一次执行) |
 | `task_delegation_send_message` | session_id、可选 text、有序 attachment_paths，文字和附件至少提供一项 | 原 Session 新 Input 的身份及当前状态 |
 | `artifact_select` | 有序 artifact_ids | 将获准版本绑定到本轮回复和各自原渠道目标 |
 | `task_delegation_supplement_todo` | session_id、instruction、request_key、expected_version、attachment_paths? | 补充未启动待办 |
@@ -162,7 +163,7 @@ MCP 请求超时、断流或取消请求本身不能证明事务回滚，也不�
 
 ## 6. 轮次回报与主会话唤醒
 
-**2026-11-17 增量设计，已接入，验收范围见专项设计**：每个 task Turn 结束均生成可靠回报，包括需要用户确认的回复；回报固定采用 steer，主 chat 忙时引导当前轮、空闲时唤醒，可与待引导输入合并。send_message 同步增加默认 steer、可选 queue 的输入行为。具体语义和兼容要求统一见[引导输入与任务轮次回报](session-input-and-task-report.md)。下文可信来源、去重及归档边界继续适用；静默 append_assistant 不承担本次主动回报。
+**2026-11-17 增量设计，已接入，验收范围见专项设计**：每个 task Turn 结束均生成可靠回报，包括需要用户确认的回复。回报进入来源主 chat 的队列，轮到时独立执行，空闲时唤醒。`send_message` 的输入方式为默认 steer、可选 queue。具体语义和兼容要求统一见[引导输入与任务轮次回报](session-input-and-task-report.md)。下文可信来源、去重及归档边界继续适用；静默 append_assistant 不承担本次主动回报。
 
 MCP 的创建响应与异步执行结果是两次不同事实。create_session 已返回后，不再把后续结果追加成该 tools/call 的第二个最终响应，也不假定 Pi 支持任意服务端唤醒。
 

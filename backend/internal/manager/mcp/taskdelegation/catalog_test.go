@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,6 +52,9 @@ func TestStableDelegationCatalogPreservesScope(t *testing.T) {
 			IsError    bool              `json:"isError"`
 			Structured map[string]any    `json:"structuredContent"`
 		} `json:"result"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 	request := func(path, authorization, grant, grantInput, raw string, status int) reply {
 		t.Helper()
@@ -77,8 +81,10 @@ func TestStableDelegationCatalogPreservesScope(t *testing.T) {
 	}
 	const list = `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
 	const call = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"task_delegation_create_session","arguments":{"instruction":"test only"}}}`
-	for _, isChannel := range []bool{false, true} {
-		store.scope = manager.DelegationScope{}
+	const triggerQuery = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"trigger_task_get_result","arguments":{}}}`
+	for _, audience := range []chatAudience{{}, {channel: true}, {group: true}, {channel: true, group: true}} {
+		isChannel := audience.channel
+		store.scope = manager.DelegationScope{Group: audience.group}
 		if isChannel {
 			store.scope.Channel = &manager.ChannelActor{ID: manager.NewID(), Generation: 1}
 		}
@@ -93,6 +99,17 @@ func TestStableDelegationCatalogPreservesScope(t *testing.T) {
 		if len(ordinary) == 0 || !reflect.DeepEqual(ordinary, report) || len(legacy) != wantLegacy {
 			t.Fatalf("catalog mismatch: ordinary=%d report=%d legacy=%d", len(ordinary), len(report), len(legacy))
 		}
+		hasTriggerQuery := slices.ContainsFunc(ordinary, func(tool json.RawMessage) bool {
+			return strings.Contains(string(tool), `"name":"trigger_task_get_result"`)
+		})
+		if hasTriggerQuery != audience.group {
+			t.Fatalf("trigger task query visibility mismatch for %+v", audience)
+		}
+		if audience.group {
+			if denied := request("?catalog=stable", token, "", "", triggerQuery, 200); !denied.Result.IsError || !catalogDenied(denied.Result.Structured) {
+				t.Fatal("an automatically triggered report authorized the trigger task query")
+			}
+		}
 		if isChannel {
 			callArtifact := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"artifact_select","arguments":{"artifact_ids":["` + manager.NewID() + `"]}}}`
 			before := store.artifactCalls
@@ -102,12 +119,23 @@ func TestStableDelegationCatalogPreservesScope(t *testing.T) {
 			}
 		}
 		store.scope.ReportOnly = false // A committed user steer must not widen the report endpoint.
-		before := store.calls
-		denied := request("?catalog=stable&mode=report", token, "", "", call, 200)
-		if !denied.Result.IsError || store.calls != before+1 || !catalogDenied(denied.Result.Structured) {
-			t.Fatal("report-only request reached Manager call")
+		reportCalls := []string{call}
+		if audience.group {
+			reportCalls = append(reportCalls, triggerQuery)
+		} else {
+			privateLookup := request("?catalog=stable", token, "", "", triggerQuery, 200)
+			if privateLookup.Error == nil || !strings.Contains(privateLookup.Error.Message, "unknown tool") {
+				t.Fatal("the trigger query is registered in a private chat")
+			}
 		}
-		grant, err := manager.SignChatToolCatalog(secret, manager.ChatToolCatalogGrant{Identity: id, InputID: input, Family: manager.ChatToolCatalogDelegation, Channel: isChannel})
+		for _, body := range reportCalls {
+			before := store.calls
+			denied := request("?catalog=stable&mode=report", token, "", "", body, 200)
+			if !denied.Result.IsError || store.calls != before+1 || !catalogDenied(denied.Result.Structured) {
+				t.Fatal("report-only request reached Manager call")
+			}
+		}
+		grant, err := manager.SignChatToolCatalog(secret, manager.ChatToolCatalogGrant{Identity: id, InputID: input, Family: manager.ChatToolCatalogDelegation, Channel: isChannel, Group: audience.group})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,9 +144,11 @@ func TestStableDelegationCatalogPreservesScope(t *testing.T) {
 		if !reflect.DeepEqual(ordinary, catalogOnly.Result.Tools) || store.calls != 0 {
 			t.Fatal("schema-only grant does not list the scoped stable catalog")
 		}
-		denied = request("?catalog=stable", "", grant, input, call, 200)
-		if !denied.Result.IsError || store.calls != 0 || !catalogDenied(denied.Result.Structured) {
-			t.Fatal("schema-only grant unexpectedly reached Manager")
+		for _, body := range reportCalls {
+			denied := request("?catalog=stable", "", grant, input, body, 200)
+			if !denied.Result.IsError || store.calls != 0 || !catalogDenied(denied.Result.Structured) {
+				t.Fatal("schema-only grant unexpectedly reached Manager")
+			}
 		}
 		request("", "", grant, input, list, 401)
 		request("?catalog=stable", "", grant, manager.NewID(), list, 401)

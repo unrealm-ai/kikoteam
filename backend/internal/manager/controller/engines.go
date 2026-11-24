@@ -179,7 +179,7 @@ func (s *Server) signChatCredentials(v *service.HarnessConfig, input string, id 
 			return err
 		}
 	}
-	grant := service.ChatToolCatalogGrant{Identity: id, InputID: input, Family: service.ChatToolCatalogDelegation, Channel: v.ChatCatalogChannel}
+	grant := service.ChatToolCatalogGrant{Identity: id, InputID: input, Family: service.ChatToolCatalogDelegation, Channel: v.ChatCatalogChannel, Group: v.ChatCatalogGroup}
 	v.ChatDelegationCatalogToken, err = service.SignChatToolCatalog(s.EngineToken, grant)
 	if err == nil && v.ChatCatalogPrivate {
 		grant.Family = service.ChatToolCatalogHuman

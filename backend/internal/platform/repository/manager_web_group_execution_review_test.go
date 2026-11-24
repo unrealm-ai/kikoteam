@@ -153,8 +153,8 @@ func reviewWebGroupDelegation(t *testing.T, revoke string) {
 	}
 	chatTurn := reviewStartTurn(t, db, w, chat, input, identity.AssignmentID, identity.Generation)
 	catalog, _, err := s.HarnessConfig(ctx, engine, chat, identity.AssignmentID, identity.Generation, input)
-	if err != nil || catalog.ChatCatalogPrivate || catalog.ChatCatalogChannel {
-		t.Fatal("Web group got the private confirmation catalog or IM catalog", err)
+	if err != nil || !catalog.ChatCatalogGroup || catalog.ChatCatalogPrivate || catalog.ChatCatalogChannel {
+		t.Fatal("Web group did not get the Web group catalog scope", err)
 	}
 	secret := strings.Repeat("r", 40)
 	token, err := manager.SignDelegation(secret, identity)

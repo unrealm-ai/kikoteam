@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | 平台服务配置 | [邮件与注册、GitHub 插件 OAuth](platform-service-settings.md) | 自动化夹具和隔离 PostgreSQL；未验证真实 SMTP 送达或真实 GitHub 授权 |
 | 本地启动器 | [无宿主机 Python 的 Compose 启停与安装引导](local-launcher.md) | macOS 真机 Compose；macOS/Linux CLI 黑盒（含模拟 Docker 安装） |
-| 镜像发布 | [Git 标签与双架构镜像](tagged-multiarch-release.md) | 本地标签规则、部署回归和缓存 AMD64 冒烟已验证；双架构发布及 M 系列实机待验 |
+| 镜像发布 | [主分支与版本标签的 AMD64 镜像发布](tagged-multiarch-release.md) | 推送到主分支后构建三个服务镜像，通过 AMD64 验收后更新部署指针 |
 | 渠道接收反应 | [飞书、钉钉原消息接收反应](channel-receipt-reactions.md) | 隔离 PostgreSQL、供应商 HTTP 夹具与钉钉实测通过；飞书真实贴表情待验 |
 | 主对话与任务提示词 | [委派回话、员工身份与能力包文案](task-package-prompt.md) | 主对话回话规则单测；身份与能力包文案经隔离 PostgreSQL 与 Engine/Pi 测试模型端到端验证 |
 | 钉钉回复 | [原会话回复、主动投递与缺权限提示](dingtalk-session-reply.md) | 本地渠道协议夹具、隔离 PostgreSQL；真实账号待验 |

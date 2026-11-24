@@ -117,7 +117,7 @@ http://localhost:18080
 
 ### 容器镜像
 
-每次推送到 `main`，[GitHub Actions](.github/workflows/images.yml) 都会构建以下三个镜像，覆盖 `linux/amd64` 和 `linux/arm64`。两种架构验收通过后，按提交的完整 SHA 和 7 位短 SHA 发布到 GHCR。当前 `main` 顶端提交还会更新 `latest` 和托管部署使用的 `backend:verified-deploy`。
+每次推送到 `main`，[GitHub Actions](.github/workflows/images.yml) 都会构建以下三个 `linux/amd64` 镜像。验收通过后，按提交的完整 SHA 和 7 位短 SHA 发布到 GHCR。当前 `main` 顶端提交还会更新 `latest` 和托管部署使用的 `backend:verified-deploy`。
 
 | GHCR 镜像 | 内容 |
 | --- | --- |
@@ -136,8 +136,8 @@ docker pull ghcr.io/unrealm-ai/kikoteam/backend:latest
 
 - 每个 PR 和每次推送到 `main` 都会运行静态检查，涉及相应路径时还会运行组件检查和本地 Compose 集成测试。各检查也可在 **Actions** 中手动运行。
 - 需要固定产品版本时，可对已进入 `main` 历史的提交推送正式 Git 标签（如 `v1.2.3`）。该流程经过相同验收，发布对应的不可变版本标签。托管部署继续跟随通过验收的 `main`。
-- 在 **Actions → Published image acceptance → Run workflow** 可单独复验。留空读取已验收的部署指针，也可指定双架构镜像的完整提交 SHA。复验不推进发布。
-- Apple Silicon 的 Docker Desktop 会为双架构镜像选择 Linux ARM64。仓库的 `./start.sh` 仍从源码构建，不使用这些预构建镜像。详见[镜像发布规范](docs/spec/tagged-multiarch-release.md)。
+- 在 **Actions → Published image acceptance → Run workflow** 可单独复验 AMD64 镜像。留空读取部署指针，也可指定已发布的完整提交 SHA。
+- Mac 上的 `./start.sh` 从源码构建本机镜像。详见[镜像发布规范](docs/spec/tagged-multiarch-release.md)。
 
 </details>
 

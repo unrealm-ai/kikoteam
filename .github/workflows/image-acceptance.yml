@@ -8,7 +8,7 @@ on:
         type: string
         required: true
       candidate_digests:
-        description: '本次构建的三个服务多架构索引摘要（JSON，按服务名索引）'
+        description: '本次构建的三个服务镜像索引摘要（JSON，按服务名索引）'
         type: string
         required: true
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Resolve one immutable release for both architectures
+      - name: Resolve the immutable release to verify
         id: resolve
         env:
           COMMIT_SHA: ${{ inputs.commit_sha }}
@@ -89,17 +89,9 @@ jobs:
           printf 'sha=%s\ndigests=%s\n' "$sha" "$digests" >> "$GITHUB_OUTPUT"
 
   verify:
-    name: Verify linux/${{ matrix.arch }}
+    name: Verify linux/amd64
     needs: resolve
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            arch: amd64
-          - runner: ubuntu-24.04-arm
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
       postgres:
@@ -123,48 +115,38 @@ jobs:
       - name: Verify the source revision and load all pinned native images
         id: images
         env:
-          ARCH: ${{ matrix.arch }}
           SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
           DIGESTS: ${{ needs.resolve.outputs.digests }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          case "$ARCH/$(uname -m)" in
-            amd64/x86_64|arm64/aarch64) ;;
-            *) echo 'Expected a native runner for this platform'; exit 1 ;;
-          esac
+          test "$(uname -m)" = x86_64
           base="ghcr.io/${GITHUB_REPOSITORY,,}"
           for app in backend event-hub agent-engine; do
             repo="$base/$app"
             index=$(jq -er --arg app "$app" '.[$app]' <<< "$DIGESTS")
             docker buildx imagetools inspect --raw "$repo@$index" > "$RUNNER_TEMP/index.json"
-            platform_digest=$(jq -er --arg arch "$ARCH" '
+            platform_digest=$(jq -er '
               .manifests
-              | map(select(
-                   .annotations["vnd.docker.reference.type"] != "attestation-manifest"
-                   or .platform.os != "unknown" or .platform.architecture != "unknown"
-                )) as $runtime
-              | if ($runtime | map([.platform.os,.platform.architecture]) | sort)
-                   == [["linux","amd64"],["linux","arm64"]]
-                   and all($runtime[];
-                     .mediaType == "application/vnd.oci.image.manifest.v1+json"
-                     or .mediaType == "application/vnd.docker.distribution.manifest.v2+json")
-                then $runtime[] | select(.platform.architecture==$arch) | .digest
-                else error("Expected exactly one linux image for each of amd64 and arm64")
+              | map(select(.platform.os == "linux" and .platform.architecture == "amd64"))
+              | if length == 1 and (.[0].mediaType == "application/vnd.oci.image.manifest.v1+json"
+                                    or .[0].mediaType == "application/vnd.docker.distribution.manifest.v2+json")
+                then .[0].digest
+                else error("Expected exactly one linux/amd64 image")
                 end
               | select(test("^sha256:[0-9a-f]{64}$"))
             ' "$RUNNER_TEMP/index.json")
             ref="$repo@$platform_digest"
-            docker pull --platform "linux/$ARCH" "$ref"
+            docker pull --platform linux/amd64 "$ref"
             id=$(docker image inspect --format '{{.Id}}' "$ref")
-            test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$id")" = "linux/$ARCH"
+            test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$id")" = linux/amd64
             revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$id")
             [[ "$id" =~ ^sha256:[0-9a-f]{64}$ && "$revision" == "$SOURCE_SHA" ]] || {
-              echo "Unexpected revision for $app on linux/$ARCH"
+              echo "Unexpected revision for $app on linux/amd64"
               exit 1
             }
             printf '%s=%s\n' "${app//-/_}" "$id" >> "$GITHUB_OUTPUT"
-            printf 'Verified `%s` for `linux/%s` at `%s`.\n' "$app" "$ARCH" "$platform_digest" >> "$GITHUB_STEP_SUMMARY"
+            printf 'Verified `%s` for `linux/amd64` at `%s`.\n' "$app" "$platform_digest" >> "$GITHUB_STEP_SUMMARY"
           done
       - uses: actions/setup-go@v6
         with:

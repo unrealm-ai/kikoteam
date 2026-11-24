@@ -242,8 +242,8 @@
           "description": "Expected body for Feishu notification readback or WeCom same-group full-text anchor matching."
         },
         "trigger_format": {
-          "enum": ["text", "markdown"],
-          "description": "Stored outbound format for Feishu notification readback. Older notification jobs default to text."
+          "enum": ["text", "markdown", "task_detail_card", "task_detail_link"],
+          "description": "Actual confirmed outbound presentation for strict Feishu notification readback. Older notification jobs use the original text/Markdown format."
         }
       }
     },
@@ -450,8 +450,13 @@
           "properties": {
             "title": {"type": "string"},
             "state": {"type": "string"},
+            "description": {"type": "string", "maxLength": 1000, "description": "Optional plain-text card body supplied by the authorized conversation."},
             "url": {"type": "string", "format": "uri", "description": "Sensitive scoped link; present only after dispatch authorization. Do not log or add to context."}
           }
+        },
+        "trigger_result_card": {
+          "type": "boolean",
+          "description": "Prefer a native result card preserving the original text. Present only after authorizing an eligible trigger result on a compatible Hub."
         },
         "task_detail_url": {
           "type": "string",
@@ -584,6 +589,12 @@
           "name": "X-Kiko-Delivery-Task-Detail",
           "in": "header",
           "description": "Value 1 opts a compatible Hub into task detail deliveries and secret separation.",
+          "schema": {"type": "string", "const": "1"}
+        },
+        {
+          "name": "X-Kiko-Delivery-Task-Detail-Body",
+          "in": "header",
+          "description": "Value 1 allows leasing task detail deliveries whose plain-text body must be preserved.",
           "schema": {"type": "string", "const": "1"}
         },
         {

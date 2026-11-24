@@ -94,7 +94,7 @@ list_targets 已移除，主对话只能操作当前员工。list_sessions 只�
 | `task_delegation_get_session` | task_id、turn_id?、cursor?、limit?、input_id? | 简明状态及结果摘要、当前执行事实、所选轮次的正式回复分页与输入回执 |
 | `trigger_task_get_result` | notification_id? 或 cursor? | [同一目的群已送达的定时任务和 Hook 执行记录](trigger-notifications.md#在群里追问一次执行) |
 | `task_delegation_send_message` | task_id、可选 text、有序 attachment_paths，文字和附件至少提供一项 | 原 Session 新 Input 的身份及当前状态 |
-| `send_task_detail_card` | task_id | 按当前外部渠道和平台配置请求发卡；返回投递状态，不返回链接 |
+| `send_task_detail_link` | task_id、可选 text | 平台生成授权链接并发往当前外部渠道；只返回投递状态。用户轮限本对话任务、不做业务去重，回告轮限本次任务、检查有效链接与待确认投递 |
 | `artifact_select` | 有序 artifact_ids | 将获准版本绑定到本轮回复和各自原渠道目标 |
 | `task_delegation_supplement_todo` | task_id、instruction、request_key、expected_version、attachment_paths? | 补充未启动待办 |
 | `task_delegation_stop_session` | task_id | 目标 Session 当前执行概况，沿现有 stop 语义受理与收尾 |

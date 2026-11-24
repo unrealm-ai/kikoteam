@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { SessionEvent } from '../api/manager';
-import { availability, duration, jsonText, outputText, record, taskAction, toolTaskTarget, text, toolFailed, toolName, toolOutput, toolStatus, toolTarget, type TaskNavigationTarget } from '../utils/session-presentation';
+import { isTaskDetailLinkTool, availability, duration, jsonText, outputText, record, taskAction, toolTaskTarget, text, toolFailed, toolName, toolOutput, toolStatus, toolTarget, type TaskNavigationTarget } from '../utils/session-presentation';
 const props = defineProps<{ event: SessionEvent; taskTitle?: string | undefined; canOpenTask?: boolean | undefined }>();
 const emit = defineEmits<{ openTask: [target: TaskNavigationTarget] }>();
 const tab = ref<'input' | 'output'>('output');
@@ -34,9 +34,9 @@ function moveTab(event: KeyboardEvent) {
       <p v-else-if="failed" class="tool-error">操作未成功，请展开调用详情查看原因。</p>
       <p v-else-if="event.name === 'task_delegation_create_session'">{{ status === '已触发' ? '任务已受理，执行进展与结果可在任务中查看。' : event.status === 'completed' ? '调用已结束，尚无法确认任务受理结果。' : '正在向员工发起任务，以实际受理结果为准。' }}</p>
       <p v-else-if="event.name === 'task_delegation_stop_session'">停止请求与实际停止状态分别确认。</p>
-      <p v-else-if="event.name === 'send_task_detail_card' && status === '已提交投递'">发送请求已受理，尚未确认送达。</p>
-      <p v-else-if="event.name === 'send_task_detail_card' && status === '送达待核对'">渠道尚未确认送达，请稍后核对。</p>
-      <p v-else-if="event.name === 'send_task_detail_card' && status === '未发送'" class="tool-error">渠道未发送任务详情卡片。</p>
+      <p v-else-if="isTaskDetailLinkTool(event.name) && status === '已提交投递'">发送请求已受理，尚未确认送达。</p>
+      <p v-else-if="isTaskDetailLinkTool(event.name) && status === '送达待核对'">渠道尚未确认送达，请稍后核对。</p>
+      <p v-else-if="isTaskDetailLinkTool(event.name) && status === '未发送'" class="tool-error">渠道未发送任务详情链接。</p>
       <p v-else>{{ event.summary || '任务操作与结果已记录。' }}</p>
       <button v-if="canOpenTask && target" type="button" class="task-link" @click="emit('openTask', target)">查看任务 <span aria-hidden="true">↗</span></button>
       <details v-if="instruction" class="task-instruction"><summary>任务要求</summary><p>{{ instruction }}</p></details>

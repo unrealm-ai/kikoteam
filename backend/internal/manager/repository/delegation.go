@@ -13,6 +13,11 @@ const delegationFilter = ` WHERE manager_input_actor_allowed(i.id) AND NOT EXIST
 
 const effectiveDelegatingInput = `COALESCE((SELECT u.id FROM manager_inputs u WHERE u.turn_id=t.id AND u.source_kind='user' AND u.trigger_agent_loop AND u.context_state='committed' ORDER BY u.seq DESC LIMIT 1),i.id)`
 
+const delegationReportTask = `COALESCE((SELECT k.id::text FROM manager_task_reports r JOIN manager_inputs src ON src.id=r.source_input_id
+ JOIN manager_sessions ex ON ex.id=src.session_id JOIN manager_tasks k ON k.id=ex.task_id
+ WHERE i.source_kind='task_report' AND r.id=i.report_id AND r.target_input_id=i.id AND r.target_session_id=s.id AND r.workspace_id=s.workspace_id AND r.status='admitted'
+ AND ex.mode='task' AND ex.workspace_id=s.workspace_id AND k.workspace_id=s.workspace_id AND k.source_chat_session_id=s.id AND k.trigger_id IS NULL),'')`
+
 const chatIsGroup = `(c.web_group_id IS NOT NULL OR COALESCE(c.channel_chat_type='group',false))`
 
 func (s *Store) DelegationSource(ctx context.Context, v service.DelegationIdentity) (service.DelegationScope, error) {
@@ -20,7 +25,7 @@ func (s *Store) DelegationSource(ctx context.Context, v service.DelegationIdenti
 	var principal *string
 	var generation int64
 	var webGroup bool
-	err := s.DB.QueryRowContext(ctx, `SELECT s.workspace_id,COALESCE(i.submitted_by,i.channel_principal_id),s.conversation_id,s.agent_id,a.name,a.role,i.channel_principal_id,COALESCE(i.channel_generation,0),`+effectiveDelegatingInput+`,c.web_group_id IS NOT NULL,`+chatIsGroup+`,i.source_kind='task_report' AND NOT EXISTS(SELECT 1 FROM manager_inputs u WHERE u.turn_id=t.id AND u.source_kind='user' AND u.trigger_agent_loop AND u.context_state='committed')`+delegationFrom, v.SessionID, v.EngineID, v.AssignmentID, v.Generation).Scan(&out.WorkspaceID, &out.ActorID, &out.ConversationID, &out.AgentID, &out.Name, &out.Role, &principal, &generation, &out.InputID, &webGroup, &out.Group, &out.ReportOnly)
+	err := s.DB.QueryRowContext(ctx, `SELECT s.workspace_id,COALESCE(i.submitted_by,i.channel_principal_id),s.conversation_id,s.agent_id,a.name,a.role,i.channel_principal_id,COALESCE(i.channel_generation,0),`+effectiveDelegatingInput+`,c.web_group_id IS NOT NULL,`+chatIsGroup+`,i.source_kind='task_report' AND NOT EXISTS(SELECT 1 FROM manager_inputs u WHERE u.turn_id=t.id AND u.source_kind='user' AND u.trigger_agent_loop AND u.context_state='committed'),`+delegationReportTask+delegationFrom, v.SessionID, v.EngineID, v.AssignmentID, v.Generation).Scan(&out.WorkspaceID, &out.ActorID, &out.ConversationID, &out.AgentID, &out.Name, &out.Role, &principal, &generation, &out.InputID, &webGroup, &out.Group, &out.ReportOnly, &out.ReportTaskID)
 	if webGroup {
 		out.WebGroup = &service.WebGroupExecution{ConversationID: out.ConversationID}
 	}

@@ -1,13 +1,14 @@
 [
   {
-    "name": "send_task_detail_card",
-    "description": "Send a task detail card to this authorized channel conversation for an exact task_id from a task creation receipt or task query. Use only when the user explicitly asks for the detail link or a multi-step task benefits from live follow-up. Do not use for simple status questions or an ambiguous task reference. The platform selects recipient and access; no URL is returned. Queued means requested, not delivered.",
+    "name": "send_task_detail_link",
+    "description": "Send a task detail link to this authorized channel conversation for an exact task_id from a task creation receipt, task query, or current task report. Use when the user explicitly asks to open or resend task details, or the work benefits from opening its steps or deliverables. Do not use for simple status questions or ambiguous references. Aim to send a link only once per task unless the user asks again. In a user turn choose a task delegated by this conversation; in a report turn choose only the reported task and put the user-facing result in text so the link message can replace the ordinary text report. If the tool rejects the request, report the result normally. The platform turns task_id into an authorized link accessible to the user and sends it directly to the current conversation. No URL is returned to you; never construct or guess a link from task_id. Queued means requested, not delivered.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
       "required": ["task_id"],
       "properties": {
-        "task_id": {"type": "string", "format": "uuid"}
+        "task_id": {"type": "string", "format": "uuid"},
+        "text": {"type": "string", "maxLength": 1000, "description": "Optional user-facing plain-text explanation or result included with the task detail link. Do not include a task URL, credentials or private execution logs."}
       }
     }
   },

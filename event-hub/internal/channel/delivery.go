@@ -15,32 +15,35 @@ import (
 
 // Delivery targets are returned by Manager, never inferred from message text.
 type Delivery struct {
-	taskDetailDispatch     bool
-	TaskDetailCard         *taskDetailCard `json:"task_detail_card,omitempty"`
-	TaskDetailURL          string          `json:"task_detail_url,omitempty"`
-	Presentation           string          `json:"presentation,omitempty"`
-	SessionWebhookEligible bool            `json:"session_webhook_eligible,omitempty"`
-	ArtifactID             string          `json:"artifact_id,omitempty"`
-	Media                  *deliveryMedia  `json:"-"`
-	BeforeDispatch         func() error    `json:"-"`
-	Provider               string          `json:"provider"`
-	TenantID               string          `json:"external_tenant_id"`
-	ChatType               string          `json:"chat_type"`
-	RecipientID            string          `json:"recipient_id"`
-	ProviderRequestID      string          `json:"provider_request_id,omitempty"`
-	TargetDigest           string          `json:"target_digest"`
-	QueryToken             string          `json:"query_token,omitempty"`
-	ID                     string          `json:"id"`
-	LeaseToken             string          `json:"lease_token"`
-	BindingID              string          `json:"binding_id"`
-	Generation             int64           `json:"connection_generation"`
-	ConfigRevision         int64           `json:"config_revision,omitempty"`
-	ChatID                 string          `json:"chat_id"`
-	ReplyToMessageID       string          `json:"reply_to_message_id"`
-	ThreadID               string          `json:"thread_id"`
-	Text                   string          `json:"text"`
-	Format                 string          `json:"format,omitempty"`
-	IdempotencyKey         string          `json:"idempotency_key"`
+	taskDetailDispatch       bool
+	taskDetailNotice         bool
+	taskDetailNoticeMarkdown bool
+	TriggerResultCard        bool            `json:"trigger_result_card,omitempty"`
+	TaskDetailCard           *taskDetailCard `json:"task_detail_card,omitempty"`
+	TaskDetailURL            string          `json:"task_detail_url,omitempty"`
+	Presentation             string          `json:"presentation,omitempty"`
+	SessionWebhookEligible   bool            `json:"session_webhook_eligible,omitempty"`
+	ArtifactID               string          `json:"artifact_id,omitempty"`
+	Media                    *deliveryMedia  `json:"-"`
+	BeforeDispatch           func() error    `json:"-"`
+	Provider                 string          `json:"provider"`
+	TenantID                 string          `json:"external_tenant_id"`
+	ChatType                 string          `json:"chat_type"`
+	RecipientID              string          `json:"recipient_id"`
+	ProviderRequestID        string          `json:"provider_request_id,omitempty"`
+	TargetDigest             string          `json:"target_digest"`
+	QueryToken               string          `json:"query_token,omitempty"`
+	ID                       string          `json:"id"`
+	LeaseToken               string          `json:"lease_token"`
+	BindingID                string          `json:"binding_id"`
+	Generation               int64           `json:"connection_generation"`
+	ConfigRevision           int64           `json:"config_revision,omitempty"`
+	ChatID                   string          `json:"chat_id"`
+	ReplyToMessageID         string          `json:"reply_to_message_id"`
+	ThreadID                 string          `json:"thread_id"`
+	Text                     string          `json:"text"`
+	Format                   string          `json:"format,omitempty"`
+	IdempotencyKey           string          `json:"idempotency_key"`
 }
 
 func (d Delivery) contentFormat() string {
@@ -191,7 +194,7 @@ func sameDeliveryTarget(claimed, authorized Delivery) bool {
 		authorized.contentFormat() == claimed.contentFormat() && authorized.Provider == claimed.Provider &&
 		authorized.TenantID == claimed.TenantID && authorized.ChatType == claimed.ChatType &&
 		authorized.RecipientID == claimed.RecipientID && authorized.TargetDigest != "" &&
-		claimed.TaskDetailURL == "" && sameTaskDetailTarget(claimed, authorized)
+		claimed.TaskDetailURL == "" && !claimed.TriggerResultCard && sameTaskDetailTarget(claimed, authorized)
 }
 
 func sendFeishuDelivery(ctx context.Context, b Binding, d Delivery) deliveryReceipt {

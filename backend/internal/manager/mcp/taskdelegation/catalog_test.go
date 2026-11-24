@@ -174,7 +174,7 @@ func TestStableDelegationCatalogRejectsExplicitAmbiguousAuthorization(t *testing
 	}
 }
 
-func TestTaskDetailToolOnlyInSelectedOrdinaryChannelCatalog(t *testing.T) {
+func TestTaskDetailToolOnlyInSelectedChannelCatalog(t *testing.T) {
 	secret := strings.Repeat("s", 32)
 	id := manager.DelegationIdentity{SessionID: manager.NewID(), EngineID: manager.NewID(), AssignmentID: manager.NewID(), Generation: 1}
 	token, err := manager.SignDelegation(secret, id)
@@ -192,8 +192,8 @@ func TestTaskDetailToolOnlyInSelectedOrdinaryChannelCatalog(t *testing.T) {
 	}{
 		{"enabled channel", "?catalog=stable&task_detail=enabled", true, false, true},
 		{"settings off at harness fetch", "?catalog=stable", true, false, false},
-		{"report flag despite steered input", "?catalog=stable&mode=report&task_detail=enabled", true, false, false},
-		{"report detected in Manager", "?catalog=stable&task_detail=enabled", true, true, false},
+		{"report mode with settings on", "?catalog=stable&mode=report&task_detail=enabled", true, false, true},
+		{"report detected in Manager", "?catalog=stable&task_detail=enabled", true, true, true},
 		{"web cannot issue an external card", "?catalog=stable&task_detail=enabled", false, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -207,7 +207,7 @@ func TestTaskDetailToolOnlyInSelectedOrdinaryChannelCatalog(t *testing.T) {
 			r.Header.Set("Authorization", "Bearer "+token)
 			out := httptest.NewRecorder()
 			h.ServeHTTP(out, r)
-			if out.Code != http.StatusOK || strings.Contains(out.Body.String(), `"name":"send_task_detail_card"`) != tc.shown {
+			if out.Code != http.StatusOK || strings.Contains(out.Body.String(), `"name":"send_task_detail_link"`) != tc.shown {
 				t.Fatalf("task detail catalog mismatch: %d", out.Code)
 			}
 		})

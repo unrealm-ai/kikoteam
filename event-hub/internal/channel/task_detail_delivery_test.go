@@ -13,6 +13,7 @@ import (
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
+	"github.com/unrealm-ai/kikoteam/event-hub/internal/taskdetailurl"
 )
 
 const (
@@ -89,7 +90,7 @@ func TestTaskDetailDeliveryAuthorizationFenceAndReceipt(t *testing.T) {
 					t.Error("delivery operation or target changed")
 				}
 				if len(sends) == 2 {
-					if v.Text != taskDetailLink(fakeTaskDetailURL) || v.TaskDetailCard != nil {
+					if v.Text != taskdetailurl.Link(fakeTaskDetailURL) || v.TaskDetailCard != nil {
 						t.Error("fallback did not carry only the same grant")
 					}
 					return deliveryReceipt{Status: "sent", MessageID: "link"}
@@ -299,7 +300,7 @@ func TestTaskDetailDingProviderAndResultQuery(t *testing.T) {
 						fixtureWriteRaw(t, w, `{"code":"Forbidden.AccessDenied.AccessTokenPermissionDenied"}`)
 						return
 					}
-				} else if body.Key != "sampleMarkdown" || param["text"] != taskDetailLink(detail.URL) {
+				} else if body.Key != "sampleMarkdown" || param["text"] != taskdetailurl.Link(detail.URL) {
 					t.Error("incorrect DingTalk ordinary link")
 				}
 				fixtureWriteRaw(t, w, `{"processQueryKey":"query-id"}`)
@@ -395,7 +396,7 @@ func TestTaskDetailTriggerURLAppendsWithoutChangingOriginal(t *testing.T) {
 			count++
 			want := d.Text
 			if wantLink {
-				want += "\n\n" + taskDetailLink(tdURL)
+				want += "\n\n" + taskdetailurl.Link(tdURL)
 			}
 			if v.ChatID != "chat" || v.Text != want || v.Format != "markdown" || v.TaskDetailCard != nil {
 				t.Error("trigger result route/body changed")
@@ -513,8 +514,69 @@ func TestTaskDetailInternalOriginURLBoundary(t *testing.T) {
 		{"http://192.168.10.20:8080/%74asks/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false},
 		{"http://192.168.10.20:8080/" + suffix, false},
 	} {
-		if got := validTaskDetailURL(tc.raw); got != tc.want {
+		if got := taskdetailurl.Valid(tc.raw); got != tc.want {
 			t.Errorf("link accepted=%v, want=%v (%s)", got, tc.want, tc.raw)
 		}
+	}
+}
+
+func TestOrdinaryTaskDetailCarriesDescriptionAndSameLink(t *testing.T) {
+	for _, provider := range []string{"feishu", "dingtalk", "wecom"} {
+		t.Run(provider, func(t *testing.T) {
+			for _, mode := range []string{"native", "rejected", "long", "unknown"} {
+				t.Run(mode, func(t *testing.T) {
+					card := testTaskDetailCard()
+					card.Description = "已检查。"
+					if mode == "long" {
+						card.Description = strings.Repeat("已", 113)
+					}
+					d := Delivery{TaskDetailCard: card}
+					var sends []Delivery
+					got := sendTaskDetail(t.Context(), Binding{Provider: provider}, d, func(_ context.Context, _ Binding, v Delivery) deliveryReceipt {
+						sends = append(sends, v)
+						if v.Format == taskDetailCardFormat {
+							switch mode {
+							case "rejected":
+								return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: taskDetailRejected}
+							case "unknown":
+								return deliveryReceipt{Status: "unknown"}
+							}
+						}
+						return deliveryReceipt{Status: "sent"}
+					})
+					if len(sends) == 0 || sends[0].Text == "" || !strings.Contains(sends[0].Text, card.Description) {
+						t.Fatalf("description lost: %+v", sends)
+					}
+					last := sends[len(sends)-1]
+					switch {
+					case mode == "rejected" || mode == "long" && provider == "wecom":
+						if got.Presentation != taskDetailLinkFormat || last.Text != card.Description+"\n\n"+taskdetailurl.Link(card.URL) {
+							t.Fatalf("original text + same authorized link not sent: %+v", got)
+						}
+					case mode == "unknown":
+						if len(sends) != 1 || got.Status != "unknown" {
+							t.Fatal("unknown report was resent")
+						}
+					default:
+						if len(sends) != 1 || got.Presentation != taskDetailCardFormat || last.TaskDetailCard.URL != card.URL {
+							t.Fatal("native report card missing")
+						}
+						var payload map[string]any
+						if provider == "feishu" {
+							payload = feishuTaskDetailContent(last)
+						}
+						if provider == "wecom" {
+							payload = wecomTaskDetailContent(last)
+						}
+						if payload != nil {
+							raw, err := json.Marshal(payload)
+							if err != nil || !strings.Contains(string(raw), card.Description) {
+								t.Fatal("renderer lost body", err)
+							}
+						}
+					}
+				})
+			}
+		})
 	}
 }

@@ -163,6 +163,9 @@ func scanDeliveryLease(row scanner, authorized bool) (service.ChannelDelivery, e
 	e := row.Scan(&v.ID, &v.LeaseToken, &v.BindingID, &v.ConnectionGeneration, &v.ChatID, &v.ReplyToMessageID, &v.ThreadID, &v.Text, &v.Format, &v.Provider, &v.ExternalTenantID, &v.ChatType, &v.RecipientID, &v.ProviderRequestID, &v.TargetDigest, &v.QueryToken, &kind, &v.ArtifactID, &cardTitle, &cardState, &v.Presentation)
 	if cardTitle != "" {
 		v.TaskDetailCard = &service.TaskDetailCard{Title: cardTitle, State: cardState}
+		if strings.HasPrefix(kind, "task_detail:body:") {
+			v.TaskDetailCard.Description = v.Text
+		}
 	}
 	// A private task result has its own authorized outbox operation. Address
 	// the original user even if the interactive callback socket has expired.
@@ -205,12 +208,14 @@ func (s *Store) ClaimChannelDeliveries(ctx context.Context, limit int, supportsM
 	}
 	media := len(supportsMedia) > 0 && supportsMedia[0]
 	taskDetail := len(supportsMedia) > 1 && supportsMedia[1]
+	taskDetailBody := len(supportsMedia) > 2 && supportsMedia[2]
 	rows, e := tx.QueryContext(ctx, `WITH claimed AS (
  SELECT d.id FROM manager_channel_deliveries d
  WHERE (d.content_format='text' OR ($2 AND d.content_format='markdown') OR ($3 AND d.artifact_id IS NOT NULL))
  AND (d.status='pending' OR (d.status='leased' AND d.lease_until<now()))
  AND (d.artifact_id IS NULL OR d.attempts<$4)
  AND ($5 OR d.kind NOT LIKE 'task_detail:%')
+ AND ($6 OR d.kind NOT LIKE 'task_detail:body:%')
  AND (d.artifact_id IS NULL OR NOT EXISTS(
    SELECT FROM manager_artifact_selections current JOIN manager_artifact_selections earlier USING (chat_turn_id,inbox_id)
    JOIN manager_channel_deliveries prev ON prev.inbox_id=earlier.inbox_id AND prev.kind='artifact:'||earlier.chat_turn_id||':'||earlier.artifact_id
@@ -218,7 +223,7 @@ func (s *Store) ClaimChannelDeliveries(ctx context.Context, limit int, supportsM
    AND earlier.position<current.position AND prev.status IN ('pending','leased','sending')))
  ORDER BY d.created_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT $1),
  updated AS (UPDATE manager_channel_deliveries d SET status='leased',lease_token=gen_random_uuid(),lease_until=now()+interval '30 seconds',attempts=attempts+1,updated_at=now() FROM claimed WHERE d.id=claimed.id RETURNING d.*)
- SELECT `+deliverySelect+` FROM updated d JOIN manager_channel_inbox n ON n.id=d.inbox_id ORDER BY d.created_at,d.id`, limit, supportsMarkdown, media, maxArtifactDeliveryAttempts, taskDetail)
+ SELECT `+deliverySelect+` FROM updated d JOIN manager_channel_inbox n ON n.id=d.inbox_id ORDER BY d.created_at,d.id`, limit, supportsMarkdown, media, maxArtifactDeliveryAttempts, taskDetail, taskDetailBody)
 	if e != nil {
 		return nil, e
 	}

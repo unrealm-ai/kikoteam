@@ -71,7 +71,7 @@ func (s *Store) claimNotificationContext(ctx context.Context, id string) (*servi
 		return nil, err
 	}
 	var j service.ChannelHistoryJob
-	err = tx.QueryRowContext(ctx, `SELECT n.id,b.id,b.connection_generation,b.config_revision,b.rules_version,b.external_tenant_id,c.external_chat_id,c.channel_thread_id,n.provider_message_id,COALESCE(n.provider_created_at_ms,0),n.text,n.content_format,COALESCE(h.trigger_message_id,''),COALESCE(h.trigger_created_at_ms,0) FROM manager_trigger_notifications n JOIN manager_conversations c ON c.id=n.conversation_id JOIN platform_channel_bindings b ON b.id=c.channel_binding_id LEFT JOIN manager_channel_history_boundaries h ON h.conversation_id=c.id WHERE n.id=$1 AND n.status='sent' AND n.context_status='pending' AND b.provider='feishu' AND (n.context_lease_until IS NULL OR n.context_lease_until<now()) FOR UPDATE OF n`, id).Scan(&j.ID, &j.BindingID, &j.ConnectionGeneration, &j.ConfigRevision, &j.RulesVersion, &j.ExternalTenantID, &j.ChatID, &j.ThreadID, &j.TriggerMessageID, &j.TriggerCreatedAtMS, &j.TriggerText, &j.TriggerFormat, &j.PreviousTriggerMessageID, &j.PreviousTriggerCreatedAtMS)
+	err = tx.QueryRowContext(ctx, `SELECT n.id,b.id,b.connection_generation,b.config_revision,b.rules_version,b.external_tenant_id,c.external_chat_id,c.channel_thread_id,n.provider_message_id,COALESCE(n.provider_created_at_ms,0),n.text,CASE WHEN n.task_detail_card_authorized THEN COALESCE(n.presentation,n.content_format) ELSE n.content_format END,COALESCE(h.trigger_message_id,''),COALESCE(h.trigger_created_at_ms,0) FROM manager_trigger_notifications n JOIN manager_conversations c ON c.id=n.conversation_id JOIN platform_channel_bindings b ON b.id=c.channel_binding_id LEFT JOIN manager_channel_history_boundaries h ON h.conversation_id=c.id WHERE n.id=$1 AND n.status='sent' AND n.context_status='pending' AND b.provider='feishu' AND (n.context_lease_until IS NULL OR n.context_lease_until<now()) FOR UPDATE OF n`, id).Scan(&j.ID, &j.BindingID, &j.ConnectionGeneration, &j.ConfigRevision, &j.RulesVersion, &j.ExternalTenantID, &j.ChatID, &j.ThreadID, &j.TriggerMessageID, &j.TriggerCreatedAtMS, &j.TriggerText, &j.TriggerFormat, &j.PreviousTriggerMessageID, &j.PreviousTriggerCreatedAtMS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -209,7 +209,7 @@ func (s *Store) CompleteNotificationContext(ctx context.Context, id string, v se
 	if err = tx.QueryRowContext(ctx, `SELECT CASE WHEN reminder_event_id IS NULL THEN 'task_result' ELSE 'system' END FROM manager_trigger_notifications WHERE id=$1`, id).Scan(&resultKind); err != nil {
 		return err
 	}
-	result, err := insertNotificationContext(t, id, "[系统消息]"+strings.TrimPrefix(j.TriggerText, "[系统消息]"), resultKind, epoch)
+	result, err := insertNotificationContext(t, id, triggerNotificationContextText(j.TriggerText, j.TriggerFormat), resultKind, epoch)
 	if err != nil {
 		return err
 	}
@@ -236,4 +236,13 @@ func finishFeishuNoticeContext(ctx context.Context, tx *sql.Tx, id, status, code
 		return err
 	}
 	return tx.Commit()
+}
+
+// Reflect verified task details without exposing how the notification was presented.
+func triggerNotificationContextText(text, presentation string) string {
+	body := strings.TrimPrefix(redactTaskDetailBearer(text), "[系统消息]")
+	if presentation == service.TaskDetailCardPresentation || presentation == service.TaskDetailLinkPresentation {
+		return "[系统消息] 已发送任务结果，任务详情链接可查看。\n" + body
+	}
+	return "[系统消息]" + body
 }

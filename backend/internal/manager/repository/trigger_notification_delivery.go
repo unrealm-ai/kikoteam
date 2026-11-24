@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+
 	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 )
 
@@ -14,7 +15,7 @@ import (
 const noticeDeliverySelect = `n.id,COALESCE(n.lease_token::text,''),n.target->>'binding_id',
     (n.target->>'generation')::bigint,n.target->>'chat_id','',n.target->>'thread_id',n.text,n.content_format,
     n.target->>'provider',n.target->>'tenant_id','group','',COALESCE(n.provider_request_id,''),
-    COALESCE(n.attempt_target_digest,''),COALESCE(n.query_token::text,''),'trigger_notification' AS kind,'' AS artifact_id,'','',''`
+    COALESCE(n.attempt_target_digest,''),COALESCE(n.query_token::text,''),'trigger_notification' AS kind,'' AS artifact_id,'','',COALESCE(n.presentation,'')`
 
 func noticeBatchValid(limit int) error {
 	if limit < 1 || limit > 50 {
@@ -57,12 +58,15 @@ func (s *Store) ClaimTriggerNotifications(ctx context.Context, limit int) ([]ser
 	return out, tx.Commit()
 }
 func (s *Store) AuthorizeTriggerNotification(ctx context.Context, id, lease string) (service.ChannelDelivery, error) {
-	return s.authorizeTriggerNotification(ctx, id, lease, false)
+	return s.authorizeTriggerNotification(ctx, id, lease, false, false)
 }
 func (s *Store) AuthorizeTriggerNotificationWithDetail(ctx context.Context, id, lease string) (service.ChannelDelivery, error) {
-	return s.authorizeTriggerNotification(ctx, id, lease, true)
+	return s.authorizeTriggerNotification(ctx, id, lease, true, false)
 }
-func (s *Store) authorizeTriggerNotification(ctx context.Context, id, lease string, detail bool) (service.ChannelDelivery, error) {
+func (s *Store) AuthorizeTriggerNotificationWithResultCard(ctx context.Context, id, lease string) (service.ChannelDelivery, error) {
+	return s.authorizeTriggerNotification(ctx, id, lease, true, true)
+}
+func (s *Store) authorizeTriggerNotification(ctx context.Context, id, lease string, detail, card bool) (service.ChannelDelivery, error) {
 	var out service.ChannelDelivery
 	if !service.ValidID(id) || !service.ValidID(lease) {
 		return out, service.Fail("invalid_argument", 400, "投递身份无效")
@@ -108,9 +112,10 @@ func (s *Store) authorizeTriggerNotification(ctx context.Context, id, lease stri
 			return service.ChannelDelivery{}, err
 		}
 	}
+	out.TriggerResultCard = card && out.TaskDetailURL != ""
 	out.Allowed = true
 	out.TargetDigest = deliveryTargetDigest(out)
-	_, err = tx.ExecContext(ctx, `UPDATE manager_trigger_notifications SET status='sending',authorized_at=CASE WHEN target->>'provider'='dingtalk' THEN clock_timestamp() ELSE now() END,lease_until=now()+interval '45 seconds',attempt_target_digest=$2,updated_at=now()WHERE id=$1`, id, out.TargetDigest)
+	_, err = tx.ExecContext(ctx, `UPDATE manager_trigger_notifications SET status='sending',authorized_at=CASE WHEN target->>'provider'='dingtalk' THEN clock_timestamp() ELSE now() END,lease_until=now()+interval '45 seconds',attempt_target_digest=$2,task_detail_card_authorized=$3,updated_at=now()WHERE id=$1`, id, out.TargetDigest, out.TriggerResultCard)
 	if err != nil {
 		return out, err
 	}
@@ -128,8 +133,9 @@ func (s *Store) CompleteTriggerNotification(ctx context.Context, id string, v se
 		return err
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
-	var state, provider, lease, digest, request, query, message string
-	err = tx.QueryRowContext(ctx, `SELECT status,target->>'provider',COALESCE(lease_token::text,''),COALESCE(attempt_target_digest,''),COALESCE(provider_request_id,''),COALESCE(query_token::text,''),COALESCE(provider_message_id,'') FROM manager_trigger_notifications WHERE id=$1 FOR UPDATE`, id).Scan(&state, &provider, &lease, &digest, &request, &query, &message)
+	var state, provider, lease, digest, request, query, message, presentation string
+	var cardAuthorized, linkAuthorized bool
+	err = tx.QueryRowContext(ctx, `SELECT status,target->>'provider',COALESCE(lease_token::text,''),COALESCE(attempt_target_digest,''),COALESCE(provider_request_id,''),COALESCE(query_token::text,''),COALESCE(provider_message_id,''), COALESCE(presentation,''), task_detail_card_authorized, EXISTS(SELECT 1 FROM manager_task_detail_grants WHERE trigger_notification_id=$1) FROM manager_trigger_notifications WHERE id=$1 FOR UPDATE`, id).Scan(&state, &provider, &lease, &digest, &request, &query, &message, &presentation, &cardAuthorized, &linkAuthorized)
 	if err != nil {
 		return visibleError(err)
 	}
@@ -148,6 +154,9 @@ func (s *Store) CompleteTriggerNotification(ctx context.Context, id string, v se
 	if v.QueryToken != "" && (query != v.QueryToken || request == "") {
 		return service.Fail("query_lease_lost", 409, "查询租约失效")
 	}
+	if err = normalizeTriggerPresentation(&v, presentation, cardAuthorized, linkAuthorized); err != nil {
+		return err
+	}
 	if err = validateNoticeAnchor(ctx, tx, id, provider, v); err != nil {
 		return err
 	}
@@ -164,11 +173,8 @@ func (s *Store) CompleteTriggerNotification(ctx context.Context, id string, v se
 	if err != nil {
 		return err
 	}
-	if v.Status == "sent" && v.ProviderCreatedAtMS > 0 {
-		_, err = tx.ExecContext(ctx, `UPDATE manager_trigger_notifications SET provider_created_at_ms=$2,provider_chat_id=$3,provider_thread_id=$4 WHERE id=$1 AND (provider_created_at_ms IS NULL OR provider_created_at_ms=$2)`, id, v.ProviderCreatedAtMS, v.ProviderChatID, v.ProviderThreadID)
-		if err != nil {
-			return err
-		}
+	if err = saveTriggerReceiptAnchor(ctx, tx, id, v); err != nil {
+		return err
 	}
 	if state == "sent" || state == "failed" {
 		return tx.Commit()
@@ -176,7 +182,7 @@ func (s *Store) CompleteTriggerNotification(ctx context.Context, id string, v se
 	if v.Status == "unknown" && state == "accepted" {
 		v.Status = "accepted"
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE manager_trigger_notifications SET status=$2,provider_message_id=COALESCE(NULLIF($3,''),provider_message_id),provider_request_id=COALESCE(NULLIF($4,''),provider_request_id),provider_session_id=COALESCE(NULLIF($5,''),provider_session_id),error_code=NULLIF($6,''),confirmed_at=CASE WHEN $2 IN ('sent','failed')THEN now()ELSE confirmed_at END,next_query_at=CASE WHEN $2 IN ('accepted','unknown')AND COALESCE(NULLIF($4,''),provider_request_id)IS NOT NULL THEN now()+make_interval(secs=>CASE query_attempts WHEN 0 THEN 2 WHEN 1 THEN 5 WHEN 2 THEN 10 WHEN 3 THEN 20 ELSE 30 END)ELSE NULL END,query_until=NULL,updated_at=now()WHERE id=$1`, id, v.Status, v.ProviderMessageID, v.ProviderRequestID, v.ProviderSessionID, v.ErrorCode)
+	_, err = tx.ExecContext(ctx, `UPDATE manager_trigger_notifications SET status=$2,provider_message_id=COALESCE(NULLIF($3,''),provider_message_id),provider_request_id=COALESCE(NULLIF($4,''),provider_request_id),provider_session_id=COALESCE(NULLIF($5,''),provider_session_id),error_code=NULLIF($6,''),confirmed_at=CASE WHEN $2 IN ('sent','failed')THEN now()ELSE confirmed_at END,next_query_at=CASE WHEN $2 IN ('accepted','unknown')AND COALESCE(NULLIF($4,''),provider_request_id)IS NOT NULL THEN now()+make_interval(secs=>CASE query_attempts WHEN 0 THEN 2 WHEN 1 THEN 5 WHEN 2 THEN 10 WHEN 3 THEN 20 ELSE 30 END)ELSE NULL END,query_until=NULL,presentation=COALESCE(presentation,NULLIF($7,'')),updated_at=now()WHERE id=$1`, id, v.Status, v.ProviderMessageID, v.ProviderRequestID, v.ProviderSessionID, v.ErrorCode, v.Presentation)
 	if err != nil {
 		return err
 	}
@@ -189,6 +195,14 @@ func (s *Store) CompleteTriggerNotification(ctx context.Context, id string, v se
 	}
 	return err
 }
+func saveTriggerReceiptAnchor(ctx context.Context, tx *sql.Tx, id string, v service.DeliveryCompletion) error {
+	if v.Status != "sent" || v.ProviderCreatedAtMS <= 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE manager_trigger_notifications SET provider_created_at_ms=$2,provider_chat_id=$3,provider_thread_id=$4 WHERE id=$1 AND (provider_created_at_ms IS NULL OR provider_created_at_ms=$2)`, id, v.ProviderCreatedAtMS, v.ProviderChatID, v.ProviderThreadID)
+	return err
+}
+
 func (s *Store) ClaimTriggerNotificationQueries(ctx context.Context, limit int) ([]service.ChannelDelivery, error) {
 	if err := noticeBatchValid(limit); err != nil {
 		return nil, err
@@ -225,6 +239,20 @@ func validateNoticeAnchor(ctx context.Context, tx *sql.Tx, id, provider string, 
 		if provider != "feishu" || v.Status != "sent" || v.ProviderCreatedAtMS <= 0 || v.ProviderChatID != chat || v.ProviderThreadID != thread {
 			return service.Fail("receipt_anchor_mismatch", 400, "消息锚点与目标不符")
 		}
+	}
+	return nil
+}
+
+// A receipt can describe actual presentation only for an opted-in attempt.
+// DingTalk query receipts may inherit, but never replace, its accepted presentation.
+func normalizeTriggerPresentation(v *service.DeliveryCompletion, stored string, cardAuthorized, linkAuthorized bool) error {
+	if (v.Presentation == service.TaskDetailCardPresentation && !cardAuthorized) ||
+		(v.Presentation == service.TaskDetailLinkPresentation && !linkAuthorized) ||
+		(stored != "" && v.Presentation != "" && v.Presentation != stored) {
+		return service.Fail("receipt_mismatch", 409, "回执呈现与投递尝试不符")
+	}
+	if v.QueryToken != "" && v.Presentation == "" {
+		v.Presentation = stored
 	}
 	return nil
 }

@@ -21,7 +21,7 @@ func TestTaskDetailChannelDispatchAndSilentContext(t *testing.T) {
 			}
 			send := func(want string) {
 				t.Helper()
-				r, err := store.QueueTaskDetailCard(ctx, *issue.Source, task)
+				r, err := store.QueueTaskDetailCard(ctx, *issue.Source, task, "")
 				if err != nil || r.Status != want {
 					t.Fatalf("queue receipt: %+v, %v", r, err)
 				}
@@ -31,8 +31,7 @@ func TestTaskDetailChannelDispatchAndSilentContext(t *testing.T) {
 				}
 			}
 			send("queued")
-			send("queued")
-			if _, err := store.QueueTaskDetailCard(ctx, *issue.Source, manager.NewID()); err == nil {
+			if _, err := store.QueueTaskDetailCard(ctx, *issue.Source, manager.NewID(), ""); err == nil {
 				t.Fatal("an unrelated task can be sent")
 			}
 			old, err := store.ClaimChannelDeliveries(ctx, 10, true, true)
@@ -41,7 +40,7 @@ func TestTaskDetailChannelDispatchAndSilentContext(t *testing.T) {
 			}
 			claims, err := store.ClaimChannelDeliveries(ctx, 10, true, true, true)
 			if err != nil || len(claims) != 1 || claims[0].TaskDetailCard == nil || claims[0].TaskDetailCard.URL != "" {
-				t.Fatalf("claim exposed a URL or did not deduplicate: %d, %v", len(claims), err)
+				t.Fatalf("claim exposed a URL or was not created: %d, %v", len(claims), err)
 			}
 			claim := claims[0]
 			out, err := store.AuthorizeChannelDelivery(ctx, claim.ID, claim.LeaseToken)
@@ -81,7 +80,7 @@ func TestTaskDetailChannelDispatchAndSilentContext(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			send("already_sent")
+			send("queued")
 			var notes, triggers int
 			var text string
 			err = db.QueryRow(`SELECT count(*), count(*) FILTER (WHERE trigger_agent_loop), COALESCE(max(text),'')
@@ -117,10 +116,11 @@ func verifyTriggerTaskDetailNotifications(t *testing.T, kind string) {
 	reviewExec(t, db, `INSERT INTO platform_channel_bindings(id,workspace_id,agent_id,provider,connection_generation,rules_version,config_revision,enabled,app_id,external_tenant_id,credential_ciphertext,trigger,history,access)
  VALUES($1,$2,$3,'feishu',1,1,1,true,'cli_fixture','tenant',decode('00','hex'),'{"mention":true}','{"enabled":false}','{"mode":"all"}')`, binding, w, agent)
 	var raw []manager.TriggerNotificationTarget
-	for _, dest := range []string{"new-hub-group", "old-hub-group", "disabled-group"} {
+	for _, dest := range []string{"new-hub-group", "fallback-group", "old-hub-group", "disabled-group"} {
 		target := manager.NewID()
 		reviewExec(t, db, `INSERT INTO manager_conversations(id,workspace_id,agent_id,system_owned,channel_binding_id,channel_identity_epoch,channel_tenant_id,channel_chat_type,external_chat_id)
 VALUES($1,$2,$3,true,$4,1,'tenant','group',$5)`, target, w, agent, binding, dest)
+		reviewExec(t, db, `INSERT INTO manager_sessions(id,workspace_id,agent_id,conversation_id,created_by,mode,configuration)VALUES($1,$2,$3,$4,$5,'chat','{}')`, manager.NewID(), w, agent, target, actor)
 		raw = append(raw, manager.TriggerNotificationTarget{ConversationID: target})
 	}
 	targets, err := json.Marshal(raw)
@@ -150,10 +150,10 @@ VALUES($1,$2,$3,true,$4,1,'tenant','group',$5)`, target, w, agent, binding, dest
 		t.Fatal(err)
 	}
 	claims, err := store.ClaimTriggerNotifications(ctx, 10)
-	if err != nil || len(claims) != 3 {
+	if err != nil || len(claims) != 4 {
 		t.Fatalf("notification claims: %d %v", len(claims), err)
 	}
-	for _, chat := range []string{"old-hub-group", "new-hub-group", "disabled-group"} {
+	for _, chat := range []string{"old-hub-group", "new-hub-group", "fallback-group", "disabled-group"} {
 		for _, d := range claims {
 			if d.TaskDetailURL != "" {
 				t.Fatal("notification claim exposed capability")
@@ -166,28 +166,35 @@ VALUES($1,$2,$3,true,$4,1,'tenant','group',$5)`, target, w, agent, binding, dest
 				d, err = store.AuthorizeTriggerNotification(ctx, d.ID, d.LeaseToken)
 			case "disabled-group":
 				reviewExec(t, db, `UPDATE platform_task_link_settings SET enabled=false WHERE singleton`)
-				d, err = store.AuthorizeTriggerNotificationWithDetail(ctx, d.ID, d.LeaseToken)
+				d, err = store.AuthorizeTriggerNotificationWithResultCard(ctx, d.ID, d.LeaseToken)
 			default:
-				d, err = store.AuthorizeTriggerNotificationWithDetail(ctx, d.ID, d.LeaseToken)
+				d, err = store.AuthorizeTriggerNotificationWithResultCard(ctx, d.ID, d.LeaseToken)
 			}
 			if err != nil || !strings.Contains(d.Text, "public result") || strings.Contains(d.Text, "/tasks/") {
 				t.Fatal("notice body failed or changed", err)
 			}
-			if (d.TaskDetailURL != "") != (chat == "new-hub-group") {
+			linked := chat == "new-hub-group" || chat == "fallback-group"
+			if (d.TaskDetailURL != "") != linked || d.TriggerResultCard != linked {
 				t.Fatal("unexpected optional result link presence")
 			}
-			if chat == "new-hub-group" {
-				verifyTriggerDetailGrant(t, store, d)
+			if linked {
+				presentation := manager.TaskDetailCardPresentation
+				if chat == "fallback-group" {
+					presentation = manager.TaskDetailLinkPresentation
+				}
+				verifyTriggerDetailGrant(t, store, d, presentation)
 			}
 		}
 	}
+	reviewExec(t, db, `UPDATE platform_task_link_settings SET enabled=true WHERE singleton`)
+	verifyTriggerDetailContexts(t, store)
 	var grants int
-	if err = db.QueryRow(`SELECT count(*) FROM manager_task_detail_grants WHERE task_id=$1`, task).Scan(&grants); err != nil || grants != 1 {
+	if err = db.QueryRow(`SELECT count(*) FROM manager_task_detail_grants WHERE task_id=$1`, task).Scan(&grants); err != nil || grants != 2 {
 		t.Fatalf("unexpected issuance count %d: %v", grants, err)
 	}
 }
 
-func verifyTriggerDetailGrant(t *testing.T, store *managerrepo.Store, d manager.ChannelDelivery) {
+func verifyTriggerDetailGrant(t *testing.T, store *managerrepo.Store, d manager.ChannelDelivery, presentation string) {
 	t.Helper()
 	token, ok := strings.CutPrefix(d.TaskDetailURL, "https://tasks.example.test/tasks/")
 	if !ok || len(token) != 43 {
@@ -198,12 +205,45 @@ func verifyTriggerDetailGrant(t *testing.T, store *managerrepo.Store, d manager.
 	}
 	receipt := manager.DeliveryCompletion{LeaseToken: d.LeaseToken, TargetDigest: d.TargetDigest, Status: "sent",
 		ProviderMessageID: "provider-notice", EvidenceType: "send_response", EvidenceID: "provider-notice",
-		Presentation: manager.TaskDetailLinkPresentation}
+		Presentation: presentation, ProviderCreatedAtMS: 1001, ProviderChatID: d.ChatID, ProviderThreadID: d.ThreadID}
 	if err := store.CompleteTriggerNotification(t.Context(), d.ID, receipt); err != nil {
 		t.Fatal(err)
 	}
 	result, err := store.ResolveTaskDetailGrant(t.Context(), token)
 	if err != nil || result.CanWrite() || result.TriggerNotificationID != d.ID || result.Destination.ChatID != d.ChatID {
 		t.Fatalf("bad result grant: %q %v", result.Scope, err)
+	}
+}
+
+func verifyTriggerDetailContexts(t *testing.T, store *managerrepo.Store) {
+	t.Helper()
+	jobs, err := store.ClaimNotificationContexts(t.Context(), 10)
+	if err != nil || len(jobs) != 2 {
+		t.Fatalf("notification context jobs: %d %v", len(jobs), err)
+	}
+	for _, j := range jobs {
+		isCard := j.ChatID == "new-hub-group"
+		expected := manager.TaskDetailLinkPresentation
+		if isCard {
+			expected = manager.TaskDetailCardPresentation
+		}
+		if j.TriggerFormat != expected || !strings.Contains(j.TriggerText, "public result") || strings.Contains(j.TriggerText, "/tasks/") {
+			t.Fatalf("wrong redacted context: %+v", j)
+		}
+		err = store.CompleteNotificationContext(t.Context(), j.ID, manager.NotificationContextCompletion{
+			LeaseToken: j.LeaseToken, AnchorID: j.TriggerMessageID, AnchorTime: j.TriggerCreatedAtMS, ChatID: j.ChatID, ThreadID: j.ThreadID,
+			Snapshot: manager.ChannelHistorySnapshot{Status: "complete"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body string
+		var loops bool
+		if err = store.DB.QueryRow(`SELECT text,trigger_agent_loop FROM manager_inputs WHERE notification_id=$1 AND source_kind='task_result'`, j.ID).Scan(&body, &loops); err != nil {
+			t.Fatal(err)
+		}
+		if loops || strings.Contains(body, "/tasks/") || !strings.Contains(body, "public result") || !strings.HasPrefix(body, "[系统消息] 已发送任务结果，任务详情链接可查看。\n") {
+			t.Fatal("incorrect silent input:", body, loops)
+		}
 	}
 }

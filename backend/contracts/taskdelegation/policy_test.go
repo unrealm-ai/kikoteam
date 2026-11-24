@@ -20,7 +20,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := map[string][]string{
-		"send_task_detail_card":        {"authorized channel conversation", "exact task_id", "explicitly asks", "no URL is returned", "not delivered"},
+		"send_task_detail_link":        {"authorized channel conversation", "exact task_id", "explicitly asks", "once per task", "only the reported task", "No URL is returned", "never construct or guess", "not delivered"},
 		"artifact_select":              {"candidate IDs", "pending delivery"},
 		"supplement_todo":              {"unstarted todo", "planning_version"},
 		"work_item_get_current":        {"Read-only", "current employee"},
@@ -58,7 +58,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 				t.Errorf("%s missing required property %s", name, key)
 			}
 		}
-		if name == "send_task_detail_card" && (len(tool.Schema.Properties) != 1 || len(tool.Schema.Required) != 1 || tool.Schema.Required[0] != "task_id") {
+		if name == "send_task_detail_link" && (len(tool.Schema.Properties) != 2 || len(tool.Schema.Properties["text"]) == 0 || len(tool.Schema.Required) != 1 || tool.Schema.Required[0] != "task_id") {
 			t.Errorf("task detail card must take only the exact task_id: %v", tool.Schema)
 		}
 		if name == "create_session" {

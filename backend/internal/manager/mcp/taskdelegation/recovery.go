@@ -34,7 +34,7 @@ func failedToolResult(op, code, message string, args manager.DelegationArgs, err
 }
 
 func recoveryForTask(op, code string, args manager.DelegationArgs, err error) *recoveryHint {
-	if op != "send_message" && op != "stop_session" && op != "supplement_todo" && op != "cancel_todo" && op != "start_todo" && op != "get_session" && op != "send_task_detail_card" {
+	if op != "send_message" && op != "stop_session" && op != "supplement_todo" && op != "cancel_todo" && op != "start_todo" && op != "get_session" && op != "send_task_detail_link" {
 		return nil
 	}
 	if code == "resource_not_found" && op == "get_session" && manager.ValidID(args.TaskID) && args.TurnID != "" {
@@ -57,6 +57,8 @@ func recoveryForTask(op, code string, args manager.DelegationArgs, err error) *r
 		}
 	}
 	switch code {
+	case "task_detail_report_task_mismatch", "task_detail_already_sent", "task_detail_delivery_pending":
+		return &recoveryHint{Action: "reply_text", Instructions: "照常回告本轮业务结果，不要再次尝试或声称本轮发送了任务详情链接。"}
 	case "version_conflict", "session_revision_conflict":
 		return queryTask(args, "not_applied", "先核对最新状态与回执。普通任务由 Manager 重新读取 input_revision；待办使用查询返回的 planning_version。只在原要求仍适用、未写入且无冲突时尝试一次，不改变请求内容。")
 	case "already_started", "task_already_started_or_canceled":

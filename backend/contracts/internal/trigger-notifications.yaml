@@ -76,6 +76,11 @@
         "in": "header",
         "description": "Value 1 opts into the optional read-only result link, separate from notification history text.",
         "schema": {"type": "string", "const": "1"}
+      }, {
+        "name": "X-Kiko-Trigger-Result-Card",
+        "in": "header",
+        "description": "Value 1 opts a compatible Hub into native trigger result cards with the original body; definite rejection may downgrade to the original body with the same read-only link.",
+        "schema": {"type": "string", "const": "1"}
       }],
       "security": [
         {
@@ -180,8 +185,8 @@
               "properties": {
                 "presentation": {
                   "type": "string",
-                  "enum": ["task_detail_link"],
-                  "description": "Optional annotation of the result notice presentation; never contains the link."
+                  "enum": ["task_detail_card", "task_detail_link"],
+                  "description": "Actual result presentation authenticated by the original send/query attempt; never contains the link."
                 },
                 "lease_token": {
                   "type": "string",

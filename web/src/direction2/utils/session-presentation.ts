@@ -37,8 +37,9 @@ const taskActions: Record<string, string> = {
   task_delegation_create_session: '触发任务', task_delegation_list_targets: '查看可用员工',
   task_delegation_list_sessions: '查看任务列表', task_delegation_get_session: '查看任务进展',
   task_delegation_send_message: '补充任务要求', task_delegation_stop_session: '停止任务',
-  send_task_detail_card: '发送任务详情卡片',
+  send_task_detail_link: '发送任务详情链接', send_task_detail_card: '发送任务详情链接',
 };
+export function isTaskDetailLinkTool(name: string | undefined): boolean { return name === 'send_task_detail_link' || name === 'send_task_detail_card'; }
 export function taskAction(event: SessionEvent): string { return taskActions[event.name || ''] || ''; }
 export function toolName(event: SessionEvent): string {
   return taskAction(event) || ({ read: '读取文件', write: '写入文件', edit: '编辑文件', ls: '浏览目录', find: '查找文件', grep: '搜索内容', bash_start: '执行命令', bash_poll: '查看命令输出', bash_write: '输入命令内容', bash_stop: '停止命令', bash_list: '查看后台进程' } as Record<string, string>)[event.name || ''] || event.name || '工具调用';
@@ -63,7 +64,7 @@ export function toolStatus(event: SessionEvent): string {
   const output = record(toolOutput(event));
   if (event.name === 'task_delegation_create_session') return output.accepted === true || text(output.session_id) ? '已触发' : '调用结束';
   if (['task_delegation_send_message', 'task_delegation_stop_session'].includes(event.name || '')) return '已受理';
-  if (event.name === 'send_task_detail_card') {
+  if (isTaskDetailLinkTool(event.name)) {
     return ({ queued: '已提交投递', sent: '已发送', already_sent: '此前已发送', not_sent: '未发送', delivery_unconfirmed: '送达待核对' } as Record<string, string>)[text(output.status)] || '调用结束';
   }
   if (output.state === 'running') return '后台运行中';

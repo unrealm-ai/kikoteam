@@ -100,6 +100,7 @@ type ChannelReceipt struct {
 }
 type ChannelDelivery struct {
 	TaskDetailCard       *TaskDetailCard `json:"task_detail_card,omitempty"`
+	TriggerResultCard    bool            `json:"trigger_result_card,omitempty"`
 	TaskDetailURL        string          `json:"task_detail_url,omitempty"`
 	Presentation         string          `json:"presentation,omitempty"`
 	ArtifactID           string          `json:"artifact_id,omitempty"`

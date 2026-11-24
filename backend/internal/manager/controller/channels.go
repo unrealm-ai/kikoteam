@@ -79,7 +79,7 @@ func (s *ChannelServer) Routes(mux *http.ServeMux) {
 		if e := decode(r, &v); e != nil {
 			return nil, e
 		}
-		items, e := s.Store.ClaimChannelDeliveries(r.Context(), v.Limit, r.Header.Get("X-Kiko-Delivery-Markdown") == "1", r.Header.Get("X-Kiko-Delivery-Media") == "1", r.Header.Get("X-Kiko-Delivery-Task-Detail") == "1")
+		items, e := s.Store.ClaimChannelDeliveries(r.Context(), v.Limit, r.Header.Get("X-Kiko-Delivery-Markdown") == "1", r.Header.Get("X-Kiko-Delivery-Media") == "1", r.Header.Get("X-Kiko-Delivery-Task-Detail") == "1", r.Header.Get("X-Kiko-Delivery-Task-Detail-Body") == "1")
 		return map[string]any{"items": items}, e
 	}))
 	mux.HandleFunc("POST /api/internal/v1/channel-deliveries/{id}/authorize", s.wrap(func(r *http.Request) (any, error) {

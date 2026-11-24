@@ -48,10 +48,10 @@ func (s *Store) materializeTaskDetailContexts(ctx context.Context) error {
 }
 
 type taskDetailContext struct {
-	workspace, principal, presentation, title, scope, task string
-	generation, epoch                                      int64
-	allowed                                                bool
-	queued                                                 int
+	workspace, principal, title, scope, task string
+	generation, epoch                        int64
+	allowed                                  bool
+	queued                                   int
 }
 
 func (s *Store) admitTaskDetailContext(ctx context.Context, id, session string) error {
@@ -69,14 +69,14 @@ func (s *Store) admitTaskDetailContext(ctx context.Context, id, session string) 
 		return err
 	}
 	var n taskDetailContext
-	err = tx.QueryRowContext(ctx, `SELECT ss.workspace_id,i.channel_principal_id,i.channel_generation,a.admission_epoch,x.title,g.task_id,g.scope,x.presentation,
- a.enabled AND ss.mode='chat' AND ss.lifecycle='active' AND manager_input_actor_allowed(i.id),
+	err = tx.QueryRowContext(ctx, `SELECT ss.workspace_id,n.principal_id,n.connection_generation,a.admission_epoch,x.title,g.task_id,g.scope,
+ a.enabled AND ss.mode='chat' AND ss.lifecycle='active' AND manager_input_actor_allowed(i.id) AND manager_input_actor_allowed(n.input_id),
  (SELECT count(*) FROM manager_inputs q WHERE q.session_id=ss.id AND q.status='queued')
  FROM manager_task_detail_deliveries x JOIN manager_channel_deliveries d ON d.id=x.delivery_id
- JOIN manager_task_detail_grants g ON g.id=x.grant_id JOIN manager_inputs i ON i.id=x.source_input_id
+ JOIN manager_channel_inbox n ON n.id=d.inbox_id JOIN manager_task_detail_grants g ON g.id=x.grant_id JOIN manager_inputs i ON i.id=x.source_input_id
  JOIN manager_sessions ss ON ss.id=i.session_id JOIN platform_agents a ON a.id=ss.agent_id
  WHERE x.delivery_id=$1 AND ss.id=$2 AND d.status='sent' AND x.context_settled_at IS NULL AND x.presentation IS NOT NULL
- FOR UPDATE OF x`, id, session).Scan(&n.workspace, &n.principal, &n.generation, &n.epoch, &n.title, &n.task, &n.scope, &n.presentation, &n.allowed, &n.queued)
+ FOR UPDATE OF x`, id, session).Scan(&n.workspace, &n.principal, &n.generation, &n.epoch, &n.title, &n.task, &n.scope, &n.allowed, &n.queued)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -104,16 +104,12 @@ func (s *Store) insertTaskDetailContext(ctx context.Context, tx *sql.Tx, session
 	if err != nil {
 		return err
 	}
-	kind := "卡片"
-	if n.presentation == service.TaskDetailLinkPresentation {
-		kind = "链接"
-	}
 	access := "仅可查看"
 	if n.scope == "write" {
 		access = "可查看、补充或在允许时停止"
 	}
 	trigger := false
-	body := "[系统消息] 已发送任务「" + n.title + "」（task_id: " + n.task + "）的详情" + kind + "，" + access + "。"
+	body := "[系统消息] 已发送任务「" + n.title + "」（task_id: " + n.task + "）的详情链接，" + access + "。"
 	v := service.Input{ID: service.NewID(), SessionID: session, Seq: seq, Text: body, SourceKind: "system", Status: "queued", DeliveryMode: "queue", TriggerAgentLoop: &trigger, PrincipalType: "channel", ChannelPrincipalID: &n.principal, CreatedAt: time.Now().UTC()}
 	_, err = tx.ExecContext(ctx, `INSERT INTO manager_inputs(id,workspace_id,session_id,admission_epoch,seq,text,created_at,channel_principal_id,channel_generation,context_state,delivery_mode,source_kind,trigger_agent_loop)
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending','queue','system',false)`, v.ID, n.workspace, session, n.epoch, seq, body, v.CreatedAt, n.principal, n.generation)

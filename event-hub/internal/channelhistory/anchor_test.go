@@ -116,3 +116,52 @@ func TestNotificationAnchorRejectsDifferentFormatOrBody(t *testing.T) {
 		t.Fatal("used a post as evidence for a plain-text notice")
 	}
 }
+
+func TestNotificationTaskDetailAnchorBindsProviderScopeWithoutReadingCard(t *testing.T) {
+	const bearer = "http://192.168.1.55:8080/tasks/fixture_example_not_a_token_1234567890"
+	original := "[系统消息]本次执行已结束\n**合成结果**"
+	j := Job{TriggerID: "message", ChatID: "group", ThreadID: "topic", TenantID: "tenant", TriggerText: original, TriggerTimeMS: 1760000000000}
+	for _, tc := range []struct {
+		name, format, kind, body, sender, thread, timestamp string
+		want                                                bool
+	}{
+		{"interactive opaque content", "task_detail_card", "interactive", "opaque data unsuited for decoding", "app", "topic", "1760000000000", true},
+		{"interactive wrong type", "task_detail_card", "post", "same type is required", "app", "topic", "1760000000000", false},
+		{"interactive wrong source", "task_detail_card", "interactive", "opaque", "other-app", "topic", "1760000000000", false},
+		{"interactive wrong thread", "task_detail_card", "interactive", "opaque", "app", "other-topic", "1760000000000", false},
+		{"interactive wrong provider time", "task_detail_card", "interactive", "opaque", "app", "topic", "1760000000001", false},
+		{"link same body", "task_detail_link", "post", original + "\n\n[查看任务详情](" + bearer + ")", "app", "topic", "1760000000000", true},
+		{"link added text", "task_detail_link", "post", original + "extra\n\n[查看任务详情](" + bearer + ")", "app", "topic", "1760000000000", false},
+		{"link missing", "task_detail_link", "post", original, "app", "topic", "1760000000000", false},
+		{"link invalid", "task_detail_link", "post", original + "\n\n[查看任务详情](file:///tasks/fixture_example_not_a_token_1234567890)", "app", "topic", "1760000000000", false},
+		{"link doubled", "task_detail_link", "post", original + "\n\n[查看任务详情](" + bearer + ")\n\n[查看任务详情](" + bearer + ")", "app", "topic", "1760000000000", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			job := j
+			job.TriggerFormat = tc.format
+			m := wireMessage{ID: j.TriggerID, ChatID: j.ChatID, ThreadID: tc.thread, Created: tc.timestamp, Type: tc.kind}
+			m.Sender.Type, m.Sender.ID, m.Sender.TenantKey = "app", tc.sender, j.TenantID
+			m.Body.Content = tc.body
+			if tc.kind == "post" {
+				body, err := json.Marshal(map[string]any{"content_v2": [][]map[string]string{{{"tag": "md", "text": tc.body}}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				m.Body.Content = string(body)
+			}
+			r := Reader{Authorize: allow, Get: func(_ context.Context, p string) ([]byte, error) {
+				if p != "/open-apis/im/v1/messages/message" {
+					t.Fatal("queried wrong message", p)
+				}
+				return page([]wireMessage{m}, false, ""), nil
+			}}
+			at, err := r.ResolveNotificationAnchor(context.Background(), job, "app")
+			if (err == nil) != tc.want || tc.want && at != j.TriggerTimeMS {
+				t.Fatal("wrong anchor decision", at, err)
+			}
+			if err != nil && strings.Contains(err.Error(), bearer) {
+				t.Fatal("anchor failure exposed bearer")
+			}
+		})
+	}
+}

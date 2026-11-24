@@ -62,9 +62,13 @@ func (b *Backend) request(ctx context.Context, method, path string, in, out any)
 		req.Header.Set("X-Kiko-Delivery-Markdown", "1")
 		req.Header.Set("X-Kiko-Delivery-Media", "1")
 	}
-	if method == http.MethodPost && (path == "/api/internal/v1/channel-deliveries/claim" ||
-		strings.HasPrefix(path, "/api/internal/v1/trigger-notifications/") && strings.HasSuffix(path, "/authorize")) {
+	if method == http.MethodPost && path == "/api/internal/v1/channel-deliveries/claim" {
 		req.Header.Set("X-Kiko-Delivery-Task-Detail", "1")
+		req.Header.Set("X-Kiko-Delivery-Task-Detail-Body", "1")
+	}
+	if method == http.MethodPost && strings.HasPrefix(path, "/api/internal/v1/trigger-notifications/") && strings.HasSuffix(path, "/authorize") {
+		req.Header.Set("X-Kiko-Delivery-Task-Detail", "1")
+		req.Header.Set("X-Kiko-Trigger-Result-Card", "1")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, e := b.HTTP.Do(req)

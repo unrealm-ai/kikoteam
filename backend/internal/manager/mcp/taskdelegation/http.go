@@ -46,7 +46,7 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 				return nil, nil, errors.New("unauthenticated")
 			}
 			scope := access.scope
-			if access.schemaOnly || access.report && (name != "artifact_select" || !access.channel) || name == "send_task_detail_card" && !access.taskDetail {
+			if access.schemaOnly || access.report && (!access.channel || name != "artifact_select" && name != "send_task_detail_link") || name == "send_task_detail_link" && !access.taskDetail {
 				return &sdk.CallToolResult{IsError: true}, failedToolResult(name, "user_authorization_required", "当前输入没有调用此工具的授权", args, nil), nil
 			}
 			out, err := d.Call(ctx, scope, name, args)
@@ -74,7 +74,7 @@ func Handler(d *manager.Delegation, log *slog.Logger) (http.Handler, error) {
 			sdk.AddTool[manager.DelegationArgs, any](report, &spec, call)
 		}
 		for audience, server := range catalogs {
-			if name == "artifact_select" && !audience.channel || name == "trigger_task_get_result" && !audience.group || name == "send_task_detail_card" && !audience.taskDetail {
+			if name == "artifact_select" && !audience.channel || name == "trigger_task_get_result" && !audience.group || name == "send_task_detail_link" && !audience.taskDetail {
 				continue
 			}
 			sdk.AddTool[manager.DelegationArgs, any](server, &spec, call)
@@ -125,7 +125,7 @@ func authorizeToolAccess(ctx context.Context, r *http.Request, d *manager.Delega
 		a.scope, err = d.Authorize(ctx, token)
 		a.report = a.report || a.scope.ReportOnly
 		a.chatAudience = chatAudience{channel: a.scope.Channel != nil, group: a.scope.Group}
-		a.taskDetail = a.channel && !a.report && a.stable && r.URL.Query().Get("task_detail") == "enabled" && a.scope.InputID != ""
+		a.taskDetail = a.channel && a.stable && r.URL.Query().Get("task_detail") == "enabled" && a.scope.InputID != ""
 		return a, err
 	}
 	if !a.stable {

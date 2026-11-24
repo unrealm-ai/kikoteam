@@ -2,9 +2,10 @@ package controller
 
 import (
 	"context"
-	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 	"net/http"
 	"time"
+
+	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 )
 
 // Register separately: no synthetic inbound record or public actor token.
@@ -37,6 +38,13 @@ func (s *ChannelServer) TriggerNotificationRoutes(mux *http.ServeMux) {
 		}
 		if e := decode(r, &v); e != nil {
 			return nil, e
+		}
+		if r.Header.Get("X-Kiko-Trigger-Result-Card") == "1" {
+			if card, ok := store.(interface {
+				AuthorizeTriggerNotificationWithResultCard(context.Context, string, string) (service.ChannelDelivery, error)
+			}); ok {
+				return card.AuthorizeTriggerNotificationWithResultCard(r.Context(), r.PathValue("id"), v.LeaseToken)
+			}
 		}
 		if r.Header.Get("X-Kiko-Delivery-Task-Detail") == "1" {
 			if detail, ok := store.(interface {

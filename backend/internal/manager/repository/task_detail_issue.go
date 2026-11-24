@@ -63,16 +63,19 @@ func matchingTaskDetailDestination(request, trusted service.TaskDetailDestinatio
 }
 
 func (s *Store) prepareOrdinaryTaskDetailGrant(ctx context.Context, tx *sql.Tx, g *service.TaskDetailGrant, scope service.DelegationScope) error {
-	if scope.ReportOnly || !service.ValidID(scope.InputID) {
+	if !service.ValidID(scope.InputID) || scope.ReportOnly && scope.ReportTaskID == "" {
 		return service.Fail("user_authorization_required", 403, "只有普通主对话输入可发送任务详情链接")
 	}
 	target := service.Target{Source: &scope.Identity, SourceInputID: scope.InputID, Workspace: scope.WorkspaceID, Actor: scope.ActorID, Conversation: scope.ConversationID}
-	if err := s.lockDelegationSource(ctx, tx, target); err != nil {
+	if scope.ReportTaskID == "" {
+		if err := s.lockDelegationSource(ctx, tx, target); err != nil {
+			return err
+		}
+	} else if _, err := lockTaskDetailDispatchTarget(ctx, tx, scope, scope.ReportTaskID); err != nil {
 		return err
 	}
-	// Validate that the real Turn root is ordinary input, even if a user steer
-	// arrived during a report. Require a verified channel inbox for its exact
-	// effective Input to prevent routing to a guessed chat or tenant.
+	// Bind the verified inbox to the effective user input or the reported
+	// task’s original user input, never to a caller-selected chat or tenant.
 	return loadOrdinaryTaskDetailAuthority(ctx, tx, g, scope)
 }
 
@@ -84,13 +87,15 @@ const ordinaryTaskDetailAuthority = `SELECT s.workspace_id,s.task_id,c.id,k.sour
  JOIN manager_conversations c ON c.id=chat.conversation_id AND c.workspace_id=s.workspace_id
  JOIN manager_inputs orig ON orig.id=k.source_chat_input_id AND orig.session_id=chat.id AND orig.workspace_id=s.workspace_id
  JOIN manager_turns turn ON turn.id=chat.active_turn_id JOIN manager_inputs root ON root.id=turn.input_id
- JOIN manager_inputs input ON input.id=$4 AND input.session_id=chat.id AND input.workspace_id=s.workspace_id
+ JOIN manager_inputs input ON input.id=CASE WHEN root.source_kind='task_report' THEN orig.id ELSE $4::uuid END AND input.session_id=chat.id AND input.workspace_id=s.workspace_id
  JOIN manager_channel_inbox n ON n.input_id=input.id AND n.conversation_id=c.id
  JOIN platform_channel_bindings b ON b.id=c.channel_binding_id AND b.id=n.binding_id AND b.workspace_id=s.workspace_id
  WHERE s.id=$1 AND s.mode='task' AND s.workspace_id=$2 AND chat.id=$3 AND s.conversation_id=c.id
  AND k.planning_state='started' AND s.lifecycle='active' AND c.lifecycle='active' AND chat.lifecycle='active'
- AND root.source_kind='user' AND root.trigger_agent_loop AND input.source_kind='user' AND input.trigger_agent_loop
- AND input.channel_principal_id IS NOT NULL AND input.channel_principal_id::text=$5 AND orig.source_kind='user'
+ AND root.trigger_agent_loop AND input.source_kind='user' AND input.trigger_agent_loop
+ AND ((root.source_kind='user' AND $6='' AND input.channel_principal_id::text=$5)
+ OR (root.source_kind='task_report' AND k.id::text=$6 AND root.id=$4 AND input.id=orig.id))
+ AND input.channel_principal_id IS NOT NULL AND orig.source_kind='user'
  AND n.status='accepted' AND n.connection_generation=b.connection_generation AND n.principal_id=input.channel_principal_id
  AND n.external_chat_id=c.external_chat_id AND n.thread_id=c.channel_thread_id AND n.chat_type=c.channel_chat_type
  AND b.enabled AND b.identity_epoch=c.channel_identity_epoch AND b.external_tenant_id=c.channel_tenant_id
@@ -100,7 +105,7 @@ const ordinaryTaskDetailAuthority = `SELECT s.workspace_id,s.task_id,c.id,k.sour
 
 func loadOrdinaryTaskDetailAuthority(ctx context.Context, tx *sql.Tx, g *service.TaskDetailGrant, scope service.DelegationScope) error {
 	d := &g.Destination
-	err := tx.QueryRowContext(ctx, ordinaryTaskDetailAuthority, g.SessionID, scope.WorkspaceID, scope.Identity.SessionID, scope.InputID, scope.ActorID).
+	err := tx.QueryRowContext(ctx, ordinaryTaskDetailAuthority, g.SessionID, scope.WorkspaceID, scope.Identity.SessionID, scope.InputID, scope.ActorID, scope.ReportTaskID).
 		Scan(&g.WorkspaceID, &g.TaskID, &g.ConversationID, &g.SourceChatSessionID, &g.SubjectInputID, &g.SubjectID,
 			&g.SubjectGeneration, &d.Channel, &d.BindingID, &d.Generation, &d.ChatType, &d.ChatID, &d.TopicID)
 	if errors.Is(err, sql.ErrNoRows) {

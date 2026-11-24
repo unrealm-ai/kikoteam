@@ -20,6 +20,7 @@ type DelegationScope struct {
 	WebGroup                                                  *WebGroupExecution
 	Group                                                     bool
 	ReportOnly                                                bool
+	ReportTaskID                                              string
 	Channel                                                   *ChannelActor
 	InputID                                                   string
 	Identity                                                  DelegationIdentity
@@ -124,7 +125,7 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 		return nil, Fail("delegation_input_changed", 409, "本次委派的来源输入已改变")
 	}
 	scope = current
-	if scope.ReportOnly && name != "artifact_select" {
+	if scope.ReportOnly && name != "artifact_select" && name != "send_task_detail_link" {
 		return nil, Fail("user_authorization_required", 403, "任务回报只能说明结果或询问用户，业务操作需要用户输入")
 	}
 	if scope.WebGroup != nil {
@@ -134,8 +135,8 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 		ctx = WithChannelActor(ctx, *scope.Channel)
 	}
 	switch name {
-	case "send_task_detail_card":
-		return d.taskDetailDispatch(ctx, scope, args.TaskID)
+	case "send_task_detail_link":
+		return d.taskDetailDispatch(ctx, scope, args.TaskID, args.Text)
 	case "trigger_task_get_result":
 		return d.triggerTaskResults(ctx, scope, args)
 	case "artifact_select":
@@ -210,7 +211,7 @@ func (d *Delegation) delegatedTaskTarget(ctx context.Context, scope DelegationSc
 }
 
 func pinsDelegationInput(name string, args DelegationArgs) bool {
-	return len(args.AttachmentIDs) > 0 || name == "create_session" || name == "send_message" || name == "artifact_select" || name == "trigger_task_get_result" || name == "send_task_detail_card"
+	return len(args.AttachmentIDs) > 0 || name == "create_session" || name == "send_message" || name == "artifact_select" || name == "trigger_task_get_result" || name == "send_task_detail_link"
 }
 
 func (d *Delegation) sendTaskMessage(ctx context.Context, scope DelegationScope, v Session, args DelegationArgs) (any, error) {

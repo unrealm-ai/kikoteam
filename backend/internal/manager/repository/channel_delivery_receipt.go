@@ -23,6 +23,9 @@ func deliveryTargetDigest(d service.ChannelDelivery) string {
 	if d.TaskDetailURL != "" {
 		raw += "\x00task-detail-link:" + d.TaskDetailURL
 	}
+	if d.TriggerResultCard {
+		raw += "\x00trigger-result-card"
+	}
 	if d.ArtifactID != "" {
 		raw += "\x00artifact:" + d.ArtifactID
 	}

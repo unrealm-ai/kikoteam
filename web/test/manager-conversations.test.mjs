@@ -402,7 +402,7 @@ test('task_id-only report preserves the source execution turn and channel card r
  const report = reportEvent({content:[{type:'text',text:'平台任务回报\n'+JSON.stringify({
    task_id,turn_id:'source-turn',outcome:'completed',result:'# 新回报正文',background_process_count:0,queued_input_count:0,
  })}]});
- const card = toolEvent({seq:'11',name:'send_task_detail_card',input:{task_id},output:{structuredContent:{status:'queued'}}});
+ const card = toolEvent({seq:'11',name:'send_task_detail_link',input:{task_id},output:{structuredContent:{status:'queued'}}});
  const m = await mount({override:url=>url.includes('/chat/events?')?Response.json({items:[card,report],next_cursor:null,resume_cursor:'H'}):null});
  try {
    const receipt=m.host.querySelector('.task-action');

@@ -23,7 +23,12 @@ type TaskDetailArtifact struct {
 	Size int64  `json:"size"`
 }
 
+type PublicTaskProgress struct {
+	Phase string `json:"phase"`
+}
+
 type TaskDetailSnapshot struct {
+	Progress          *PublicTaskProgress     `json:"progress,omitempty"`
 	Title             string                  `json:"title"`
 	Status            string                  `json:"status"`
 	Permission        string                  `json:"permission"`

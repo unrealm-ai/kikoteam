@@ -134,6 +134,12 @@ taskSchema:
   properties:
     title: { type: string }
     status: { type: string }
+    progress:
+      type: object
+      additionalProperties: false
+      required: [phase]
+      properties:
+        phase: {type: string, description: Display-only phase within the existing grant; no person or handoff details.}
     permission: { type: string, enum: [read, write] }
     can_append: { type: boolean }
     can_stop: { type: boolean }

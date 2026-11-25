@@ -48,6 +48,7 @@ item:
                   required: [initial_input, latest_result]
                   properties:
                     work_item_id: {type: string, format: uuid, description: Latest related handoff item}
+                    progress: {$ref: '#/schemas/TaskProgress'}
                     initial_input:
                       oneOf:
                         - $ref: './session-schemas.yaml#/Input'
@@ -89,6 +90,34 @@ parameters:
   cursor: {name: cursor, in: query, schema: {type: string}, description: Opaque signed cursor. Reusing it with other scope or filters returns invalid_cursor.}
   limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
 schemas:
+  TaskProgress:
+    type: object
+    required: [phase]
+    properties:
+      phase: {type: string, description: Display-only phase; not an authorization decision.}
+      assignee: {type: string}
+      confirmation:
+        type: object
+        properties:
+          recipient: {type: string}
+          question: {type: string}
+      handoffs:
+        type: array
+        maxItems: 20
+        items:
+          type: object
+          required: [assignee, phase]
+          properties:
+            assignee: {type: string}
+            phase: {type: string}
+      delivery:
+        type: array
+        items:
+          type: object
+          required: [channel, phase]
+          properties:
+            channel: {type: string, enum: [web, feishu, dingtalk, wecom]}
+            phase: {type: string, enum: [confirmed, pending, unconfirmed, partial, failed]}
   Task:
     type: object
     required: [task_id, session_id, title, agent, source, lifecycle, execution, latest_input, latest_turn, created_at, revision, accepts_input, input_block_reason, actions]

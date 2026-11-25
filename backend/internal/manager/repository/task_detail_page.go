@@ -109,6 +109,9 @@ func (s *Store) TaskDetailProjection(ctx context.Context, grant service.TaskDeta
 			return service.TaskDetailSnapshot{}, visibleError(err)
 		}
 	}
+	if view.Progress, err = publicTaskProgress(ctx, tx, g, st, view.Status); err != nil {
+		return service.TaskDetailSnapshot{}, err
+	}
 	if view.Activities, view.ActivityTruncated, err = taskDetailActivities(ctx, tx, g); err != nil {
 		return service.TaskDetailSnapshot{}, err
 	}

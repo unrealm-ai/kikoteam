@@ -152,10 +152,22 @@ func scanTasks(rows *sql.Rows) ([]service.Task, error) {
 }
 func (s *Store) Task(ctx context.Context, w, actor, id string) (service.TaskDetail, error) {
 	var out service.TaskDetail
-	var workSpace bool
-	row := s.DB.QueryRowContext(ctx, `SELECT `+taskReadColumns+`,EXISTS(SELECT 1 FROM manager_work_items wi WHERE wi.task_space_id=s.task_space_id)`+taskFrom+` WHERE s.workspace_id=$1 AND `+sessionRead(ctx, actor)+` AND k.id=$3`, w, actor, id)
-	v, err := scanTask(appendedScanner{scanner: row, extra: []any{&workSpace}})
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	if err != nil {
+		return out, err
+	}
+	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
+	var workSpace, preparing, stopped bool
+	row := tx.QueryRowContext(ctx, `SELECT `+taskReadColumns+`,EXISTS(SELECT 1 FROM manager_work_items wi WHERE wi.task_space_id=s.task_space_id),
+ `+taskPreparingEnvironment+`,COALESCE(`+taskSettledStop+`,false)`+taskFrom+` WHERE s.workspace_id=$1 AND `+sessionRead(ctx, actor)+` AND k.id=$3`, w, actor, id)
+	v, err := scanTask(appendedScanner{scanner: row, extra: []any{&workSpace, &preparing, &stopped}})
+	if err != nil {
+		return out, err
+	}
+	if out.Progress, err = authenticatedTaskProgress(ctx, tx, w, actor, v, preparing, stopped); err != nil {
+		return out, err
+	}
+	if err = tx.Commit(); err != nil {
 		return out, err
 	}
 	out.Task = v

@@ -309,3 +309,112 @@ func TestTaskDetailSSEReconnectAndRevoke(t *testing.T) {
 		t.Fatalf("SSE repeated applied state or streamed revoked contents: %s %v", data, err)
 	}
 }
+
+func TestTaskDetailHandoffProgressUsesCurrentAssignment(t *testing.T) {
+	f := newAmendmentConflictFixture(t)
+	ctx := t.Context()
+	current := func() manager.TaskDetail {
+		t.Helper()
+		d, e := f.manager.GetTask(ctx, f.workspace, f.actor, f.task)
+		if e != nil || d.Progress == nil || len(d.Progress.Handoffs) != 1 {
+			t.Fatalf("task handoff summary: %+v %v", d.Progress, e)
+		}
+		if d.Progress.Phase != "waiting_handoff" {
+			t.Fatalf("root not waiting: %+v", d.Progress)
+		}
+		return d
+	}
+	if got := current().Progress.Handoffs[0]; got.Phase != "queued" || got.Assignee != "Checklist reviewer" {
+		t.Fatalf("queued assignee: %+v", got)
+	}
+	var session, input string
+	f.check(f.db.QueryRow(`SELECT s.id,s.initial_input_id FROM manager_work_items w JOIN manager_work_assignments a ON a.id=w.current_assignment_id JOIN manager_sessions s ON s.id=a.session_id WHERE w.id=$1`, f.item).Scan(&session, &input))
+	assignment := manager.NewID()
+	turn := reviewStartTurn(t, f.db, f.workspace, session, input, assignment, 1)
+	if got := current().Progress.Handoffs[0].Phase; got != "running" {
+		t.Fatalf("child running: %s", got)
+	}
+	reviewFinishTurn(t, f.db, session, input, turn)
+	reviewExec(t, f.db, `UPDATE manager_turns SET status='failed' WHERE id=$1`, turn)
+	if got := current().Progress.Handoffs[0].Phase; got != "failed" {
+		t.Fatalf("child failed independently of root: %s", got)
+	}
+	reviewExec(t, f.db, `UPDATE manager_work_items SET status='awaiting_acceptance' WHERE id=$1`, f.item)
+	if got := current().Progress.Handoffs[0].Phase; got != "waiting_acceptance" {
+		t.Fatalf("waiting acceptance: %s", got)
+	}
+	reviewExec(t, f.db, `UPDATE manager_work_items SET status='failed' WHERE id=$1`, f.item)
+	reviewExec(t, f.db, `UPDATE manager_sessions SET required_actions='[]' WHERE task_id=$1`, f.task)
+	d, err := f.manager.GetTask(ctx, f.workspace, f.actor, f.task)
+	if err != nil || d.Progress == nil || d.Progress.Phase != "handoff_failed" {
+		t.Fatalf("an ended handoff-originating turn is not task completion: %+v %v", d.Progress, err)
+	}
+}
+
+func TestTaskDetailConfirmationProgressKeepsResumeSeparate(t *testing.T) {
+	db, m, mux, w, actor, employee, cookie := managerFixture(t)
+	ctx := t.Context()
+	c, e := m.CreateConversation(ctx, w, actor, manager.CreateConversation{AgentID: employee})
+	if e != nil {
+		t.Fatal(e)
+	}
+	session, _, e := m.CreateSession(ctx, w, actor, "confirm-progress", manager.CreateSession{ConversationID: c.ID, Mode: "task", Input: &struct {
+		Text string `json:"text"`
+	}{Text: "等待确认的测试"}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	taskPath := "/api/v1/workspaces/" + w + "/tasks/" + *session.TaskID
+	assert := func(phase string, canStop bool) {
+		t.Helper()
+		r := httptest.NewRequest("GET", taskPath, nil)
+		r.Header.Set("Cookie", cookie)
+		res := httptest.NewRecorder()
+		mux.ServeHTTP(res, r)
+		var d manager.TaskDetail
+		if e := json.Unmarshal(res.Body.Bytes(), &d); e != nil || res.Code != 200 || d.Progress == nil || d.Progress.Phase != phase || d.Actions["stop"].Allowed != canStop {
+			t.Fatalf("want %s/stop %t got %d %s (%v)", phase, canStop, res.Code, res.Body, e)
+		}
+		if !canStop && (d.Progress.Confirmation == nil || d.Progress.Confirmation.Question != "请确认范围") {
+			t.Fatalf("missing confirmation summary: %+v", d.Progress.Confirmation)
+		}
+	}
+	assert("queued", true)
+	turn := reviewStartTurn(t, db, w, session.ID, *session.InitialInputID, manager.NewID(), 1)
+	reviewFinishTurn(t, db, session.ID, *session.InitialInputID, turn)
+	id := manager.NewID()
+	reviewExec(t, db, `INSERT INTO manager_human_requests(id,workspace_id,agent_id,session_id,turn_id,input_id,authority_input_id,recipient,rules_version,question,stop_revision,fenced_at,state)
+ VALUES($1,$2,$3,$4,$5,$6,$6,'{}',1,'{"question":"请确认范围"}',0,now(),'pending')`, id, w, employee, session.ID, turn, *session.InitialInputID)
+	reviewExec(t, db, `UPDATE manager_sessions SET required_actions=jsonb_build_array(jsonb_build_object('type','human_confirmation','request_id',$2::text)) WHERE id=$1`, session.ID, id)
+	assert("waiting_confirmation", false)
+	reviewExec(t, db, `UPDATE manager_human_requests SET state='approved',answer='{"decision":"approve"}',answered_at=now(),resume_input_id=$2 WHERE id=$1`, id, *session.InitialInputID)
+	assert("waiting_resume", false)
+}
+
+func TestTaskDetailResultDeliveryDoesNotChangeExecutionOutcome(t *testing.T) {
+	db, store, w, actor, _, _, input := triggerNoticeFixture(t)
+	ctx := t.Context()
+	endNoticeExecution(t, db, input)
+	if err := store.MaterializeTriggerNotifications(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var task string
+	if err := db.QueryRow(`SELECT task_id FROM manager_trigger_notifications WHERE source_input_id=$1`, input).Scan(&task); err != nil {
+		t.Fatal(err)
+	}
+	assert := func(want string) {
+		t.Helper()
+		d, e := store.Task(ctx, w, actor, task)
+		if e != nil || d.Progress == nil || d.Progress.Phase != "completed" || len(d.Progress.Delivery) != 1 || d.Progress.Delivery[0].Channel != "web" || d.Progress.Delivery[0].Phase != want {
+			t.Fatalf("completed, delivery=%s: %+v %v", want, d.Progress, e)
+		}
+	}
+	// The Web materializer may have already confirmed delivery; use
+	// deterministic ledger states to exercise this read-only projection.
+	reviewExec(t, db, `UPDATE manager_trigger_notifications SET status='unknown' WHERE source_input_id=$1`, input)
+	assert("unconfirmed")
+	reviewExec(t, db, `UPDATE manager_trigger_notifications SET status='failed' WHERE source_input_id=$1`, input)
+	assert("failed")
+	reviewExec(t, db, `UPDATE manager_trigger_notifications SET status='sent',confirmed_at=now() WHERE source_input_id=$1`, input)
+	assert("confirmed")
+}

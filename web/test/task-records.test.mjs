@@ -315,3 +315,17 @@ test('authenticated task detail queues supplements but cannot stop during human 
     } finally { await m.cleanup(); }
   }
 });
+
+test('task detail separates root, handoff and delivery state without opening another task', async () => {
+  const m = await mount(Detail, url => url.endsWith('/tasks/one') ? Response.json({...task(), progress:{
+    phase:'waiting_handoff', assignee:'原员工', handoffs:[{assignee:'财务 AI 员工', phase:'failed'}],
+    delivery:[{channel:'dingtalk', phase:'unconfirmed'}],
+  }}) : null);
+  try {
+    const summary = m.host.querySelector('[aria-label="任务状态摘要"]');
+    assert.match(summary.textContent, /已交接，等待处理结果/);
+    assert.match(summary.textContent, /财务 AI 员工 · 失败/);
+    assert.match(summary.textContent, /钉钉 · 发送结果暂未确认/);
+    assert.equal(summary.querySelector('a,button'), null);
+  } finally { await m.cleanup(); }
+});

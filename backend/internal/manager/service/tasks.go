@@ -62,6 +62,7 @@ type TaskAction struct {
 }
 type TaskDetail struct {
 	Task
+	Progress     *TaskProgress      `json:"progress,omitempty"`
 	InitialInput *Input             `json:"initial_input"`
 	LatestResult *TaskResultPreview `json:"latest_result"`
 }

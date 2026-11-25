@@ -1,8 +1,10 @@
 import { D2ApiError } from './client';
+import type { TaskProgress } from './tasks';
 
 export interface TaskActivity { kind: string; text: string; occurred_at: string }
 export interface TaskArtifact { id: string; name: string; size: number }
 export interface PublicTask {
+  progress?: Pick<TaskProgress, 'phase'>;
   title: string;
   status: string;
   permission: 'read' | 'write';

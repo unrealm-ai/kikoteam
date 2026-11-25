@@ -9,6 +9,7 @@ import { D2ApiError } from '../api/client';
 import ManagerSessionPanel from './ManagerSessionPanel.vue';
 import SessionMarkdown from './SessionMarkdown.vue';
 import TaskSupplementReceipts from './TaskSupplementReceipts.vue';
+import TaskProgressSummary from './TaskProgressSummary.vue';
 import { usePublicTaskDetail } from '../composables/usePublicTaskDetail';
 import { sessionStatus, workItemProgress } from '../utils/session-presentation';
 const props = withDefaults(defineProps<{ workspaceId?: string; taskId?: string; publicToken?: string; taskCenter?: boolean; taskRecordActions?: boolean; initialTurnId?: string | undefined; presentation?: 'sidebar' | 'drawer' | 'page' }>(), { workspaceId: '', taskId: '', publicToken: '' });
@@ -19,6 +20,7 @@ const visibleError = computed(() => guest ? guest.error.value : error.value);
 const visibleLoading = computed(() => guest ? guest.loading.value : loading.value);
 function reload() { return guest ? guest.load() : load(); }
 const detail = ref<TaskDetail | null>(null), loading = ref(false), error = ref(''), actionError = ref(''), notice = ref('');
+const progress = computed(() => guestTask.value?.progress || detail.value?.progress);
 const tab = ref('process'), turn = ref(props.initialTurnId || ''), inputs = ref<TaskInput[]>([]), turns = ref<TaskTurn[]>([]), reports = ref<TaskReport[]>([]);
 const historicalReport = ref<TaskReport | null>(null);
 const inputCursor = ref<string | null>(null), turnCursor = ref<string | null>(null), reportCursor = ref<string | null>(null);
@@ -135,7 +137,8 @@ onUnmounted(() => { generation++; controller.abort(); if (timer) clearInterval(t
       <div class="task-summary" :class="{'t-summary-card': taskCenter}">
         <h2>{{ (detail?.title ?? guestTask?.title) || '未命名任务' }}</h2>
         <p v-if="detail">{{ detail.agent.name }} · {{ detail.task_space_id ? '任务空间中的独立任务' : detail.source.kind === 'chat_delegation' ? '由主对话触发' : '来源未指定' }}</p>
-        <div class="facts ts-row"><span>{{ guestTask ? sessionStatus(guestTask.status) : executionLabel }}</span><span v-if="guestTask?.permission === 'read'">只读</span><span v-if="guestTask">{{ guest?.connection.value || '正在连接' }}</span><template v-if="detail"><span>{{ sessionStatus(detail.lifecycle) }}</span><span v-if="detail.latest_turn">最近：{{ sessionStatus(detail.latest_turn.status) }}</span><span v-if="duration">本轮用时 {{ duration }}</span></template></div>
+        <TaskProgressSummary v-if="progress" :progress="progress" />
+        <div class="facts ts-row"><span v-if="!progress">{{ guestTask ? sessionStatus(guestTask.status) : executionLabel }}</span><span v-if="guestTask?.permission === 'read'">只读</span><span v-if="guestTask">{{ guest?.connection.value || '正在连接' }}</span><template v-if="detail"><span>{{ sessionStatus(detail.lifecycle) }}</span><span v-if="detail.latest_turn">最近：{{ sessionStatus(detail.latest_turn.status) }}</span><span v-if="duration">本轮用时 {{ duration }}</span></template></div>
         <template v-if="detail">
           <p v-if="detail.execution.queued_input_count">{{ detail.execution.queued_input_count }} 条输入排队中</p><p v-if="detail.execution.background_process_count === null || detail.execution.background_process_count">{{ detail.execution.background_process_count === null ? '后台活动待核对' : `${detail.execution.background_process_count} 个后台进程仍在运行` }}</p><p v-if="detail.latest_turn?.has_unknown_tool_results" class="warning">存在结果未知的工具调用，请查看执行过程。</p>
           <details><summary>任务要求与标识</summary><SessionMarkdown :text="detail.initial_input?.text || '尚无任务输入'" /><p class="muted">任务 {{ detail.task_id }}<br>创建于 {{ new Date(detail.created_at).toLocaleString('zh-CN') }}</p><NButton size="tiny" @click="copyID">复制任务 ID</NButton></details>

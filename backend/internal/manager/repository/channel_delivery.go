@@ -169,6 +169,9 @@ func scanDeliveryLease(row scanner, authorized bool) (service.ChannelDelivery, e
 	}
 	// A private task result has its own authorized outbox operation. Address
 	// the original user even if the interactive callback socket has expired.
+	if strings.HasPrefix(kind, humanRejectionDeliveryPrefix) {
+		v.ReplyToMessageID = ""
+	}
 	if v.Provider == "wecom" && v.ChatType == "direct" && v.ThreadID == "" && v.ChatID == v.RecipientID && (strings.HasPrefix(kind, "task_reply:") || strings.HasPrefix(kind, "task_detail:") || v.ArtifactID != "") {
 		v.ReplyToMessageID = ""
 	}
@@ -312,6 +315,10 @@ func (s *Store) AuthorizeChannelDelivery(ctx context.Context, id, lease string) 
 }
 
 const deliveryAllowedExpression = `b.enabled AND b.connection_generation=d.connection_generation AND (b.external_tenant_id<>'' AND b.external_tenant_id=n.external_tenant_id) AND (n.chat_type='direct' OR (manager_channel_group_allowed(n.binding_id,n.identity_epoch,n.external_tenant_id,n.external_chat_id,n.sender_id) AND NOT EXISTS(SELECT 1 FROM manager_channel_groups g WHERE g.binding_id=n.binding_id AND g.identity_epoch=n.identity_epoch AND g.external_tenant_id=n.external_tenant_id AND g.external_chat_id=n.external_chat_id AND g.watermark_ms>n.trigger_created_at_ms) AND NOT EXISTS(SELECT 1 FROM manager_channel_group_members gm WHERE gm.binding_id=n.binding_id AND gm.identity_epoch=n.identity_epoch AND gm.external_tenant_id=n.external_tenant_id AND gm.external_chat_id=n.external_chat_id AND gm.member_id=n.sender_id AND gm.watermark_ms>n.trigger_created_at_ms)))
+ AND (d.kind NOT LIKE 'human_rejection:%' OR (n.status='accepted' AND manager_human_channel_inbox_current(n.id,n.principal_id)
+  AND EXISTS(SELECT FROM manager_inputs i JOIN manager_sessions src ON src.id=i.session_id
+   WHERE i.id=n.input_id AND src.conversation_id=n.conversation_id AND src.lifecycle='active'
+    AND i.channel_principal_id=n.principal_id AND i.admission_epoch=a.admission_epoch AND manager_input_actor_allowed(i.id))))
  AND CASE d.kind WHEN 'fixed' THEN true
  ELSE a.enabled AND (manager_channel_actor_allowed(n.principal_id,n.conversation_id,d.connection_generation)
  OR (d.kind='reply' AND manager_human_chat_input_allowed(n.input_id))) END`

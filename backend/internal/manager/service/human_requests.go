@@ -75,16 +75,23 @@ type HumanFact struct {
 }
 
 type HumanQuestionItem struct {
-	ID          string   `json:"id"`
-	Text        string   `json:"text"`
-	Required    *bool    `json:"required"`
-	AnswerType  string   `json:"answerType"`
-	Constraints []string `json:"constraints,omitempty"`
+	ID          string                `json:"id"`
+	Text        string                `json:"text"`
+	Required    *bool                 `json:"required"`
+	AnswerType  string                `json:"answerType"`
+	Constraints []string              `json:"constraints,omitempty"`
+	Options     []HumanQuestionOption `json:"options,omitempty"`
+}
+
+type HumanQuestionOption struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
 type HumanAnswerItem struct {
-	QuestionID string `json:"questionId"`
-	Value      string `json:"value"`
+	QuestionID string   `json:"questionId"`
+	Value      string   `json:"value,omitempty"`
+	OptionIDs  []string `json:"optionIds,omitempty"`
 }
 
 type HumanAnswer struct {

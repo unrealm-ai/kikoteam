@@ -86,12 +86,12 @@ export default function humanTools(pi) {
         requestId: string, page: { type: "integer", minimum: 1 }, pageSize: { type: "integer", minimum: 1, maximum: 50 },
       }), async (_id, { requestId, page, pageSize }, signal) =>
         result(await call(config(), "pending", { request_id: requestId, page, pageSize }, signal)));
-    register("submit_human_confirmation", "提交当前消息中明确对应一张确认单的答复。先查询问题。题目不明确就直接追问；若答复不完整或回执返回 explicit_decision_required，提交 needs_more 和 clarificationText，最终回复原样发出追问。revise 的 text 填入用户修改意见。每次提交指定当前消息内唯一的 operationId，例如 submit-1；超时用原标识查回执，原样重试沿用，变更内容用新标识。",
+    register("submit_human_confirmation", "提交当前消息中明确对应一张确认单的答复。先查询问题。题目不明确就直接追问；若答复不完整或回执返回 explicit_decision_required，提交 needs_more 和 clarificationText，最终回复原样发出追问。approve 或 reject 的 text 只填用户明确提供的说明，没有就省略，不替用户写理由。revise 的 text 填入用户修改意见。每次提交指定当前消息内唯一的 operationId，例如 submit-1；超时用原标识查回执，原样重试沿用，变更内容用新标识。",
       schema({ request_id: string, operationId, version: string, questionDigest: string,
         association: { enum: ["current_message", "clarification", "unclear"] },
         decision: { enum: ["approve", "reject", "information", "needs_more", "revise"] },
         text: string, clarificationText: string, evidenceSegmentIds: { type: "array", items: string },
-        answers: { type: "array", items: schema({ questionId: string, value: string }, ["questionId", "value"]) },
+        answers: { type: "array", items: schema({ questionId: string, value: string, optionIds: { type: "array", minItems: 1, maxItems: 20, uniqueItems: true, items: string } }, ["questionId"]) },
       }, ["request_id", "operationId", "version", "questionDigest", "association", "decision", "answers"]),
       async (_id, { request_id, operationId, ...answer }, signal) => result(await call(config(), "propose", { request_id, operationId, answer }, signal)));
     register("get_human_confirmation_receipt", "提交超时或结果未知时，按当前用户消息内的原提交标识和确认单 ID 查回执。unknown 表示暂未查到，已排队不代表任务完成。",
@@ -201,15 +201,16 @@ export default function humanTools(pi) {
     background: string, goal: string,
     knownFacts: { type: "array", items: schema({ text: string, evidenceRefs: { type: "array", items: string } }, ["text"]) },
     questions: { type: "array", items: schema({
-      id: string, text: string, required: { type: "boolean" }, answerType: { enum: ["text", "choice", "boolean", "number"] },
+      id: string, text: string, required: { type: "boolean" }, answerType: { enum: ["text", "choice", "multi_choice", "boolean", "number"] },
       constraints: { type: "array", items: string },
+      options: { type: "array", minItems: 1, maxItems: 20, items: schema({ id: string, label: string }, ["id", "label"]) },
     }, ["id", "text", "required", "answerType"]) },
     completionCriteria: { type: "array", items: string },
     proposedAction: string, impactScope: string, ifNotConfirmed: string,
   };
   register(askName, reapproval_only
     ? "提交修改后的方案，向已选职责对应的确认人请求明确批准。交代修改后的问题、必答项、完成标准、拟执行动作和影响范围。单独调用，成功后等待新批准。"
-    : "向已选职责对应的确认人提问。提交可直接阅读的问题、必答项、完成标准、拟执行动作和影响范围。只有纯信息请求才设置 decisionRequired=false，默认要求明确决定。单独调用，成功后暂停当前执行段。",
+    : "向已选职责对应的确认人提问。提交可直接阅读的问题、必答项、完成标准、拟执行动作和影响范围。纯信息表单设置 decisionRequired=false；选择题用 choice 或 multi_choice 并提供 options，文字或数字填空用 text 或 number。只请求同意或拒绝时 questions 传空数组，明确描述拟执行动作和影响范围。单独调用，成功后暂停当前执行段。",
     schema(questionFields, Object.keys(questionFields).filter(field => field !== "decisionRequired")),
     async (_id, question, signal) => {
       const credentials = config();

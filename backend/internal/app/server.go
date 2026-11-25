@@ -222,6 +222,8 @@ func Run(stderr io.Writer, version string) int {
 	defer func() { cancelNotification(); <-notificationDone }()
 	stopWebGroups := startWebGroupWorker(ctx, managerStore, log)
 	defer stopWebGroups()
+	stopHumanRejections := startHumanRejectionWorker(ctx, managerStore, log)
+	defer stopHumanRejections()
 	stopFeishuRegistration := startFeishuSetup(ctx, feishuSetup, log)
 	defer stopFeishuRegistration()
 	stopDingTalkRegistration := startDingTalkSetup(ctx, dingtalkSetup, log)

@@ -195,10 +195,13 @@ func (s *Store) AnswerHumanRequest(ctx context.Context, workspace, actor, reques
 }
 
 func recordHumanAnswer(ctx context.Context, tx *sql.Tx, viewer humanViewer, id string, answer service.HumanAnswer) (any, error) {
-	args := append(viewer.queryArgs(), id)
+	return recordHumanAnswerWithTarget(ctx, tx, viewer, id, answer, humanAnswerTarget, append(viewer.queryArgs(), id))
+}
+
+func recordHumanAnswerWithTarget(ctx context.Context, tx *sql.Tx, viewer humanViewer, id string, answer service.HumanAnswer, target string, args []any) (any, error) {
 	var session string
 	err := tx.QueryRowContext(ctx, `SELECT s.id FROM manager_human_requests r JOIN manager_sessions s ON s.id=r.session_id
- WHERE r.id=$7 AND `+humanAnswerTarget+` FOR UPDATE OF s`, args...).Scan(&session)
+ WHERE r.id=$7 AND `+target+` FOR UPDATE OF s`, args...).Scan(&session)
 	if err != nil {
 		return nil, visibleError(err)
 	}
@@ -210,7 +213,7 @@ func recordHumanAnswer(ctx context.Context, tx *sql.Tx, viewer humanViewer, id s
 	var rawQuestion []byte
 	err = tx.QueryRowContext(ctx, `SELECT r.state,r.version,r.question->>'answer_type',r.question,r.answer,
  s.active_turn_id IS NULL AND s.applied_stop_revision=s.stop_revision
- AND (`+humanRequestActive+`) AND (`+humanAnswerTarget+`),
+ AND (`+humanRequestActive+`) AND (`+target+`),
  COALESCE(r.continuation_context->'source'=manager_human_continuation_context(r,s,NULL)->'source',true)
  FROM manager_human_requests r JOIN manager_sessions s ON s.id=r.session_id
  LEFT JOIN manager_conversations c ON c.id=s.conversation_id LEFT JOIN manager_task_spaces p ON p.id=s.task_space_id
@@ -316,6 +319,11 @@ func recordFinalHumanAnswer(ctx context.Context, tx *sql.Tx, viewer humanViewer,
  FROM manager_sessions s WHERE r.id=$1 AND s.id=r.session_id`, id, state, answerJSON, viewer.input, resume, viewer.inbox)
 	if err != nil {
 		return nil, err
+	}
+	if state == "rejected" && answer.Text != "" {
+		if err = queueHumanRejectionNotice(ctx, tx, id, answer.Version); err != nil {
+			return nil, err
+		}
 	}
 	return map[string]string{"id": id, "state": state}, st.SnapshotEvent()
 }

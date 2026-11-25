@@ -15,6 +15,8 @@ import (
 
 // Delivery targets are returned by Manager, never inferred from message text.
 type Delivery struct {
+	HumanCard                *humanConfirmationCard `json:"human_card,omitempty"`
+	humanCardContent         map[string]any
 	taskDetailDispatch       bool
 	taskDetailNotice         bool
 	taskDetailNoticeMarkdown bool
@@ -54,20 +56,21 @@ func (d Delivery) contentFormat() string {
 }
 
 type deliveryReceipt struct {
-	Presentation        string `json:"presentation,omitempty"`
-	ProviderCreatedAtMS int64  `json:"provider_created_at_ms,string,omitempty"`
-	ProviderChatID      string `json:"provider_chat_id,omitempty"`
-	ProviderThreadID    string `json:"provider_thread_id,omitempty"`
-	ProviderRequestID   string `json:"provider_request_id,omitempty"`
-	TargetDigest        string `json:"target_digest"`
-	QueryToken          string `json:"query_token,omitempty"`
-	EvidenceType        string `json:"evidence_type,omitempty"`
-	EvidenceID          string `json:"evidence_id,omitempty"`
-	ProviderSessionID   string `json:"provider_session_id,omitempty"`
-	LeaseToken          string `json:"lease_token"`
-	Status              string `json:"status"`
-	MessageID           string `json:"provider_message_id,omitempty"`
-	ErrorCode           string `json:"error_code,omitempty"`
+	HumanConfirmationCard bool   `json:"human_confirmation_card,omitempty"`
+	Presentation          string `json:"presentation,omitempty"`
+	ProviderCreatedAtMS   int64  `json:"provider_created_at_ms,string,omitempty"`
+	ProviderChatID        string `json:"provider_chat_id,omitempty"`
+	ProviderThreadID      string `json:"provider_thread_id,omitempty"`
+	ProviderRequestID     string `json:"provider_request_id,omitempty"`
+	TargetDigest          string `json:"target_digest"`
+	QueryToken            string `json:"query_token,omitempty"`
+	EvidenceType          string `json:"evidence_type,omitempty"`
+	EvidenceID            string `json:"evidence_id,omitempty"`
+	ProviderSessionID     string `json:"provider_session_id,omitempty"`
+	LeaseToken            string `json:"lease_token"`
+	Status                string `json:"status"`
+	MessageID             string `json:"provider_message_id,omitempty"`
+	ErrorCode             string `json:"error_code,omitempty"`
 }
 type deliverySender func(context.Context, Binding, Delivery) deliveryReceipt
 
@@ -108,6 +111,11 @@ func runDeliveries(ctx context.Context, b *Backend, lookup func(string) (Binding
 		}
 		if err := reconcileDeliveryQueries(ctx, b, lookup, queryDingTalkDelivery); err != nil {
 			return err
+		}
+		if b.humanNoticeDelivery {
+			if err := refreshTerminalHumanCards(ctx, b, lookup, refreshHumanCardProvider); err != nil && b.Logger != nil && ctx.Err() == nil {
+				b.Logger.Warn("Human confirmation card refresh pending", "event", "human.card_refresh_retry")
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -177,7 +185,12 @@ func deliver(ctx context.Context, b *Backend, lookup func(string) (Binding, bool
 		current.Media = media
 	}
 
-	receipt := sendWithTaskDetail(ctx, binding, current, b.notificationDelivery, send)
+	var receipt deliveryReceipt
+	if b.humanNoticeDelivery && current.HumanCard != nil {
+		receipt = sendHumanConfirmationCard(ctx, binding, current, send)
+	} else {
+		receipt = sendWithTaskDetail(ctx, binding, current, b.notificationDelivery, send)
+	}
 	b.traceDelivery(ctx, "channel.delivery.send_result", current, receipt.Status)
 	b.trace(ctx, "channel.delivery.provider_receipt", "delivery_id", traceID(d.ID), "provider", binding.Provider, "provider_message_id", traceID(receipt.MessageID), "provider_request_id", traceID(receipt.ProviderRequestID), "status", traceID(receipt.Status), "error_code", traceID(receipt.ErrorCode))
 	receipt.LeaseToken = d.LeaseToken
@@ -194,7 +207,7 @@ func sameDeliveryTarget(claimed, authorized Delivery) bool {
 		authorized.contentFormat() == claimed.contentFormat() && authorized.Provider == claimed.Provider &&
 		authorized.TenantID == claimed.TenantID && authorized.ChatType == claimed.ChatType &&
 		authorized.RecipientID == claimed.RecipientID && authorized.TargetDigest != "" &&
-		claimed.TaskDetailURL == "" && !claimed.TriggerResultCard && sameTaskDetailTarget(claimed, authorized)
+		claimed.TaskDetailURL == "" && !claimed.TriggerResultCard && sameTaskDetailTarget(claimed, authorized) && sameHumanCardTarget(claimed.HumanCard, authorized.HumanCard)
 }
 
 func sendFeishuDelivery(ctx context.Context, b Binding, d Delivery) deliveryReceipt {
@@ -220,6 +233,11 @@ func sendFeishuWithClient(ctx context.Context, api *lark.Client, d Delivery) del
 	var kind string
 	var bodyContent any
 	switch d.contentFormat() {
+	case "human_confirmation_card":
+		if d.humanCardContent == nil {
+			return deliveryReceipt{Status: "failed", EvidenceType: "not_dispatched", ErrorCode: "invalid_human_card"}
+		}
+		kind, bodyContent = "interactive", d.humanCardContent
 	case taskDetailCardFormat:
 		if d.TaskDetailCard == nil {
 			return deliveryReceipt{Status: "failed", EvidenceType: "not_dispatched", ErrorCode: "invalid_task_detail_card"}
@@ -272,7 +290,7 @@ func sendFeishuWithClient(ctx context.Context, api *lark.Client, d Delivery) del
 			return deliveryReceipt{Status: "unknown", ErrorCode: "provider_result_unknown"}
 		}
 		if !resp.Success() {
-			return feishuMessageRejected(d.taskDetailDispatch, kind, resp.Code, resp.StatusCode, resp.Data != nil && value(resp.Data.MessageId) != "")
+			return feishuMessageRejected(d.taskDetailDispatch || d.humanCardContent != nil, kind, resp.Code, resp.StatusCode, resp.Data != nil && value(resp.Data.MessageId) != "")
 		}
 		if resp.Data != nil && value(resp.Data.MessageId) != "" {
 			return feishuSentReceipt(d, value(resp.Data.MessageId), value(resp.Data.CreateTime), value(resp.Data.ChatId), value(resp.Data.ThreadId))
@@ -287,7 +305,7 @@ func sendFeishuWithClient(ctx context.Context, api *lark.Client, d Delivery) del
 			return deliveryReceipt{Status: "unknown", ErrorCode: "provider_result_unknown"}
 		}
 		if !resp.Success() {
-			return feishuMessageRejected(d.taskDetailDispatch, kind, resp.Code, resp.StatusCode, resp.Data != nil && value(resp.Data.MessageId) != "")
+			return feishuMessageRejected(d.taskDetailDispatch || d.humanCardContent != nil, kind, resp.Code, resp.StatusCode, resp.Data != nil && value(resp.Data.MessageId) != "")
 		}
 		if resp.Data != nil && value(resp.Data.MessageId) != "" {
 			return feishuSentReceipt(d, value(resp.Data.MessageId), value(resp.Data.CreateTime), value(resp.Data.ChatId), value(resp.Data.ThreadId))

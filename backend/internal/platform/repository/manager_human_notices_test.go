@@ -40,6 +40,7 @@ func verifyHumanNotice(t *testing.T, db *sql.DB, store *managerrepo.Store, ref s
 	v := manager.DeliveryCompletion{LeaseToken: d.LeaseToken, TargetDigest: d.TargetDigest, Status: "sent"}
 	switch ref.Provider {
 	case "feishu":
+		v.HumanConfirmationCard = true
 		v.EvidenceType = "send_response"
 		v.ProviderChatID = "chat-" + ref.ExternalID
 		v.ProviderMessageID = "om-confirmation"
@@ -82,6 +83,31 @@ func verifyHumanNotice(t *testing.T, db *sql.DB, store *managerrepo.Store, ref s
 	}
 	if err = store.CompleteHumanNotice(ctx, d.ID, v); err != nil {
 		t.Fatal("replay persisted receipt", err)
+	}
+	if ref.Provider == "feishu" {
+		action := manager.HumanCardAction{BindingID: d.BindingID, Provider: d.Provider, ExternalTenant: d.ExternalTenantID,
+			ExternalActor: d.RecipientID, Generation: d.ConnectionGeneration, Revision: d.ConfigRevision,
+			ProviderCardID: v.ProviderMessageID, ProviderChatID: v.ProviderChatID}
+		if _, err = store.ReadHumanCard(ctx, d.ID, action); err != nil {
+			t.Fatal("read verified native card", err)
+		}
+		wrong := action
+		wrong.ExternalActor = "ou_wrong"
+		if _, err = store.ReadHumanCard(ctx, d.ID, wrong); err == nil {
+			t.Fatal("other actor read card")
+		}
+		wrong = action
+		wrong.Revision++
+		wrong.Decision = "reject"
+		if _, err = store.AnswerHumanCard(ctx, d.ID, wrong); err == nil {
+			t.Fatal("stale callback could submit")
+		}
+		bad := action
+		bad.Decision = "approve"
+		got, e := store.AnswerHumanCard(ctx, d.ID, bad)
+		if e != nil || got.(map[string]any)["state"] != "needs_more" {
+			t.Fatalf("native answer bypassed required fields: %v %v", got, e)
+		}
 	}
 	var status, message, chat string
 	if err = db.QueryRowContext(ctx, `SELECT status,COALESCE(provider_message_id,''),COALESCE(provider_chat_id,'') FROM manager_human_notices WHERE id=$1`, d.ID).Scan(&status, &message, &chat); err != nil || status != "sent" || message != v.ProviderMessageID || chat != v.ProviderChatID {

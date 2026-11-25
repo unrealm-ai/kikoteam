@@ -139,6 +139,16 @@ paths:
     $ref: ./human-notices.yaml#/authorize
   /api/internal/v1/human-notices/{id}/dispatch-check:
     $ref: ./human-notices.yaml#/dispatchCheck
+  /api/internal/v1/human-notices/{id}/read-card:
+    $ref: ./human-notices.yaml#/readCard
+  /api/internal/v1/human-notices/{id}/answer-card:
+    $ref: ./human-notices.yaml#/answerCard
+  /api/internal/v1/human-notices/card-refreshes/claim:
+    $ref: ./human-card-refresh.yaml#/claim
+  /api/internal/v1/human-notices/card-refreshes/{id}/authorize:
+    $ref: ./human-card-refresh.yaml#/authorize
+  /api/internal/v1/human-notices/card-refreshes/{id}/complete:
+    $ref: ./human-card-refresh.yaml#/complete
   /api/internal/v1/human-notices/{id}/complete:
     $ref: ./human-notices.yaml#/complete
   /api/internal/v1/model-proxy/reconcile:

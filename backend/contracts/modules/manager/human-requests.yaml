@@ -30,7 +30,17 @@ questionItem:
     id: {type: string}
     text: {type: string}
     required: {type: boolean}
-    answerType: {enum: [text, choice, boolean, number]}
+    answerType: {enum: [text, choice, multi_choice, boolean, number]}
+    options:
+      type: array
+      maxItems: 20
+      items:
+        type: object
+        additionalProperties: false
+        required: [id, label]
+        properties:
+          id: {type: string, pattern: "^[A-Za-z0-9_-]{1,64}$"}
+          label: {type: string, minLength: 1, maxLength: 200}
     constraints: {type: array, items: {type: string}}
 question:
   type: object
@@ -59,17 +69,21 @@ answer:
   properties:
     version: {$ref: '#/version'}
     decision: {enum: [approve, reject, information, revise, needs_more]}
-    text: {type: string, maxLength: 4000, description: Required for revise and needs_more.}
+    text: {type: string, maxLength: 4000, description: Optional approval or rejection explanation. Required for revise and needs_more.}
     answers:
       type: array
       maxItems: 12
       items:
         type: object
         additionalProperties: false
-        required: [questionId, value]
+        required: [questionId]
+        oneOf:
+          - required: [value]
+          - required: [optionIds]
         properties:
           questionId: {type: string}
           value: {type: string, maxLength: 2000}
+          optionIds: {type: array, minItems: 1, maxItems: 20, uniqueItems: true, items: {type: string}}
 request:
   type: object
   required: [id, version, state, question]

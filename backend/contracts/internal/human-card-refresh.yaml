@@ -1,0 +1,93 @@
+claim:
+  post:
+    operationId: humanCardRefreshClaim
+    description: Lease at most one original, confirmed Feishu or DingTalk card of a terminal request version for an idempotent UI update.
+    security: [{hubBearer: []}]
+    responses:
+      "200":
+        description: A pending refresh, or an empty list.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  maxItems: 1
+                  items: {$ref: "#/schemas/Job"}
+      "401": {description: Hub identity required.}
+authorize:
+  parameters: [{$ref: "#/parameters/NoticeID"}]
+  post:
+    operationId: humanCardRefreshAuthorize
+    description: Recheck the lease, unchanged original request version, recipient and binding immediately before writing the provider card.
+    security: [{hubBearer: []}]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [lease_token]
+            properties:
+              lease_token: {type: string, format: uuid}
+    responses:
+      "200":
+        description: The exact revalidated job.
+        content:
+          application/json:
+            schema: {$ref: "#/schemas/Job"}
+      "401": {description: Hub identity required.}
+      "409": {description: Lock or original card authorization no longer valid.}
+complete:
+  parameters: [{$ref: "#/parameters/NoticeID"}]
+  post:
+    operationId: humanCardRefreshComplete
+    description: Record only the result of the original UI replacement attempt; does not modify the send receipt or confirmation answer.
+    security: [{hubBearer: []}]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [lease_token, result]
+            properties:
+              lease_token: {type: string, format: uuid}
+              result: {type: string, enum: [updated, failed, unknown]}
+    responses:
+      "200": {description: Idempotent completion acknowledgment.}
+      "401": {description: Hub identity required.}
+parameters:
+  NoticeID:
+    name: id
+    in: path
+    required: true
+    schema: {type: string, format: uuid}
+schemas:
+  Job:
+    type: object
+    additionalProperties: false
+    required: [id, lease_token, binding_id, provider, tenant_id, connection_generation, config_revision, provider_card_id, state, request_version, card]
+    properties:
+      id: {type: string, format: uuid}
+      lease_token: {type: string, format: uuid}
+      binding_id: {type: string, format: uuid}
+      provider: {type: string, enum: [feishu, dingtalk]}
+      tenant_id: {type: string}
+      connection_generation: {type: integer, minimum: 1}
+      config_revision: {type: integer, minimum: 1}
+      provider_card_id: {type: string}
+      state: {type: string, enum: [approved, rejected, revised, cancelled]}
+      request_version: {type: integer, minimum: 1}
+      card:
+        type: object
+        required: [title, description, decision_required]
+        properties:
+          title: {type: string}
+          description: {type: string}
+          decision_required: {type: boolean}
+          questions: {type: array, items: {type: object}}

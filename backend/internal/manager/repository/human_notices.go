@@ -41,14 +41,32 @@ func scanHumanNotice(row scanner) (service.ChannelDelivery, error) {
 	if d.Provider == "wecom" {
 		d.ChatID = d.RecipientID
 	}
+	var q service.HumanQuestion
+	if err = json.Unmarshal(raw, &q); err != nil {
+		return d, err
+	}
 	if d.Text == "" {
-		var q service.HumanQuestion
-		if err = json.Unmarshal(raw, &q); err != nil {
-			return d, err
-		}
 		d.Text = humanNoticeText(service.HumanShortCode(request, version), q)
 	}
+	d.HumanCard = humanCardPresentation(q, d.Text)
 	return d, nil
+}
+
+func humanCardPresentation(q service.HumanQuestion, text string) *service.HumanConfirmationCard {
+	card := &service.HumanConfirmationCard{Title: q.Question, Description: text, DecisionRequired: q.AnswerType == "decision", Questions: q.Questions}
+	if card.DecisionRequired {
+		if len(q.Questions) != 0 || len(service.NumberedHumanQuestions(q.Question)) != 0 {
+			return nil // Existing decisions with required/numbered answers remain text.
+		}
+	} else if len(q.Questions) == 0 {
+		return nil // Old free text is valid but keeps its existing reply path.
+	}
+	for _, item := range q.Questions {
+		if item.AnswerType == "boolean" || item.AnswerType == "choice" && len(item.Options) == 0 {
+			return nil
+		}
+	}
+	return card
 }
 
 func humanNoticeText(request string, q service.HumanQuestion) string {
@@ -113,6 +131,17 @@ func humanNoticeQuestion(item service.HumanQuestionItem, required bool) string {
 			notes = append(notes, condition)
 		}
 	}
+	if len(item.Options) > 0 {
+		labels := make([]string, 0, len(item.Options))
+		for _, option := range item.Options {
+			labels = append(labels, strings.TrimSpace(option.Label))
+		}
+		prefix := "单选："
+		if item.AnswerType == "multi_choice" {
+			prefix = "多选："
+		}
+		notes = append(notes, prefix+strings.Join(labels, " / "))
+	}
 	if len(notes) != 0 {
 		text += "（" + strings.Join(notes, "，") + "）"
 	}
@@ -153,6 +182,11 @@ func (s *Store) ClaimHumanNotices(ctx context.Context, limit int, query bool) ([
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
+	if !query {
+		if err = materializeWebHumanNotices(ctx, tx); err != nil {
+			return nil, err
+		}
+	}
 	statement := leaseHumanNotice
 	if query {
 		statement = leaseHumanNoticeQuery

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { NAlert, NButton, NInput, NSkeleton } from 'naive-ui';
+import { NAlert, NButton, NInput, NSelect, NSkeleton } from 'naive-ui';
 import SessionMarkdown from '../components/SessionMarkdown.vue';
 import { D2ApiError } from '../api/client';
 import {
   humanRequestsApi,
   type HumanDecision,
+  type HumanAnswerItem,
   type HumanRequest,
   type HumanHistoryItem,
   type HistoryFilter,
@@ -53,6 +54,7 @@ const decisionLabels: Record<HumanDecision, string> = {
 type DisplayItem = Omit<HumanRequest, 'question'> & Partial<HumanHistoryItem>;
 const drafts = ref<Record<string, string>>({});
 const structuredDrafts = ref<Record<string, Record<string, string>>>({});
+const multiDrafts = ref<Record<string, Record<string, string[]>>>({});
 const loading = ref(false);
 const answering = ref('');
 const error = ref('');
@@ -207,6 +209,11 @@ function turnPage(delta: number) {
   void load();
 }
 defineExpose({ refresh: load });
+function showAnswer(item: DisplayItem, answer: HumanAnswerItem): string {
+  const options = item.question?.questions?.find((q) => q.id === answer.questionId)?.options;
+  const label = (id: string) => options?.find((opt) => opt.id === id)?.label ?? id;
+  return answer.optionIds?.map(label).join('、') ?? (answer.value ? label(answer.value) : '');
+}
 async function answer(item: DisplayItem, decision: HumanDecision) {
   if (props.readOnly || !item.question || answering.value || loading.value) return;
   const { signal } = controller;
@@ -214,12 +221,13 @@ async function answer(item: DisplayItem, decision: HumanDecision) {
   notice.value = '';
   error.value = '';
   try {
-    const body =
-      decision === 'approve' || decision === 'reject'
-        ? ''
-        : drafts.value[item.id]?.trim() || '';
+    const body = drafts.value[item.id]?.trim() || '';
     const answers = decision === 'approve' || decision === 'information'
-      ? item.question.questions?.flatMap((question) => {
+      ? item.question.questions?.flatMap<HumanAnswerItem>((question) => {
+          if (question.answerType === "multi_choice") {
+            const optionIds = multiDrafts.value[item.id]?.[question.id];
+            return optionIds?.length ? [{ questionId: question.id, optionIds }] : [];
+          }
           const value = structuredDrafts.value[item.id]?.[question.id]?.trim();
           return value ? [{ questionId: question.id, value }] : [];
         })
@@ -245,6 +253,7 @@ async function answer(item: DisplayItem, decision: HumanDecision) {
     }
     delete drafts.value[item.id];
     delete structuredDrafts.value[item.id];
+    delete multiDrafts.value[item.id];
     if (result.state === 'pending') {
       notice.value = result.remaining?.length
         ? `已记录，仍需回答小题 ${result.remaining.join('、')}。`
@@ -414,7 +423,25 @@ onUnmounted(() => {
       <div v-if="!readOnly && item.question?.questions?.length" class="appr-reason-box">
         <label v-for="question in item.question.questions" :key="question.id">
           <span>{{ question.text }}<template v-if="question.required">（必答）</template></span>
+          <NSelect
+            v-if="question.options?.length && question.answerType === 'multi_choice'"
+            multiple
+            :value="multiDrafts[item.id]?.[question.id] ?? []"
+            :options="question.options.map(({ id, label }) => ({ value: id, label }))"
+            :aria-label="question.text"
+            :disabled="!!answering"
+            @update:value="(value: string[]) => { (multiDrafts[item.id] ??= {})[question.id] = value; }"
+          />
+          <NSelect
+            v-else-if="question.options?.length && question.answerType === 'choice'"
+            :value="structuredDrafts[item.id]?.[question.id] || null"
+            :options="question.options.map(({ id, label }) => ({ value: id, label }))"
+            :aria-label="question.text"
+            :disabled="!!answering"
+            @update:value="(value: string) => { (structuredDrafts[item.id] ??= {})[question.id] = value; }"
+          />
           <NInput
+            v-else
             :value="structuredDrafts[item.id]?.[question.id] || ''"
             :placeholder="question.constraints?.join('、') ?? ''"
             :aria-label="question.text"
@@ -442,7 +469,7 @@ onUnmounted(() => {
         <SessionMarkdown v-if="item.answer?.text" :text="item.answer.text" />
         <p v-for="answer in item.answer?.answers" :key="answer.questionId">
           {{ item.question?.questions?.find((question) => question.id === answer.questionId)?.text || answer.questionId }}
-          {{ answer.value }}
+          {{ showAnswer(item, answer) }}
         </p>
         <time v-if="item.answered_at">{{
           new Date(item.answered_at).toLocaleString('zh-CN')
@@ -462,7 +489,9 @@ onUnmounted(() => {
         :placeholder="
           numbered(item)
             ? '按小题填写，例如：第一个 500 元；第二个 周五'
-            : '填写答复、退回理由或补问内容'
+            : item.question.answer_type === 'decision'
+              ? '说明（选填）；退回修改或补问时请填写内容'
+              : '填写答复、退回理由或补问内容'
         "
         aria-label="答复内容"
         :disabled="!!answering"

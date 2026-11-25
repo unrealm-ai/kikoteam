@@ -9,7 +9,7 @@ Error.stackTraceLimit = 0;
 
 const window = new Window({ url: 'http://127.0.0.1:5173/' });
 for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'SVGElement', 'Node', 'Text', 'Comment',
-  'KeyboardEvent', 'Image', 'Document', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+  'KeyboardEvent', 'InputEvent', 'Image', 'Document', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
   const value = name === 'window' ? window : window[name];
   if (value === undefined) continue;
   const bound = ['getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame'].includes(name) ? value.bind(window) : value;
@@ -310,4 +310,35 @@ test('replacing workspace ignores a late focused response even if transport igno
     assert.match(host.textContent, /新工作区内容/);
     assert.doesNotMatch(host.textContent, /旧工作区/);
   } finally { app.unmount(); host.remove(); }
+});
+
+test('approve and reject include the optional explanation', async (t) => {
+  for (const [label, decision] of [['同意', 'approve'], ['拒绝', 'reject']]) {
+    await t.test(decision, async () => {
+      const calls = [];
+      const item = { id: 'request-reason', version: '1', state: 'pending', question: { question: '是否继续？', answer_type: 'decision' } };
+      globalThis.fetch = async (_path, init) => {
+        if (init.method !== 'POST') return Response.json({ items: [item] });
+        calls.push(JSON.parse(init.body));
+        return Response.json({ id: item.id, state: decision === 'reject' ? 'rejected' : 'approved' });
+      };
+      const host = document.createElement('div');
+      document.body.append(host);
+      const app = createApp(Inbox, { workspace: 'workspace-a' });
+      app.mount(host);
+      try {
+        await settle();
+        const input = host.querySelector('textarea');
+        assert.match(input.placeholder, /说明（选填）/);
+        input.value = '请记录本次说明';
+        input.dispatchEvent(new window.InputEvent('input', { bubbles: true }));
+        [...host.querySelectorAll('button')].find(button => button.textContent.trim() === label).click();
+        await settle();
+        assert.deepEqual(calls, [{ version: '1', decision, text: '请记录本次说明' }]);
+      } finally {
+        app.unmount();
+        host.remove();
+      }
+    });
+  }
 });

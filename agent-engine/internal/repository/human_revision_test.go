@@ -56,7 +56,7 @@ func testHumanContinuation(t *testing.T, decision string, changeScope bool) {
 		t.Fatalf("expected the corresponding continuation turn, got %+v: %v", turn, err)
 	}
 	if decision == "approve" {
-		for _, field := range []string{`"decision": "approve"`, `"version": "1"`, `"questionDigest"`, "发布 A", "仅测试环境", "只发布 A"} {
+		for _, field := range []string{`"decision": "approve"`, `"version": "1"`, `"questionDigest"`, "发布 A", "仅测试环境", "只发布 A", `"text": "发布计划"`} {
 			if !strings.Contains(turn.Input.Text, field) {
 				t.Fatalf("resume prompt omitted %q: %s", field, turn.Input.Text)
 			}

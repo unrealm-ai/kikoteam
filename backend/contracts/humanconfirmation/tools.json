@@ -28,7 +28,7 @@
     },
     {
       "name": "submit_human_confirmation",
-      "description": "按当前用户真实消息，为一张确认单提交结构化答复。先查询题目。用 current_message 表示本条已明确指向该题，clarification 表示接续唯一可信引用或实际送达的澄清，unclear 表示不明。题目不明直接询问；题目已知但缺信息、有条件、意思不明确时，提交 needs_more 和 clarificationText，并在最终回复中原样发出该追问。返回 explicit_decision_required 时，登记并发出是否批准的追问。revise 的 text 填入用户的修改意见。多个确认单分开提交，可用本条真实片段 ID。为每次提交指定 operationId；超时用原标识查回执，原样重试沿用原标识，变更内容用新标识。按实际回执告知用户结果。",
+      "description": "按当前用户真实消息，为一张确认单提交结构化答复。先查询题目和选项。单选的 value 用选项 ID，多选只传 optionIds；填空的 value 填实际答案。明确同意或拒绝用 decision，不用选项 ID。用 current_message 表示本条已明确指向该题，clarification 表示接续唯一可信引用或实际送达的澄清，unclear 表示不明。题目不明直接询问；题目已知但缺信息、有条件、意思不明确时，提交 needs_more 和 clarificationText，并在最终回复中原样发出该追问。返回 explicit_decision_required 时，登记并发出是否批准的追问。approve 或 reject 的 text 只填用户明确提供的说明，没有就省略，不替用户写理由。revise 的 text 填入用户的修改意见。多个确认单分开提交，可用本条真实片段 ID。为每次提交指定 operationId；超时用原标识查回执，原样重试沿用原标识，变更内容用新标识。按实际回执告知用户结果。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -97,12 +97,14 @@
                 "value": {
                   "type": "string",
                   "maxLength": 2000
+                },
+                "optionIds": {
+                  "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true,
+                  "items": {"type": "string"}
                 }
               },
-              "required": [
-                "questionId",
-                "value"
-              ]
+              "required": ["questionId"],
+              "oneOf": [{"required": ["value"]}, {"required": ["optionIds"]}]
             }
           }
         },

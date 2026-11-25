@@ -1,7 +1,7 @@
 package channel
 
 // Stream protocol follows the locally audited official dingtalk-stream 2.1.5.
-// Only robot CALLBACK is subscribed; no EVENT auto-ack or fabricated history.
+// Only robot and native card callbacks are subscribed.
 import (
 	"context"
 	"encoding/json"
@@ -130,7 +130,7 @@ func DingTalk(ctx context.Context, b Binding, backend *Backend) error {
 		Endpoint string `json:"endpoint"`
 		Ticket   string `json:"ticket"`
 	}
-	if err := api.request(ctx, "POST", "/v1.0/gateway/connections/open", "", map[string]any{"clientId": b.Credentials.AppID, "clientSecret": b.Credentials.AppSecret, "ua": "kiko-event-hub", "subscriptions": []map[string]string{{"type": "CALLBACK", "topic": dingRobotTopic}}}, &endpoint); err != nil {
+	if err := api.request(ctx, "POST", "/v1.0/gateway/connections/open", "", map[string]any{"clientId": b.Credentials.AppID, "clientSecret": b.Credentials.AppSecret, "ua": "kiko-event-hub", "subscriptions": []map[string]string{{"type": "CALLBACK", "topic": dingRobotTopic}, {"type": "CALLBACK", "topic": dingHumanCardTopic}}}, &endpoint); err != nil {
 		return err
 	}
 	address, err := dingEndpoint(endpoint.Endpoint, endpoint.Ticket)
@@ -194,6 +194,13 @@ func runDingStream(ctx context.Context, b Binding, backend *Backend, conn *webso
 				if err := dingWrite(conn, map[string]any{"code": 200, "headers": f.Headers, "message": "OK", "data": f.Data}); err != nil {
 					return err
 				}
+			}
+			continue
+		}
+
+		if f.Type == "CALLBACK" && f.Headers["topic"] == dingHumanCardTopic {
+			if err := handleDingHumanCardEvent(ctx, b, backend, f, func(value any) error { return dingWrite(conn, value) }); err != nil {
+				return err
 			}
 			continue
 		}

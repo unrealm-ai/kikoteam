@@ -464,6 +464,7 @@ func TestHumanRecipientsAcrossChannels(t *testing.T) {
 					t.Fatal("semantic answer was not accepted", result, err)
 				}
 			}
+			assertHumanCardRefreshAfterText(t, db, store, request.ID, recipient.Ref.Provider)
 			lookup, err = store.HumanChatSubmission(ctx, chat, request.ID, "approve-1", nil)
 			if err != nil || lookup.(map[string]any)["continuation"].(map[string]string)["state"] != "queued" {
 				t.Fatal("committed approval could not be reconciled", lookup, err)

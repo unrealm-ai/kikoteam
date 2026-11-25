@@ -443,6 +443,17 @@
         "query_token": {
           "type": "string"
         },
+        "human_card": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title", "description", "decision_required"],
+          "properties": {
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "decision_required": {"type": "boolean"},
+            "questions": {"type": "array", "items": {"$ref": "../modules/manager/human-requests.yaml#/questionItem"}}
+          }
+        },
         "task_detail_card": {
           "type": "object",
           "additionalProperties": false,

@@ -127,7 +127,7 @@ func encodeAddons(permissions []service.FeishuPermission) (string, error) {
 	for _, p := range permissions {
 		scopes = append(scopes, p.Scope)
 	}
-	data, err := json.Marshal(map[string]any{"preset": false, "scopes": map[string]any{"tenant": scopes}, "events": map[string]any{"items": map[string]any{"tenant": []string{"im.message.receive_v1", "im.chat.member.bot.added_v1", "im.chat.member.bot.deleted_v1", "im.chat.disbanded_v1"}}}})
+	data, err := json.Marshal(map[string]any{"preset": false, "scopes": map[string]any{"tenant": scopes}, "events": map[string]any{"items": map[string]any{"tenant": []string{"im.message.receive_v1", "im.chat.member.bot.added_v1", "im.chat.member.bot.deleted_v1", "im.chat.disbanded_v1"}}}, "callbacks": map[string][]string{"items": {"card.action.trigger"}}})
 	if err != nil {
 		return "", err
 	}

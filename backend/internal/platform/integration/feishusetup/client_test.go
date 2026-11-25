@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -73,9 +74,19 @@ func TestBeginUsesOfficialProtocolAndApprovedProfile(t *testing.T) {
 		Scopes struct {
 			Tenant []string `json:"tenant"`
 		} `json:"scopes"`
+		Events struct {
+			Items map[string][]string `json:"items"`
+		} `json:"events"`
+		Callbacks struct {
+			Items []string `json:"items"`
+		} `json:"callbacks"`
 	}
 	if e = json.Unmarshal(b, &payload); e != nil || payload.Preset || len(payload.Scopes.Tenant) != len(service.FeishuPermissions()) {
 		t.Fatal(payload, e)
+	}
+	if !slices.Equal(payload.Events.Items["tenant"], []string{"im.message.receive_v1", "im.chat.member.bot.added_v1", "im.chat.member.bot.deleted_v1", "im.chat.disbanded_v1"}) ||
+		!slices.Equal(payload.Callbacks.Items, []string{"card.action.trigger"}) {
+		t.Fatalf("unexpected events or callbacks: %+v", payload)
 	}
 }
 func TestBeginRejectsUntrustedURLsAndMalformedExpiry(t *testing.T) {

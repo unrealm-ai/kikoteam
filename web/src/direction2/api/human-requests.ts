@@ -19,12 +19,14 @@ export interface HumanQuestionItem {
   id: string;
   text: string;
   required: boolean;
-  answerType: 'text' | 'choice' | 'boolean' | 'number';
+  answerType: 'text' | 'choice' | 'multi_choice' | 'boolean' | 'number';
   constraints?: string[];
+  options?: { id: string; label: string }[];
 }
 export interface HumanAnswerItem {
   questionId: string;
-  value: string;
+  value?: string;
+  optionIds?: string[];
 }
 export interface HumanRequest {
   id: string;

@@ -201,6 +201,10 @@
                 "query_token": {
                   "type": "string"
                 },
+                "human_confirmation_card": {
+                  "type": "boolean",
+                  "description": "True only for a confirmed native confirmation card delivery."
+                },
                 "evidence_type": {
                   "type": "string"
                 },
@@ -373,5 +377,192 @@
         }
       }
     ]
+  },
+  "readCard": {
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "humanNoticeReadCard",
+      "description": "Read the canonical question and state for a verified provider callback.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "binding_id",
+                "provider",
+                "tenant_id",
+                "actor_id",
+                "connection_generation",
+                "config_revision",
+                "provider_card_id"
+              ],
+              "properties": {
+                "binding_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "provider": {
+                  "enum": [
+                    "feishu",
+                    "dingtalk",
+                    "wecom"
+                  ]
+                },
+                "tenant_id": {
+                  "type": "string"
+                },
+                "actor_id": {
+                  "type": "string"
+                },
+                "connection_generation": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "config_revision": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "provider_card_id": {
+                  "type": "string"
+                },
+                "provider_chat_id": {"type": "string", "description": "Required for Feishu."}
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Current state for this specific recipient and card."
+        },
+        "404": {
+          "description": "No verified matching delivery."
+        },
+        "401": {
+          "description": "Hub identity required."
+        }
+      }
+    }
+  },
+  "answerCard": {
+    "parameters": [
+      {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "post": {
+      "operationId": "humanNoticeAnswerCard",
+      "description": "Record a verified provider action on its exact sent native confirmation card.",
+      "security": [
+        {
+          "hubBearer": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "binding_id",
+                "provider",
+                "tenant_id",
+                "actor_id",
+                "connection_generation",
+                "config_revision",
+                "provider_card_id",
+                "decision"
+              ],
+              "properties": {
+                "binding_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "provider": {
+                  "enum": [
+                    "feishu",
+                    "dingtalk",
+                    "wecom"
+                  ]
+                },
+                "tenant_id": {
+                  "type": "string"
+                },
+                "actor_id": {
+                  "type": "string"
+                },
+                "connection_generation": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "config_revision": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "provider_card_id": {
+                  "type": "string"
+                },
+                "provider_chat_id": {"type": "string", "description": "Required for Feishu."},
+                "decision": {
+                  "enum": [
+                    "approve",
+                    "reject",
+                    "information"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 4000
+                },
+                "answers": {
+                  "type": "array",
+                  "maxItems": 12,
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Current state for this specific recipient and card."
+        },
+        "404": {
+          "description": "No verified matching delivery."
+        },
+        "401": {
+          "description": "Hub identity required."
+        }
+      }
+    }
   }
 }

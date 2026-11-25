@@ -1937,6 +1937,12 @@ CREATE TABLE public.manager_human_notices (
     receipt jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     sent_at timestamp with time zone,
+    card_refresh_token uuid,
+    card_refresh_until timestamp with time zone,
+    card_refresh_attempts integer DEFAULT 0 NOT NULL,
+    card_refresh_result text,
+    CONSTRAINT manager_human_notices_card_refresh_attempts_check CHECK (((card_refresh_attempts >= 0) AND (card_refresh_attempts <= 3))),
+    CONSTRAINT manager_human_notices_card_refresh_result_check CHECK ((card_refresh_result = ANY (ARRAY['updated'::text, 'failed'::text, 'unknown'::text]))),
     CONSTRAINT manager_human_notices_provider_check CHECK ((provider = ANY (ARRAY['feishu'::text, 'dingtalk'::text, 'wecom'::text]))),
     CONSTRAINT manager_human_notices_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'leased'::text, 'sending'::text, 'accepted'::text, 'sent'::text, 'failed'::text, 'unknown'::text, 'cancelled'::text])))
 );
@@ -1978,6 +1984,20 @@ CREATE TABLE public.manager_human_recovery_audit (
     CONSTRAINT manager_human_recovery_audit_action_check CHECK ((action = ANY (ARRAY['retry'::text, 'reassign'::text]))),
     CONSTRAINT manager_human_recovery_audit_check CHECK ((next_version = (previous_version + 1))),
     CONSTRAINT manager_human_recovery_audit_reason_check CHECK (((char_length(reason) >= 1) AND (char_length(reason) <= 1000)))
+);
+
+
+--
+-- Name: manager_human_rejection_notices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manager_human_rejection_notices (
+    request_id uuid NOT NULL,
+    request_version bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    outcome text,
+    CONSTRAINT manager_human_rejection_notices_outcome_check CHECK ((outcome = ANY (ARRAY['web_published'::text, 'channel_queued'::text, 'suppressed'::text]))),
+    CONSTRAINT manager_human_rejection_notices_request_version_check CHECK ((request_version > 0))
 );
 
 
@@ -4507,6 +4527,14 @@ ALTER TABLE ONLY public.manager_human_recovery_audit
 
 
 --
+-- Name: manager_human_rejection_notices manager_human_rejection_notices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_human_rejection_notices
+    ADD CONSTRAINT manager_human_rejection_notices_pkey PRIMARY KEY (request_id);
+
+
+--
 -- Name: manager_human_requests manager_human_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6100,6 +6128,13 @@ CREATE INDEX manager_human_answer_channel_inbox ON public.manager_human_requests
 
 
 --
+-- Name: manager_human_card_refresh_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_human_card_refresh_pending ON public.manager_human_notices USING btree (sent_at, id) WHERE ((status = 'sent'::text) AND (provider = ANY (ARRAY['feishu'::text, 'dingtalk'::text])) AND ((receipt ->> 'human_confirmation_card'::text) = 'true'::text) AND (card_refresh_attempts < 3) AND ((card_refresh_result IS NULL) OR (card_refresh_result = 'unknown'::text)));
+
+
+--
 -- Name: manager_human_dm_context_pending; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6118,6 +6153,13 @@ CREATE INDEX manager_human_notices_pending ON public.manager_human_notices USING
 --
 
 CREATE INDEX manager_human_notices_quote ON public.manager_human_notices USING btree (binding_id, provider_chat_id, provider_message_id) WHERE ((status = 'sent'::text) AND (provider_chat_id IS NOT NULL) AND (provider_message_id IS NOT NULL));
+
+
+--
+-- Name: manager_human_rejection_notices_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_human_rejection_notices_pending ON public.manager_human_rejection_notices USING btree (created_at, request_id) WHERE (outcome IS NULL);
 
 
 --
@@ -7317,6 +7359,14 @@ ALTER TABLE ONLY public.manager_human_recovery_audit
 
 ALTER TABLE ONLY public.manager_human_recovery_audit
     ADD CONSTRAINT manager_human_recovery_audit_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.manager_human_requests(id);
+
+
+--
+-- Name: manager_human_rejection_notices manager_human_rejection_notices_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_human_rejection_notices
+    ADD CONSTRAINT manager_human_rejection_notices_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.manager_human_requests(id) ON DELETE CASCADE;
 
 
 --

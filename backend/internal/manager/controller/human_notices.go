@@ -20,6 +20,7 @@ func (s *ChannelServer) humanNoticeRoutes(mux *http.ServeMux) {
 	if !ok {
 		return
 	}
+	s.humanCardRefreshRoutes(mux)
 	const base = "/api/internal/v1/human-notices"
 	for path, query := range map[string]bool{base + "/claim": false, base + "/queries/claim": true} {
 		mux.HandleFunc("POST "+path, s.wrap(func(r *http.Request) (any, error) {
@@ -52,4 +53,24 @@ func (s *ChannelServer) humanNoticeRoutes(mux *http.ServeMux) {
 		err := store.CompleteHumanNotice(r.Context(), r.PathValue("id"), body)
 		return map[string]bool{"accepted": err == nil}, err
 	}))
+	if cards, ok := s.Store.(interface {
+		AnswerHumanCard(context.Context, string, service.HumanCardAction) (any, error)
+		ReadHumanCard(context.Context, string, service.HumanCardAction) (any, error)
+	}); ok {
+		mux.HandleFunc("POST "+base+"/{id}/read-card", s.wrap(func(r *http.Request) (any, error) {
+			var body service.HumanCardAction
+			if err := decode(r, &body); err != nil {
+				return nil, err
+			}
+			return cards.ReadHumanCard(r.Context(), r.PathValue("id"), body)
+		}))
+		mux.HandleFunc("POST "+base+"/{id}/answer-card", s.wrap(func(r *http.Request) (any, error) {
+			var body service.HumanCardAction
+			if err := decode(r, &body); err != nil {
+				return nil, err
+			}
+			return cards.AnswerHumanCard(r.Context(), r.PathValue("id"), body)
+		}))
+	}
+
 }

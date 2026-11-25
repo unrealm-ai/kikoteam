@@ -321,8 +321,17 @@ func (s *wecomSession) read(ctx context.Context, events chan<- wecomFrame) error
 					Type string `json:"eventtype"`
 				} `json:"event"`
 			}
-			if json.Unmarshal(f.Body, &b) == nil && b.Event.Type == "disconnected_event" {
-				return errors.New("wecom_connection_taken_over")
+			if json.Unmarshal(f.Body, &b) == nil {
+				switch b.Event.Type {
+				case "disconnected_event":
+					return errors.New("wecom_connection_taken_over")
+				case "template_card_event":
+					select {
+					case events <- f:
+					default:
+						return errors.New("wecom_ingress_backpressure")
+					}
+				}
 			}
 			continue
 		}
@@ -391,6 +400,10 @@ func (s *wecomSession) ingest(ctx context.Context, backend *Backend, events <-ch
 		case f, ok := <-events:
 			if !ok {
 				return
+			}
+			if f.Cmd == "aibot_event_callback" {
+				s.handleWecomNativeConfirmation(ctx, backend, f)
+				continue
 			}
 			v, reply, err := normalizeWecom(s.binding, f, f.ReceivedAt)
 			if err != nil {
@@ -462,11 +475,10 @@ func (s *wecomSession) sendBound(ctx context.Context, d Delivery, requiredCallba
 	id := wireID("send_")
 	cmd := "aibot_send_msg"
 	body := map[string]any{"chatid": d.ChatID, "msgtype": "markdown", "markdown": map[string]string{"content": d.Text}}
-	if d.contentFormat() == taskDetailCardFormat {
-		if d.TaskDetailCard == nil || d.ReplyToMessageID != "" || mediaID != "" {
-			return deliveryReceipt{Status: "failed", EvidenceType: "not_dispatched", ErrorCode: "invalid_task_detail_card"}
-		}
-		body = map[string]any{"chatid": d.ChatID, "msgtype": "template_card", "template_card": wecomTaskDetailContent(d)}
+	var invalid string
+	id, body, invalid = wecomCardPayload(d, mediaID, id, body)
+	if invalid != "" {
+		return deliveryReceipt{Status: "failed", EvidenceType: "not_dispatched", ErrorCode: invalid}
 	}
 	s.mu.Lock()
 	if s.closed {
@@ -517,7 +529,7 @@ func (s *wecomSession) sendBound(ctx context.Context, d Delivery, requiredCallba
 			}
 			// Documented invalid message type: the correlated active card was
 			// rejected before posting. Other errors stay unknown.
-			if d.contentFormat() == taskDetailCardFormat && *ack.ErrorCode == 40008 {
+			if (d.contentFormat() == taskDetailCardFormat || d.humanCardContent != nil) && *ack.ErrorCode == 40008 {
 				return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: taskDetailRejected}
 			}
 		}
@@ -527,6 +539,23 @@ func (s *wecomSession) sendBound(ctx context.Context, d Delivery, requiredCallba
 	}
 	s.poisonReply(d.ReplyToMessageID, id)
 	return deliveryReceipt{Status: "unknown", ErrorCode: "wecom_send_outcome_unknown"}
+}
+
+func wecomCardPayload(d Delivery, mediaID, id string, body map[string]any) (string, map[string]any, string) {
+	switch d.contentFormat() {
+	case "human_confirmation_card":
+		if d.humanCardContent == nil || !humanCardNoticeID.MatchString(d.ID) || d.ReplyToMessageID != "" || mediaID != "" {
+			return id, nil, "invalid_human_card"
+		}
+		return d.ID, map[string]any{"chatid": d.ChatID, "msgtype": "template_card", "template_card": d.humanCardContent}, ""
+	case taskDetailCardFormat:
+		if d.TaskDetailCard == nil || d.ReplyToMessageID != "" || mediaID != "" {
+			return id, nil, "invalid_task_detail_card"
+		}
+		return id, map[string]any{"chatid": d.ChatID, "msgtype": "template_card", "template_card": wecomTaskDetailContent(d)}, ""
+	default:
+		return id, body, ""
+	}
 }
 
 // Caller holds s.mu. A control response must use this exact callback, not a

@@ -218,6 +218,7 @@ func Feishu(ctx context.Context, b Binding, backend *Backend) error {
 		return err
 	})
 	registerLifecycle(ctx, handler, b, backend)
+	registerFeishuHumanCardHandler(handler, b, backend)
 	var client *larkws.Client
 	reportConnected := func() {
 		if err := backend.Applied(ctx, b.ID, status(b, "connected", "")); err != nil {

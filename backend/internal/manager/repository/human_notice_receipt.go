@@ -43,7 +43,8 @@ func (s *Store) CompleteHumanNotice(ctx context.Context, id string, v service.De
 	if exact {
 		return nil
 	}
-	if lease != v.LeaseToken || digest != v.TargetDigest || !validHumanNoticeReceipt(provider, state, query, request, v) {
+	if lease != v.LeaseToken || digest != v.TargetDigest || !validHumanNoticeReceipt(provider, state, query, request, v) ||
+		v.HumanConfirmationCard && provider != "feishu" && v.ProviderRequestID != id {
 		return service.Fail("human_notice_receipt_conflict", 409, "投递回执与原尝试不一致")
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE manager_human_notices SET status=$2,
@@ -69,6 +70,17 @@ func (s *Store) CompleteHumanNotice(ctx context.Context, id string, v service.De
 }
 
 func validHumanNoticeReceipt(provider, state, query, request string, v service.DeliveryCompletion) bool {
+	if v.HumanConfirmationCard {
+		// Native DingTalk CreateAndDeliver provides the terminal receipt from the
+		// actual private delivery result rather than an async robot query.
+		if v.Status != "sent" || v.ProviderRequestID == "" && provider != "feishu" ||
+			provider != "feishu" && (v.ProviderMessageID != "" || v.ProviderChatID != "") {
+			return false
+		}
+		if provider == "dingtalk" {
+			return state == "sending" && v.QueryToken == "" && v.EvidenceType == "send_response" && v.EvidenceID == v.ProviderRequestID
+		}
+	}
 	if !deliveryEvidence(provider, v) {
 		return false
 	}

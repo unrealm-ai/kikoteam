@@ -12,7 +12,6 @@ check-fmt:
 	@files="$$(gofmt -l cmd internal)"; test -z "$$files" || { echo "$$files"; exit 1; }
 lint: check-fmt check-contracts $(GOLANGCI_LINT)
 	node --check extensions/capability-policy.mjs
-	node --check extensions/context-receipt.mjs
 	node --check extensions/human-tools.mjs
 	$(GOLANGCI_LINT) run --config ../.golangci.yml ./...
 check-contracts:

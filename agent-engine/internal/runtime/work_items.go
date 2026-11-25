@@ -10,7 +10,7 @@ import (
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
 )
 
-func (w *Worker) fenceWorkBoundary(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, steer steering) (string, error) {
+func (w *Worker) fenceWorkBoundary(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, steer *steering) (string, error) {
 	id, err := w.Store.WorkBoundaryToFence(ctx, work, turn.ID)
 	if err != nil || id == "" {
 		return "", err
@@ -59,7 +59,7 @@ func boundaryError(promptErr, confirmationErr error) error {
 	return errors.Join(promptErr, confirmationErr)
 }
 
-func (w *Worker) fenceBoundary(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, steer steering, humanEnabled, workEnabled bool) (executionBoundary, error) {
+func (w *Worker) fenceBoundary(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, steer *steering, humanEnabled, workEnabled bool) (executionBoundary, error) {
 	if work.Mode != "task" {
 		return executionBoundary{}, nil
 	}

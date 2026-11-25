@@ -190,6 +190,9 @@ func (c *Client) sendCommand(ctx context.Context, v any) error {
 		return errors.New("pi client closing")
 	}
 }
+
+var ErrCommandRejected = errors.New("pi rejected RPC command")
+
 func (c *Client) call(ctx context.Context, command string, params map[string]any) (json.RawMessage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -214,7 +217,7 @@ func (c *Client) call(ctx context.Context, command string, params map[string]any
 			return nil, errors.New("pi response command mismatch")
 		}
 		if !r.Success {
-			return nil, fmt.Errorf("pi %s failed: %s", command, r.Error)
+			return nil, fmt.Errorf("%w (%s): %s", ErrCommandRejected, command, r.Error)
 		}
 		return r.Data, nil
 	case <-c.readDone:

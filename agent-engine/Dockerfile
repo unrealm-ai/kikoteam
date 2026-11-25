@@ -48,7 +48,7 @@ COPY --from=go-build /out/agent-engine ./agent-engine/bin/agent-engine
 COPY --from=go-build /out/sandbox-runner ./sandbox-runner/bin/sandbox-runner
 COPY --from=node-build /src/agent-engine/node_modules ./agent-engine/node_modules
 COPY agent-engine/scripts/pi.sh ./agent-engine/scripts/pi.sh
-COPY agent-engine/extensions/capability-policy.mjs agent-engine/extensions/context-receipt.mjs agent-engine/extensions/human-tools.mjs ./agent-engine/extensions/
+COPY agent-engine/extensions/capability-policy.mjs agent-engine/extensions/human-tools.mjs ./agent-engine/extensions/
 WORKDIR /opt/kikoteam/sandbox-runner/builtin-mcp
 COPY --from=node-build /src/builtin-mcp/package.json ./
 COPY --from=node-build /src/builtin-mcp/dist ./dist

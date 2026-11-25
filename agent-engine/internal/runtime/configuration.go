@@ -47,7 +47,6 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 	}
 	if turn.Input.CorrectionOnly {
 		out.PlanOnly = true
-		out.ReceiptExtension = filepath.Join(filepath.Dir(filepath.Dir(w.Launcher)), "extensions/context-receipt.mjs")
 		out.Instruction += "\n[平台执行约束] 本轮根据修改意见拟定新方案。仅可查询确认职责并用 ask_human 发起新的明确批准，必须等待新答复后才执行。禁止项目操作、业务操作或向其他事项提交成果。"
 		if cfg.HumanToolsToken != "" {
 			w.configureHumanTools(&out, turn, cfg, false)
@@ -81,10 +80,6 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 		out.HumanTools.WorkMCPToken = cfg.WorkMCPToken
 		// Role changes alter the set and schema of local boundary tools.
 		out.WorkMCPRole = cfg.WorkRole
-	}
-	// Ask-enabled tasks need the same native evidence for steering and resume.
-	if current.Mode == "chat" || cfg.HumanToolsToken != "" || cfg.WorkLocalToken != "" {
-		out.ReceiptExtension = filepath.Join(filepath.Dir(filepath.Dir(w.Launcher)), "extensions/context-receipt.mjs")
 	}
 	if current.Mode == "chat" && (cfg.DelegationToken != "" || cfg.ChatDelegationCatalogToken != "") {
 		w.configureChatDelegation(&out, turn.Input.ID, cfg)

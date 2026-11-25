@@ -55,7 +55,7 @@ task 的创建请求将 mode 改为 task，保持同一个 Conversation。通常
 <root>/workspaces/W/
   projects/conv-C/                 # 会话任务共享项目
   projects/task-T/                 # TaskSpace 独立项目
-  sessions/S/pi/                   # Pi 身份、JSONL 和输入回执
+  sessions/S/pi/                   # Pi 身份和原生 JSONL
   sessions/S/runner/token          # 固定 MCP Token
   sessions/S/runner/processes/     # SQLite 账本和初始化标记
 <root>/temp/uploads/               # 项目上传回执和 Skill 导入暂存

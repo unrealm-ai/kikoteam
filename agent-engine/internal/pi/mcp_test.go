@@ -204,7 +204,7 @@ func TestUpstreamBuiltinHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = c.Close() }()
-	reason, err := c.Prompt(ctx, "Write the two files using the tools.", func(Update) {})
+	reason, err := c.Prompt(ctx, "Write the two files using the tools.", nil, func(Update) {})
 	if err != nil || reason != "end_turn" {
 		t.Fatalf("prompt %s %v", reason, err)
 	}

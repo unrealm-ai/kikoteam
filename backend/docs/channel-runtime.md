@@ -83,7 +83,7 @@ Conversation 映射独立按员工绑定、聊天类型和来源 chat 固定，�
 
 达到历史条数或预算上限明确记录 truncated/partial。接口失败、已知锚缺失、线程不支持或范围未知明确 unavailable，不制造完整空历史；若按契约降级只写当前事件，成功入 Input 仍是新边界，同时保留缺口事实，不能承诺日后自动补齐。只保存历史快照、Inbox accepted 或 Delivery pending 都不等于成功写入当前事件的 Input。
 
-原生 `context_state=pending/committed/absent/unknown` 保留，用于判断该输入是否已经进入 Pi、是否能安全重试，**不再推进或阻挡群历史边界**。Input 已成功提交后即使仍在 false 缓存、后来撤回或模型失败，也不把渠道边界退回；重试只核对既有事实。已提交批次结果未知时先核对原生可恢复证据，不盲目重放；明确未消费才可归还同一批次。
+原生 `context_state=pending/committed/absent/unknown` 保留，用于判断该输入是否已经进入 Pi、是否能安全重试，**不再推进或阻挡群历史边界**。Input 已成功提交后即使仍在 false 缓存、后来撤回或模型失败，也不把渠道边界退回；重试只核对既有事实。已提交批次结果未知时保留现有记录。Pi 明确从队列中移除的引导输入可按原批次归还。
 
 ### Engine 合批与文本
 

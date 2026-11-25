@@ -15,25 +15,3 @@ func (s *Store) ContextReceipt(ctx context.Context, w Work, input, state string)
 		return err
 	})
 }
-
-type ContextCandidate struct {
-	ID  string
-	Seq int64
-}
-
-func (s *Store) UnresolvedContextInputs(ctx context.Context, w Work, after int64) ([]ContextCandidate, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT id,seq FROM manager_inputs WHERE session_id=$1 AND started_at IS NOT NULL AND context_state IN ('pending','unknown') AND (batch_input_id IS NULL OR batch_input_id=id) AND seq>$2 ORDER BY seq LIMIT 8`, w.SessionID, after)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }() //nolint:errcheck // Scan errors checked below.
-	var ids []ContextCandidate
-	for rows.Next() {
-		var id ContextCandidate
-		if err = rows.Scan(&id.ID, &id.Seq); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
-}

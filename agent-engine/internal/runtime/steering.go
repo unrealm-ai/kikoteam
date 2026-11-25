@@ -2,75 +2,88 @@ package runtime
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
+
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/pi"
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
 )
 
-// One outstanding receipt preserves the existing receipt extension's purpose
-// and exclusive intent protocol, without adding or changing Pi extensions.
+// The prompt reader and the steering loop share one outstanding input per Turn.
+// Install it before sending RPC because Pi may emit the user event before its reply.
 type steering struct {
-	inputs []repository.Input
-	last   string
+	pending atomic.Pointer[repository.Input]
+}
+
+func (s *steering) matchingUser(update pi.Update) *repository.Input {
+	if update["type"] != "message_end" {
+		return nil
+	}
+	message, _ := update["message"].(map[string]any)
+	if message["role"] != "user" {
+		return nil
+	}
+	text, ok := message["content"].(string)
+	if !ok {
+		blocks, _ := message["content"].([]any)
+		if len(blocks) != 1 {
+			return nil
+		}
+		block, _ := blocks[0].(map[string]any)
+		if block["type"] != "text" {
+			return nil
+		}
+		text, ok = block["text"].(string)
+	}
+	input := s.pending.Load()
+	if !ok || input == nil || text != input.Text {
+		return nil
+	}
+	return input
 }
 
 func (w *Worker) steer(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, state *steering) error {
-	if pi.NativeInputState(w.nativeDirectory(work), client.SessionID(), state.last) != "committed" {
+	if state.pending.Load() != nil {
 		return nil
-	}
-	if err := w.Store.ContextReceipt(ctx, work, state.last, "committed"); err != nil {
-		return err
 	}
 	native, err := client.GetState(ctx)
-	if err != nil {
+	if err != nil || !native.IsStreaming {
 		return err
-	}
-	if !native.IsStreaming {
-		return nil
 	}
 	input, err := w.Store.ClaimSteering(ctx, work, turn)
 	if err != nil || input == nil {
 		return err
 	}
 	w.logInputClaim(work, turn, *input, "steer")
-	state.inputs = append(state.inputs, *input)
-	state.last = input.ID
-	text, err := pi.PrepareInputReceipt(w.nativeDirectory(work), client.SessionID(), input.ID, input.Text)
-	if err != nil {
-		return err
+	state.pending.Store(input)
+	disposition, err := client.Steer(ctx, input.Text)
+	if errors.Is(err, pi.ErrCommandRejected) {
+		return errors.Join(err, w.Store.ContextReceipt(ctx, work, input.ID, "absent"))
 	}
-	return client.Steer(ctx, text)
+	if disposition == "handled" {
+		// Pi handled this command without queueing a user message. Later tools
+		// keep their previous source. Complete settles the unobserved context.
+		state.pending.CompareAndSwap(input, nil)
+	}
+	return err
 }
-func (w *Worker) finishSteering(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, state steering, stopped bool) error {
+
+func (w *Worker) finishSteering(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, state *steering, stopped bool) error {
 	removed, err := client.TakeQueue(ctx)
 	if err != nil {
 		return err
 	}
-	for _, input := range state.inputs {
-		receipt := pi.NativeInputState(w.nativeDirectory(work), client.SessionID(), input.ID)
-		if receipt != "committed" && input.ID == state.last {
-			for _, text := range removed {
-				if text == input.Text {
-					receipt = "absent"
-					if !stopped {
-						if err = pi.ForgetUnconsumedIntent(w.nativeDirectory(work), input.ID); err != nil {
-							return err
-						}
-						if err = w.Store.ReturnSteering(ctx, work, turn, input.ID); err != nil {
-							return err
-						}
-						w.Log.Info("Steering input returned to queue", "event", "input.requeued", "input_id", input.ID, "session_id", work.SessionID, "turn_id", turn.ID)
-						receipt = "pending"
-					}
-					break
-				}
-			}
-		}
-		if receipt != "pending" {
-			if err = w.Store.ContextReceipt(ctx, work, input.ID, receipt); err != nil {
-				return err
-			}
-		}
-		w.Log.Info("Steering input reconciled", "event", "input.steer_reconciled", "input_id", input.ID, "session_id", work.SessionID, "turn_id", turn.ID, "context_state", receipt)
+	input := state.pending.Load()
+	if input == nil || input.ID == turn.Input.ID || len(removed) != 1 || removed[0] != input.Text {
+		return nil
 	}
+	if stopped {
+		return w.Store.ContextReceipt(ctx, work, input.ID, "absent")
+	}
+	if err := w.Store.ReturnSteering(ctx, work, turn, input.ID); err != nil {
+		return err
+	}
+	state.pending.CompareAndSwap(input, nil)
+	w.Log.Info("Steering input returned to queue", "event", "input.requeued", "input_id", input.ID, "session_id", work.SessionID, "turn_id", turn.ID)
 	return nil
 }

@@ -13,6 +13,10 @@ type commandResult struct {
 	err  error
 }
 
+type inputAck struct {
+	Disposition string `json:"disposition"`
+}
+
 type State struct {
 	SessionID           string `json:"sessionId"`
 	SessionFile         string `json:"sessionFile"`
@@ -41,7 +45,7 @@ func (c *Client) Abort(ctx context.Context) error {
 
 // Prompt owns the event stream until Pi has settled, not merely acknowledged input.
 // Other callers may submit steering/follow-up commands while this owner drains events.
-func (c *Client) Prompt(ctx context.Context, text string, onUpdate func(Update)) (string, error) {
+func (c *Client) Prompt(ctx context.Context, text string, onAccepted func(), onUpdate func(Update)) (string, error) {
 	if !c.promptMu.TryLock() {
 		return "", errors.New("pi prompt already active")
 	}
@@ -60,10 +64,10 @@ func (c *Client) Prompt(ctx context.Context, text string, onUpdate func(Update))
 		data, err := c.call(requestCtx, "prompt", map[string]any{"message": text})
 		result <- commandResult{data, err}
 	}()
-	return c.waitPrompt(ctx, result, onUpdate)
+	return c.waitPrompt(ctx, result, onAccepted, onUpdate)
 }
 
-func (c *Client) waitPrompt(ctx context.Context, result <-chan commandResult, onUpdate func(Update)) (string, error) {
+func (c *Client) waitPrompt(ctx context.Context, result <-chan commandResult, onAccepted func(), onUpdate func(Update)) (string, error) {
 	accepted, settled, aborted := false, false, false
 	lastStop := ""
 	for {
@@ -78,16 +82,18 @@ func (c *Client) waitPrompt(ctx context.Context, result <-chan commandResult, on
 				}
 				return "", r.err
 			}
-			var ack struct {
-				Disposition string `json:"disposition"`
-			}
+			var ack inputAck
 			if json.Unmarshal(r.data, &ack) != nil {
 				return "", errors.Join(errors.New("invalid Pi prompt acknowledgement"), c.Close())
 			}
 			switch ack.Disposition {
-			case "handled":
-				return "handled", nil
-			case "started":
+			case "started", "handled":
+				if onAccepted != nil {
+					onAccepted()
+				}
+				if ack.Disposition == "handled" {
+					return "handled", nil
+				}
 				accepted = true
 			case "queued":
 				return "", errors.Join(errors.New("unexpected queued starting prompt"), c.Close())
@@ -183,9 +189,16 @@ func (c *Client) cancelPrompt(ctx context.Context, onUpdate func(Update)) (strin
 }
 
 // Steer queues native user input; success is acknowledgement, not consumption.
-func (c *Client) Steer(ctx context.Context, text string) error {
-	_, err := c.call(ctx, "steer", map[string]any{"message": text})
-	return err
+func (c *Client) Steer(ctx context.Context, text string) (string, error) {
+	data, err := c.call(ctx, "steer", map[string]any{"message": text})
+	if err != nil {
+		return "", err
+	}
+	var ack inputAck
+	if json.Unmarshal(data, &ack) != nil || (ack.Disposition != "queued" && ack.Disposition != "handled") {
+		return "", errors.New("invalid Pi steer acknowledgement")
+	}
+	return ack.Disposition, nil
 }
 
 // FollowUp uses Pi's in-memory queue, not the platform's durable Input queue.
@@ -198,7 +211,7 @@ func (c *Client) ClearQueue(ctx context.Context) error {
 	return err
 }
 
-// TakeQueue returns positive evidence of messages removed before consumption.
+// TakeQueue clears both queues and returns only the removed steering messages.
 func (c *Client) TakeQueue(ctx context.Context) ([]string, error) {
 	data, err := c.call(ctx, "clear_queue", nil)
 	if err != nil {
@@ -206,12 +219,11 @@ func (c *Client) TakeQueue(ctx context.Context) ([]string, error) {
 	}
 	var result struct {
 		Steering []string `json:"steering"`
-		FollowUp []string `json:"followUp"`
 	}
 	if err = json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
-	return append(result.Steering, result.FollowUp...), nil
+	return result.Steering, nil
 }
 func (c *Client) SetQueueMode(ctx context.Context, queue, mode string) error {
 	if queue != "steering" && queue != "follow_up" {

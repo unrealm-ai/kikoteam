@@ -41,9 +41,6 @@ func TestUpstreamConversationLoadAndCancel(t *testing.T) {
 			w.WriteHeader(400)
 			return
 		}
-		if strings.Contains(fmt.Sprint(body.Messages), "kiko.context-receipt.v2") {
-			t.Error("custom entry leaked into model context")
-		}
 		if len(body.Tools) > 0 {
 			t.Error("chat unexpectedly exposes tools")
 		}
@@ -89,7 +86,6 @@ func TestUpstreamConversationLoadAndCancel(t *testing.T) {
 	defer server.Close()
 	dir := t.TempDir()
 	cfg := Config{Directory: filepath.Join(dir, "native"), RuntimeDirectory: filepath.Join(dir, "work"), PiCommand: filepath.Join(root, "node_modules/.bin/pi"), Launcher: filepath.Join(root, "scripts/pi.sh"), Chat: true, Model: Model{Protocol: "chat_completions", BaseURL: server.URL + "/v1", ID: "fixture-model", Key: "fixture-key"}, Instruction: "Be concise."}
-	cfg.ReceiptExtension = filepath.Join(root, "extensions/context-receipt.mjs")
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	c, err := Start(ctx, cfg, "")
@@ -99,7 +95,7 @@ func TestUpstreamConversationLoadAndCancel(t *testing.T) {
 	prompt := func(c *Client, text, want string) {
 		t.Helper()
 		var output strings.Builder
-		reason, err := c.Prompt(ctx, text, func(u Update) {
+		reason, err := c.Prompt(ctx, text, nil, func(u Update) {
 			if u["type"] == "message_update" {
 				if v, ok := u["assistantMessageEvent"].(map[string]any); ok && v["type"] == "text_delta" {
 					if text, ok := v["delta"].(string); ok {
@@ -112,25 +108,10 @@ func TestUpstreamConversationLoadAndCancel(t *testing.T) {
 			t.Fatalf("prompt reason=%s err=%v output=%q", reason, err, output.String())
 		}
 	}
-	receiptText, err := PrepareInputReceipt(cfg.Directory, c.SessionID(), "receipt-integration", "Remember blue.")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if receiptText != "Remember blue." {
-		t.Fatal("receipt altered model input")
-	}
-	prompt(c, receiptText, "answer-1")
-	if state := NativeInputState(cfg.Directory, c.SessionID(), "receipt-integration"); state != "committed" {
-		t.Fatal("real Pi user receipt", state)
-	}
-	assertInvisibleReceiptParent(t, cfg.Directory)
-	secondText, err := PrepareInputReceipt(cfg.Directory, c.SessionID(), "receipt-second", "Remember blue.")
-	if err != nil {
-		t.Fatal(err)
-	}
-	prompt(c, secondText, "answer-2")
-	if state := NativeInputState(cfg.Directory, c.SessionID(), "receipt-second"); state != "committed" {
-		t.Fatal("same text new receipt", state)
+	prompt(c, "Remember blue.", "answer-1")
+	prompt(c, "Remember blue.", "answer-2")
+	if _, err := os.Stat(filepath.Join(cfg.Directory, "input-receipts")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected input receipt directory: %v", err)
 	}
 	id := c.SessionID()
 	if err = c.Close(); err != nil {
@@ -140,18 +121,14 @@ func TestUpstreamConversationLoadAndCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = c.Close() }()
-	if state := NativeInputState(cfg.Directory, c.SessionID(), "receipt-integration"); state != "committed" {
-		t.Fatal("recovered Pi receipt", state)
-	}
-	assertInvisibleReceiptParent(t, cfg.Directory)
+	defer func(client *Client) { _ = client.Close() }(c)
 	prompt(c, "Continue after restart.", "answer-3")
-	if _, err = c.Prompt(ctx, "fixture-failure", func(Update) {}); err == nil {
+	if _, err = c.Prompt(ctx, "fixture-failure", nil, func(Update) {}); err == nil {
 		t.Fatal("upstream model failure was reported as a completed Turn")
 	}
 	slow, stop := context.WithTimeout(ctx, 750*time.Millisecond)
 	defer stop()
-	_, err = c.Prompt(slow, "slow", func(Update) {})
+	_, err = c.Prompt(slow, "slow", nil, func(Update) {})
 	if err == nil {
 		t.Fatal("canceled request succeeded")
 	}
@@ -159,18 +136,17 @@ func TestUpstreamConversationLoadAndCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	crashText, err := PrepareInputReceipt(cfg.Directory, c.SessionID(), "receipt-crash", "slow crash")
-	if err != nil {
-		t.Fatal(err)
-	}
+	accepted := make(chan struct{})
+	defer func(client *Client) { _ = client.Close() }(c)
 	crashed := make(chan error, 1)
-	go func() { _, e := c.Prompt(ctx, crashText, func(Update) {}); crashed <- e }()
-	deadline := time.Now().Add(5 * time.Second)
-	for NativeInputState(cfg.Directory, id, "receipt-crash") != "committed" && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if NativeInputState(cfg.Directory, id, "receipt-crash") != "committed" {
-		t.Fatal("native user never persisted before crash")
+	go func() {
+		_, e := c.Prompt(ctx, "slow crash", func() { close(accepted) }, func(Update) {})
+		crashed <- e
+	}()
+	select {
+	case <-accepted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Pi did not acknowledge prompt before crash")
 	}
 	if err = syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
@@ -187,9 +163,8 @@ func TestUpstreamConversationLoadAndCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if NativeInputState(cfg.Directory, id, "receipt-crash") != "committed" {
-		t.Fatal("lost committed receipt after actual process crash")
-	}
+	defer func() { _ = c.Close() }()
+	prompt(c, "Continue after crash.", "answer-")
 	mu.Lock()
 	defer mu.Unlock()
 	if len(counts) < 3 || counts[0] != 1 || counts[1] != 2 || counts[2] != 3 {

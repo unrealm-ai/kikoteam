@@ -1,6 +1,6 @@
 # agent-engine · Agent 执行引擎
 
-**Input 有序合批（2026-11-18，实施中，迁移 19/20）**：false 输入单独等待，不触发 Pi；Engine 到同 Session 首个 true 截批，合并前面 false 与该 true 为一条原生 user prompt。原始行保留，以 batch_input_id 关联触发根与上下文成员，receipt/状态按批次传播；触发根提供执行权限，不把历史作者权限混入当前 Turn。steer 不越过更早 true 或 queue；明确 absent 的 false 在非取消场景归还，unknown 不盲目重放。主会话/话题以独立 Session 隔离 Input、Pi 和批次，Backend 已同步独立话题映射，真实渠道端到端仍待验收。须停稳旧 Engine 后同代升级；验证范围及未完成项见[输入专项](../backend/docs/session-input-and-task-report.md#input-有序合批2026-11-18实施中迁移-20)。
+**Input 有序合批（2026-11-18，实施中，迁移 19/20）**：false 输入单独等待，不触发 Pi；Engine 到同 Session 首个 true 截批，合并前面 false 与该 true 为一条原生 user prompt。原始行保留，以 batch_input_id 关联触发根与上下文成员，投递状态按批次传播；触发根提供执行权限，不把历史作者权限混入当前 Turn。steer 不越过更早 true 或 queue；明确 absent 的 false 在非取消场景归还，unknown 不盲目重放。主会话/话题以独立 Session 隔离 Input、Pi 和批次，Backend 已同步独立话题映射，真实渠道端到端仍待验收。须停稳旧 Engine 后同代升级；验证范围及未完成项见[输入专项](../backend/docs/session-input-and-task-report.md#input-有序合批2026-11-18实施中迁移-20)。
 
 **任务回报与输入方式（2026-11-17）**：默认 steer、可选 queue；Engine 在 task Turn 提交后主动回调 backend，Hub 仅定时补偿。运行中同主体输入通过原生 steering 加入当前 Turn，原生 prompt 承载带来源标记的内部回报，不新增或修改 Pi 扩展。详见[输入与回报](../backend/docs/session-input-and-task-report.md)。
 
@@ -32,7 +32,7 @@ Go 实现，可多实例部署，主动向 backend 注册、心跳和对账。ba
 
 chat 的后台压缩与仅追加 assistant 而不触发回复属于待评估设计，新增扩展或特殊适配须先取得用户明确确认，详见[对话与任务及扩展](docs/chat-and-task.md)。
 
-原生集成遵守 [Pi 原生能力优先规则](../AI_RULES.md#通用开发与静态检查)；既有授权和输入回执扩展保留原用途，不因迁移新增插件。方案与运行时接入见[Session 运行时与 Pi RPC 接入](docs/session-runtime.md)。
+原生集成遵守 [Pi 原生能力优先规则](../AI_RULES.md#通用开发与静态检查)；输入通过原生 RPC 投递，授权仍由既有扩展执行。方案与运行时接入见[Session 运行时与 Pi RPC 接入](docs/session-runtime.md)。
 
 检查入口：`npm ci` 安装固定依赖；`make check build` 运行格式/契约/lint、扩展测试、实际 Pi/MCP race 回归和构建。需要先安装 Runner builtin 依赖并构建，契约校验器按 Event Hub 的开发依赖安装。
 
@@ -56,7 +56,7 @@ chat 的后台压缩与仅追加 assistant 而不触发回复属于待评估设�
 
 ### Input 消费链路日志
 
-`input.claimed` 在平台 Claim 事务成功后输出 input/session/turn ID、序号、主体类型及 `consumption_mode=turn|steer`；`queue_wait_ms` 为该输入创建至此次领取的耗时（重新领取时包含此前等待/尝试，不是纯排队性能统计）。此事件只证明平台领取，不证明 Pi 已提交、模型已采用或外发成功；false 上下文合批沿既有 batch_input_id 与触发根关联，不分别制造 Turn。`turn.finished` 仅在终态提交成功后记录并携带根 input_id；steer 的 `input.steer_reconciled` 记录持久回执事实，明确归还队列后另记 `input.requeued`。日志不含消息正文、渠道用户身份或凭据。普通 queue 后续输入由下一次 Claim 记录，重放/未知保持既有执行语义。
+`input.claimed` 在平台 Claim 事务成功后输出 input/session/turn ID、序号、主体类型及 `consumption_mode=turn|steer`；`queue_wait_ms` 为该输入创建至此次领取的耗时（重新领取时包含此前等待/尝试，不是纯排队性能统计）。此事件只证明平台领取，不证明 Pi 已提交、模型已采用或外发成功；false 上下文合批沿既有 batch_input_id 与触发根关联，不分别制造 Turn。`turn.finished` 仅在终态提交成功后记录并携带根 input_id；`input.requeued` 表示 Pi 已从引导队列移除该输入，Engine 已将其归还平台队列。日志不含消息正文、渠道用户身份或凭据。普通 queue 后续输入由下一次 Claim 记录，重放/未知保持既有执行语义。
 
 `turn.prompt_failed` 记录请求失败时最早已知的本地中止阶段或 Pi 错误类型，可用 session、turn 和 input ID 与投递日志关联；不记录原始错误正文，也不把用户主动停止或正常等待人工确认记为执行故障。
 

@@ -45,7 +45,7 @@ func TestPlanOnlyNativePiDoesNotOfferTools(t *testing.T) {
 			t.Error(e)
 		}
 	}()
-	if _, e = c.Prompt(ctx, "Prepare a corrected draft", func(Update) {}); e != nil {
+	if _, e = c.Prompt(ctx, "Prepare a corrected draft", nil, func(Update) {}); e != nil {
 		t.Fatal(e)
 	}
 	select {

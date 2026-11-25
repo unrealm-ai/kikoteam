@@ -83,6 +83,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	var workMu sync.RWMutex
 	askReady, releaseAsk := make(chan struct{}, 1), make(chan struct{})
 	crashRequest := make(chan struct{}, 1)
+	releaseSteer := make(chan struct{})
 	taskBModelReady, resumeTaskBModel := make(chan struct{}), make(chan struct{})
 	var pauseTaskBModel sync.Once
 	var reportCalls reportReminderCalls
@@ -189,7 +190,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 		last := fmt.Sprint(body.Messages[len(body.Messages)-1].Content)
 		if strings.Contains(last, "steer-base") {
 			select {
-			case <-time.After(1500 * time.Millisecond):
+			case <-releaseSteer:
 			case <-r.Context().Done():
 				return
 			}
@@ -602,12 +603,25 @@ func testManagerRuntime(t *testing.T, mode string) {
 	})
 	stopEngine()
 	stopEngine = nil
+	// A new Session creates no receipt directory. Leave a stale active pointer
+	// beside the native history to exercise resuming a pre-upgrade Session.
+	legacy := filepath.Join(store.RuntimeRoot, "workspaces", workspace, "sessions", session, "pi", "input-receipts")
+	if err := os.Mkdir(legacy, 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(legacy, "active.json")
+	if err := os.WriteFile(marker, []byte("stale"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	stopEngine = startEngine()
 	call("POST", sessionPath+"/inputs", map[string]string{"text": "after restart"}, "third")
 	wait(func() bool {
 		turns := call("GET", sessionPath+"/turns", nil, "")["items"].([]any)
 		return len(turns) == 3 && turns[2].(map[string]any)["status"] == "completed"
 	})
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "stale" {
+		t.Fatalf("legacy input receipt changed on resume: %v", err)
+	}
 	call("POST", sessionPath+"/inputs", map[string]string{"text": "slow-response"}, "slow")
 	waitStatus("running")
 	call("POST", sessionPath+"/stop", map[string]any{}, "")
@@ -661,11 +675,18 @@ func testManagerRuntime(t *testing.T, mode string) {
 	if !found {
 		t.Fatal("no reliable SSE message")
 	}
-	// A real native steer joins the running platform Turn; queue waits for another.
+	// Identical text has distinct input IDs. The steer joins the active Turn
+	// only when consumed, while the queued input waits for another Turn.
 	rootInput := call("POST", sessionPath+"/inputs", map[string]string{"text": "steer-base"}, "steer-base")["id"].(string)
 	waitStatus("running")
-	steerInput := call("POST", sessionPath+"/inputs", map[string]string{"text": "steer-new"}, "steer-new")["id"].(string)
+	steerInput := call("POST", sessionPath+"/inputs", map[string]string{"text": "steer-base"}, "steer-new")["id"].(string)
 	queuedInput := call("POST", sessionPath+"/inputs", map[string]string{"text": "queue-new", "delivery_mode": "queue"}, "queue-new")["id"].(string)
+	wait(func() bool {
+		var awaiting bool
+		e := db.QueryRowContext(ctx, `SELECT a.context_state='committed' AND b.status='started' AND b.context_state='pending' FROM manager_inputs a,manager_inputs b WHERE a.id=$1 AND b.id=$2`, rootInput, steerInput).Scan(&awaiting)
+		return e == nil && awaiting
+	})
+	close(releaseSteer)
 	wait(func() bool {
 		var finished bool
 		e := db.QueryRowContext(ctx, `SELECT count(*)=3 FROM manager_inputs WHERE id IN ($1,$2,$3) AND status='processed'`, rootInput, steerInput, queuedInput).Scan(&finished)

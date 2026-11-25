@@ -55,7 +55,7 @@ func TestCorrectionConfigurationOnlyCarriesHumanReviewTools(t *testing.T) {
 			HumanMCPToken: "human-mcp", HumanToolsToken: "human-local", WorkRole: role, WorkMCPToken: "work-mcp", WorkLocalToken: "work-local", GroupHistoryToken: "history", CapabilityToken: "capability"}
 		turn := repository.Turn{Input: repository.Input{ID: "correction", CorrectionOnly: true}}
 		out, signature, e := w.prepareConfiguration(t.Context(), current, turn, cfg, integration.Endpoint{URL: "http://runner.invalid", Token: "builtin"})
-		if e != nil || signature == "" || !out.PlanOnly || len(out.MCP) != 0 || len(out.Skills) != 0 || out.PolicyExtension != "" || out.HumanToolsExtension == "" || out.WorkMCPRole != "" || out.ReceiptExtension == "" {
+		if e != nil || signature == "" || !out.PlanOnly || len(out.MCP) != 0 || len(out.Skills) != 0 || out.PolicyExtension != "" || out.HumanToolsExtension == "" || out.WorkMCPRole != "" {
 			t.Fatalf("role %s exposed unneeded capabilities: err=%v", role, e)
 		}
 		if out.HumanTools.Token != cfg.HumanToolsToken || out.HumanTools.Input != turn.Input.ID ||

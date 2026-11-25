@@ -52,8 +52,7 @@ Mac 原生进程使用展开的绝对路径。Backend、Engine 和 Runner 按同
 │   └── sessions/<sid>/
 │       ├── pi/
 │       │   ├── sessions/*.jsonl
-│       │   ├── session.json
-│       │   └── input-receipts/
+│       │   └── session.json
 │       └── runner/
 │           ├── token
 │           └── processes/
@@ -67,7 +66,7 @@ Mac 原生进程使用展开的绝对路径。Backend、Engine 和 Runner 按同
 
 Skill 的 `files/` 保存固定版本的完整内容，包括入口 `SKILL.md`、脚本和参考资料。工作区直接绑定官方版本时只保存引用。日常编辑使用 `projects/<P>/`，显式交付时才将当时的字节写入 `work-files/<sha256>`，由数据库记录名称、来源、摘要和交付关系。
 
-主会话和任务各自使用 `pi/` 中的原生历史、身份映射和输入回执。首次使用 Runner 时才创建 `runner/`，固定 Token、进程账本及初始化标记随 Session 保留。Engine 在 `temp/runtime/` 创建并持有实例锁，Backend 在同一文件上核对接管条件。挂载盘须支持文件锁、SQLite 事务、同步写入和同卷排他重命名。`temp/` 中的文件按各自生命周期清理，运行中不得整体清空。
+主会话和任务各自使用 `pi/` 中的原生历史和身份映射。首次使用 Runner 时才创建 `runner/`，固定 Token、进程账本及初始化标记随 Session 保留。Engine 在 `temp/runtime/` 创建并持有实例锁，Backend 在同一文件上核对接管条件。挂载盘须支持文件锁、SQLite 事务、同步写入和同卷排他重命名。`temp/` 中的文件按各自生命周期清理，运行中不得整体清空。
 
 ### 资产归属与引用
 

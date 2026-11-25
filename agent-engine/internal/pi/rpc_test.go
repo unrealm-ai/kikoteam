@@ -25,7 +25,7 @@ func TestPromptWaitsForSettled(t *testing.T) {
 	done := make(chan error, 1)
 	seen := make(chan struct{}, 1)
 	go func() {
-		_, err := c.waitPrompt(ctx, ack, func(u Update) {
+		_, err := c.waitPrompt(ctx, ack, nil, func(u Update) {
 			if u["type"] == "agent_end" {
 				seen <- struct{}{}
 			}
@@ -58,7 +58,11 @@ func TestPromptHandledRejectedAndDisconnected(t *testing.T) {
 			c := &Client{updates: make(chan Update), readDone: make(chan struct{}), closing: make(chan struct{})}
 			ack := make(chan commandResult, 1)
 			ack <- commandResult{data: json.RawMessage(fmt.Sprintf(`{"disposition":%q}`, tc.disposition)), err: tc.err}
-			reason, err := c.waitPrompt(context.Background(), ack, func(Update) {})
+			accepted := false
+			reason, err := c.waitPrompt(context.Background(), ack, func() { accepted = true }, func(Update) {})
+			if accepted != (tc.err == nil) {
+				t.Fatalf("accepted=%t for %s", accepted, tc.name)
+			}
 			if tc.err == nil && (err != nil || reason != "handled") || tc.err != nil && !errors.Is(err, tc.err) {
 				t.Fatalf("%s %v", reason, err)
 			}
@@ -66,7 +70,7 @@ func TestPromptHandledRejectedAndDisconnected(t *testing.T) {
 	}
 	c := &Client{updates: make(chan Update), readDone: make(chan struct{}), closing: make(chan struct{}), readErr: errors.New("disconnected")}
 	close(c.readDone)
-	if _, err := c.waitPrompt(context.Background(), make(chan commandResult), func(Update) {}); !errors.Is(err, c.readErr) {
+	if _, err := c.waitPrompt(context.Background(), make(chan commandResult), nil, func(Update) {}); !errors.Is(err, c.readErr) {
 		t.Fatal(err)
 	}
 }
@@ -137,14 +141,14 @@ func testUpstreamQueues(t *testing.T, mode string) {
 		t.Fatal(err)
 	}
 	defer func() { _ = c.Close() }()
-	if err = c.Steer(ctx, "discarded-steer"); err != nil {
-		t.Fatal(err)
+	if disposition, err := c.Steer(ctx, "discarded-steer"); err != nil || disposition != "queued" {
+		t.Fatal(disposition, err)
 	}
 	if err = c.FollowUp(ctx, "discarded-follow-up"); err != nil {
 		t.Fatal(err)
 	}
-	if err = c.ClearQueue(ctx); err != nil {
-		t.Fatal(err)
+	if removed, err := c.TakeQueue(ctx); err != nil || len(removed) != 1 || removed[0] != "discarded-steer" {
+		t.Fatalf("removed steering messages=%v err=%v", removed, err)
 	}
 	for _, q := range []string{"steering", "follow_up"} {
 		if err = c.SetQueueMode(ctx, q, mode); err != nil {
@@ -152,7 +156,7 @@ func testUpstreamQueues(t *testing.T, mode string) {
 		}
 	}
 	done := make(chan error, 1)
-	go func() { _, e := c.Prompt(ctx, "start", func(Update) {}); done <- e }()
+	go func() { _, e := c.Prompt(ctx, "start", nil, func(Update) {}); done <- e }()
 	select {
 	case <-entered:
 	case <-ctx.Done():
@@ -164,7 +168,7 @@ func testUpstreamQueues(t *testing.T, mode string) {
 		}
 	}
 	for _, message := range []string{"steer-A", "steer-B"} {
-		if err = c.Steer(ctx, message); err != nil {
+		if _, err = c.Steer(ctx, message); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -304,13 +308,13 @@ func TestUpstreamAbortClearsQueuedInput(t *testing.T) {
 	}
 	defer func() { _ = c.Close() }()
 	done := make(chan error, 1)
-	go func() { _, e := c.Prompt(ctx, "slow", func(Update) {}); done <- e }()
+	go func() { _, e := c.Prompt(ctx, "slow", nil, func(Update) {}); done <- e }()
 	select {
 	case <-entered:
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if err = c.Steer(ctx, "must not execute"); err != nil {
+	if _, err = c.Steer(ctx, "must not execute"); err != nil {
 		t.Fatal(err)
 	}
 	if err = c.FollowUp(ctx, "must not run later"); err != nil {
@@ -346,7 +350,7 @@ func TestBlockedPiInputHonorsDeadline(t *testing.T) {
 	}
 	deadline, stop := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer stop()
-	_, err = c.Prompt(deadline, strings.Repeat("blocked", 1<<18), func(Update) {})
+	_, err = c.Prompt(deadline, strings.Repeat("blocked", 1<<18), nil, func(Update) {})
 	if !errors.Is(err, context.DeadlineExceeded) || c.Alive() {
 		t.Fatalf("blocked write did not retire: %v", err)
 	}

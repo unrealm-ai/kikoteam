@@ -8,9 +8,6 @@ fi
 if [ -n "${KIKO_POLICY_EXTENSION:-}" ]; then
   set -- "$@" -e "$KIKO_POLICY_EXTENSION"
 fi
-if [ -n "${KIKO_RECEIPT_EXTENSION:-}" ]; then
-  set -- "$@" -e "$KIKO_RECEIPT_EXTENSION"
-fi
 if [ -n "${KIKO_HUMAN_TOOLS_EXTENSION:-}" ]; then
   set -- "$@" -e "$KIKO_HUMAN_TOOLS_EXTENSION"
 fi

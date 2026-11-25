@@ -10,7 +10,7 @@ import (
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
 )
 
-func (w *Worker) fenceHumanRequest(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, steer steering) (string, error) {
+func (w *Worker) fenceHumanRequest(ctx context.Context, work repository.Work, turn repository.Turn, client *pi.Client, steer *steering) (string, error) {
 	id, err := w.Store.HumanRequestToFence(ctx, work, turn.ID)
 	if err != nil || id == "" {
 		return "", err

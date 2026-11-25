@@ -62,8 +62,8 @@ func TestInputTriggerBatch(t *testing.T) {
 			triggerInsert(t, db, next, 3, true, "user")
 			triggerInsert(t, db, later, 4, false, "human_confirmation")
 			var input *Input
+			var err error
 			if steer {
-				var err error
 				input, err = store.ClaimSteering(ctx, work, *root)
 				if err != nil {
 					t.Fatal(err)
@@ -85,10 +85,6 @@ func TestInputTriggerBatch(t *testing.T) {
 			}
 			if err := db.QueryRow(`SELECT count(*) FROM manager_inputs WHERE id=$1 AND status='queued' AND batch_input_id IS NULL`, later).Scan(&count); err != nil || count != 1 {
 				t.Fatal(count, err)
-			}
-			candidates, err := store.UnresolvedContextInputs(ctx, work, 1)
-			if err != nil || len(candidates) != 1 || candidates[0].ID != next {
-				t.Fatal(candidates, err)
 			}
 			if steer {
 				if err = store.ReturnSteering(ctx, work, *root, next); err != nil {

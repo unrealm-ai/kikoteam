@@ -33,7 +33,6 @@ type Config struct {
 	Chat                bool
 	PlanOnly            bool
 	Skills              []string
-	ReceiptExtension    string
 	PolicyExtension     string
 	Policy              any
 	Environment         map[string]string `json:"-"`
@@ -101,7 +100,7 @@ func (c Config) prepare() ([]string, error) {
 		return nil, err
 	}
 	env := []string{"TMPDIR=" + c.RuntimeDirectory, "HOME=" + filepath.Join(c.RuntimeDirectory, "home"), "PI_CODING_AGENT_DIR=" + agent, "PI_CODING_AGENT_SESSION_DIR=" + filepath.Join(c.Directory, "sessions"), "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "KIKO_PI_BINARY=" + c.PiCommand, "KIKO_MODEL_KEY=" + c.Model.Key}
-	env = append(env, "KIKO_SKILL_PATHS_FILE="+filepath.Join(agent, "skills.list"), "KIKO_CAPABILITY_POLICY="+filepath.Join(agent, "capability-policy.json"), "KIKO_POLICY_EXTENSION="+c.PolicyExtension, "KIKO_RECEIPT_EXTENSION="+c.ReceiptExtension, "KIKO_RECEIPT_DIRECTORY="+filepath.Join(c.Directory, "input-receipts"))
+	env = append(env, "KIKO_SKILL_PATHS_FILE="+filepath.Join(agent, "skills.list"), "KIKO_CAPABILITY_POLICY="+filepath.Join(agent, "capability-policy.json"), "KIKO_POLICY_EXTENSION="+c.PolicyExtension)
 	if c.PlanOnly {
 		env = append(env, "KIKO_PLAN_ONLY=1")
 	}

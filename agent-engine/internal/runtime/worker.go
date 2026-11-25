@@ -28,8 +28,6 @@ func (w *Worker) Run(ctx context.Context, a repository.Assignment) {
 	harnessID := NewID()
 	var current repository.Work
 	lastWork := time.Now()
-	var receiptAfter int64
-	var nextReceiptCheck time.Time
 	defer func() {
 		w.cleanupSession(ctx, current, client, runner)
 	}()
@@ -56,13 +54,6 @@ func (w *Worker) Run(ctx context.Context, a repository.Assignment) {
 		if w.reconcilePreviousTurn(ctx, current) {
 			wait(ctx, ticker)
 			continue
-		}
-		if time.Now().After(nextReceiptCheck) {
-			nextReceiptCheck = time.Now().Add(30 * time.Second)
-			receiptAfter, err = w.reconcileContextReceipts(ctx, current, receiptAfter)
-			if err != nil {
-				w.Log.Warn("Context receipt reconciliation pending", "event", "input.context_pending", "session_id", current.SessionID)
-			}
 		}
 		client, err = closeUnresolvedPi(current, client)
 		if err != nil {
@@ -270,7 +261,6 @@ func (w *Worker) execute(ctx context.Context, current repository.Work, turn repo
 		}
 	}
 	status, code, summary := "failed", "configuration_unusable", ""
-	contextState := "absent"
 	if err == nil && runner != nil && !turn.Input.CorrectionOnly {
 		err = runner.Open(ctx, current, turn.ID, harness)
 	}
@@ -280,11 +270,7 @@ func (w *Worker) execute(ctx context.Context, current repository.Work, turn repo
 		err = prepared.PrepareHumanTools()
 	}
 	if err == nil {
-		contextState = "unknown"
 		status, code, summary = w.prompt(ctx, current, turn, client, runner, renderPromptInput(current, cfg, turn.Input.Text), prepared.HumanTools.Token != "", prepared.HumanTools.WorkToken != "", current.Mode == "chat" && cfg.HumanMCPToken != "")
-		if turn.Input.NeedsContextReceipt {
-			contextState = pi.NativeInputState(w.nativeDirectory(current), client.SessionID(), turn.Input.ID)
-		}
 	}
 	if ctx.Err() != nil {
 		status = "interrupted"
@@ -298,8 +284,8 @@ func (w *Worker) execute(ctx context.Context, current repository.Work, turn repo
 			w.Log.Warn("Activity report pending", "event", "session.activity_pending", "session_id", current.SessionID)
 		}
 	}
-	if turn.Input.NeedsContextReceipt {
-		if err = w.Store.ContextReceipt(finish, current, turn.Input.ID, contextState); err != nil {
+	if err != nil && turn.Input.NeedsContextReceipt {
+		if err = w.Store.ContextReceipt(finish, current, turn.Input.ID, "absent"); err != nil {
 			w.Log.Error("Context receipt commit failed", "event", "input.context_pending", "session_id", current.SessionID)
 			return client, prior, harness, false
 		}
@@ -357,16 +343,10 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 	promptCtx, cancel := context.WithCancelCause(ctx)
 	executionDeadline := time.Now().Add(10 * time.Minute)
 	defer cancel(nil)
-	if err = pi.ClearActiveReceipt(w.nativeDirectory(work)); err != nil {
-		return "failed", "context_receipt_unavailable", ""
-	}
-	var promptText string
-	{
-		promptText, err = pi.PrepareInputReceipt(w.nativeDirectory(work), client.SessionID(), turn.Input.ID, inputText)
-		if err != nil {
-			return "failed", "context_receipt_unavailable", ""
-		}
-	}
+	steeringState := &steering{}
+	root := turn.Input
+	root.Text = inputText
+	steeringState.pending.Store(&root)
 	writer := &eventWriter{ctx: ctx, store: w.Store, work: work, turn: turn, tools: map[string]*toolState{}}
 	done := make(chan error, 1)
 	requests := make(chan pi.Update)
@@ -375,12 +355,11 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 	var confirmErr error
 	var boundary executionBoundary
 	go func() {
-		done <- w.readPrompt(ctx, promptCtx, cancel, writer, client, promptText, requests)
+		done <- w.readPrompt(ctx, promptCtx, cancel, writer, client, inputText, requests, steeringState)
 	}()
 	check := time.NewTicker(250 * time.Millisecond)
 	defer check.Stop()
 	stopped := false
-	steeringState := steering{last: turn.Input.ID}
 	for {
 		select {
 		case update := <-requests:
@@ -455,7 +434,7 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 					continue
 				}
 				if boundary.id == "" && !humanReplyEnabled {
-					if steerErr := w.steerOrExpire(promptCtx, latest, turn, client, &steeringState, executionDeadline); steerErr != nil {
+					if steerErr := w.steerOrExpire(promptCtx, latest, turn, client, steeringState, executionDeadline); steerErr != nil {
 						cancel(promptFailure("steering", steerErr))
 					}
 				}
@@ -482,7 +461,7 @@ func (w *Worker) steerOrExpire(ctx context.Context, work repository.Work, turn r
 	return w.steer(steerCtx, work, turn, client, state)
 }
 
-func (w *Worker) finishPrompt(ctx context.Context, writer *eventWriter, client *pi.Client, steeringState steering, pending, parked, stopped bool, err, confirmErr error) (string, string, string) {
+func (w *Worker) finishPrompt(ctx context.Context, writer *eventWriter, client *pi.Client, steeringState *steering, pending, parked, stopped bool, err, confirmErr error) (string, string, string) {
 	if pending && !client.Alive() && !stopped && confirmErr == nil {
 		// EOF alone is insufficient evidence that the old process is gone.
 		confirmErr = client.Close()
@@ -530,9 +509,17 @@ func (w *Worker) finishPrompt(ctx context.Context, writer *eventWriter, client *
 
 var errWorkMCPUnavailable = errors.New("[kiko_work_mcp_unavailable]")
 
-func (w *Worker) readPrompt(ctx, promptCtx context.Context, cancel context.CancelCauseFunc, writer *eventWriter, client *pi.Client, promptText string, requests chan<- pi.Update) error {
+func (w *Worker) readPrompt(ctx, promptCtx context.Context, cancel context.CancelCauseFunc, writer *eventWriter, client *pi.Client, promptText string, requests chan<- pi.Update, state *steering) error {
 	var setupErr error
-	_, err := client.Prompt(promptCtx, promptText, func(u pi.Update) {
+	recordRoot := func(status string) {
+		if writer.turn.Input.NeedsContextReceipt {
+			if e := w.Store.ContextReceipt(ctx, writer.work, writer.turn.Input.ID, status); e != nil {
+				setupErr = e
+				cancel(promptFailure("input_delivery", e))
+			}
+		}
+	}
+	_, err := client.Prompt(promptCtx, promptText, func() { recordRoot("committed") }, func(u pi.Update) {
 		if u["type"] == "extension_error" && u["event"] == "before_agent_start" && u["error"] == errWorkMCPUnavailable.Error() {
 			setupErr = errWorkMCPUnavailable
 		}
@@ -543,20 +530,23 @@ func (w *Worker) readPrompt(ctx, promptCtx context.Context, cancel context.Cance
 			}
 			return
 		}
-		if u["type"] == "message_end" {
-			if message, ok := u["message"].(map[string]any); ok && message["role"] == "user" {
-				evidenceWork := writer.work
-				native := client.SessionID()
-				evidenceWork.NativeSessionID = &native
-				if _, receiptErr := w.reconcileContextReceipts(ctx, evidenceWork, 0); receiptErr != nil {
-					cancel(promptFailure("input_receipt", receiptErr))
+		if input := state.matchingUser(u); input != nil {
+			if input.ID != writer.turn.Input.ID {
+				if e := w.Store.ContextReceipt(ctx, writer.work, input.ID, "committed"); e != nil {
+					setupErr = e
+					cancel(promptFailure("input_delivery", e))
+					return
 				}
 			}
+			state.pending.CompareAndSwap(input, nil)
 		}
 		writer.update(u)
 		if writer.err != nil {
 			cancel(promptFailure("event_persistence", writer.err))
 		}
 	})
+	if errors.Is(err, pi.ErrCommandRejected) {
+		recordRoot("absent")
+	}
 	return errors.Join(err, setupErr)
 }

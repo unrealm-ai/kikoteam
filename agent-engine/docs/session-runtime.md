@@ -26,7 +26,7 @@ Conversation、Task 和 Session 均由 Backend 创建，首版一 Task 一 task 
 
 使用固定的 [Pi v1.5.2](https://github.com/earendil-works/pi/releases/tag/v1.5.2)，不在启动时拉取 latest。Engine 用 `session.json` 核对 Pi 返回的原生身份。
 
-遵守 [Pi 原生能力优先规则](../../AI_RULES.md#通用开发与静态检查)：未经用户明确确认，不改 Pi 源码、补丁/fork，不新增 Pi 插件、扩展或特殊桥接。Engine 负责公开协议通信、平台事件映射及旧数据迁移，不重写内部循环。原有 capability-policy.mjs 用于逐调用授权及 Skill 提示，context-receipt.mjs 用于输入回执；两者保留既有用途，本次未修改。官方 builtin:mcp 继续显式加载。 找人确认经用户确认增加 `human-tools.mjs`，使用公开工具注册和调用钩子结束执行段。Engine 在收到终态前核对输入门禁及所属 Runner，详见[找人确认](../../backend/docs/human-requests.md)。
+遵守 [Pi 原生能力优先规则](../../AI_RULES.md#通用开发与静态检查)：未经用户明确确认，不改 Pi 源码、补丁/fork，不新增 Pi 插件、扩展或特殊桥接。Engine 负责公开协议通信、平台事件映射及旧数据迁移，不重写内部循环。`capability-policy.mjs` 负责逐调用授权及 Skill 提示。官方 builtin:mcp 继续显式加载。 找人确认经用户确认增加 `human-tools.mjs`，使用公开工具注册和调用钩子结束执行段。Engine 在收到终态前核对输入门禁及所属 Runner，详见[找人确认](../../backend/docs/human-requests.md)。
 
 | 原生能力 | Engine 处理 |
 | --- | --- |
@@ -60,7 +60,7 @@ Conversation、Task 和 Session 均由 Backend 创建，首版一 Task 一 task 
 
 每个 Session 使用独立 HOME、原生配置目录、工作目录及环境变量白名单，不继承开发者账号、祖先项目指令或任意扩展。仅允许固定工件、配置声明的原生能力及平台白名单扩展；task 模型参数跟随 Harness，chat 强制非思考策略；保持原生 MCP 内置支持，不因关闭任意扩展而一并禁用它。
 
-主对话和任务统一使用 `workspaces/<W>/sessions/<sid>/pi/`，沿用原生 JSONL 和输入回执。开发环境一次性解除受影响旧 Session 的原生身份绑定，同一平台 `sid` 可从下一条新消息建立新上下文。此后重启按新目录恢复。[存储目录方案](../../docs/architecture/storage-paths.md)
+主对话和任务统一使用 `workspaces/<W>/sessions/<sid>/pi/`，保存原生 JSONL 和会话身份映射。开发环境一次性解除受影响旧 Session 的原生身份绑定，同一平台 `sid` 可从下一条新消息建立新上下文。此后重启按新目录恢复。[存储目录方案](../../docs/architecture/storage-paths.md)
 
 通过原生 settings.json、models.json、mcp.json、`--system-prompt` 及必要环境变量装配。认证材料按消费者最小范围提供，与持久历史分开。新会话的 sessions/*.jsonl 由 Pi 初始化和写入，Engine 在 session.json 保存 id、nativeId 与 sessionFile。仅首次创建空文件供 Pi 初始化持久头部，Engine 不写原生条目。历史缺失、损坏、身份不符或越界时拒绝加载，不创建空白替代。进程重启使用同一持久目录和有效路径映射，不能手改历史来伪造成功加载。
 
@@ -92,7 +92,7 @@ Sandbox MCP Token 在环境首次授权绑定时生成，跟随 Sandbox 实例�
 6. Pi 原生消息/工具事件映射为正式消息和工具状态；底层模型子步骤不另建平台 Turn。客户端支持 steer/follow_up，但当前 Worker 仍逐条领取，业务多输入关联及回报尚未上线。
 7. 收到 agent_settled 后核对最后 assistant 结果；stop 成功、error 失败、length 为截断失败、aborted 为取消；无最终结果不能报成功。处理完前序通知并核对没有未决调用；在当前代次事务中提交 Turn 终态、Input processed、可靠事件和 Session 运行概况，再处理下一条 Input。原生历史由 Pi 持久化，不增加检查点上传或数据库引用提交屏障。已确认的后台进程不阻止正常 Turn 结束。
 
-投递阶段区分未发送、发送结果待确认、已取得执行证据和已结束。Pi RPC command ID 只关联连接内响应，不是 prompt 幂等键。写入管道或收到传输确认不证明模型完成；连接断开后不能盲目再次发送原 prompt。
+Engine 收到 `prompt` 的 `started` 或 `handled` 回包后记录起始输入已受理。`steer` 的 `queued` 回包表示进入 Pi 内存队列。每轮最多保留一条待观察输入，收到正文匹配的原生用户 `message_end` 后才将追加输入用于后续操作归属。重启时沿用平台已记录的投递状态，已领取且结果不明的输入随 Turn 收尾为 `unknown`。Pi RPC command ID 只关联连接内响应，不是 prompt 幂等键。写入管道或收到传输确认不证明模型完成；连接断开后不能盲目再次发送原 prompt。
 
 模型或环境必需依赖采用有界安全重试；单个插件不可用由 Harness 决定是否继续。重试预算不因新建运行实例无限重置，也不重放未知副作用。不能只因长时间没有文本增量判定 Turn 失败。
 

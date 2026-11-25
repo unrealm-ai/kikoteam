@@ -175,19 +175,6 @@ func TestClaimChannelIdentityAndRevocation(t *testing.T) {
 					t.Fatalf("receipt downgrade state=%s err=%v", state, err)
 				}
 			}
-			if mode == "channel" {
-				for seq := int64(2); seq <= 11; seq++ {
-					claimExec(t, db, `INSERT INTO manager_inputs(id,workspace_id,session_id,channel_principal_id,channel_generation,admission_epoch,seq,text,status,started_at,finished_at,context_state)VALUES($1,$2,$3,$4,1,1,$5,'old','processed',now(),now(),'unknown')`, fixtureID(100+int(seq)), ws, session, principal, seq)
-				}
-				batch, e := store.UnresolvedContextInputs(context.Background(), w, 0)
-				if e != nil || len(batch) != 8 || batch[0].Seq != 2 || batch[7].Seq != 9 {
-					t.Fatalf("unbounded receipt batch %+v %v", batch, e)
-				}
-				next, e := store.UnresolvedContextInputs(context.Background(), w, batch[7].Seq)
-				if e != nil || len(next) != 2 || next[0].Seq != 10 {
-					t.Fatalf("receipt pagination starved %+v %v", next, e)
-				}
-			}
 			if mode == "channel" || mode == "tracked_channel" || mode == "web" {
 				if turn == nil {
 					t.Fatal("authorized input rejected")
@@ -235,8 +222,8 @@ func verifyInterruptedAssignment(t *testing.T, store Store, w Work, turn Turn) {
 	if err != nil || next != nil {
 		t.Fatalf("interrupted input was replayed: %+v %v", next, err)
 	}
-	var status, inputStatus string
-	if err = store.DB.QueryRow(`SELECT t.status,i.status FROM manager_turns t JOIN manager_inputs i ON i.id=t.input_id WHERE t.id=$1`, turn.ID).Scan(&status, &inputStatus); err != nil || status != "interrupted" || inputStatus != "processed" {
-		t.Fatalf("turn=%q input=%q err=%v", status, inputStatus, err)
+	var status, inputStatus, contextState string
+	if err = store.DB.QueryRow(`SELECT t.status,i.status,i.context_state FROM manager_turns t JOIN manager_inputs i ON i.id=t.input_id WHERE t.id=$1`, turn.ID).Scan(&status, &inputStatus, &contextState); err != nil || status != "interrupted" || inputStatus != "processed" || contextState != "unknown" {
+		t.Fatalf("turn=%q input=%q context=%q err=%v", status, inputStatus, contextState, err)
 	}
 }

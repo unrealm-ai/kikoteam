@@ -313,7 +313,7 @@ func (s *Store) Complete(ctx context.Context, w Work, t Turn, status, code, summ
 		if _, err := tx.ExecContext(ctx, `UPDATE manager_turns SET status=$2,error=$3,result_summary=NULLIF($4,''),finished_at=now(),has_unknown_tool_results=has_unknown_tool_results OR EXISTS(SELECT 1 FROM manager_capability_calls WHERE turn_id=$1 AND status='authorized') WHERE id=$1`, t.ID, status, failure, strings.ReplaceAll(summary, "\x00", "\uFFFD")); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE manager_inputs SET status='processed',finished_at=now() WHERE turn_id=$1 AND status='started'`, t.ID); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE manager_inputs SET status='processed',finished_at=now(),context_state=CASE WHEN context_state='pending' THEN 'unknown' ELSE context_state END WHERE turn_id=$1 AND status='started'`, t.ID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE manager_sessions SET active_turn_id=NULL,block_reason=CASE WHEN EXISTS(SELECT 1 FROM manager_capability_calls WHERE session_id=$1 AND status='authorized') THEN 'remote_tool_outcome_unknown' ELSE block_reason END WHERE id=$1`, w.SessionID); err != nil {

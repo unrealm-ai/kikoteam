@@ -2,6 +2,7 @@ package taskdelegation
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -25,7 +26,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 		"supplement_todo":              {"unstarted todo", "planning_version"},
 		"work_item_get_current":        {"Read-only", "current employee"},
 		"trigger_task_get_result":      {"Read-only", "this exact destination group", "ask which one if ambiguous", "exact notified execution"},
-		"work_item_amend_requirements": {"only the user's new requirements", "queues the change", "same request_key"},
+		"work_item_amend_requirements": {"only the user's new requirements", "Queued does not mean received or applied", "same basis and content", "no change was applied", "retry once with the returned amendment_basis and unchanged content"},
 		"create_todo":                  {"unstarted todo", "No model", "same request_key"},
 		"start_todo":                   {"Rechecks current permissions", "planning_version", "Acceptance is not completion"},
 		"cancel_todo":                  {"only an unstarted todo", "not stop", "already_started"},
@@ -67,6 +68,12 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 			}
 			if len(tool.Schema.Required) != 1 || tool.Schema.Required[0] != "instruction" {
 				t.Errorf("immediate creation required fields: %v", tool.Schema.Required)
+			}
+		}
+		if name == "work_item_amend_requirements" {
+			want := []string{"amendment_basis", "content"}
+			if len(tool.Schema.Properties) != len(want) || !slices.Equal(tool.Schema.Required, want) {
+				t.Errorf("amendment must accept only amendment_basis and content: %v", tool.Schema)
 			}
 		}
 		if name == "send_message" {

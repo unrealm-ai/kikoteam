@@ -3,15 +3,20 @@ package repository
 import (
 	"context"
 	"encoding/base64"
+	"os"
+	"path"
+	"path/filepath"
+	"testing"
+
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/integration/skillasset"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
-	"testing"
 )
 
 func TestPostgresSkillImmutableVersionsAndIsolation(t *testing.T) {
 	db, _, ws, actor := modelFixture(t)
 	ctx := context.Background()
-	assets, e := skillasset.NewStore(ctx, skillasset.Config{LocalRoot: t.TempDir()})
+	root := t.TempDir()
+	assets, e := skillasset.NewStore(ctx, skillasset.Config{LocalRoot: root})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -38,7 +43,35 @@ func TestPostgresSkillImmutableVersionsAndIsolation(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	v2, e := s.Publish(ctx, ws, actor, v.ID, service.SkillPublish{ImportID: imp2.ID, Version: v.Version})
+	// Simulate a process exiting mid-write, before publishing the version.
+	prefix := path.Join("workspaces", ws, "skills", v.ID, "versions", imp2.ID)
+	files := filepath.Join(root, prefix, "files")
+	if e = os.MkdirAll(files, 0700); e != nil {
+		t.Fatal(e)
+	}
+	partial := filepath.Join(files, "SKILL.md")
+	if e = os.WriteFile(partial, []byte("partial"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	update := service.SkillPublish{ImportID: imp2.ID, Version: v.Version}
+	if _, e = s.Publish(ctx, ws, actor, v.ID, update); e == nil {
+		t.Fatal("published an incomplete version")
+	}
+	current, e := s.Get(ctx, ws, actor, v.ID)
+	if e != nil || current.CurrentVersionID != v.CurrentVersionID {
+		t.Fatalf("failed publication changed the current version: %+v %v", current, e)
+	}
+	if data, err := os.ReadFile(partial); err != nil || string(data) != "partial" {
+		t.Fatalf("failed publication changed the incomplete file: %q %v", data, err)
+	}
+	if e = os.Remove(partial); e != nil {
+		t.Fatal(e)
+	}
+	// A retry can also find complete files left before the database commit.
+	if e = assets.Copy(ctx, imp2.KeyPrefix, prefix, imp2.Manifest); e != nil {
+		t.Fatal(e)
+	}
+	v2, e := s.Publish(ctx, ws, actor, v.ID, update)
 	if e != nil {
 		t.Fatal(e)
 	}

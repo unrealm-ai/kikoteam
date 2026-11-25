@@ -139,7 +139,7 @@ func (s *Store) put(ctx context.Context, key string, b []byte) error {
 		return e
 	}
 	if s.root != nil {
-		return s.localPut(key, b)
+		return s.localPut(ctx, key, b)
 	}
 	_, e = s.client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(k), Body: bytes.NewReader(b), ContentLength: aws.Int64(int64(len(b))), IfNoneMatch: aws.String("*")})
 	var api smithy.APIError
@@ -151,36 +151,27 @@ func (s *Store) put(ctx context.Context, key string, b []byte) error {
 	}
 	return e
 }
-func (s *Store) localPut(key string, b []byte) error {
+func (s *Store) localPut(ctx context.Context, key string, b []byte) error {
 	if e := s.root.MkdirAll(path.Dir(key), 0700); e != nil {
 		return e
 	}
-	// Publish immutable files through a temporary sibling, then link without replacement.
-	tmp := key + ".pending-" + service.NewID()
-	f, e := s.root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	// Callers publish the database reference after the file is complete.
+	f, e := s.root.OpenFile(key, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if errors.Is(e, os.ErrExist) {
+		existing, readErr := s.get(ctx, key, int64(len(b)))
+		if readErr == nil && bytes.Equal(existing, b) {
+			return nil
+		}
+		return errors.Join(e, readErr)
+	}
 	if e != nil {
 		return e
 	}
-	defer func() { _ = s.root.Remove(tmp) }() //nolint:errcheck // Temporary orphan removal is best effort; never removes published objects.
 	_, e = f.Write(b)
 	if e == nil {
 		e = f.Sync()
 	}
-	ce := f.Close()
-	if e != nil {
-		return e
-	}
-	if ce != nil {
-		return ce
-	}
-	e = s.root.Link(tmp, key)
-	if errors.Is(e, os.ErrExist) {
-		existing, re := s.root.ReadFile(key)
-		if re == nil && bytes.Equal(existing, b) {
-			return nil
-		}
-	}
-	return e
+	return errors.Join(e, f.Close())
 }
 func (s *Store) get(ctx context.Context, key string, limit int64) ([]byte, error) {
 	k, e := s.key(key)

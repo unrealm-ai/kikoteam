@@ -4,10 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
 
 const goodMD = "---\nname: sample-skill\ndescription: A sample\nextra: preserved\n---\nHello\n"
@@ -78,12 +80,18 @@ func TestLocalImmutableStore(t *testing.T) {
 	if e = s.Copy(ctx, "tmp/import", "workspaces/ws/skills/s/versions/v", b.Manifest); e != nil {
 		t.Fatal(e)
 	}
+	if e = s.Write(ctx, "tmp/import", b); e != nil {
+		t.Fatalf("reuse identical files: %v", e)
+	}
+	if e = s.put(ctx, "tmp/import/files/SKILL.md", []byte("changed")); !errors.Is(e, os.ErrExist) {
+		t.Fatalf("expected a conflict, got %v", e)
+	}
 	data, e := s.Read(ctx, "workspaces/ws/skills/s/versions/v", b.Manifest.Files[0])
 	if e != nil || string(data) != goodMD {
 		t.Fatalf("read=%q %v", data, e)
 	}
-	if e = s.put(ctx, "tmp/import/files/SKILL.md", []byte("changed")); e == nil {
-		t.Fatal("overwrote immutable file")
+	if _, e = s.Read(ctx, "tmp/import", b.Manifest.Files[0]); e != nil {
+		t.Fatalf("conflict damaged the original: %v", e)
 	}
 	if e = s.put(ctx, "../escape", []byte("bad")); e == nil {
 		t.Fatal("escaped root")
@@ -126,7 +134,7 @@ func TestExampleProjectRoot(t *testing.T) {
 	}
 }
 
-func TestCleanupRemovesCrashedPendingFileOnlyInReceipt(t *testing.T) {
+func TestCleanupIncompleteImport(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	s, e := NewStore(ctx, Config{LocalRoot: root})
@@ -143,11 +151,14 @@ func TestCleanupRemovesCrashedPendingFileOnlyInReceipt(t *testing.T) {
 		t.Fatal(e)
 	}
 	p := "temp/uploads/skill-imports/ws/id"
-	if e = s.Write(ctx, p, b); e != nil {
+	if e = os.MkdirAll(filepath.Join(root, p, "files"), 0700); e != nil {
 		t.Fatal(e)
 	}
-	if e = os.WriteFile(root+"/"+p+"/files/SKILL.md.pending-crashed", []byte("partial"), 0600); e != nil {
+	if e = os.WriteFile(filepath.Join(root, p, "files", "SKILL.md"), []byte("partial"), 0600); e != nil {
 		t.Fatal(e)
+	}
+	if e = s.Write(ctx, p, b); !errors.Is(e, os.ErrExist) {
+		t.Fatalf("expected an incomplete file to conflict, got %v", e)
 	}
 	if e = s.Cleanup(ctx, p, b.Manifest); e != nil {
 		t.Fatal(e)

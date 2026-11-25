@@ -31,40 +31,21 @@
   },
   {
     "name": "work_item_amend_requirements",
-    "description": "Append an explicitly requested change to an existing work item before its current assignment starts finishing. Read work_item_get_current first. Send only the user's new requirements in content; preserve their restrictions. The platform identifies the current employee, updates the acceptance criteria and queues the change for the assignment. A queued receipt does not mean received or applied. If the submission already started, explain that the amendment was rejected. Retry an unknown call with the same request_key and arguments. Use the amendment_basis from that read verbatim. A version_conflict response is not applied; compare the original_message and new requirements. For an unambiguous compatible amendment, retry once with the returned version and basis, preserving the same request_key and content; otherwise clarify or explain it was not applied.",
+    "description": "Append an explicitly requested change to an existing work item before its current assignment starts finishing. Read work_item_get_current first. Pass its amendment_basis and only the user's new requirements in content. The platform identifies and validates the item, original user message, and requirements version. Queued does not mean received or applied. On an unknown outcome retry with the same basis and content. If version_conflict is returned, no change was applied: compare original_message and the new requirements with the latest criteria. Only if compatible and not already included, retry once with the returned amendment_basis and unchanged content; otherwise clarify. Do not bypass a rejection by adding to the ordinary task or creating another task.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "work_item_id",
-        "amendment_basis",
-        "expected_requirements_version",
-        "content",
-        "request_key"
-      ],
+      "required": ["amendment_basis", "content"],
       "properties": {
-        "work_item_id": {
-          "type": "string",
-          "format": "uuid"
-        },
         "amendment_basis": {
           "type": "string",
           "minLength": 1,
           "maxLength": 2048
         },
-        "expected_requirements_version": {
-          "type": "string",
-          "pattern": "^[1-9][0-9]*$"
-        },
         "content": {
           "type": "string",
           "minLength": 1,
           "maxLength": 4000
-        },
-        "request_key": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200
         }
       }
     }

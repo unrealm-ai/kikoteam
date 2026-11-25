@@ -155,7 +155,7 @@ export default function humanTools(pi) {
     register("work_item_handoff", work_role === "ordinary"
       ? "单独调用。当前任务确需另一位员工继续处理时使用。先用 work_item_list_handoff_employees 查询获准接手的员工，按职责和能力选择。给出目标、验收标准和必要摘要。受理后挂起原任务，成果会回到原任务验收。"
       : work_role === "review"
-        ? "单独调用。按原标准验收失败时退回整改。先用 work_item_get_current 核对本次提交和版本（无需传提交 ID），用 work_item_list_handoff_employees 确定接手员工，并说明具体缺陷。原任务等待修订成果。"
+        ? "单独调用。按原标准验收失败时退回整改。先用 work_item_get_current 核对本次提交和版本（无需传提交 ID），用 work_item_list_handoff_employees 查询可接手名单，优先选择本次成果的提交员工（验收输入中的员工），前提是仍在名单中。若缺陷明确归属其他有资格的员工，可选择对应员工。写清哪条验收标准没过、具体哪里不符及需要补什么。原任务等待修订成果。"
         : "单独调用。当前事项确需下一位员工接手时使用。先用 work_item_get_current 核对本环节和版本（无需传环节 ID），再用 work_item_list_handoff_employees 按职责和能力选择接手员工。摘要提供下一环节所需事实。受理后结束当前环节。",
     schema({...handoff,...files}, Object.keys(handoff)), (id, args, signal) => workBoundary("handoff", id, args, signal), { executionMode: "sequential" });
     if (work_role === "assignee") {

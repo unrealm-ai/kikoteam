@@ -156,7 +156,7 @@ func (f *workAmendmentRuntime) replyChatAmendment(t *testing.T, w http.ResponseW
 			t.Errorf("chat read unexpected work projection: %s", last)
 		}
 		if reachAmendmentGate(r.Context(), c.chatReady, c.amend) {
-			tool("mcp__task_delegation__work_item_amend_requirements", map[string]string{"work_item_id": state.Item.ID, "expected_requirements_version": "1", "amendment_basis": state.Basis, "content": refundColumn, "request_key": "refund-prerequisite"})
+			tool("mcp__task_delegation__work_item_amend_requirements", map[string]string{"amendment_basis": state.Basis, "content": refundColumn})
 		}
 		return
 	}

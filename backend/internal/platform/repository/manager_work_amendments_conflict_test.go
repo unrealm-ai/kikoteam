@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -149,17 +148,11 @@ func (f amendmentConflictFixture) next(key, text string) string {
 	return input.ID
 }
 
-func (f amendmentConflictFixture) basis(key, text string) manager.DelegationArgs {
+func (f amendmentConflictFixture) basis(text string) manager.DelegationArgs {
 	f.t.Helper()
 	out, err := f.call("work_item_get_current", manager.DelegationArgs{TaskID: f.task})
 	f.check(err)
-	item := out["item"].(map[string]any)
-	version, err := strconv.ParseInt(item["requirements_version"].(string), 10, 64)
-	f.check(err)
-	return manager.DelegationArgs{
-		WorkItemID: f.item, AmendmentBasis: out["amendment_basis"].(string), RequirementsVersion: version,
-		RequestKey: key, Content: text,
-	}
+	return manager.DelegationArgs{AmendmentBasis: out["amendment_basis"].(string), Content: text}
 }
 
 func (f amendmentConflictFixture) assertApplied(version int, source string, args manager.DelegationArgs) string {
@@ -176,9 +169,9 @@ func (f amendmentConflictFixture) assertApplied(version int, source string, args
 
 func TestWorkAmendmentBindsOriginalInputAndRebasesOnce(t *testing.T) {
 	f := newAmendmentConflictFixture(t)
-	a := f.basis("pool", "Add connection pool check")
+	a := f.basis("Add connection pool check")
 	bSource := f.next("slow", "Also check slow queries")
-	b := f.basis("slow", "Also check slow queries")
+	b := f.basis("Also check slow queries")
 	f.next("progress", "How's it going?")
 	f.assertApplied(2, f.first, a)
 
@@ -188,7 +181,7 @@ func TestWorkAmendmentBindsOriginalInputAndRebasesOnce(t *testing.T) {
 		!strings.Contains(conflict["item"].(map[string]any)["criteria"].(string), a.Content) {
 		t.Fatal("conflict lacked original input and latest standards", conflict)
 	}
-	b.RequirementsVersion, b.AmendmentBasis = 2, conflict["amendment_basis"].(string)
+	b.AmendmentBasis = conflict["amendment_basis"].(string)
 	changed := b
 	changed.Content = "different amendment"
 	_, err := f.call("work_item_amend_requirements", changed)
@@ -199,18 +192,18 @@ func TestWorkAmendmentBindsOriginalInputAndRebasesOnce(t *testing.T) {
 	}
 
 	f.next("conflicting", "Drop the disk check")
-	c := f.basis("remove-disk", "Drop the disk check")
+	c := f.basis("Drop the disk check")
 	winner := f.next("winner", "Keep the disk check")
-	d := f.basis("keep-disk", "Keep the disk check")
+	d := f.basis("Keep the disk check")
 	f.assertApplied(4, winner, d)
 	out, err := f.call("work_item_amend_requirements", c)
 	f.check(err)
 	if out["applied"] != false || !strings.Contains(out["item"].(map[string]any)["criteria"].(string), d.Content) {
 		t.Fatal("conflicting request was silently applied", out)
 	}
-	c.AmendmentBasis, c.RequirementsVersion = out["amendment_basis"].(string), 4
+	c.AmendmentBasis = out["amendment_basis"].(string)
 	lastSource := f.next("another", "Check replication lag")
-	last := f.basis("replication", "Check replication lag")
+	last := f.basis("Check replication lag")
 	f.assertApplied(5, lastSource, last)
 	_, err = f.call("work_item_amend_requirements", c)
 	assertChannelError(t, err, "work_version_changed")
@@ -219,11 +212,21 @@ func TestWorkAmendmentBindsOriginalInputAndRebasesOnce(t *testing.T) {
 	if count != 4 {
 		t.Fatal("conflict or replay changed amendment count", count)
 	}
+	// Identical content on a new source message is a different operation.
+	sameTextSource := f.next("new-same-content", last.Content)
+	repeated := f.basis(last.Content)
+	tampered := repeated
+	tampered.AmendmentBasis += "x"
+	_, err = f.call("work_item_amend_requirements", tampered)
+	assertChannelError(t, err, "work_amendment_basis_invalid")
+	if f.assertApplied(6, sameTextSource, repeated) == f.assertApplied(5, lastSource, last) {
+		t.Fatal("new source message reused a previous amendment input")
+	}
 }
 
 func TestWorkAmendmentRechecksOriginalScopeAndClosure(t *testing.T) {
 	f := newAmendmentConflictFixture(t)
-	a := f.basis("pool", "Add connection pool check")
+	a := f.basis("Add connection pool check")
 	reviewExec(t, f.db, `UPDATE manager_work_items SET status='completed' WHERE id=$1`, f.item)
 	_, err := f.call("work_item_amend_requirements", a)
 	assertChannelError(t, err, "work_amendment_closed")

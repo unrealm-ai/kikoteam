@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"strings"
 )
@@ -74,29 +73,27 @@ type Delegation struct {
 	Secret  string
 }
 type DelegationArgs struct {
-	AmendmentBasis      string   `json:"amendment_basis,omitempty"`
-	ArtifactIDs         []string `json:"artifact_ids,omitempty"`
-	TaskID              string   `json:"task_id,omitempty"`
-	WorkItemID          string   `json:"work_item_id,omitempty"`
-	Content             string   `json:"content,omitempty"`
-	RequirementsVersion int64    `json:"expected_requirements_version,string,omitempty"`
-	AttachmentIDs       []string `json:"attachment_ids,omitempty"`
-	AttachmentPaths     []string `json:"attachment_paths,omitempty"`
-	PlanningState       string   `json:"planning_state,omitempty"`
-	ExecutionState      string   `json:"execution_state,omitempty"`
-	LatestTurnStatus    string   `json:"latest_turn_status,omitempty"`
-	InputID             string   `json:"input_id,omitempty"`
-	NotificationID      string   `json:"notification_id,omitempty"`
-	ExpectedVersion     int64    `json:"expected_version,string,omitempty"`
-	Instruction         string   `json:"instruction,omitempty"`
-	RequestKey          string   `json:"request_key,omitempty"`
-	EmployeeID          string   `json:"employee_id,omitempty"`
-	Title               *string  `json:"title,omitempty"`
-	SessionID           string   `json:"session_id,omitempty"`
-	Text                string   `json:"text,omitempty"`
-	TurnID              string   `json:"turn_id,omitempty"`
-	Cursor              string   `json:"cursor,omitempty"`
-	Limit               int      `json:"limit,omitempty"`
+	AmendmentBasis   string   `json:"amendment_basis,omitempty"`
+	ArtifactIDs      []string `json:"artifact_ids,omitempty"`
+	TaskID           string   `json:"task_id,omitempty"`
+	Content          string   `json:"content,omitempty"`
+	AttachmentIDs    []string `json:"attachment_ids,omitempty"`
+	AttachmentPaths  []string `json:"attachment_paths,omitempty"`
+	PlanningState    string   `json:"planning_state,omitempty"`
+	ExecutionState   string   `json:"execution_state,omitempty"`
+	LatestTurnStatus string   `json:"latest_turn_status,omitempty"`
+	InputID          string   `json:"input_id,omitempty"`
+	NotificationID   string   `json:"notification_id,omitempty"`
+	ExpectedVersion  int64    `json:"expected_version,string,omitempty"`
+	Instruction      string   `json:"instruction,omitempty"`
+	RequestKey       string   `json:"request_key,omitempty"`
+	EmployeeID       string   `json:"employee_id,omitempty"`
+	Title            *string  `json:"title,omitempty"`
+	SessionID        string   `json:"session_id,omitempty"`
+	Text             string   `json:"text,omitempty"`
+	TurnID           string   `json:"turn_id,omitempty"`
+	Cursor           string   `json:"cursor,omitempty"`
+	Limit            int      `json:"limit,omitempty"`
 }
 
 func (d *Delegation) Authorize(ctx context.Context, raw string) (DelegationScope, error) {
@@ -105,13 +102,6 @@ func (d *Delegation) Authorize(ctx context.Context, raw string) (DelegationScope
 		return DelegationScope{}, err
 	}
 	return d.Store.DelegationSource(ctx, v)
-}
-func delegationKey(source, key string) (string, error) {
-	if !validKey(key) {
-		return "", Fail("idempotency_key_required", 400, "request_key 无效")
-	}
-	sum := sha256.Sum256([]byte("task_delegation:" + source + ":" + key))
-	return hex.EncodeToString(sum[:]), nil
 }
 func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name string, args DelegationArgs) (any, error) {
 	current, err := d.Store.DelegationSource(ctx, scope.Identity)
@@ -256,10 +246,10 @@ func (d *Delegation) callWorkItem(ctx context.Context, scope DelegationScope, na
 		return d.readChatWorkItem(ctx, scope, args.TaskID)
 	}
 	content := strings.TrimSpace(args.Content)
-	if !ValidID(args.WorkItemID) || args.RequirementsVersion < 1 || !workText(content, 4000) || strings.ContainsRune(content, 0) {
-		return nil, Fail("invalid_work_arguments", 400, "事项、需求版本或补充内容无效")
+	if !workText(content, 4000) || strings.ContainsRune(content, 0) {
+		return nil, Fail("invalid_work_arguments", 400, "事项补充内容无效")
 	}
-	return d.writeChatWorkItem(ctx, scope, args, content)
+	return d.writeChatWorkItem(ctx, scope, args.AmendmentBasis, content)
 }
 
 func (d *Delegation) createTask(ctx context.Context, scope DelegationScope, args DelegationArgs) (any, error) {

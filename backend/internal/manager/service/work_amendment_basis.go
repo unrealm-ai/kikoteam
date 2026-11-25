@@ -50,11 +50,11 @@ func (d *Delegation) signAmendmentBasis(v workAmendmentBasis) (string, error) {
 	return payload + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
-func (d *Delegation) verifyAmendmentBasis(scope DelegationScope, args DelegationArgs) (workAmendmentBasis, error) {
+func (d *Delegation) verifyAmendmentBasis(scope DelegationScope, token string) (workAmendmentBasis, error) {
 	var v workAmendmentBasis
 	bad := Fail("work_amendment_basis_invalid", 409, "本次事项补充与已查询的来源或版本不匹配，未写入")
-	payload, _, ok := strings.Cut(args.AmendmentBasis, ".")
-	if !ok || len(args.AmendmentBasis) > 2048 || len(d.Secret) < 32 {
+	payload, _, ok := strings.Cut(token, ".")
+	if !ok || len(token) > 2048 || len(d.Secret) < 32 {
 		return v, bad
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(payload)
@@ -65,9 +65,9 @@ func (d *Delegation) verifyAmendmentBasis(scope DelegationScope, args Delegation
 	if err != nil {
 		return v, err
 	}
-	if !hmac.Equal([]byte(expect), []byte(args.AmendmentBasis)) ||
+	if !hmac.Equal([]byte(expect), []byte(token)) ||
 		v.Identity != scope.Identity || v.Actor != scope.ActorID ||
-		!ValidID(v.Input) || v.Item != args.WorkItemID || v.Version != args.RequirementsVersion {
+		!ValidID(v.Input) || !ValidID(v.Item) || v.Version < 1 {
 		return v, bad
 	}
 	return v, nil
@@ -90,31 +90,29 @@ func (d *Delegation) readChatWorkItem(ctx context.Context, scope DelegationScope
 	return out, err
 }
 
-func (d *Delegation) writeChatWorkItem(ctx context.Context, scope DelegationScope, args DelegationArgs, content string) (any, error) {
-	basis, err := d.verifyAmendmentBasis(scope, args)
+func (d *Delegation) writeChatWorkItem(ctx context.Context, scope DelegationScope, token, content string) (any, error) {
+	basis, err := d.verifyAmendmentBasis(scope, token)
 	if err != nil {
 		return nil, err
 	}
-	key, err := delegationKey(scope.Identity.SessionID+":"+basis.Input, args.RequestKey)
+	// The signed user input distinguishes even identical text in later
+	// messages. The item and canonical content survive a one-time rebase.
+	key, err := fingerprint([]string{"work-amendment", basis.Identity.SessionID, basis.Input, basis.Item, content})
 	if err != nil {
 		return nil, err
 	}
-	attemptDigest, err := fingerprint([]string{key, content})
-	if err != nil {
-		return nil, err
-	}
-	if basis.RetryFor != "" && basis.RetryFor != attemptDigest {
-		return nil, Fail("work_amendment_basis_invalid", 409, "重试必须使用同一次补充的请求键和内容")
+	if basis.RetryFor != "" && basis.RetryFor != key {
+		return nil, Fail("work_amendment_basis_invalid", 409, "重试必须使用原来的补充内容")
 	}
 	scope.InputID = basis.Input
-	out, err := d.Store.AmendChatWorkItem(ctx, scope, args.WorkItemID, basis.Assignment, key, content, args.RequirementsVersion)
+	out, err := d.Store.AmendChatWorkItem(ctx, scope, basis.Item, basis.Assignment, key, content, basis.Version)
 	rebase, ok := out.(WorkAmendmentRebase)
 	var e *Error
 	if !ok || !errors.As(err, &e) || e.Code != "work_version_changed" || basis.RetryFor != "" {
 		return out, err
 	}
-	basis.Version, basis.RetryFor = rebase.Latest.Version, attemptDigest
-	token, err := d.signAmendmentBasis(basis)
+	basis.Version, basis.RetryFor = rebase.Latest.Version, key
+	token, err = d.signAmendmentBasis(basis)
 	if err != nil {
 		return nil, err
 	}

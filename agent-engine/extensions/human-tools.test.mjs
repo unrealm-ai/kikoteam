@@ -80,6 +80,12 @@ test("current assignment and submission IDs are not model inputs; genuine choice
     const review = toolsFor("review");
     check(review.get("work_item_handoff"), ["target_employee_id", "summary", "expected_version"]);
     assert.equal(review.has("work_item_submit_result"), false);
+    const reviewHandoff = review.get("work_item_handoff").description;
+    assert.match(reviewHandoff, /优先选择本次成果的提交员工.*仍在名单中/);
+    assert.match(reviewHandoff, /哪条验收标准没过、具体哪里不符及需要补什么/);
+    for (const role of [ordinary, assignee]) {
+      assert.doesNotMatch(role.get("work_item_handoff").description, /优先选择本次成果的提交员工/);
+    }
   } finally {
     if (prior === undefined) delete process.env.KIKO_HUMAN_TOOLS_CONFIG;
     else process.env.KIKO_HUMAN_TOOLS_CONFIG = prior;

@@ -2,9 +2,14 @@ package channel
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func wecomHumanChoice(id, kind string) humanConfirmationQuestion {
@@ -165,7 +170,7 @@ func TestParseWecomHumanCardEventRejectsInvalidScopeAndShapes(t *testing.T) {
 }
 
 func TestRenderWecomHumanCardUpdate(t *testing.T) {
-	for _, tc := range [][2]string{{"approve", "已同意"}, {"reject", "已拒绝"}, {"information", "已提交"}} {
+	for _, tc := range [][3]string{{"approve", "已同意", "已经同意，无需再次提交。"}, {"reject", "已拒绝", "已经拒绝，无需再次提交。"}, {"information", "已提交", "已经提交，无需再次提交。"}} {
 		got, ok := renderWecomHumanCardUpdate("nonce", "actor", tc[0])
 		exp := map[string]any{
 			"response_type": "update_template_card",
@@ -174,7 +179,7 @@ func TestRenderWecomHumanCardUpdate(t *testing.T) {
 				"card_type":   "text_notice",
 				"task_id":     "nonce",
 				"card_action": map[string]any{"type": 1, "url": "https://work.weixin.qq.com/"},
-				"main_title":  map[string]string{"title": tc[1], "desc": "答复已记录，无需再次操作。"},
+				"main_title":  map[string]string{"title": tc[1], "desc": tc[2]},
 			},
 		}
 		if !ok || !reflect.DeepEqual(got, exp) {
@@ -183,5 +188,64 @@ func TestRenderWecomHumanCardUpdate(t *testing.T) {
 	}
 	if got, ok := renderWecomHumanCardUpdate("nonce", "actor", "needs_more"); ok || got != nil {
 		t.Fatalf("nonterminal response rendered: %#v", got)
+	}
+}
+
+func TestWecomOldRejectButtonRefreshesTheRecordedApproval(t *testing.T) {
+	const notice = "a0000000-0000-4000-8000-000000000001"
+	manager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var got humanCardAction
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil ||
+			r.Method != http.MethodPost || r.URL.Path != "/api/internal/v1/human-notices/"+notice+"/answer-card" ||
+			got.Decision != "reject" || got.ExternalActor != "user" || got.ProviderCardID != notice {
+			t.Errorf("invalid late click: %+v %v", got, err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		fixtureWriteJSON(t, w, humanCardAnswerResult{State: "approved", Card: &humanConfirmationCard{DecisionRequired: true}})
+	}))
+	defer manager.Close()
+	client, err := NewBackend(manager.URL, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := make(chan wecomFrame, 1)
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, e := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if e != nil {
+			t.Error(e)
+			return
+		}
+		defer func() { _ = c.Close() }()
+		var frame wecomFrame
+		if e = c.ReadJSON(&frame); e != nil {
+			t.Error(e)
+			return
+		}
+		updated <- frame
+	}))
+	defer provider.Close()
+	conn, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(provider.URL, "http"), nil)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	b := Binding{ID: "binding", Provider: "wecom", TenantID: "tenant", Generation: 1, Revision: 1, Credentials: Credentials{AppID: "bot"}}
+	s := &wecomSession{binding: b, conn: conn, timeout: time.Second}
+	click := makeWecomHumanEvent(t, "single", "user", "bot", `"task_id":"`+notice+`","event_key":"reject","card_type":"button_interaction"`)
+	s.handleWecomNativeConfirmation(t.Context(), client, click)
+	select {
+	case replacement := <-updated:
+		body := string(replacement.Body)
+		if replacement.Cmd != "aibot_respond_update_msg" || replacement.Headers.ReqID != click.Headers.ReqID ||
+			!strings.Contains(body, notice) || !strings.Contains(body, "已经同意，无需再次提交。") ||
+			strings.Contains(body, "已拒绝") || strings.Contains(body, "button_list") {
+			t.Fatalf("incorrect original card replacement: %s", body)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no update sent for the original confirmation")
 	}
 }

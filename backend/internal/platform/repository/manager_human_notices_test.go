@@ -53,6 +53,10 @@ func verifyHumanNotice(t *testing.T, db *sql.DB, store *managerrepo.Store, ref s
 		v.EvidenceType = "business_ack"
 		v.ProviderRequestID = "ack-123"
 		v.ProviderSessionID = "socket-123"
+		if d.HumanCard != nil && d.HumanCard.DecisionRequired && len(d.HumanCard.Questions) == 0 {
+			v.HumanConfirmationCard = true
+			v.ProviderRequestID = d.ID
+		}
 		v.EvidenceID = v.ProviderRequestID
 	case "dingtalk":
 		v.Status = "accepted"

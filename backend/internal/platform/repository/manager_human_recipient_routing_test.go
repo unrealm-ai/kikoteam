@@ -485,6 +485,65 @@ func TestHumanRecipientsAcrossChannels(t *testing.T) {
 			reviewExec(t, db, `UPDATE platform_channel_bindings SET access='{"mode":"all"}' WHERE id=$1`, recipient.Ref.BindingID)
 		})
 	}
+	t.Run("wecom_text_approval_wins_over_old_reject_button", func(t *testing.T) {
+		recipient := rules.Recipients[3]
+		create := manager.CreateSession{ConversationID: conversation.ID, Mode: "task"}
+		create.Input = &struct {
+			Text string `json:"text"`
+		}{Text: "Prepare sample approval"}
+		task, _, err := sessions.CreateSession(ctx, workspace, owner, "confirm-wecom-text-first", create)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var input string
+		if err = db.QueryRow(`SELECT id FROM manager_inputs WHERE session_id=$1 AND seq=1`, task.ID).Scan(&input); err != nil {
+			t.Fatal(err)
+		}
+		created, err := store.HumanTaskTool(ctx, start(t, task.ID, input), "request", "", &manager.HumanQuestion{
+			RecipientID: recipient.ID, RulesVersion: rules.Version, Question: "是否同意演练？", AnswerType: "decision",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := created.(manager.HumanRequest)
+		reviewExec(t, db, `UPDATE manager_turns SET status='completed',finished_at=now() WHERE input_id=$1`, input)
+		reviewExec(t, db, `UPDATE manager_sessions SET active_turn_id=NULL WHERE id=$1`, task.ID)
+		reviewExec(t, db, `UPDATE manager_human_requests SET state='pending',fenced_at=now() WHERE id=$1`, request.ID)
+		verifyHumanNotice(t, db, store, recipient.Ref, request.ID)
+		var notice string
+		if err = db.QueryRow(`SELECT id FROM manager_human_notices WHERE request_id=$1 AND status='sent' AND receipt->>'human_confirmation_card'='true'`, request.ID).Scan(&notice); err != nil {
+			t.Fatal(err)
+		}
+		chat := openChat(t, recipient.Ref, "我同意这次演练")
+		list, err := store.HumanChatTool(ctx, chat, "pending", request.ID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pending := list.(map[string]any)["items"].([]manager.HumanRequest)
+		if len(pending) != 1 {
+			t.Fatal("missing pending approval")
+		}
+		answer := manager.HumanAnswer{Version: request.Version, Decision: "approve", Association: "current_message", QuestionDigest: pending[0].QuestionDigest}
+		result, err := store.HumanChatSubmission(ctx, chat, request.ID, "approve-wecom-text-first", &answer)
+		if err != nil || result.(map[string]any)["state"] != "approved" {
+			t.Fatal("text approval was not recorded", result, err)
+		}
+		click := manager.HumanCardAction{BindingID: recipient.Ref.BindingID, Provider: "wecom", ExternalTenant: recipient.Ref.TenantID, ExternalActor: recipient.Ref.ExternalID,
+			Generation: 1, Revision: 1, ProviderCardID: notice, Decision: "reject"}
+		for range 2 {
+			got, e := store.AnswerHumanCard(ctx, notice, click)
+			if e != nil || got.(map[string]any)["state"] != "approved" || !got.(map[string]any)["card"].(*manager.HumanConfirmationCard).DecisionRequired {
+				t.Fatal("late rejection did not return stored approval state", got, e)
+			}
+		}
+		var decision string
+		var stopped, continuations int
+		if err = db.QueryRow(`SELECT r.answer->>'decision',s.stop_revision,
+ (SELECT count(*) FROM manager_inputs i WHERE i.human_request_id=r.id)
+ FROM manager_human_requests r JOIN manager_sessions s ON s.id=r.session_id WHERE r.id=$1`, request.ID).Scan(&decision, &stopped, &continuations); err != nil || decision != "approve" || stopped != 0 || continuations != 1 {
+			t.Fatalf("late rejection changed the task: decision=%q stops=%d resumes=%d %v", decision, stopped, continuations, err)
+		}
+	})
 }
 
 func testHumanClarificationStaysPending(t *testing.T, ctx context.Context, store *managerrepo.Store, workspace, actor, id string) {

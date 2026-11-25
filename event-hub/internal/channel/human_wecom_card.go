@@ -280,7 +280,7 @@ func renderWecomHumanCardUpdate(taskID, actorID, decision string) (map[string]an
 			"card_type":   "text_notice",
 			"task_id":     taskID,
 			"card_action": map[string]any{"type": 1, "url": wecomHumanUpdateAction},
-			"main_title":  map[string]string{"title": label, "desc": "答复已记录，无需再次操作。"},
+			"main_title":  map[string]string{"title": label, "desc": "已经" + strings.TrimPrefix(label, "已") + "，无需再次提交。"},
 		},
 	}, true
 }

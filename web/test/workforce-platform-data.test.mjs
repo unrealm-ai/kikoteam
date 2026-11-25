@@ -54,7 +54,12 @@ test('the current binding supplies permission evidence for the business table',a
  let checked=true;const urls=[];
  globalThis.fetch=async url=>{urls.push(url);return url.endsWith('/channels/feishu')?Response.json(checked?{...binding,permission_diagnostics:{ready:true,checked_at:'checked'},permission_groups:[{id:'docs',label:'文档',status:'granted',scopeStates:[{scope:'docs:read',status:'granted'}]}]}:binding):response(url,x);};
  let emp=await api.getWorkforcePlatformEmployee('groups','a');assert.equal(emp.channels[0].businessCapabilities[0].name,'文档');assert.equal(emp.channels[0].businessCapabilities[0].resourceAccessStatus,'unknown');assert.equal(emp.channels[0].permissionReady,true);
- checked=false;emp=await api.getWorkforcePlatformEmployee('groups','a');assert.equal(emp.channels[0].businessCapabilities,undefined);assert.equal(emp.channels[0].permissionReady,undefined);
+ assert.deepEqual(emp.channels[0].businessCapabilities.map(row=>row.id),['docs','feishu-card-callback']);
+ checked=false;emp=await api.getWorkforcePlatformEmployee('groups','a');
+ assert.deepEqual(emp.channels[0].businessCapabilities.map(({id,description,platformAuthStatus})=>({id,description,platformAuthStatus})),[
+  {id:'feishu-card-callback',description:'可选',platformAuthStatus:'unknown'},
+ ]);
+ assert.equal(emp.channels[0].permissionReady,undefined);
  assert.ok(urls.every(url=>!url.endsWith('/registration')));
 });
 

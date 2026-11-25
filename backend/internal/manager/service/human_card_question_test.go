@@ -91,3 +91,44 @@ func TestHumanCardEachFormTypeCanStandAlone(t *testing.T) {
 		})
 	}
 }
+
+func TestModelAnswersFollowStoredType(t *testing.T) {
+	options := []HumanQuestionOption{{ID: "1", Label: "一"}, {ID: "2", Label: "二"}}
+	q := HumanQuestion{Questions: []HumanQuestionItem{
+		{ID: "single", AnswerType: "choice", Options: options},
+		{ID: "multi", AnswerType: "multi_choice", Options: options},
+		{ID: "text", AnswerType: "text"},
+		{ID: "number", AnswerType: "number"},
+	}}
+	items := []HumanModelAnswerItem{
+		{QuestionID: "single", Values: []string{"1"}},
+		{QuestionID: "multi", Values: []string{"1", "2"}},
+		{QuestionID: "text", Values: []string{"实际说明"}},
+		{QuestionID: "number", Values: []string{"42"}},
+	}
+	converted, err := q.ModelAnswers(items)
+	if err != nil || converted[0].Value != "1" || len(converted[0].OptionIDs) != 0 ||
+		len(converted[1].OptionIDs) != 2 || converted[1].Value != "" ||
+		converted[2].Value != "实际说明" || converted[3].Value != "42" {
+		t.Fatal("model answers were not normalized by stored type", converted, err)
+	}
+	if _, err := q.CheckAnswers(HumanAnswer{Decision: "information", Answers: converted}); err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []HumanModelAnswerItem{
+		{QuestionID: "single", Values: []string{"1", "2"}},
+		{QuestionID: "number", Values: []string{"not a number"}},
+		{QuestionID: "multi", Values: []string{"1", "1"}},
+		{QuestionID: "multi", Values: []string{"3"}},
+		{QuestionID: "text", Values: nil},
+		{QuestionID: "unknown", Values: []string{"1"}},
+	} {
+		converted, err := q.ModelAnswers([]HumanModelAnswerItem{invalid})
+		if err == nil {
+			_, err = q.CheckAnswers(HumanAnswer{Decision: "information", Answers: converted})
+		}
+		if err == nil {
+			t.Fatal("invalid answer was accepted", invalid)
+		}
+	}
+}

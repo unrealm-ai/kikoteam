@@ -91,6 +91,9 @@ func permissionGroups(profile *FeishuPermissionProfile, d *FeishuDiagnostics) []
 	}
 	groups := make([]FeishuPermissionGroup, 0, len(profile.Groups))
 	for _, g := range profile.Groups {
+		if g.ID == "receipt-reaction" && inventory["im:message"] == "granted" {
+			g.Scopes = []string{"im:message"}
+		}
 		g.Status = "granted"
 		g.ScopeStates = []FeishuPermission{}
 		g.MissingScopes = []string{}
@@ -102,7 +105,7 @@ func permissionGroups(profile *FeishuPermissionProfile, d *FeishuDiagnostics) []
 			g.ScopeStates = append(g.ScopeStates, FeishuPermission{Scope: scope, Required: g.Required, Status: status})
 			if status != "granted" {
 				g.MissingScopes = append(g.MissingScopes, scope)
-				if status == "missing" || g.Status == "granted" {
+				if status == "missing" || status == "not_detected" || g.Status == "granted" {
 					g.Status = status
 				}
 			}

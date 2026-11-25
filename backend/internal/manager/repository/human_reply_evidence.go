@@ -270,7 +270,7 @@ func humanMessageMentions(text string, ref humanReplyRef) bool {
 	return false
 }
 
-func proposeHumanReply(ctx context.Context, tx *sql.Tx, viewer humanViewer, scope service.HumanRuntimeScope, id string, answer service.HumanAnswer) (any, error) {
+func proposeHumanReply(ctx context.Context, tx *sql.Tx, viewer humanViewer, scope service.HumanRuntimeScope, id string, answer service.HumanAnswer, values []service.HumanModelAnswerItem) (any, error) {
 	request, err := scanHumanRequest(tx.QueryRowContext(ctx, `SELECT r.id,r.version,r.state,r.question,r.fenced_at IS NOT NULL
  FROM manager_human_requests r JOIN manager_inputs i ON i.id=$5 AND i.created_at>=r.created_at
  WHERE r.id=$7 AND `+humanAnswerTarget, append(viewer.queryArgs(), id)...))
@@ -307,6 +307,12 @@ func proposeHumanReply(ctx context.Context, tx *sql.Tx, viewer humanViewer, scop
 	}
 	if answer.ClarificationText != "" || strings.TrimSpace(selected) == "" {
 		return nil, service.Fail("human_evidence_invalid", 409, "正式提交需要本次真实回复")
+	}
+	if len(values) != 0 {
+		answer.Answers, err = request.Question.ModelAnswers(values)
+		if err != nil {
+			return nil, err
+		}
 	}
 	answer.Association, answer.QuestionDigest, answer.EvidenceSegmentIDs = "", "", nil
 	return recordHumanAnswer(ctx, tx, viewer, id, answer)

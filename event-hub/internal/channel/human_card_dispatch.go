@@ -41,13 +41,17 @@ func sendHumanConfirmationCard(ctx context.Context, b Binding, d Delivery, send 
 	}
 	content, ok := buildFeishuHumanCard(spec)
 	if !ok {
-		return send(ctx, b, d)
+		fallback := send(ctx, b, d)
+		fallback.humanCardFallback = "unsupported_card_shape"
+		return fallback
 	}
 	native := d
 	native.Format, native.humanCardContent = "human_confirmation_card", content
 	result := send(ctx, b, native)
 	if result.Status == "failed" && result.EvidenceType == "send_response" && result.ErrorCode == taskDetailRejected {
-		return send(ctx, b, d)
+		fallback := send(ctx, b, d)
+		fallback.humanCardFallback, fallback.providerErrorCode = "provider_rejected", result.providerErrorCode
+		return fallback
 	}
 	result.HumanConfirmationCard = result.Status == "sent"
 	return result

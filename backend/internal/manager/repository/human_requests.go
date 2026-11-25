@@ -285,7 +285,14 @@ func createHumanRequest(ctx context.Context, tx *sql.Tx, scope service.HumanRunt
 	}
 	existing, err := scanHumanRequest(tx.QueryRowContext(ctx, `SELECT id,version,state,question,fenced_at IS NOT NULL FROM manager_human_requests WHERE turn_id=$1`, scope.Turn))
 	if err == nil {
-		if reflect.DeepEqual(existing.Question, *question) && existing.State == "preparing" {
+		comparison := *question
+		// The new tool omits scope. For an exact preparing replay, reuse the
+		// scope already captured by that candidate/version, not today's rules.
+		if comparison.QuestionScope == "" && comparison.CandidateID != "" &&
+			comparison.CandidateID == existing.Question.CandidateID && comparison.RulesVersion == existing.Question.RulesVersion {
+			comparison.QuestionScope = existing.Question.QuestionScope
+		}
+		if reflect.DeepEqual(existing.Question, comparison) && existing.State == "preparing" {
 			return existing, nil
 		}
 		return out, service.Fail("human_request_conflict", 409, "本轮已有确认请求")
@@ -300,11 +307,14 @@ func createHumanRequest(ctx context.Context, tx *sql.Tx, scope service.HumanRunt
 	if err != nil {
 		return out, err
 	}
-	ref, err := selectHumanRecipient(rules, *question)
+	candidate, err := selectHumanRecipient(rules, *question)
 	if err != nil {
 		return out, err
 	}
-	recipient, err := json.Marshal(ref)
+	if question.CandidateID != "" && question.QuestionScope == "" {
+		question.QuestionScope = candidate.Scope
+	}
+	recipient, err := json.Marshal(candidate.Ref)
 	if err != nil {
 		return out, err
 	}
@@ -340,13 +350,13 @@ func createHumanRequest(ctx context.Context, tx *sql.Tx, scope service.HumanRunt
 	return out, st.SnapshotEvent()
 }
 
-func selectHumanRecipient(rules service.HumanRecipients, q service.HumanQuestion) (platform.SelectionRef, error) {
+func selectHumanRecipient(rules service.HumanRecipients, q service.HumanQuestion) (service.HumanRecipient, error) {
 	if rules.Version == q.RulesVersion {
 		for _, candidate := range rules.Recipients {
 			if candidate.ID == q.RecipientID {
-				return candidate.Ref, nil
+				return candidate, nil
 			}
 		}
 	}
-	return platform.SelectionRef{}, service.Fail("human_recipient_changed", 409, "确认人配置或权限已变化，请重新查询候选")
+	return service.HumanRecipient{}, service.Fail("human_recipient_changed", 409, "确认人配置或权限已变化，请重新查询候选")
 }

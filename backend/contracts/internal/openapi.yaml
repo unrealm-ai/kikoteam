@@ -91,9 +91,23 @@ paths:
               properties:
                 operation: {enum: [recipients, request, fenced, pending, answer, propose, receipt]}
                 operationId: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}
-                request_id: {type: string, format: uuid}
+                request_id: {type: string, maxLength: 36, description: UUID; the pending operation also accepts an H- reference.}
+                status: {type: string, enum: [pending, resolved], description: List filter for the pending operation. Omission searches both states if request_id is given, otherwise defaults to pending.}
+                page: {type: integer, minimum: 1, default: 1}
+                pageSize: {type: integer, minimum: 1, maximum: 50, default: 20}
                 question: {$ref: '../modules/manager/human-requests.yaml#/question'}
                 answer: {$ref: '../modules/manager/human-requests.yaml#/answer'}
+                modelAnswers:
+                  type: array
+                  description: Optional model-only shape for propose with an operationId. Must not be combined with answer.answers.
+                  maxItems: 12
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [questionId, values]
+                    properties:
+                      questionId: {type: string}
+                      values: {type: array, minItems: 1, maxItems: 20, uniqueItems: true, items: {type: string, minLength: 1, maxLength: 2000}}
       responses:
         '200': {description: Operation-specific runtime result}
         '400': {$ref: '#/components/responses/Error'}

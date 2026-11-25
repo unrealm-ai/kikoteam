@@ -80,10 +80,10 @@ func (s *ChannelService) ObservedProvider(ctx context.Context, w, a, employee, p
 			if err != nil {
 				return b, err
 			}
-			if b.PermissionDiagnostics != nil {
-				b.PermissionGroups = BindingFeishuPermissionGroups(b.PermissionDiagnostics)
-			}
 		}
+	}
+	if provider == "feishu" {
+		b.PermissionGroups = BindingFeishuPermissionGroups(b.PermissionDiagnostics)
 	}
 	if provider == "dingtalk" && b.Enabled {
 		if store, ok := s.Store.(interface {

@@ -41,7 +41,7 @@ export interface ChannelBusinessCapability {
   id: string;
   name: string;
   description: string;
-  platformAuthStatus: 'authorized' | 'partial' | 'unauthorized' | 'unknown';
+  platformAuthStatus: 'authorized' | 'partial' | 'unauthorized' | 'not_detected' | 'unknown';
   resourceAccessStatus: 'ready' | 'pending_collaborator' | 'not_configured' | 'unknown';
   statusDetail: string;
 }

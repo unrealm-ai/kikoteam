@@ -56,6 +56,8 @@ func (d Delivery) contentFormat() string {
 }
 
 type deliveryReceipt struct {
+	humanCardFallback     string
+	providerErrorCode     int    // Provider diagnostics only; never serialized as a receipt.
 	HumanConfirmationCard bool   `json:"human_confirmation_card,omitempty"`
 	Presentation          string `json:"presentation,omitempty"`
 	ProviderCreatedAtMS   int64  `json:"provider_created_at_ms,string,omitempty"`
@@ -191,6 +193,9 @@ func deliver(ctx context.Context, b *Backend, lookup func(string) (Binding, bool
 	} else {
 		receipt = sendWithTaskDetail(ctx, binding, current, b.notificationDelivery, send)
 	}
+	if receipt.humanCardFallback != "" {
+		b.trace(ctx, "human.feishu_card_fallback", "delivery_id", traceID(d.ID), "reason", receipt.humanCardFallback, "provider_error_code", receipt.providerErrorCode)
+	}
 	b.traceDelivery(ctx, "channel.delivery.send_result", current, receipt.Status)
 	b.trace(ctx, "channel.delivery.provider_receipt", "delivery_id", traceID(d.ID), "provider", binding.Provider, "provider_message_id", traceID(receipt.MessageID), "provider_request_id", traceID(receipt.ProviderRequestID), "status", traceID(receipt.Status), "error_code", traceID(receipt.ErrorCode))
 	receipt.LeaseToken = d.LeaseToken
@@ -322,7 +327,7 @@ func feishuMessageRejected(taskDetailDispatch bool, kind string, code, status in
 	}
 	if kind == "interactive" {
 		if code == 230099 && (status == http.StatusOK || status == http.StatusBadRequest) {
-			return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: taskDetailRejected}
+			return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: taskDetailRejected, providerErrorCode: code}
 		}
 	}
 	return deliveryReceipt{Status: "failed", EvidenceType: "send_response", ErrorCode: "provider_rejected"}

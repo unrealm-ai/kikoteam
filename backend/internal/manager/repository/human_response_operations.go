@@ -17,6 +17,18 @@ var humanOperationID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // HumanChatSubmission records a proposal or, with no proposal, reads its
 // receipt. Operation IDs are scoped to the authenticated inbound Input.
 func (s *Store) HumanChatSubmission(ctx context.Context, scope service.HumanRuntimeScope, requestID, operationID string, answer *service.HumanAnswer) (any, error) {
+	return s.humanChatSubmission(ctx, scope, requestID, operationID, answer, nil)
+}
+
+// HumanChatSubmitValues keeps model inputs separate from the Web/card answer contract.
+func (s *Store) HumanChatSubmitValues(ctx context.Context, scope service.HumanRuntimeScope, requestID, operationID string, answer service.HumanAnswer, values []service.HumanModelAnswerItem) (any, error) {
+	if len(answer.Answers) != 0 {
+		return nil, service.Fail("invalid_human_answers", 400, "不能混用两种小题答复格式")
+	}
+	return s.humanChatSubmission(ctx, scope, requestID, operationID, &answer, values)
+}
+
+func (s *Store) humanChatSubmission(ctx context.Context, scope service.HumanRuntimeScope, requestID, operationID string, answer *service.HumanAnswer, values []service.HumanModelAnswerItem) (any, error) {
 	if !service.ValidID(requestID) || !humanOperationID.MatchString(operationID) {
 		return nil, service.Fail("invalid_human_operation_id", 400, "请提供确认单 ID 和有效的提交标识")
 	}
@@ -40,7 +52,14 @@ func (s *Store) HumanChatSubmission(ctx context.Context, scope service.HumanRunt
 		}
 		return stored.result()
 	}
-	proposal, err := json.Marshal(answer)
+	var body any = answer
+	if len(values) != 0 {
+		body = struct {
+			*service.HumanAnswer
+			ModelAnswers []service.HumanModelAnswerItem `json:"modelAnswers"`
+		}{answer, values}
+	}
+	proposal, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +70,7 @@ func (s *Store) HumanChatSubmission(ctx context.Context, scope service.HumanRunt
 		}
 		return stored.result()
 	}
-	receipt, err := runHumanResponseOperation(ctx, tx, viewer, scope, requestID, *answer)
+	receipt, err := runHumanResponseOperation(ctx, tx, viewer, scope, requestID, *answer, values)
 	if err != nil {
 		return nil, err
 	}
@@ -101,11 +120,11 @@ func humanOperationConflict() error {
 	return service.Fail("human_operation_conflict", 409, "提交标识已用于其他答复；原样重试应沿用相同标识和内容")
 }
 
-func runHumanResponseOperation(ctx context.Context, tx *sql.Tx, viewer humanViewer, scope service.HumanRuntimeScope, requestID string, answer service.HumanAnswer) ([]byte, error) {
+func runHumanResponseOperation(ctx context.Context, tx *sql.Tx, viewer humanViewer, scope service.HumanRuntimeScope, requestID string, answer service.HumanAnswer, values []service.HumanModelAnswerItem) ([]byte, error) {
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT human_proposal"); err != nil {
 		return nil, err
 	}
-	result, err := proposeHumanReply(ctx, tx, viewer, scope, requestID, answer)
+	result, err := proposeHumanReply(ctx, tx, viewer, scope, requestID, answer, values)
 	if err == nil {
 		return json.Marshal(result)
 	}
@@ -118,6 +137,8 @@ func runHumanResponseOperation(ctx context.Context, tx *sql.Tx, viewer humanView
 	}
 	nextAction := "向用户说明答复未记录，并按原因处理"
 	switch failure.Code {
+	case "invalid_human_answer_cardinality":
+		nextAction = "根据已查到的题型和用户原话修正 values 后用新 operationId 提交；意图不明确时先追问"
 	case "human_request_changed":
 		nextAction = "重新查询确认单，再根据当前消息判断如何答复"
 	case "human_task_scope_changed":

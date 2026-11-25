@@ -77,8 +77,8 @@ func TestHumanChatListPagesAndReferences(t *testing.T) {
 		item        string
 		more        bool
 	}{
-		{page: 1, total: 2, item: ids[0], more: true},
-		{page: 2, total: 2, item: ids[1]},
+		{page: 1, total: 2, item: ids[1], more: true},
+		{page: 2, total: 2, item: ids[0]},
 		{page: 3, total: 2},
 		{page: 1, total: 1, locator: code, item: ids[1]},
 		{page: 1, total: 1, locator: ids[1], item: ids[1]},
@@ -97,4 +97,46 @@ func TestHumanChatListPagesAndReferences(t *testing.T) {
 			}
 		})
 	}
+	// Completed results remain visible even when the task stop revision has advanced.
+	reviewExec(t, db, `UPDATE manager_human_requests SET state='approved',answer='{"decision":"information"}',answered_at=now()+interval '1 second' WHERE id=$1`, ids[0])
+	reviewExec(t, db, `UPDATE manager_human_requests SET state='rejected',answer='{"decision":"reject"}',answered_at=now() WHERE id=$1`, ids[1])
+	reviewExec(t, db, `UPDATE manager_sessions SET stop_revision=1 WHERE id=(SELECT session_id FROM manager_human_requests WHERE id=$1)`, ids[1])
+	for _, tc := range []struct {
+		status, locator, wantID, wantDecision string
+		page, total                           int
+	}{
+		{page: 1},
+		{status: "pending", locator: code, page: 1},
+		{locator: code, page: 1, total: 1, wantID: ids[1], wantDecision: "reject"},
+		{locator: ids[0], page: 1, total: 1, wantID: ids[0], wantDecision: "information"},
+		{locator: service.NewID(), page: 1},
+		{status: "resolved", page: 1, total: 2, wantID: ids[1], wantDecision: "reject"},
+		{status: "resolved", page: 2, total: 2, wantID: ids[0], wantDecision: "information"},
+		{status: "resolved", page: 3, total: 2},
+		{status: "resolved", locator: code, page: 1, total: 1, wantID: ids[1], wantDecision: "reject"},
+	} {
+		size := 1
+		value, err := store.HumanChatList(ctx, scope, manager.HumanListQuery{Status: tc.status, Page: &tc.page, PageSize: &size, RequestID: tc.locator})
+		if err != nil {
+			t.Fatal(err)
+		}
+		reply := value.(map[string]any)
+		items := reply["items"].([]manager.HumanRequest)
+		if reply["total"] != tc.total || len(reply["referencedRequests"].([]manager.HumanRequest)) != 0 ||
+			(tc.wantID == "" && len(items) != 0) || (tc.wantID != "" && (len(items) != 1 || items[0].ID != tc.wantID || items[0].RecordedDecision != tc.wantDecision)) {
+			t.Fatalf("unexpected completed page: %+v, got %v", tc, reply)
+		}
+	}
+	if _, err := store.HumanChatList(ctx, scope, manager.HumanListQuery{Status: "anything"}); err == nil {
+		t.Fatal("accepted an unknown status")
+	}
+	// A resolved list must still enforce that the actor is the current configured recipient.
+	reviewExec(t, db, `UPDATE platform_agent_human_recipients SET recipients='[]' WHERE agent_id=$1`, agent)
+	for _, status := range []string{"", "resolved"} {
+		value, err := store.HumanChatList(ctx, scope, manager.HumanListQuery{Status: status, RequestID: code})
+		if err != nil || value.(map[string]any)["total"] != 0 {
+			t.Fatalf("revoked resolution leaked for status %q: %v %v", status, value, err)
+		}
+	}
+
 }

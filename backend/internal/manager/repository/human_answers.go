@@ -39,22 +39,32 @@ func (v humanViewer) queryArgs() []any {
 
 const humanInboxFrom = ` FROM manager_human_requests r JOIN manager_sessions s ON s.id=r.session_id
  LEFT JOIN manager_conversations c ON c.id=s.conversation_id LEFT JOIN manager_task_spaces p ON p.id=s.task_space_id
- WHERE ` + humanAnswerTarget + ` AND r.state='pending'
- AND ` + humanRequestActive + ` AND (COALESCE(cardinality($7::text[]),0)=0 OR r.id::text=ANY($7)
+ WHERE ` + humanAnswerTarget + `
+ AND (($8::text IN ('pending','exact') AND r.state='pending' AND (` + humanRequestActive + `))
+ OR ($8::text IN ('resolved','exact') AND r.state IN ('approved','rejected','revised')))
+ AND (COALESCE(cardinality($7::text[]),0)=0 OR r.id::text=ANY($7)
  OR 'h-'||left(encode(sha256(convert_to(r.id::text||CASE WHEN r.version=1 THEN '' ELSE ':'||r.version::text END,'UTF8')),'hex'),12)=ANY($7))`
 
-func readHumanInbox(ctx context.Context, db humanQueryer, viewer humanViewer, locators []string, offset, limit int) ([]service.HumanRequest, int, error) {
+func readHumanInbox(ctx context.Context, db humanQueryer, viewer humanViewer, locators []string, status string, newestFirst bool, offset, limit int) ([]service.HumanRequest, int, error) {
 	var total int
-	rows, err := db.QueryContext(ctx, `SELECT r.id,r.version,r.state,r.question,true,count(*) OVER()
-`+humanInboxFrom+` ORDER BY r.created_at,r.id LIMIT $9 OFFSET $8`,
-		append(viewer.queryArgs(), locators, offset, limit)...)
+	args := append(viewer.queryArgs(), locators, status)
+	order := "r.created_at,r.id"
+	if newestFirst {
+		order = "r.created_at DESC,r.id DESC"
+	}
+	rows, err := db.QueryContext(ctx, `SELECT r.id,r.version,r.state,r.question,r.fenced_at IS NOT NULL,
+ CASE WHEN r.state IN ('approved','rejected','revised') THEN COALESCE(r.answer->>'decision','') ELSE '' END,count(*) OVER()
+`+humanInboxFrom+` ORDER BY `+order+` LIMIT $10 OFFSET $9`,
+		append(args, offset, limit)...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close() //nolint:errcheck // Iteration reports read failures.
 	items := []service.HumanRequest{}
 	for rows.Next() {
-		v, err := scanHumanRequest(appendedScanner{scanner: rows, extra: []any{&total}})
+		var decision string
+		v, err := scanHumanRequest(appendedScanner{scanner: rows, extra: []any{&decision, &total}})
+		v.RecordedDecision = decision
 		if err != nil {
 			return nil, 0, err
 		}
@@ -64,7 +74,7 @@ func readHumanInbox(ctx context.Context, db humanQueryer, viewer humanViewer, lo
 		return nil, 0, err
 	}
 	if offset > 0 && len(items) == 0 {
-		err = db.QueryRowContext(ctx, "SELECT count(*)"+humanInboxFrom, append(viewer.queryArgs(), locators)...).Scan(&total)
+		err = db.QueryRowContext(ctx, "SELECT count(*)"+humanInboxFrom, args...).Scan(&total)
 	}
 	return items, total, err
 }
@@ -87,7 +97,7 @@ func (s *Store) HumanInboxPage(ctx context.Context, workspace, actor string, off
 		return nil, 0, service.Fail("workspace_forbidden", 403, "工作区不可访问")
 	}
 	viewer := humanViewer{workspace: workspace, actor: actor}
-	return readHumanInbox(ctx, s.DB, viewer, humanListLocators(id), offset, 100)
+	return readHumanInbox(ctx, s.DB, viewer, humanListLocators(id), "pending", false, offset, 100)
 }
 
 func humanListLocators(id string) []string {
@@ -126,7 +136,14 @@ func (s *Store) HumanChatList(ctx context.Context, scope service.HumanRuntimeSco
 	if err != nil {
 		return nil, err
 	}
-	items, total, err := readHumanInbox(ctx, tx, viewer, humanListLocators(query.RequestID), (page-1)*size, size)
+	status := query.Status
+	if status == "" {
+		status = "pending"
+		if query.RequestID != "" {
+			status = "exact"
+		}
+	}
+	items, total, err := readHumanInbox(ctx, tx, viewer, humanListLocators(query.RequestID), status, true, (page-1)*size, size)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +153,7 @@ func (s *Store) HumanChatList(ctx context.Context, scope service.HumanRuntimeSco
 	}
 	related := []service.HumanRequest{}
 	if ids := evidence.referencedLocators(); len(ids) != 0 {
-		related, _, err = readHumanInbox(ctx, tx, viewer, ids, 0, 20)
+		related, _, err = readHumanInbox(ctx, tx, viewer, ids, "pending", false, 0, 20)
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +185,7 @@ func (s *Store) HumanChatTool(ctx context.Context, scope service.HumanRuntimeSco
 	if err != nil {
 		return nil, err
 	}
-	result, err := proposeHumanReply(ctx, tx, viewer, scope, requestID, *answer)
+	result, err := proposeHumanReply(ctx, tx, viewer, scope, requestID, *answer, nil)
 	if err != nil {
 		return nil, err
 	}

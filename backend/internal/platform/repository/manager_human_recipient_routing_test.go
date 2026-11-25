@@ -505,6 +505,86 @@ func TestHumanRecipientsAcrossChannels(t *testing.T) {
 			reviewExec(t, db, `UPDATE platform_channel_bindings SET access='{"mode":"all"}' WHERE id=$1`, recipient.Ref.BindingID)
 		})
 	}
+	t.Run("feishu_form_defaults_to_native_card", func(t *testing.T) {
+		recipient := rules.Recipients[1]
+		create := manager.CreateSession{ConversationID: conversation.ID, Mode: "task"}
+		create.Input = &struct {
+			Text string `json:"text"`
+		}{Text: "Confirm the sample"}
+		task, _, err := sessions.CreateSession(ctx, workspace, owner, "feishu-optional-card", create)
+		if err != nil {
+			t.Fatal(err)
+		}
+		input := *task.InitialInputID
+		boolPointer := func(v bool) *bool { return &v }
+		value, err := store.HumanTaskTool(ctx, start(t, task.ID, input), "request", "", &manager.HumanQuestion{
+			CandidateID: recipient.ID, RulesVersion: rules.Version,
+			DecisionRequired: boolPointer(false), Goal: "选择演练时段", Background: "仅测试。", KnownFacts: []manager.HumanFact{},
+			Questions: []manager.HumanQuestionItem{{
+				ID: "time_slot", Text: "选择演练时段", AnswerType: "choice", Required: boolPointer(true),
+				Options: []manager.HumanQuestionOption{{ID: "1", Label: "上午"}, {ID: "2", Label: "下午"}},
+			}},
+			CompletionCriteria: []string{"记录所选时段"}, ProposedAction: "仅记录选项", ImpactScope: "仅本次演练", IfNotConfirmed: "保持等待",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := value.(manager.HumanRequest)
+		if request.Question.QuestionScope != recipient.Scope {
+			t.Fatalf("Manager did not resolve form scope: %q", request.Question.QuestionScope)
+		}
+		reviewExec(t, db, `UPDATE manager_turns SET status='completed',finished_at=now() WHERE input_id=$1`, input)
+		reviewExec(t, db, `UPDATE manager_sessions SET active_turn_id=NULL WHERE id=$1`, task.ID)
+		reviewExec(t, db, `UPDATE manager_human_requests SET state='pending',fenced_at=now() WHERE id=$1`, request.ID)
+		notices, err := store.ClaimHumanNotices(ctx, 10, false)
+		if err != nil || len(notices) != 1 {
+			t.Fatalf("expected one delivery: %v %v", notices, err)
+		}
+		n, err := store.AuthorizeHumanNotice(ctx, notices[0].ID, notices[0].LeaseToken, false)
+		if err != nil || n.Provider != "feishu" || n.HumanCard == nil || n.HumanCard.DecisionRequired || len(n.HumanCard.Questions) != 1 ||
+			n.HumanCard.Questions[0].AnswerType != "choice" || !strings.Contains(n.Text, "选择演练时段") {
+			t.Fatalf("expected a native single-choice card with full text for fallback: %+v %v", n, err)
+		}
+
+		chat := openChat(t, recipient.Ref, request.Code+" 选1")
+		list, err := store.HumanChatList(ctx, chat, manager.HumanListQuery{RequestID: request.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		items := list.(map[string]any)["items"].([]manager.HumanRequest)
+		if len(items) != 1 {
+			t.Fatal("form is not visible to its intended recipient")
+		}
+		answer := manager.HumanAnswer{Version: request.Version, Decision: "information", Association: "current_message", QuestionDigest: items[0].QuestionDigest}
+		submit := func(operation string, values ...string) (any, error) {
+			return store.HumanChatSubmitValues(ctx, chat, request.ID, operation, answer, []manager.HumanModelAnswerItem{{QuestionID: "time_slot", Values: values}})
+		}
+		bad, err := submit("invalid-1", "1", "2")
+		if err != nil || bad.(map[string]any)["reason"] != "invalid_human_answer_cardinality" || bad.(map[string]any)["state"] != "not_recorded" {
+			t.Fatal("single-choice accepted multiple answers", bad, err)
+		}
+		replay, err := store.HumanChatSubmission(ctx, chat, request.ID, "invalid-1", nil)
+		if err != nil || replay.(map[string]any)["reason"] != "invalid_human_answer_cardinality" {
+			t.Fatal("rejected submission receipt unavailable", replay, err)
+		}
+		if _, err := submit("invalid-1", "1"); err == nil {
+			t.Fatal("changed payload reused previous operation ID")
+		}
+		for range 2 {
+			got, err := submit("corrected-1", "1")
+			if err != nil || got.(map[string]any)["state"] != "approved" {
+				t.Fatal("single-choice values submission not recorded", got, err)
+			}
+		}
+		var saved string
+		var resumed int
+		if err := db.QueryRow(`SELECT r.answer->'answers'->0->>'value',
+ (SELECT count(*) FROM manager_inputs i WHERE i.human_request_id=r.id)
+ FROM manager_human_requests r WHERE r.id=$1`, request.ID).Scan(&saved, &resumed); err != nil || saved != "1" || resumed != 1 {
+			t.Fatal("the corrected answer should be recorded and resume exactly once", saved, resumed, err)
+		}
+	})
+
 	t.Run("wecom_text_approval_wins_over_old_reject_button", func(t *testing.T) {
 		recipient := rules.Recipients[3]
 		create := manager.CreateSession{ConversationID: conversation.ID, Mode: "task"}

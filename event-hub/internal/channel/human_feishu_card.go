@@ -14,7 +14,9 @@ import (
 
 const (
 	feishuHumanCardMarker = "kiko_human_confirmation"
-	feishuHumanNoteField  = "note"
+	feishuHumanNoteField  = "note" // Accept callbacks from cards sent before the note field was removed.
+	feishuHumanInputMax   = 1000
+	feishuHumanReplyHint  = "如果卡片按钮不可用，可直接在聊天里回复。"
 )
 
 type feishuHumanCardSpec struct {
@@ -77,19 +79,12 @@ func feishuHumanForm(name string, fields []feishuHumanElement) feishuHumanElemen
 	return feishuHumanElement{"tag": "form", "name": name, "elements": fields}
 }
 
-func feishuHumanNote() feishuHumanElement {
-	return feishuHumanElement{
-		"tag": "input", "name": feishuHumanNoteField, "max_length": 2000, "required": false,
-		"placeholder": feishuHumanPlainText("补充说明（选填）"),
-	}
-}
-
 func buildFeishuHumanCard(spec feishuHumanCardSpec) (map[string]any, bool) {
 	if !validFeishuHumanIdentifier(spec.Token, 256) || len(spec.Questions) > 12 ||
 		(!spec.DecisionRequired && len(spec.Questions) == 0) || len(spec.Summary) > 16000 {
 		return nil, false
 	}
-	body := []feishuHumanElement{feishuHumanParagraph(spec.Summary)}
+	body := []feishuHumanElement{feishuHumanParagraph(spec.Summary), feishuHumanParagraph(feishuHumanReplyHint)}
 	form, ok := feishuHumanQuestionFields(spec.Questions)
 	if !ok {
 		return nil, false
@@ -101,10 +96,12 @@ func buildFeishuHumanCard(spec feishuHumanCardSpec) (map[string]any, bool) {
 	approve := feishuHumanButton(spec.Token, "approve", "同意", "primary")
 	reject := feishuHumanButton(spec.Token, "reject", "拒绝", "danger")
 	if len(spec.Questions) == 0 {
-		return feishuHumanShell(append(body, feishuHumanForm("approval", []feishuHumanElement{feishuHumanNote(), approve, reject}))), true
+		delete(approve, "form_action_type")
+		delete(reject, "form_action_type")
+		return feishuHumanShell(append(body, approve, reject)), true
 	}
 	// Mandatory approval questions may never impede declining the request.
-	form = append(form, feishuHumanNote(), approve)
+	form = append(form, approve)
 	delete(reject, "form_action_type")
 	return feishuHumanShell(append(body, feishuHumanForm("approval", form), reject)), true
 }
@@ -135,7 +132,7 @@ func feishuHumanQuestionFields(questions []feishuHumanQuestion) ([]feishuHumanEl
 			if q.AnswerType == "number" {
 				prefix, label = "n_", "请输入数字"
 			}
-			field["tag"], field["placeholder"], field["max_length"] = "input", feishuHumanPlainText(label), 2000
+			field["tag"], field["placeholder"], field["max_length"] = "input", feishuHumanPlainText(label), feishuHumanInputMax
 		default:
 			return nil, false
 		}

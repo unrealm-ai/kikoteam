@@ -18,6 +18,7 @@ type Store interface {
 	HumanChatList(context.Context, service.HumanRuntimeScope, service.HumanListQuery) (any, error)
 	HumanTaskTool(context.Context, service.HumanRuntimeScope, string, string, *service.HumanQuestion) (any, error)
 	HumanChatSubmission(context.Context, service.HumanRuntimeScope, string, string, *service.HumanAnswer) (any, error)
+	HumanChatSubmitValues(context.Context, service.HumanRuntimeScope, string, string, service.HumanAnswer, []service.HumanModelAnswerItem) (any, error)
 }
 
 type scopeKey struct{}
@@ -48,6 +49,7 @@ type operationArgs struct {
 type answerArgs struct {
 	operationArgs
 	service.HumanAnswer
+	Answers []service.HumanModelAnswerItem `json:"answers"`
 }
 
 func registerTool(server *sdk.Server, spec *sdk.Tool, store Store) error {
@@ -61,7 +63,7 @@ func registerTool(server *sdk.Server, spec *sdk.Tool, store Store) error {
 			if !service.ValidID(args.RequestID) {
 				return nil, service.Fail("invalid_reference", 400, "确认请求标识无效")
 			}
-			return store.HumanChatSubmission(ctx, scope, args.RequestID, args.OperationID, &args.HumanAnswer)
+			return store.HumanChatSubmitValues(ctx, scope, args.RequestID, args.OperationID, args.HumanAnswer, args.Answers)
 		})
 	case "get_human_confirmation_receipt":
 		addTool(server, spec, func(ctx context.Context, scope service.HumanRuntimeScope, args operationArgs) (any, error) {

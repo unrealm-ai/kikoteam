@@ -333,3 +333,28 @@ func TestContactRangeDefiniteProviderDenials(t *testing.T) {
 		})
 	}
 }
+
+func TestReceiptReactionStatusDistinguishesUnlistedAndIncomplete(t *testing.T) {
+	for _, c := range []struct{ raw, want string }{
+		{`{"scopes":[]}`, "not_detected"},
+		{`{"scopes":[],"has_more":true}`, "unknown"},
+		{`{"scopes":[{"scope_name":"im:message.reactions:write_only","grant_status":1}]}`, "unknown"},
+		{`{"scopes":[{"scope_name":"im:message","grant_status":1}]}`, "unknown"},
+		{`{"scopes":[{"scope_name":"im:message","scope_type":"tenant"}]}`, "unknown"},
+		{`{"scopes":[{"scope_name":"im:message.reactions:write_only","scope_type":"user","grant_status":1}]}`, "not_detected"},
+		{`{"scopes":[{"scope_name":"im:message.reactions:write_only","scope_type":"tenant","grant_status":2}]}`, "missing"},
+		{`{"scopes":[{"scope_name":"im:message.reactions:write_only","scope_type":"tenant","grant_status":1}]}`, "granted"},
+	} {
+		var data map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(c.raw), &data); err != nil {
+			t.Fatal(err)
+		}
+		d := service.FeishuDiagnostics{Permissions: service.FeishuPermissions()}
+		inspectScopes(&d, data)
+		for _, x := range d.Permissions {
+			if x.Scope == service.FeishuReceiptReactionScope && x.Status != c.want {
+				t.Fatalf("want %s got %s for %s", c.want, x.Status, c.raw)
+			}
+		}
+	}
+}

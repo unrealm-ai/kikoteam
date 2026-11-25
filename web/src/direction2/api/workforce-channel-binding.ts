@@ -35,7 +35,7 @@ export function bindingForWorkforce(binding: FeishuBinding, usage?: UsageResourc
     connectionErrorCode: !connected && /^[a-z][a-z0-9_]{0,95}$/.test(applied?.error_code || '') ? applied?.error_code : undefined,
     errorDetail: failed ? channelErrors[applied.error_code || ''] || applied.error_code || '长连接失败' : undefined,
     permissionReady: provider === 'feishu' ? feishuPermissionReadiness(diagnostics) : undefined,
-    businessCapabilities:provider==='feishu' ? groups?.map(group => businessCapability(group,binding.app_id)) : undefined,
+    businessCapabilities:provider==='feishu' ? [...(groups ?? []).map(group => businessCapability(group,binding.app_id)), feishuCardCallbackCapability] : undefined,
     identityConfirmed: binding.identity_confirmed,
     directoryStatus: binding.directory_status,
     dingtalkProactiveSendPermissionMissing: provider === 'dingtalk' && binding.enabled ? binding.dingtalk_proactive_send_permission_missing : undefined,
@@ -61,15 +61,24 @@ export function bindingForWorkforce(binding: FeishuBinding, usage?: UsageResourc
 
 function businessCapability(group:FeishuPermissionGroup, appId:string):ChannelBusinessCapability {
   const states=group.scopeStates||[];
-  const platformAuthStatus=group.status==='granted'?'authorized':group.status==='missing'?(states.some(p=>p.status==='granted')?'partial':'unauthorized'):'unknown';
-  const missing = states.find(p => p.status === 'missing')?.scope;
+  const platformAuthStatus=group.status==='granted'?'authorized':group.status==='missing'?(states.some(p=>p.status==='granted')?'partial':'unauthorized'):group.status==='not_detected'?'not_detected':'unknown';
+  const missing = states.find(p => p.status === 'missing' || p.status === 'not_detected')?.scope;
   const authorizationUrl = feishuAuthorizationUrl(appId, missing);
   return {
     id:group.id,name:group.label,description:group.note||'',platformAuthStatus,
     ...(authorizationUrl ? {authorizationUrl} : {}),
     resourceAccessStatus:'unknown',
     statusDetail:[group.note,'具体资源访问尚未验证，接口授权不代表相关业务工具已接入。',
-      ...states.map(p=>`${p.scope}：${p.status==='granted'?'已授权':p.status==='missing'?'缺失':'未确认'}`)
+      ...states.map(p=>`${p.scope}：${p.status==='granted'?'已授权':p.status==='missing'?'缺失':p.status==='not_detected'?'未检测到授权':'未确认'}`)
     ].filter(Boolean).join('；')
   };
 }
+
+const feishuCardCallbackCapability: ChannelBusinessCapability = {
+  id: 'feishu-card-callback',
+  name: '确认卡按钮回调',
+  description: '可选',
+  platformAuthStatus: 'unknown',
+  resourceAccessStatus: 'unknown',
+  statusDetail: '扫码创建时默认请求 card.action.trigger；KIKO 不自动验证是否已发布。若点按钮无效，请在飞书「事件与回调」检查长连接配置并发布，也可以直接用文字答复。'
+};

@@ -5,13 +5,13 @@ import { setTimeout } from "node:timers/promises";
 const schema = (properties = {}, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 const string = { type: "string" };
 const askName = "ask_human";
-const approvalMode = "审批：decisionRequired=true、questions=[]。同意／拒绝是确认决定，不得作为一道题或一组选项。goal 是给确认人看的简短审批问题（标题），background 单独写背景。";
-const informationMode = "提交表单（收集信息）：decisionRequired=false，questions 至少一道实际问题。选择题用 choice 或 multi_choice 并提供 options，文字或数字填空用 text 或 number。提交表单不能替代审批。";
-function askQuestionModeError({ decisionRequired, questions }, reapprovalOnly) {
-  if (!Array.isArray(questions) || typeof decisionRequired !== "boolean") return approvalMode + (reapprovalOnly ? "" : informationMode);
-  if ((reapprovalOnly && !decisionRequired) || (decisionRequired && questions.length !== 0)) return approvalMode;
-  if (!decisionRequired && questions.length === 0) return informationMode;
-  return "";
+const approvalMode = "审批用 type=approval，不传 questions。同意／拒绝是确认决定，不得作为一道题或一组选项。goal 是给确认人看的简短审批问题（标题），background 单独写背景。";
+const informationMode = "提交表单（收集信息）用 type=form，questions 至少一道实际问题。选择题用 choice 或 multi_choice 并提供 options，文字或数字填空用 text 或 number。提交表单不能替代审批。";
+function askQuestionModeError({ type, questions }, reapprovalOnly) {
+  if (type === "approval") return questions === undefined ? "" : approvalMode;
+  if (reapprovalOnly) return approvalMode;
+  if (type !== "form") return approvalMode + informationMode;
+  return Array.isArray(questions) && questions.length > 0 ? "" : informationMode;
 }
 const workServer = "work_items";
 const workPrefix = "mcp__work_items__";
@@ -90,18 +90,18 @@ export default function humanTools(pi) {
 
   if (mode === "chat") {
     const operationId = { type: "string", pattern: "^[A-Za-z0-9_-]{1,64}$" };
-    register("list_pending_human_confirmations", "分页核对当前用户的待确认单、当前消息的真实片段、可信引用及已送达的澄清焦点。可传完整 ID 或短码精确定位。", schema({
-        requestId: string, page: { type: "integer", minimum: 1 }, pageSize: { type: "integer", minimum: 1, maximum: 50 },
-      }), async (_id, { requestId, page, pageSize }, signal) =>
-        result(await call(config(), "pending", { request_id: requestId, page, pageSize }, signal)));
-    register("submit_human_confirmation", "提交当前消息中明确对应一张确认单的答复。先查询问题。题目不明确就直接追问；若答复不完整或回执返回 explicit_decision_required，提交 needs_more 和 clarificationText，最终回复原样发出追问。approve 或 reject 的 text 只填用户明确提供的说明，没有就省略，不替用户写理由。revise 的 text 填入用户修改意见。每次提交指定当前消息内唯一的 operationId，例如 submit-1；超时用原标识查回执，原样重试沿用，变更内容用新标识。",
+    register("list_pending_human_confirmations", "按创建时间倒序分页查询当前用户的确认单及当前消息证据。不带编号默认查 pending；提供编号但不传 status 时，精确查该单的待确认或已处理状态。明确传 status 时只查指定状态。已处理结果仅供查询。可传完整 ID 或短码精确定位。", schema({
+        requestId: string, status: { enum: ["pending", "resolved"] }, page: { type: "integer", minimum: 1 }, pageSize: { type: "integer", minimum: 1, maximum: 50 },
+      }), async (_id, { requestId, status, page, pageSize }, signal) =>
+        result(await call(config(), "pending", { request_id: requestId, status, page, pageSize }, signal)));
+    register("submit_human_confirmation", "提交当前消息中明确对应一张确认单的答复。先查询问题。每题统一传 values 字符串数组：选择题填选项 ID，单选及填空恰好一项，多选按实际选择传一项或多项。没有小题答案时传 answers: []。题目不明确就直接追问；若答复不完整或回执返回 explicit_decision_required，提交 needs_more 和 clarificationText，最终回复原样发出追问。approve 或 reject 的 text 只填用户明确提供的说明，没有就省略，不替用户写理由。revise 的 text 填入用户修改意见。每次提交指定当前消息内唯一的 operationId，例如 submit-1；超时用原标识查回执，原样重试沿用，变更内容用新标识。",
       schema({ request_id: string, operationId, version: string, questionDigest: string,
         association: { enum: ["current_message", "clarification", "unclear"] },
         decision: { enum: ["approve", "reject", "information", "needs_more", "revise"] },
         text: string, clarificationText: string, evidenceSegmentIds: { type: "array", items: string },
-        answers: { type: "array", items: schema({ questionId: string, value: string, optionIds: { type: "array", minItems: 1, maxItems: 20, uniqueItems: true, items: string } }, ["questionId"]) },
+        answers: { type: "array", maxItems: 12, items: schema({ questionId: string, values: { type: "array", minItems: 1, maxItems: 20, uniqueItems: true, description: "单选和填空恰好一项；选择题传选项 ID，数字填空传数字字符串。", items: { type: "string", minLength: 1, maxLength: 2000 } } }, ["questionId", "values"]) },
       }, ["request_id", "operationId", "version", "questionDigest", "association", "decision", "answers"]),
-      async (_id, { request_id, operationId, ...answer }, signal) => result(await call(config(), "propose", { request_id, operationId, answer }, signal)));
+      async (_id, { request_id, operationId, answers, ...answer }, signal) => result(await call(config(), "propose", { request_id, operationId, answer, modelAnswers: answers }, signal)));
     register("get_human_confirmation_receipt", "提交超时或结果未知时，按当前用户消息内的原提交标识和确认单 ID 查回执。unknown 表示暂未查到，已排队不代表任务完成。",
       schema({ request_id: string, operationId }, ["request_id", "operationId"]),
       async (_id, { request_id, operationId }, signal) => result(await call(config(), "receipt", { request_id, operationId }, signal)));
@@ -204,24 +204,24 @@ export default function humanTools(pi) {
       schema(), async (_id, _args, signal) => result(await call(config(), "recipients", {}, signal)));
   }
   const questionFields = {
-    candidateId: string, rules_version: string, questionScope: string,
-    decisionRequired: { type: "boolean", description: reapproval_only ? approvalMode : approvalMode + informationMode,
-      ...(reapproval_only ? { enum: [true] } : {}) },
+    candidateId: { type: "string", description: "确认职责列表中选定的候选 ID；没有明确匹配时使用有效默认确认人。" },
+    rules_version: { type: "string", description: "与选定候选来自同一次查询的 version。" },
+    type: { type: "string", enum: reapproval_only ? ["approval"] : ["approval", "form"], description: reapproval_only ? approvalMode : approvalMode + informationMode },
     background: { type: "string", description: "独立的背景说明，不用重复审批标题。" },
     goal: { type: "string", description: "审批时填写确认人直接看到的简短问题（标题）；提交表单时填写收集信息的目标。" },
     knownFacts: { type: "array", items: schema({ text: string, evidenceRefs: { type: "array", items: string } }, ["text"]) },
-    questions: { type: "array", description: "审批模式必须为空数组；提交表单至少一道实际问题。", ...(reapproval_only ? { maxItems: 0 } : { maxItems: 12 }), items: schema({
+    ...(!reapproval_only ? { questions: { type: "array", description: "仅提交表单时必填，至少一道实际问题。审批不传。", minItems: 1, maxItems: 12, items: schema({
       id: string, text: string, required: { type: "boolean" }, answerType: { enum: ["text", "choice", "multi_choice", "boolean", "number"] },
       constraints: { type: "array", items: string },
       options: { type: "array", minItems: 1, maxItems: 20, items: schema({ id: string, label: string }, ["id", "label"]) },
-    }, ["id", "text", "required", "answerType"]) },
+    }, ["id", "text", "required", "answerType"]) } } : {}),
     completionCriteria: { type: "array", items: string },
     proposedAction: string, impactScope: string, ifNotConfirmed: string,
   };
   register(askName, reapproval_only
     ? "提交修改后的方案，向已选职责对应的确认人请求明确批准。交代目标、完成标准、拟执行动作和影响范围。" + approvalMode + "单独调用，成功后等待新批准。"
     : "向已选职责对应的确认人提问，每次只选一种模式。" + approvalMode + informationMode + "明确写出拟执行动作和影响范围。单独调用，成功后暂停当前执行段。",
-    schema(questionFields, Object.keys(questionFields)),
+    schema(questionFields, Object.keys(questionFields).filter((name) => name !== "questions")),
     async (_id, question, signal) => {
       const message = askQuestionModeError(question, reapproval_only);
       if (message) {
@@ -229,7 +229,8 @@ export default function humanTools(pi) {
       }
       const credentials = config();
       try {
-        const request = await call(credentials, "request", { question }, signal);
+        const { type, ...internalQuestion } = question;
+        const request = await call(credentials, "request", { question: { ...internalQuestion, decisionRequired: type === "approval" } }, signal);
         gate = true;
         const deadline = Date.now() + 8000;
         do {

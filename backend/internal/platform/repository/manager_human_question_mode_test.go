@@ -21,7 +21,7 @@ func TestAskHumanModeConflictsDoNotFenceAndPureApprovalCanReplay(t *testing.T) {
 	store := sessions.Store.(*managerrepo.Store)
 	rules, err := store.HumanRecipients(ctx, w, owner, agent, &manager.HumanRecipients{Recipients: []manager.HumanRecipient{{
 		Ref:       service.SelectionRef{Provider: "web", Kind: "user", WorkspaceID: w, AgentID: agent, ExternalID: owner},
-		IsDefault: true,
+		IsDefault: true, Scope: "上线",
 	}}})
 	if err != nil {
 		t.Fatal(err)
@@ -62,8 +62,11 @@ func TestAskHumanModeConflictsDoNotFenceAndPureApprovalCanReplay(t *testing.T) {
 		t.Helper()
 		wireQuestion := struct {
 			manager.HumanQuestion
-			Questions []manager.HumanQuestionItem `json:"questions"`
-		}{HumanQuestion: q, Questions: q.Questions}
+			Questions *[]manager.HumanQuestionItem `json:"questions,omitempty"`
+		}{HumanQuestion: q}
+		if q.Questions != nil {
+			wireQuestion.Questions = &q.Questions
+		}
 		wire, e := json.Marshal(map[string]any{"operation": "request", "question": wireQuestion})
 		if e != nil {
 			t.Fatal(e)
@@ -97,19 +100,26 @@ func TestAskHumanModeConflictsDoNotFenceAndPureApprovalCanReplay(t *testing.T) {
 			t.Fatalf("wrong mode conflict response: %d %s", out.Code, out.Body)
 		}
 	}
+	withoutScope := approval
+	withoutScope.QuestionScope, withoutScope.Questions = "", nil
+	stale := withoutScope
+	stale.RulesVersion++
+	if out := submit(stale); out.Code != 409 || !strings.Contains(out.Body.String(), "human_recipient_changed") {
+		t.Fatalf("stale candidate version accepted: %d %s", out.Code, out.Body)
+	}
 	var requests, actions int
 	if err = db.QueryRow(`SELECT (SELECT count(*) FROM manager_human_requests WHERE session_id=$1),
  jsonb_array_length(required_actions) FROM manager_sessions WHERE id=$1`, task.ID).Scan(&requests, &actions); err != nil || requests != 0 || actions != 0 {
 		t.Fatalf("invalid ask changed state: requests=%d actions=%d err=%v", requests, actions, err)
 	}
-	// Send an explicit empty array on the wire, rather than Go's omitempty.
-	// The Manager stores it canonically; retry must return the same request.
+	// The new wire format omits scope; legacy requests can still send it
+	// with an explicit empty array. Both normalize to the same replay.
 	var requestID string
-	for range 2 {
-		out := submit(approval)
+	for _, question := range []manager.HumanQuestion{withoutScope, withoutScope, approval} {
+		out := submit(question)
 		var v manager.HumanRequest
 		if out.Code != 200 || json.Unmarshal(out.Body.Bytes(), &v) != nil || v.State != "preparing" ||
-			len(v.Question.Questions) != 0 || v.Question.AnswerType != "decision" || v.Question.Question != approval.Goal {
+			len(v.Question.Questions) != 0 || v.Question.QuestionScope != "上线" || v.Question.AnswerType != "decision" || v.Question.Question != approval.Goal {
 			t.Fatalf("corrected approval rejected: %d %s", out.Code, out.Body)
 		}
 		if requestID != "" && requestID != v.ID {

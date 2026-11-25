@@ -58,4 +58,6 @@ chat 的后台压缩与仅追加 assistant 而不触发回复属于待评估设�
 
 `input.claimed` 在平台 Claim 事务成功后输出 input/session/turn ID、序号、主体类型及 `consumption_mode=turn|steer`；`queue_wait_ms` 为该输入创建至此次领取的耗时（重新领取时包含此前等待/尝试，不是纯排队性能统计）。此事件只证明平台领取，不证明 Pi 已提交、模型已采用或外发成功；false 上下文合批沿既有 batch_input_id 与触发根关联，不分别制造 Turn。`turn.finished` 仅在终态提交成功后记录并携带根 input_id；steer 的 `input.steer_reconciled` 记录持久回执事实，明确归还队列后另记 `input.requeued`。日志不含消息正文、渠道用户身份或凭据。普通 queue 后续输入由下一次 Claim 记录，重放/未知保持既有执行语义。
 
+`turn.prompt_failed` 记录请求失败时最早已知的本地中止阶段或 Pi 错误类型，可用 session、turn 和 input ID 与投递日志关联；不记录原始错误正文，也不把用户主动停止或正常等待人工确认记为执行故障。
+
 裸 Sandbox 执行内置表格和演示文稿 Skill 时，发布镜像提供 `openpyxl`、pandas、LibreOffice、`markitdown[pptx]`、`pptxgenjs` 和中文字体。直接在宿主机启动 Engine 时，应在其 PATH 上安装相同的 Python 和 LibreOffice 依赖，并将 NODE_PATH 指向运行过 `npm ci` 的 agent-engine/node_modules 绝对路径。

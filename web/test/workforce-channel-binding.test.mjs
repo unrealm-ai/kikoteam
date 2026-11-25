@@ -39,3 +39,16 @@ test('DingTalk proactive-send permission warning comes only from enabled DingTal
   assert.equal(bindingForWorkforce({...ding, enabled: false}, usage).dingtalkProactiveSendPermissionMissing, undefined);
   assert.equal(bindingForWorkforce({...ding, provider: 'wecom'}, usage).dingtalkProactiveSendPermissionMissing, undefined);
 });
+
+test('Feishu card callbacks are informational and do not affect permission readiness', () => {
+  const diagnostics = {ready: true, scope_status: 'pass', permissions: [{required: true, status: 'granted'}]};
+  const feishu = bindingForWorkforce(binding, usage, diagnostics);
+  const card = feishu.businessCapabilities.find(cap => cap.id === 'feishu-card-callback');
+  assert.equal(feishu.permissionReady, true);
+  assert.equal(card.platformAuthStatus, 'unknown');
+  assert.equal(card.description, '可选');
+  assert.match(card.statusDetail, /card\.action\.trigger/);
+  for (const provider of ['dingtalk', 'wecom']) {
+    assert.equal(bindingForWorkforce({...binding, provider}, usage).businessCapabilities, undefined);
+  }
+});

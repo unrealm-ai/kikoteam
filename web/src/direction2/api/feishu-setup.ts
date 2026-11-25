@@ -1,5 +1,5 @@
 import { platformRequest } from './platform';
-export interface FeishuPermission { scope: string; required: boolean; status: 'unknown' | 'granted' | 'missing' }
+export interface FeishuPermission { scope: string; required: boolean; status: 'unknown' | 'granted' | 'missing' | 'not_detected' }
 export interface FeishuDiagnostics {
   checked_at: string; credential_status: string; bot_status: string; directory_status: string; scope_status: string;
   permissions: FeishuPermission[]; ready: boolean; error_code: string; error_detail?: string;

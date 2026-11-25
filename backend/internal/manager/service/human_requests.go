@@ -31,12 +31,16 @@ type HumanRuntimeScope struct {
 }
 
 type HumanListQuery struct {
+	Status    string `json:"status,omitempty"`
 	RequestID string `json:"requestId,omitempty"`
 	Page      *int   `json:"page,omitempty"`
 	PageSize  *int   `json:"pageSize,omitempty"`
 }
 
 func (q HumanListQuery) Pagination() (page, size int, err error) {
+	if q.Status != "" && q.Status != "pending" && q.Status != "resolved" {
+		return 0, 0, Fail("invalid_human_list_status", 400, "状态须为 pending（待确认）或 resolved（已处理）")
+	}
 	page, size = 1, 20
 	if q.Page != nil {
 		page = *q.Page
@@ -88,6 +92,13 @@ type HumanQuestionOption struct {
 	Label string `json:"label"`
 }
 
+// HumanModelAnswerItem is the model-facing form answer. Web and channel callbacks
+// continue to use HumanAnswerItem.
+type HumanModelAnswerItem struct {
+	QuestionID string   `json:"questionId"`
+	Values     []string `json:"values"`
+}
+
 type HumanAnswerItem struct {
 	QuestionID string   `json:"questionId"`
 	Value      string   `json:"value,omitempty"`
@@ -107,13 +118,14 @@ type HumanAnswer struct {
 }
 
 type HumanRequest struct {
-	ID             string        `json:"id"`
-	Version        int64         `json:"version,string"`
-	State          string        `json:"state"`
-	Question       HumanQuestion `json:"question"`
-	Fenced         bool          `json:"fenced,omitempty"`
-	Code           string        `json:"code,omitempty"`
-	QuestionDigest string        `json:"questionDigest,omitempty"`
+	ID               string        `json:"id"`
+	Version          int64         `json:"version,string"`
+	State            string        `json:"state"`
+	Question         HumanQuestion `json:"question"`
+	Fenced           bool          `json:"fenced,omitempty"`
+	Code             string        `json:"code,omitempty"`
+	QuestionDigest   string        `json:"questionDigest,omitempty"`
+	RecordedDecision string        `json:"recordedDecision,omitempty"`
 }
 
 type HumanHistoryQuestion struct {

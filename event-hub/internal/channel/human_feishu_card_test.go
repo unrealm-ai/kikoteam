@@ -1,8 +1,10 @@
 package channel
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -20,7 +22,7 @@ func feishuHumanCardElements(t *testing.T, c map[string]any) []feishuHumanElemen
 	return c["body"].(feishuHumanElement)["elements"].([]feishuHumanElement)
 }
 
-func TestFeishuHumanCardBinaryOptionalNoteAndRawReplacement(t *testing.T) {
+func TestFeishuHumanCardBinaryButtonsOnlyAndRawReplacement(t *testing.T) {
 	const summary = "[系统消息]目标\n背景\n操作范围；原样保留 文本与 **字符**"
 	spec := feishuHumanCardSpec{Token: feishuHumanFixtureToken, Summary: summary, DecisionRequired: true}
 	pending, ok := buildFeishuHumanCard(spec)
@@ -28,20 +30,17 @@ func TestFeishuHumanCardBinaryOptionalNoteAndRawReplacement(t *testing.T) {
 		t.Fatal("pure binary approval must be a native candidate")
 	}
 	elements := feishuHumanCardElements(t, pending)
-	if len(elements) != 2 || elements[0]["text"].(feishuHumanElement)["content"] != summary || elements[1]["tag"] != "form" {
-		t.Fatal("original summary was changed or decision form missing")
-	}
-	fields := elements[1]["elements"].([]feishuHumanElement)
-	if len(fields) != 3 || fields[0]["name"] != "note" || fields[0]["required"] != false {
-		t.Fatal("expected one optional note")
+	if len(elements) != 4 || elements[0]["text"].(feishuHumanElement)["content"] != summary ||
+		elements[1]["text"].(feishuHumanElement)["content"] != feishuHumanReplyHint {
+		t.Fatal("expected the original summary and two standalone buttons")
 	}
 	for i, action := range []string{"approve", "reject"} {
-		button := fields[i+1]
+		button := elements[i+2]
 		behavior := button["behaviors"].([]feishuHumanElement)[0]
 		payload := behavior["value"].(feishuHumanElement)
-		if button["tag"] != "button" || button["form_action_type"] != "submit" || button["name"] != action ||
+		if button["tag"] != "button" || button["form_action_type"] != nil || button["name"] != action ||
 			behavior["type"] != "callback" || payload[feishuHumanCardMarker] != spec.Token || payload["action"] != action {
-			t.Fatal("submit click not bound to exact approval decision and note form")
+			t.Fatal("click not bound to exact approval decision")
 		}
 	}
 	for _, tc := range []struct{ decision, status string }{{"approve", "已同意"}, {"reject", "已拒绝"}, {"information", "已提交"}, {"expired", "已处理"}} {
@@ -57,6 +56,45 @@ func TestFeishuHumanCardBinaryOptionalNoteAndRawReplacement(t *testing.T) {
 		if err != nil || strings.Contains(string(wire), spec.Token) || strings.Contains(string(wire), `"tag":"button"`) || strings.Contains(string(wire), `"tag":"form"`) {
 			t.Fatal("completed replacement retained sensitive marker or live controls", err)
 		}
+	}
+}
+
+func TestFeishuHumanCardFallbackRetainsProviderError(t *testing.T) {
+	const original = "完整审批说明"
+	b := Binding{Provider: "feishu"}
+	d := Delivery{ID: feishuHumanFixtureToken, ChatType: "direct", Text: original,
+		HumanCard: &humanConfirmationCard{Description: original, DecisionRequired: true}}
+	var attempts []string
+	got := sendHumanConfirmationCard(t.Context(), b, d, func(_ context.Context, _ Binding, sent Delivery) deliveryReceipt {
+		attempts = append(attempts, sent.contentFormat())
+		if sent.contentFormat() == "human_confirmation_card" {
+			return feishuMessageRejected(true, "interactive", 230099, http.StatusBadRequest, false)
+		}
+		if sent.Text != original {
+			t.Fatal("text fallback did not preserve the full approval notice")
+		}
+		return deliveryReceipt{Status: "sent"}
+	})
+	if !reflect.DeepEqual(attempts, []string{"human_confirmation_card", "text"}) || got.Status != "sent" ||
+		got.HumanConfirmationCard || got.humanCardFallback != "provider_rejected" || got.providerErrorCode != 230099 {
+		t.Fatalf("fallback lost original failure evidence: %+v, attempts %v", got, attempts)
+	}
+}
+
+func TestFeishuHumanCardUnknownDeliveryDoesNotSendDuplicateText(t *testing.T) {
+	b := Binding{Provider: "feishu"}
+	d := Delivery{ID: feishuHumanFixtureToken, ChatType: "direct", Text: "完整审批说明",
+		HumanCard: &humanConfirmationCard{Description: "完整审批说明", DecisionRequired: true}}
+	var attempts int
+	got := sendHumanConfirmationCard(t.Context(), b, d, func(_ context.Context, _ Binding, sent Delivery) deliveryReceipt {
+		attempts++
+		if sent.contentFormat() != "human_confirmation_card" {
+			t.Fatal("unconfirmed card send may have reached Feishu; don't also send text")
+		}
+		return deliveryReceipt{Status: "unknown"}
+	})
+	if attempts != 1 || got.Status != "unknown" {
+		t.Fatalf("unexpected attempts or outcome: %d %+v", attempts, got)
 	}
 }
 
@@ -90,7 +128,7 @@ func TestFeishuHumanCardAcceptsIndividualAndMixedFormTypes(t *testing.T) {
 		t.Fatal("approval + questions should have valid form")
 	}
 	body := feishuHumanCardElements(t, pending)
-	if len(body) != 3 || body[2]["tag"] != "button" || body[2]["name"] != "reject" || body[2]["form_action_type"] != nil {
+	if len(body) != 4 || body[3]["tag"] != "button" || body[3]["name"] != "reject" || body[3]["form_action_type"] != nil {
 		t.Fatal("reject is blocked behind mandatory approval questions")
 	}
 	spec.Questions = []feishuHumanQuestion{{ID: "choice", Text: "缺选项", AnswerType: "choice"}}
@@ -105,7 +143,11 @@ func feishuAssertQuestionFields(t *testing.T, spec feishuHumanCardSpec, tags []s
 	if !ok {
 		t.Fatal("supported fields unexpectedly refused")
 	}
-	form := feishuHumanCardElements(t, c)[1]
+	body := feishuHumanCardElements(t, c)
+	if body[1]["text"].(feishuHumanElement)["content"] != feishuHumanReplyHint {
+		t.Fatal("form must say how to reply if callbacks are unavailable")
+	}
+	form := body[2]
 	fields := form["elements"].([]feishuHumanElement)
 	if form["tag"] != "form" || len(fields) != len(tags)*2+1 || fields[len(fields)-1]["name"] != "submit" {
 		t.Fatal("expected one native form with submit")
@@ -117,6 +159,9 @@ func feishuAssertQuestionFields(t *testing.T, spec feishuHumanCardSpec, tags []s
 		id, _, valid := feishuHumanFieldID(name)
 		if !valid || id != q.ID || field["tag"] != tag || field["required"] != q.Required || fields[i*2]["text"].(feishuHumanElement)["content"] != q.Text {
 			t.Fatal("question ID/required information/label lost")
+		}
+		if tag == "input" && field["max_length"] != 1000 {
+			t.Fatal("Feishu card input exceeds documented limit")
 		}
 		if len(q.Options) > 0 {
 			choices := field["options"].([]feishuHumanElement)
@@ -170,6 +215,11 @@ func TestFeishuHumanCardCallbackMatchesFrozenQuestionContract(t *testing.T) {
 		t.Fatal("did not preserve authoritative callback scope and typed answer shape")
 	}
 	for _, decision := range []string{"approve", "reject"} {
+		b, e := feishuHumanCallbackFixture(t, decision, nil)
+		r, ok := parseFeishuHumanCardEvent(b, e)
+		if !ok || r.Decision != decision || r.Text != "" || len(r.Answers) != 0 {
+			t.Fatal("standalone decision requires no form values")
+		}
 		for _, note := range []string{"", "仅这一句说明"} {
 			b, e := feishuHumanCallbackFixture(t, decision, map[string]any{"note": note})
 			r, ok := parseFeishuHumanCardEvent(b, e)

@@ -19,6 +19,7 @@ type humanStore interface {
 	HumanTaskTool(context.Context, service.HumanRuntimeScope, string, string, *service.HumanQuestion) (any, error)
 	HumanChatTool(context.Context, service.HumanRuntimeScope, string, string, *service.HumanAnswer) (any, error)
 	HumanChatSubmission(context.Context, service.HumanRuntimeScope, string, string, *service.HumanAnswer) (any, error)
+	HumanChatSubmitValues(context.Context, service.HumanRuntimeScope, string, string, service.HumanAnswer, []service.HumanModelAnswerItem) (any, error)
 }
 
 func (s *Server) humanRoutes(mux *http.ServeMux) {
@@ -132,13 +133,15 @@ func (s *Server) humanTool(r *http.Request) (any, int, error) {
 		return nil, 401, err
 	}
 	var req struct {
-		Operation   string                 `json:"operation"`
-		OperationID string                 `json:"operationId,omitempty"`
-		Page        *int                   `json:"page,omitempty"`
-		PageSize    *int                   `json:"pageSize,omitempty"`
-		RequestID   string                 `json:"request_id,omitempty"`
-		Question    *service.HumanQuestion `json:"question,omitempty"`
-		Answer      *service.HumanAnswer   `json:"answer,omitempty"`
+		Operation    string                         `json:"operation"`
+		OperationID  string                         `json:"operationId,omitempty"`
+		Status       string                         `json:"status,omitempty"`
+		Page         *int                           `json:"page,omitempty"`
+		PageSize     *int                           `json:"pageSize,omitempty"`
+		RequestID    string                         `json:"request_id,omitempty"`
+		Question     *service.HumanQuestion         `json:"question,omitempty"`
+		Answer       *service.HumanAnswer           `json:"answer,omitempty"`
+		ModelAnswers []service.HumanModelAnswerItem `json:"modelAnswers,omitempty"`
 	}
 	if err = decode(r, &req); err != nil {
 		return nil, 400, err
@@ -148,13 +151,18 @@ func (s *Server) humanTool(r *http.Request) (any, int, error) {
 	}
 	store, _ := s.Engines.(humanStore)
 	var out any
+	if req.ModelAnswers != nil && (req.Operation != "propose" || req.OperationID == "" || req.Answer == nil) {
+		return nil, 400, service.Fail("invalid_human_answers", 400, "模型答复需要提交标识和答复")
+	}
 	switch req.Operation {
 	case "recipients", "request", "fenced":
 		out, err = store.HumanTaskTool(r.Context(), scope, req.Operation, req.RequestID, req.Question)
 	case "pending":
-		out, err = store.HumanChatList(r.Context(), scope, service.HumanListQuery{RequestID: req.RequestID, Page: req.Page, PageSize: req.PageSize})
+		out, err = store.HumanChatList(r.Context(), scope, service.HumanListQuery{RequestID: req.RequestID, Status: req.Status, Page: req.Page, PageSize: req.PageSize})
 	case "answer", "propose":
-		if req.OperationID != "" && req.Answer != nil {
+		if req.ModelAnswers != nil {
+			out, err = store.HumanChatSubmitValues(r.Context(), scope, req.RequestID, req.OperationID, *req.Answer, req.ModelAnswers)
+		} else if req.OperationID != "" && req.Answer != nil {
 			out, err = store.HumanChatSubmission(r.Context(), scope, req.RequestID, req.OperationID, req.Answer)
 		} else {
 			out, err = store.HumanChatTool(r.Context(), scope, req.Operation, req.RequestID, req.Answer)

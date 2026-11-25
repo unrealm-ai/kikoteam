@@ -10,7 +10,7 @@ import (
 func (q *HumanQuestion) normalizeStructured() error {
 	invalid := Fail("invalid_human_question", 400, "请填写有效的结构化问题、必答项、完成标准、拟执行动作和影响范围")
 	if !ValidID(q.CandidateID) || q.RecipientID != "" && q.RecipientID != q.CandidateID ||
-		!humanText(strings.TrimSpace(q.QuestionScope), 1000) || q.KnownFacts == nil || len(q.KnownFacts) > 20 ||
+		(q.QuestionScope != "" && !humanText(strings.TrimSpace(q.QuestionScope), 1000)) || q.KnownFacts == nil || len(q.KnownFacts) > 20 ||
 		len(q.Questions) > 12 || len(q.CompletionCriteria) < 1 ||
 		!humanQuestionTexts(q.CompletionCriteria, 16) {
 		return invalid
@@ -98,6 +98,33 @@ func humanQuestionTexts(values []string, maxCount int) bool {
 		}
 	}
 	return true
+}
+
+// ModelAnswers converts the model shape against the exact stored question.
+func (q HumanQuestion) ModelAnswers(items []HumanModelAnswerItem) ([]HumanAnswerItem, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	known := make(map[string]HumanQuestionItem, len(q.Questions))
+	for _, item := range q.Questions {
+		known[item.ID] = item
+	}
+	out := make([]HumanAnswerItem, 0, len(items))
+	for _, answer := range items {
+		item, exists := known[answer.QuestionID]
+		if !exists {
+			return nil, Fail("invalid_human_answers", 400, "答复包含未知的小题，请按原题的 questionId 提交")
+		}
+		switch {
+		case item.AnswerType == "multi_choice" && len(answer.Values) > 0 && len(answer.Values) <= 20:
+			out = append(out, HumanAnswerItem{QuestionID: item.ID, OptionIDs: answer.Values})
+		case item.AnswerType != "multi_choice" && len(answer.Values) == 1:
+			out = append(out, HumanAnswerItem{QuestionID: item.ID, Value: answer.Values[0]})
+		default:
+			return nil, Fail("invalid_human_answer_cardinality", 400, "单选和填空的 values 必须恰好一项；多选请在 values 填入实际选中的选项 ID")
+		}
+	}
+	return out, nil
 }
 
 // Structured answers are mapped to question IDs by the interaction agent or

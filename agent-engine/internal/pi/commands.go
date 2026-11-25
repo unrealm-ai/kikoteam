@@ -126,9 +126,15 @@ func (c *Client) waitPrompt(ctx context.Context, result <-chan commandResult, on
 // completed assistant reply. A platform tool must prove its own boundary.
 var ErrToolBatchSettled = errors.New("pi settled after a terminal tool batch")
 
+var (
+	ErrPromptAborted   = errors.New("pi execution aborted")
+	ErrPromptTruncated = errors.New("pi model output truncated")
+	ErrPromptModel     = errors.New("pi model execution failed")
+)
+
 func promptOutcome(stop string, aborted bool) (string, error) {
 	if aborted || stop == "aborted" {
-		return "cancelled", errors.New("pi execution aborted")
+		return "cancelled", ErrPromptAborted
 	}
 	switch stop {
 	case "stop":
@@ -136,9 +142,9 @@ func promptOutcome(stop string, aborted bool) (string, error) {
 	case "toolUse":
 		return "tool_batch_end", ErrToolBatchSettled
 	case "length":
-		return "max_tokens", errors.New("pi model output truncated")
+		return "max_tokens", ErrPromptTruncated
 	case "error":
-		return "", errors.New("pi model execution failed")
+		return "", ErrPromptModel
 	default:
 		return "", fmt.Errorf("pi settled without a final assistant result (%s)", stop)
 	}

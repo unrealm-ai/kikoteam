@@ -2,7 +2,7 @@
   "chat": [
     {
       "name": "list_pending_human_confirmations",
-      "description": "分页核对当前主私聊用户有权回答的确认单。当前页可能不包含全部待确认。可用 requestId 精确查询，referencedRequests 提供当前消息或可信上下文提及的可答确认单，独立于当前页。返回真实入站片段、可信引用及已送达的澄清焦点。根据当前回复判断归属，禁止按列表顺序猜。",
+      "description": "分页查询当前主私聊用户有权查看的确认单，按创建时间倒序。不带编号默认 pending（待确认）。提供 requestId 且不指定 status 时，跨待确认和已处理状态精确查询这张单；指定状态时只查指定状态。resolved 返回同意、拒绝、提交表单或退回结果，只查询不重新提交。referencedRequests 仍只提供当前消息或可信上下文提及的可答确认单，独立于当前页。返回真实入站片段、可信引用及已送达的澄清焦点。根据当前回复判断归属，禁止按列表顺序猜。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -10,6 +10,11 @@
             "type": "string",
             "maxLength": 36,
             "description": "可用确认单完整 ID 或 H- 短码精确查询。"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "resolved"],
+            "description": "不传编号时默认 pending；传编号且省略此字段时跨状态精确查单。resolved 查询已处理结果。"
           },
           "page": {
             "type": "integer",
@@ -28,7 +33,7 @@
     },
     {
       "name": "submit_human_confirmation",
-      "description": "按当前用户真实消息，为一张确认单提交结构化答复。先查询题目和选项。单选的 value 用选项 ID，多选只传 optionIds；填空的 value 填实际答案。明确同意或拒绝用 decision，不用选项 ID。用 current_message 表示本条已明确指向该题，clarification 表示接续唯一可信引用或实际送达的澄清，unclear 表示不明。题目不明直接询问；题目已知但缺信息、有条件、意思不明确时，提交 needs_more 和 clarificationText，并在最终回复中原样发出该追问。返回 explicit_decision_required 时，登记并发出是否批准的追问。approve 或 reject 的 text 只填用户明确提供的说明，没有就省略，不替用户写理由。revise 的 text 填入用户的修改意见。多个确认单分开提交，可用本条真实片段 ID。为每次提交指定 operationId；超时用原标识查回执，原样重试沿用原标识，变更内容用新标识。按实际回执告知用户结果。",
+      "description": "按当前用户真实消息，为一张确认单提交结构化答复。先查询题目和选项。每题统一传 values 字符串数组：选择题填选项 ID，单选及填空恰好一项，多选按实际选择传一项或多项。没有小题答案时传 answers: []。明确同意或拒绝用 decision，不用选项 ID。用 current_message 表示本条已明确指向该题，clarification 表示接续唯一可信引用或实际送达的澄清，unclear 表示不明。题目不明直接询问；题目已知但缺信息、有条件、意思不明确时，提交 needs_more 和 clarificationText，并在最终回复中原样发出该追问。返回 explicit_decision_required 时，登记并发出是否批准的追问。approve 或 reject 的 text 只填用户明确提供的说明，没有就省略，不替用户写理由。revise 的 text 填入用户的修改意见。多个确认单分开提交，可用本条真实片段 ID。为每次提交指定 operationId；超时用原标识查回执，原样重试沿用原标识，变更内容用新标识。按实际回执告知用户结果。",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -94,17 +99,13 @@
                 "questionId": {
                   "type": "string"
                 },
-                "value": {
-                  "type": "string",
-                  "maxLength": 2000
-                },
-                "optionIds": {
+                "values": {
                   "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true,
-                  "items": {"type": "string"}
+                  "description": "单选和填空恰好一项；选择题传选项 ID，数字填空传数字字符串。",
+                  "items": {"type": "string", "minLength": 1, "maxLength": 2000}
                 }
               },
-              "required": ["questionId"],
-              "oneOf": [{"required": ["value"]}, {"required": ["optionIds"]}]
+              "required": ["questionId", "values"]
             }
           }
         },

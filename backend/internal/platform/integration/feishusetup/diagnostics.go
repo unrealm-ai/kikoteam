@@ -107,8 +107,10 @@ func (c *Client) probeDirectory(ctx context.Context, token string, d *service.Fe
 
 func inspectScopes(d *service.FeishuDiagnostics, m map[string]json.RawMessage) {
 	var more bool
-	if json.Unmarshal(m["has_more"], &more) == nil && more {
-		return
+	if raw, exists := m["has_more"]; exists {
+		if json.Unmarshal(raw, &more) != nil || more {
+			return
+		}
 	}
 	var rows []struct {
 		Scope    string `json:"scope_name"`
@@ -119,8 +121,12 @@ func inspectScopes(d *service.FeishuDiagnostics, m map[string]json.RawMessage) {
 		return
 	}
 	seen := map[string]string{}
+	uncertainIdentity := map[string]bool{}
 	for _, r := range rows {
 		if r.Identity != "tenant" {
+			if r.Identity != "user" {
+				uncertainIdentity[r.Scope] = true
+			}
 			continue
 		}
 		state := "unknown"
@@ -145,6 +151,11 @@ func inspectScopes(d *service.FeishuDiagnostics, m map[string]json.RawMessage) {
 	for n := range d.Permissions {
 		if state, ok := seen[d.Permissions[n].Scope]; ok {
 			d.Permissions[n].Status = state
+		} else if d.Permissions[n].Scope == service.FeishuReceiptReactionScope &&
+			!uncertainIdentity[service.FeishuReceiptReactionScope] && !uncertainIdentity["im:message"] && seen["im:message"] != "unknown" {
+			// An untyped candidate may be an app grant; absence from a known
+			// tenant-only map is not proof when its identity is inconclusive.
+			d.Permissions[n].Status = "not_detected"
 		}
 	}
 }

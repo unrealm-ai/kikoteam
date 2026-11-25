@@ -354,9 +354,9 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 	if promptStopped(latest, turn) {
 		return "canceled", "", ""
 	}
-	promptCtx, cancel := context.WithCancel(ctx)
+	promptCtx, cancel := context.WithCancelCause(ctx)
 	executionDeadline := time.Now().Add(10 * time.Minute)
-	defer cancel()
+	defer cancel(nil)
 	if err = pi.ClearActiveReceipt(w.nativeDirectory(work)); err != nil {
 		return "failed", "context_receipt_unavailable", ""
 	}
@@ -387,7 +387,7 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 			request, e := openConfirmation(promptCtx, w.Store, work, turn.ID, update)
 			if e != nil {
 				confirmErr = e
-				cancel()
+				cancel(promptFailure("confirmation_open", e))
 				continue
 			}
 			pending[request.action.RequestID] = request
@@ -399,6 +399,9 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 				return w.finishHumanRequest(ctx, writer, client, runner, boundary.id, boundaryError(err, confirmErr))
 			}
 			status, code, summary := w.finishPrompt(ctx, writer, client, steeringState, len(pending) > 0, parked, stopped, err, confirmErr)
+			if status == "failed" {
+				w.logPromptFailure(ctx, work, turn, context.Cause(promptCtx), errors.Join(err, confirmErr, writer.err))
+			}
 			if turn.Input.CorrectionOnly && status == "completed" {
 				return "failed", "human_reapproval_required", summary
 			}
@@ -406,7 +409,7 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 		case <-check.C:
 			latest, err := w.Store.Refresh(ctx, work.Assignment)
 			if err != nil {
-				cancel()
+				cancel(promptFailure("assignment_refresh", err))
 				if errors.Is(err, repository.ErrStale) {
 					stopped = true
 				}
@@ -414,7 +417,7 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 			}
 			if promptStopped(latest, turn) {
 				stopped = true
-				cancel()
+				cancel(nil)
 			}
 			if stopped || promptCtx.Err() != nil {
 				continue
@@ -422,13 +425,13 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 			switch {
 			case boundary.id != "":
 				if time.Now().After(executionDeadline) {
-					cancel()
+					cancel(promptFailure("execution_deadline", context.DeadlineExceeded))
 				}
 			case len(pending) > 0:
 				var retire bool
 				retire, confirmErr = w.checkConfirmations(promptCtx, latest, turn, client, runner, pending)
 				if confirmErr != nil {
-					cancel()
+					cancel(promptFailure("confirmation_poll", confirmErr))
 					continue
 				}
 				executionDeadline = time.Now().Add(10 * time.Minute)
@@ -439,26 +442,26 @@ func (w *Worker) prompt(ctx context.Context, work repository.Work, turn reposito
 						confirmErr = client.Close()
 					}
 					parked = confirmErr == nil
-					cancel()
+					cancel(promptFailure("confirmation_park", confirmErr))
 				}
 			default:
 				if humanReplyEnabled && time.Now().After(executionDeadline) {
-					cancel()
+					cancel(promptFailure("execution_deadline", context.DeadlineExceeded))
 					continue
 				}
 				boundary, confirmErr = w.fenceBoundary(promptCtx, latest, turn, client, steeringState, humanEnabled, workEnabled)
 				if confirmErr != nil {
-					cancel()
+					cancel(promptFailure("boundary_poll", confirmErr))
 					continue
 				}
 				if boundary.id == "" && !humanReplyEnabled {
 					if steerErr := w.steerOrExpire(promptCtx, latest, turn, client, &steeringState, executionDeadline); steerErr != nil {
-						cancel()
+						cancel(promptFailure("steering", steerErr))
 					}
 				}
 			}
 		case <-ctx.Done():
-			cancel()
+			cancel(nil)
 		}
 	}
 }
@@ -498,6 +501,9 @@ func (w *Worker) finishPrompt(ctx context.Context, writer *eventWriter, client *
 	steerErr := w.finishSteering(finishCtx, writer.work, writer.turn, client, steeringState, stopped || err != nil)
 	finishCancel()
 	if steerErr != nil {
+		if err == nil {
+			w.logPromptFailure(ctx, writer.work, writer.turn, promptFailure("steering_cleanup", steerErr), nil)
+		}
 		err = errors.Join(err, steerErr)
 	}
 	status, code := "completed", ""
@@ -524,7 +530,7 @@ func (w *Worker) finishPrompt(ctx context.Context, writer *eventWriter, client *
 
 var errWorkMCPUnavailable = errors.New("[kiko_work_mcp_unavailable]")
 
-func (w *Worker) readPrompt(ctx, promptCtx context.Context, cancel context.CancelFunc, writer *eventWriter, client *pi.Client, promptText string, requests chan<- pi.Update) error {
+func (w *Worker) readPrompt(ctx, promptCtx context.Context, cancel context.CancelCauseFunc, writer *eventWriter, client *pi.Client, promptText string, requests chan<- pi.Update) error {
 	var setupErr error
 	_, err := client.Prompt(promptCtx, promptText, func(u pi.Update) {
 		if u["type"] == "extension_error" && u["event"] == "before_agent_start" && u["error"] == errWorkMCPUnavailable.Error() {
@@ -543,13 +549,13 @@ func (w *Worker) readPrompt(ctx, promptCtx context.Context, cancel context.Cance
 				native := client.SessionID()
 				evidenceWork.NativeSessionID = &native
 				if _, receiptErr := w.reconcileContextReceipts(ctx, evidenceWork, 0); receiptErr != nil {
-					cancel()
+					cancel(promptFailure("input_receipt", receiptErr))
 				}
 			}
 		}
 		writer.update(u)
 		if writer.err != nil {
-			cancel()
+			cancel(promptFailure("event_persistence", writer.err))
 		}
 	})
 	return errors.Join(err, setupErr)

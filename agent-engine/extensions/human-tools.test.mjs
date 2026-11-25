@@ -121,10 +121,13 @@ test("ask_human rejects a duplicate approval choice without fencing and accepts 
     const hooks = new Map();
     registerHumanTools({ on(name, handler) { hooks.set(name, handler); }, registerTool(tool) { tools.set(tool.name, tool); } });
     const tool = tools.get("ask_human");
-    assert.ok(tool.parameters.required.includes("decisionRequired"));
-    assert.ok(tool.parameters.required.includes("questions"));
+    assert.ok(tool.parameters.required.includes("type"));
+    assert.ok(!tool.parameters.required.includes("questions"));
+    assert.deepEqual(tool.parameters.properties.type.enum, ["approval", "form"]);
+    assert.equal(tool.parameters.properties.decisionRequired, undefined);
+    assert.equal(tool.parameters.properties.questionScope, undefined);
     assert.match(tool.description, /同意／拒绝是确认决定，不得作为一道题/);
-    assert.match(tool.description, /decisionRequired=false，questions 至少一道/);
+    assert.match(tool.description, /type=form，questions 至少一道/);
     assert.match(tool.parameters.properties.goal.description, /简短问题（标题）/);
     assert.match(tool.parameters.properties.background.description, /独立的背景说明/);
     const calls = [];
@@ -136,21 +139,93 @@ test("ask_human rejects a duplicate approval choice without fencing and accepts 
     const questions = [{id: "approve", text: "是否批准", required: true, answerType: "choice", options: [
       {id: "approve", label: "同意"}, {id: "reject", label: "拒绝"},
     ]}];
-    const mixed = await tool.execute("", { decisionRequired: true, questions });
+    const mixed = await tool.execute("", { type: "approval", questions });
     assert.equal(mixed.isError, true);
     assert.equal(mixed.terminate, undefined);
-    assert.match(JSON.parse(mixed.content[0].text).message, /questions=\[\]/);
-    const emptyInformation = await tool.execute("", { decisionRequired: false, questions: [] });
+    assert.match(JSON.parse(mixed.content[0].text).message, /不传 questions/);
+    const emptyInformation = await tool.execute("", { type: "form", questions: [] });
     assert.equal(emptyInformation.isError, true);
     assert.match(JSON.parse(emptyInformation.content[0].text).message, /至少一道/);
     assert.deepEqual(calls, []);
     assert.equal(await hooks.get("before_provider_request")({}, { abort() { assert.fail("invalid answer closed the gate"); } }), undefined);
-    const corrected = await tool.execute("", { decisionRequired: true, questions: [] });
+    const corrected = await tool.execute("", { type: "approval" });
     assert.equal(corrected.terminate, true);
     assert.deepEqual(calls, [
-      { operation: "request", question: { decisionRequired: true, questions: [] } },
+      { operation: "request", question: { decisionRequired: true } },
       { operation: "fenced", request_id: "demo" },
     ]);
+  } finally {
+    globalThis.fetch = priorFetch;
+    if (prior === undefined) delete process.env.KIKO_HUMAN_TOOLS_CONFIG;
+    else process.env.KIKO_HUMAN_TOOLS_CONFIG = prior;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("ask_human translates a form and disallows forms during reapproval", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kiko-human-form-"));
+  const path = join(dir, "config.json");
+  const prior = process.env.KIKO_HUMAN_TOOLS_CONFIG;
+  const priorFetch = globalThis.fetch;
+  process.env.KIKO_HUMAN_TOOLS_CONFIG = path;
+  try {
+    const config = { mode: "task", token: "test-only", input: "fixture", url: "https://example.test/human" };
+    const ask = (flags) => {
+      writeFileSync(path, JSON.stringify({ ...config, ...flags }), { mode: 0o600 });
+      const tools = new Map();
+      registerHumanTools({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
+      return tools.get("ask_human");
+    };
+    const calls = [];
+    globalThis.fetch = async (_url, request) => {
+      const body = JSON.parse(request.body);
+      calls.push(body);
+      return Response.json(body.operation === "request" ? { id: "demo" } : { fenced: true });
+    };
+    const form = { type: "form", candidateId: "recipient", rules_version: "3",
+      questions: [{ id: "slot", text: "几点？", required: true, answerType: "number" }] };
+    const reapproval = ask({ reapproval_only: true });
+    assert.deepEqual(reapproval.parameters.properties.type.enum, ["approval"]);
+    assert.equal(reapproval.parameters.properties.questions, undefined);
+    assert.equal((await reapproval.execute("", form)).isError, true);
+    assert.deepEqual(calls, []);
+    const approval = ask({});
+    assert.equal((await approval.execute("", form)).terminate, true);
+    const { type: _type, ...expected } = form;
+    assert.deepEqual(calls, [
+      { operation: "request", question: { ...expected, decisionRequired: false } },
+      { operation: "fenced", request_id: "demo" },
+    ]);
+  } finally {
+    globalThis.fetch = priorFetch;
+    if (prior === undefined) delete process.env.KIKO_HUMAN_TOOLS_CONFIG;
+    else process.env.KIKO_HUMAN_TOOLS_CONFIG = prior;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("legacy chat exposes the same model values and forwards them for Manager validation", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kiko-human-values-"));
+  const path = join(dir, "config.json");
+  const prior = process.env.KIKO_HUMAN_TOOLS_CONFIG;
+  const priorFetch = globalThis.fetch;
+  process.env.KIKO_HUMAN_TOOLS_CONFIG = path;
+  try {
+    writeFileSync(path, JSON.stringify({ mode: "chat", token: "test-only", input: "fixture", url: "https://example.test/human" }), { mode: 0o600 });
+    const tools = new Map();
+    registerHumanTools({ registerTool(tool) { tools.set(tool.name, tool); } });
+    const tool = tools.get("submit_human_confirmation");
+    const contract = JSON.parse(readFileSync(new URL("../../backend/contracts/humanconfirmation/tools.json", import.meta.url), "utf8"));
+    const published = contract.chat.find(({ name }) => name === tool.name).inputSchema.properties.answers;
+    assert.deepEqual(tool.parameters.properties.answers, published);
+    const modelAnswers = [{ questionId: "time_slot", values: ["1"] }, { questionId: "locations", values: ["east", "west"] }];
+    const answer = { decision: "information", version: "1", association: "current_message", questionDigest: "a".repeat(64) };
+    globalThis.fetch = async (_url, request) => {
+      assert.deepEqual(JSON.parse(request.body), { operation: "propose", request_id: "fixture", operationId: "submit-1", answer, modelAnswers });
+      return Response.json({ state: "approved" });
+    };
+    const result = await tool.execute("", { request_id: "fixture", operationId: "submit-1", ...answer, answers: modelAnswers });
+    assert.equal(JSON.parse(result.content[0].text).state, "approved");
   } finally {
     globalThis.fetch = priorFetch;
     if (prior === undefined) delete process.env.KIKO_HUMAN_TOOLS_CONFIG;

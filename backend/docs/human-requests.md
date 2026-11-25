@@ -4,10 +4,10 @@
 
 ## 执行与回执
 
-- 执行 Agent 调用 `list_human_confirmation_scopes`，按负责范围选择候选。工具返回 `candidateId`、`questionScope` 和配置版本，默认确认人单列。没有可明确匹配的候选时使用有效默认人；默认人为空时报告缺少确认人。Agent 在 `ask_human` 一并提交候选 ID、版本、背景、目标、已知事实、小题及必答项、完成标准、拟执行动作、影响范围和未确认时的处理方式。每份新请求必须二选一：审批用 `decisionRequired=true` 和 `questions=[]`，用 `goal` 写给确认人看的简短审批问题（标题），`background` 单独写背景，并说明拟执行动作和影响范围；同意／拒绝不是一道题。提交表单（收集信息）用 `decisionRequired=false` 并至少提供一道实际问题，不能替代明确审批。模式冲突可在同一轮修正重试，不创建确认单、不挂起任务。历史确认单的答复方式不变。Manager 根据候选 ID 解析、复验收件人并投递。
+- 执行 Agent 调用 `list_human_confirmation_scopes`，按负责范围选择候选。工具返回 `candidateId`、`questionScope` 和配置版本，默认确认人单列。没有可明确匹配的候选时使用有效默认人；默认人为空时报告缺少确认人。Agent 在 `ask_human` 提交候选 ID、规则版本、背景、目标、已知事实、完成标准、拟执行动作、影响范围和未确认时的处理方式。Manager 按所选候选和版本取负责范围，模型不传 `questionScope`。每份新请求必须二选一：审批用 `type: "approval"`，不传 `questions`，用 `goal` 写给确认人看的简短审批问题（标题），`background` 单独写背景，并说明拟执行动作和影响范围；同意／拒绝不是一道题。提交表单（收集信息）用 `type: "form"`，并在 `questions` 中至少提供一道实际问题，不能替代明确审批。模式冲突可在同一轮修正重试，不创建确认单、不挂起任务。历史确认单的答复方式不变。Manager 根据候选 ID 解析、复验收件人并投递。
 - Pi 公开扩展钩子在整批包含 `ask_human` 时阻断同批其他工具。Manager 在登记请求的事务里关闭 Session 的普通输入领取入口。Engine 核对并清空原生排队消息，将明确未被消费的引导退回平台队列，再提交门禁回执。工具收到回执后返回 Pi 原生的 `terminate: true`。
 - Engine 核对 Pi 已 settle、成功工具结果与请求相关联，退出 Pi 并核对 Runner 已停稳和远程调用已结算。它在旧 Turn 的终态事务里发布待答复状态。无法证明停稳的请求显示待核对。
-- Web、飞书、钉钉和企微的员工主私聊通过 MCP 提供 `list_pending_human_confirmations` 和 `submit_human_confirmation`。待确认工具支持 `page` 和 `pageSize`（默认第 1 页、每页 20 条，最多 50 条），可用 `requestId` 按完整 ID 或短码精确查询。每页都返回当前真实消息、可信引用和已送达的澄清焦点，`referencedRequests` 提供当前消息和可信上下文在本页之外提到的可答确认单。主私聊 Agent 用这些信息判断答复归属与语义。已定位但语义或答案缺失时可用 `needs_more` 登记追问。Manager 校验发出的追问后提供可信焦点。
+- Web、飞书、钉钉和企微的员工主私聊通过 MCP 提供 `list_pending_human_confirmations` 和 `submit_human_confirmation`。待确认工具支持 `page` 和 `pageSize`（默认第 1 页、每页 20 条，最多 50 条），可用 `requestId` 按完整 ID 或短码精确查询；只传编号时在待确认和已处理状态中查这一单，显式传 `status` 则只查指定状态。每页都返回当前真实消息、可信引用和已送达的澄清焦点，`referencedRequests` 提供当前消息和可信上下文在本页之外提到的可答确认单。主私聊 Agent 用这些信息判断答复归属与语义。已定位但语义或答案缺失时可用 `needs_more` 登记追问。Manager 校验发出的追问后提供可信焦点。
 - 已指派的人失去普通使用权后，仍可在 Web 工作区表单答复，或在外部渠道使用确认专用轮次。专用轮次只挂确认工具。Web 表单可提交结构化逐项答案，也支持历史确认单的文本答复。
 - 确认人须保持活跃的工作区身份或当前渠道身份，并且仍在原确认规则中。受限渠道答复记录原始入站回执，待确认正文在出站前重新核对问题有效性、确认人和连接身份。原任务继续时复验确认人身份及原输入授权。
 - 需要批准的单收到完整信息但缺明确批准时，Manager 返回 `needs_more` 和 `explicit_decision_required`，Agent 登记并发出追问。私聊提交的 `operationId` 在当前真实用户 Input 内唯一，同标识、同内容可重试。提交超时后，`get_human_confirmation_receipt` 用原确认单 ID 和原标识查询。回执区分 `needs_more`、`not_recorded`、已记录的决定和 `unknown`；有续跑时还返回 Input 的实际状态。Web 表单的答复冲突返回 409。

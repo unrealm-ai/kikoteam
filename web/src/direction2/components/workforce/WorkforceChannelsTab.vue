@@ -1667,7 +1667,7 @@ defineExpose({ resetQrState, stopQrTimers });
                   <td><strong>{{ cap.name }}</strong></td>
                   <td>
                     <NTag size="tiny" :type="cap.platformAuthStatus === 'authorized' ? 'success' : cap.platformAuthStatus === 'partial' ? 'warning' : 'default'">
-                      {{ cap.platformAuthStatus === 'authorized' ? '已授权' : cap.platformAuthStatus === 'partial' ? '部分授权' : cap.platformAuthStatus === 'unauthorized' ? '未授权' : '状态未知' }}
+                      {{ cap.platformAuthStatus === 'authorized' ? '已授权' : cap.platformAuthStatus === 'partial' ? '部分授权' : cap.platformAuthStatus === 'unauthorized' ? '未授权' : cap.platformAuthStatus === 'not_detected' ? '未检测到授权' : '状态未知' }}
                     </NTag>
                   </td>
                   <td>
@@ -1677,6 +1677,8 @@ defineExpose({ resetQrState, stopQrTimers });
                   </td>
                   <td class="cap-detail-cell">
                     <span>{{ cap.statusDetail }}</span>
+                    <a v-if="realPlatform && cap.id === 'feishu-card-callback'" href="https://open.feishu.cn/document/event-subscription-guide/callback-subscription/add-callback"
+                      target="_blank" rel="noopener noreferrer">飞书配置说明 ↗</a>
                     <a v-if="realPlatform && canManage !== false && cap.authorizationUrl" :href="cap.authorizationUrl"
                       target="_blank" rel="noopener noreferrer">去飞书补授权 ↗</a>
                   </td>

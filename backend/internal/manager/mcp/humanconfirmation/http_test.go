@@ -14,8 +14,11 @@ import (
 )
 
 type humanMCPStore struct {
-	calls []string
-	scope service.HumanRuntimeScope
+	calls  []string
+	scope  service.HumanRuntimeScope
+	query  service.HumanListQuery
+	values []service.HumanModelAnswerItem
+	answer service.HumanAnswer
 }
 
 func (s *humanMCPStore) check(name string, scope service.HumanRuntimeScope) (any, error) {
@@ -24,7 +27,8 @@ func (s *humanMCPStore) check(name string, scope service.HumanRuntimeScope) (any
 	return map[string]bool{"called": true}, nil
 }
 
-func (s *humanMCPStore) HumanChatList(_ context.Context, scope service.HumanRuntimeScope, _ service.HumanListQuery) (any, error) {
+func (s *humanMCPStore) HumanChatList(_ context.Context, scope service.HumanRuntimeScope, args service.HumanListQuery) (any, error) {
+	s.query = args
 	return s.check("list", scope)
 }
 
@@ -36,6 +40,12 @@ func (s *humanMCPStore) HumanChatSubmission(_ context.Context, scope service.Hum
 	if answer == nil {
 		return s.check("receipt", scope)
 	}
+	return s.check("submit", scope)
+}
+
+func (s *humanMCPStore) HumanChatSubmitValues(_ context.Context, scope service.HumanRuntimeScope, _, _ string, answer service.HumanAnswer, values []service.HumanModelAnswerItem) (any, error) {
+	s.values = values
+	s.answer = answer
 	return s.check("submit", scope)
 }
 
@@ -212,5 +222,35 @@ func TestStableHumanMCPCatalogRejectsDuplicateAuthorization(t *testing.T) {
 	f.mux.ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized || len(f.store.calls) != 0 {
 		t.Fatal("ambiguous Authorization should not gain any human tool authority")
+	}
+}
+
+func TestHumanMCPPagedResolvedList(t *testing.T) {
+	f := newHumanMCPFixture(t)
+	const payload = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_pending_human_confirmations","arguments":{"status":"resolved","requestId":"H-123456789ABC","page":2,"pageSize":1}}}`
+	response := f.request(chatMCP, payload, f.authHeaders(f.chatAuth))
+	q := f.store.query
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"called":true`) ||
+		q.Status != "resolved" || q.RequestID != "H-123456789ABC" || q.Page == nil || *q.Page != 2 || q.PageSize == nil || *q.PageSize != 1 {
+		t.Fatalf("resolved filter and pagination were not forwarded: %s, %+v", response.Body, q)
+	}
+}
+
+func TestModelSubmitUsesOnlyValues(t *testing.T) {
+	f := newHumanMCPFixture(t)
+	args := fmt.Sprintf(`"request_id":%q,"operationId":"submit-1","version":"1","decision":"information","questionDigest":%q,"association":"current_message"`, service.NewID(), strings.Repeat("a", 64))
+	call := func(answer string) string {
+		payload := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"submit_human_confirmation","arguments":{%s,"answers":[%s]}}}`, args, answer)
+		return f.request(chatMCP, payload, f.authHeaders(f.chatAuth)).Body.String()
+	}
+	if body := call(`{"questionId":"time_slot","values":["1"]}`); !strings.Contains(body, `"called":true`) ||
+		!reflect.DeepEqual(f.store.values, []service.HumanModelAnswerItem{{QuestionID: "time_slot", Values: []string{"1"}}}) ||
+		len(f.store.answer.Answers) != 0 {
+		t.Fatal("values did not reach the model submission path", body, f.store.values)
+	}
+	for _, invalid := range []string{`{"questionId":"time_slot","value":"1"}`, `{"questionId":"time_slot","optionIds":["1"]}`, `{"questionId":"time_slot","values":[]}`} {
+		if body := call(invalid); len(f.store.calls) != 1 || strings.Contains(body, `"called":true`) {
+			t.Fatal("invalid answer reached Manager", body)
+		}
 	}
 }

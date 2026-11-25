@@ -5,7 +5,7 @@
 
 ## 业务契约
 
-- 同意／拒绝：decisionRequired=true，questions 可为空。用目标、背景、拟执行动作和影响范围描述，决定是 approve/reject，不是题目选项。
+- 同意／拒绝：decisionRequired=true，questions 必须为空数组。用目标、背景、拟执行动作和影响范围描述，决定是 approve/reject，不是题目选项。
 - 提交：decisionRequired=false。单选、多选、文字和数字题可以各自单独出现，也可以混搭，每题独立标记必答。choice 和 multi_choice 传选项 ID、显示文案；文字、数字直接传实际值。老式顶层文字答案仍走 text，结构化文字题继续用对应 questionId 和 value，原有逐项回复机制保持。通知要明确要求回复什么，不把已发送当作已答复。
 - ask_human 不指定渠道或渲染。list_pending_human_confirmations 返回当前用户有权回答的确认单、版本、题目、选项 ID 和文案。文字答复从列表匹配，歧义时澄清；保留飞书可信引用的渠道消息 ID。
 - 卡片与文字归一到同一事务，单选用 value，多选用 optionIds，拒绝或同意用独立 decision。同一确认单版本只能接受首次有效答复，不重复续跑。卡片回调单独核验真实点击人、原投递和版本，不把它冒充一条用户聊天消息。

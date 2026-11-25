@@ -54,6 +54,10 @@ func verifyHumanNotice(t *testing.T, db *sql.DB, store *managerrepo.Store, ref s
 		v.ProviderRequestID = "ack-123"
 		v.ProviderSessionID = "socket-123"
 		if d.HumanCard != nil && d.HumanCard.DecisionRequired && len(d.HumanCard.Questions) == 0 {
+			if d.HumanCard.Compact == nil || d.HumanCard.Compact.Reference != manager.HumanShortCode(request, 1) || d.HumanCard.Compact.Body == "" ||
+				strings.Contains(d.HumanCard.Compact.Body, "请直接回复") || !strings.Contains(d.Text, "请直接回复") {
+				t.Fatalf("expected independent native and full text payloads: %+v", d.HumanCard.Compact)
+			}
 			v.HumanConfirmationCard = true
 			v.ProviderRequestID = d.ID
 		}

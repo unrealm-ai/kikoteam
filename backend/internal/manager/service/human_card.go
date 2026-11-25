@@ -23,4 +23,12 @@ type HumanConfirmationCard struct {
 	Description      string              `json:"description"`
 	DecisionRequired bool                `json:"decision_required"`
 	Questions        []HumanQuestionItem `json:"questions,omitempty"`
+	Compact          *HumanCardCompact   `json:"compact,omitempty"`
+}
+
+// HumanCardCompact is the complete display context without SMS-style
+// directions or duplication of the native title, choices and actions.
+type HumanCardCompact struct {
+	Reference string `json:"reference"`
+	Body      string `json:"body"`
 }

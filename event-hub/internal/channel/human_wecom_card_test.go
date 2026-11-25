@@ -1,7 +1,9 @@
 package channel
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -83,7 +85,7 @@ func TestRenderWecomHumanCardDeclinesWholeUnsupportedCard(t *testing.T) {
 		{name: "placeholder collision", title: badOption.Text, q: []humanConfirmationQuestion{badOption}},
 		{name: "oversize option label", title: choice.Text, q: []humanConfirmationQuestion{longOption}},
 		{name: "oversize dropdown title", title: choice.Text, q: []humanConfirmationQuestion{choice, longQuestion}},
-		{name: "long approval details", title: "审批", decision: true, description: strings.Repeat("长", 113)},
+		{name: "long approval details", title: "审批", decision: true, description: strings.Repeat("长", 161)},
 		{name: "long choice details", title: choice.Text, description: strings.Repeat("长", 31), q: []humanConfirmationQuestion{choice}},
 		{name: "not visible question", title: "请选择", description: "无法看到题目", q: []humanConfirmationQuestion{choice}},
 	}
@@ -247,5 +249,119 @@ func TestWecomOldRejectButtonRefreshesTheRecordedApproval(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no update sent for the original confirmation")
+	}
+}
+
+func TestWecomConfirmationDeliveryUsesCompactBodyAndOriginalTextFallback(t *testing.T) {
+	const id = "a0000000-0000-4000-8000-000000000001"
+	const reference = "H-123456789ABC"
+	fullText := strings.Repeat("文", 296)
+	background := strings.Repeat("景", 99)
+	binding := Binding{Provider: "wecom"}
+	for _, mode := range []string{"approval", "choice", "no_extra_context", "approval_160", "approval_161", "choice_160", "choice_161", "text_field", "number_field"} {
+		t.Run(mode, func(t *testing.T) {
+			card := &humanConfirmationCard{Title: "是否同意采用演练方案？", Description: fullText, DecisionRequired: true,
+				Compact: &humanCardCompact{Reference: reference, Body: background}}
+			wantCard := true
+			switch mode {
+			case "choice":
+				card.DecisionRequired = false
+				card.Questions = []humanConfirmationQuestion{wecomHumanChoice("environment", "choice")}
+				card.Compact.Body = "发布环境\n第 1 题：必答"
+			case "no_extra_context":
+				card.Compact.Body = ""
+			case "approval_160", "approval_161", "choice_160", "choice_161":
+				size := 160
+				if strings.HasSuffix(mode, "_161") {
+					size = 161
+					wantCard = false
+				}
+				prefix := ""
+				if strings.HasPrefix(mode, "choice_") {
+					card.DecisionRequired = false
+					card.Questions = []humanConfirmationQuestion{wecomHumanChoice("environment", "choice")}
+					prefix = "发布环境\n"
+				}
+				const marker = "【末尾可见】"
+				card.Compact.Body = prefix + strings.Repeat("景", size-len([]rune(prefix+marker))) + marker
+			case "text_field", "number_field":
+				card.DecisionRequired = false
+				card.Questions = []humanConfirmationQuestion{wecomHumanChoice("environment", "choice"), {ID: "other", Text: "请提供值", AnswerType: strings.TrimSuffix(mode, "_field")}}
+				wantCard = false
+			}
+			original := Delivery{ID: id, ChatType: "direct", Format: "text", Text: fullText, HumanCard: card}
+			calls := 0
+			result := sendHumanConfirmationCard(t.Context(), binding, original, func(_ context.Context, _ Binding, d Delivery) deliveryReceipt {
+				calls++
+				if d.Text != fullText || (d.Format == "human_confirmation_card") != wantCard {
+					t.Errorf("expected native=%v without changing fallback text, got %s", wantCard, d.Format)
+				}
+				if wantCard {
+					title := d.humanCardContent["main_title"].(map[string]string)
+					if title["desc"] != reference || title["title"] != card.Title || d.humanCardContent["task_id"] != id {
+						t.Errorf("incorrect reference or title: %#v", d.humanCardContent)
+					}
+					display, _ := d.humanCardContent["sub_title_text"].(string)
+					if display != card.Compact.Body {
+						t.Errorf("card lost actionable context: %q", display)
+					}
+				}
+				return deliveryReceipt{Status: "sent", EvidenceType: "business_ack", EvidenceID: id}
+			})
+			if calls != 1 || result.HumanConfirmationCard != wantCard {
+				t.Fatalf("send calls=%d, native receipt=%v", calls, result.HumanConfirmationCard)
+			}
+		})
+	}
+}
+
+func TestWecomHumanTitleLimitsByCardType(t *testing.T) {
+	const id = "a0000000-0000-4000-8000-000000000001"
+	const marker = "【标题末尾】"
+	const fullText = "完整的文字通知"
+	for _, tc := range []struct {
+		kind string
+		max  int
+	}{{"approval", 32}, {"single", 16}, {"multi", 26}, {"dropdowns", 26}} {
+		for _, oversize := range []bool{false, true} {
+			n := tc.max
+			if oversize {
+				n++
+			}
+			t.Run(fmt.Sprintf("%s_%d", tc.kind, n), func(t *testing.T) {
+				title := strings.Repeat("题", n-len([]rune(marker))) + marker
+				card := &humanConfirmationCard{
+					Title: title, Description: fullText, DecisionRequired: tc.kind == "approval",
+					Compact: &humanCardCompact{Reference: "H-123456789ABC", Body: "简短说明"},
+				}
+				switch tc.kind {
+				case "single":
+					q := wecomHumanChoice("a", "choice")
+					q.Text = title
+					card.Questions = []humanConfirmationQuestion{q}
+				case "multi":
+					q := wecomHumanChoice("a", "multi_choice")
+					q.Text = title
+					card.Questions = []humanConfirmationQuestion{q}
+				case "dropdowns":
+					card.Questions = []humanConfirmationQuestion{wecomHumanChoice("a", "choice"), wecomHumanChoice("b", "choice")}
+				}
+				d := Delivery{ID: id, ChatType: "direct", Format: "text", Text: fullText, HumanCard: card}
+				calls := 0
+				got := sendHumanConfirmationCard(t.Context(), Binding{Provider: "wecom"}, d, func(_ context.Context, _ Binding, sent Delivery) deliveryReceipt {
+					calls++
+					if sent.Text != fullText || (sent.Format == "human_confirmation_card") == oversize {
+						t.Fatalf("wrong format or text: %v, %q", sent.Format, sent.Text)
+					}
+					if !oversize && sent.humanCardContent["main_title"].(map[string]string)["title"] != title {
+						t.Fatal("title changed before dispatch")
+					}
+					return deliveryReceipt{Status: "sent"}
+				})
+				if calls != 1 || got.HumanConfirmationCard == oversize {
+					t.Fatalf("calls=%d, native receipt=%t", calls, got.HumanConfirmationCard)
+				}
+			})
+		}
 	}
 }

@@ -77,8 +77,8 @@ func runtimeHumanReply(t *testing.T, w http.ResponseWriter, req runtimeRequest, 
 			map[string]string{"path": "human-forbidden-before.txt", "content": "unapproved"},
 			map[string]any{
 				"candidateId": list.Default.CandidateID, "rules_version": list.Version, "questionScope": "报表",
-				"background": "fixture-private-background", "goal": "确认报表口径", "knownFacts": []any{},
-				"questions":          []any{map[string]any{"id": "refund", "text": "确认报表是否包含退款？", "required": false, "answerType": "boolean"}},
+				"background": "fixture-private-background", "goal": "确认报表是否包含退款？", "knownFacts": []any{},
+				"questions": []any{}, "decisionRequired": true,
 				"completionCriteria": []string{"明确是否纳入"}, "proposedAction": "生成报表", "impactScope": "报表", "ifNotConfirmed": "保持等待",
 			},
 			map[string]string{"path": "human-forbidden-after.txt", "content": "unapproved"},
@@ -108,8 +108,8 @@ func runtimeHumanReply(t *testing.T, w http.ResponseWriter, req runtimeRequest, 
 		}
 		humanToolStream(t, w, []string{"ask_human"}, []any{map[string]any{
 			"candidateId": list.Default.CandidateID, "rules_version": list.Version, "questionScope": "报表",
-			"background": "按意见将范围缩至已到账退款", "goal": "确认修改后的报表范围", "knownFacts": []any{},
-			"questions":          []any{map[string]any{"id": "revised-refund", "text": "确认报表只统计已到账退款？", "required": false, "answerType": "boolean"}},
+			"background": "按意见将范围缩至已到账退款", "goal": "确认报表只统计已到账退款？", "knownFacts": []any{},
+			"questions":          []any{},
 			"completionCriteria": []string{"批准修订范围"}, "proposedAction": "仅统计已到账退款", "impactScope": "报表", "ifNotConfirmed": "保持等待",
 			"decisionRequired": true,
 		}})

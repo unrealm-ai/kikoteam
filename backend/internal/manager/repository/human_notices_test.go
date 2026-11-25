@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
@@ -49,5 +50,29 @@ func TestHumanNoticeText(t *testing.T) {
 				t.Fatalf("got:\n%s\nwant:\n%s", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCompactHumanNoticePreservesBusinessContext(t *testing.T) {
+	approval := service.HumanQuestion{
+		Question: "是否同意采用演练方案？", AnswerType: "decision",
+		Background:     "这是仅测试，不涉及实际业务通知。",
+		ProposedAction: "记录演练答复", ImpactScope: "仅演练",
+	}
+	const wantApproval = "这是仅测试，不涉及实际业务通知。\n同意后：记录演练答复\n影响范围：仅演练"
+	if got := compactHumanNoticeBody(approval); got != wantApproval {
+		t.Fatalf("approval context got %q, want %q", got, wantApproval)
+	}
+	const ref = "H-123456789ABC"
+	if full := humanNoticeText(ref, approval); !strings.Contains(full, ref) || !strings.Contains(full, approval.Question) || !strings.Contains(full, "请直接回复") {
+		t.Fatalf("text fallback lost its disambiguation instructions: %q", full)
+	}
+	required := true
+	form := service.HumanQuestion{Question: "安排演练", AnswerType: "information",
+		Questions: []service.HumanQuestionItem{{Text: "哪个时段？", Required: &required, Constraints: []string{"用北京时间", "用北京时间"},
+			Options: []service.HumanQuestionOption{{ID: "am", Label: "上午"}, {ID: "pm", Label: "下午"}}}},
+	}
+	if got := compactHumanNoticeBody(form); got != "哪个时段？\n第 1 题：必答，用北京时间" {
+		t.Fatalf("form context should keep required and constraints but not repeat choices: %q", got)
 	}
 }

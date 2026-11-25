@@ -5,6 +5,14 @@ import { setTimeout } from "node:timers/promises";
 const schema = (properties = {}, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 const string = { type: "string" };
 const askName = "ask_human";
+const approvalMode = "审批：decisionRequired=true、questions=[]。同意／拒绝是确认决定，不得作为一道题或一组选项。goal 是给确认人看的简短审批问题（标题），background 单独写背景。";
+const informationMode = "提交表单（收集信息）：decisionRequired=false，questions 至少一道实际问题。选择题用 choice 或 multi_choice 并提供 options，文字或数字填空用 text 或 number。提交表单不能替代审批。";
+function askQuestionModeError({ decisionRequired, questions }, reapprovalOnly) {
+  if (!Array.isArray(questions) || typeof decisionRequired !== "boolean") return approvalMode + (reapprovalOnly ? "" : informationMode);
+  if ((reapprovalOnly && !decisionRequired) || (decisionRequired && questions.length !== 0)) return approvalMode;
+  if (!decisionRequired && questions.length === 0) return informationMode;
+  return "";
+}
 const workServer = "work_items";
 const workPrefix = "mcp__work_items__";
 const workUnavailable = "[kiko_work_mcp_unavailable]";
@@ -197,10 +205,12 @@ export default function humanTools(pi) {
   }
   const questionFields = {
     candidateId: string, rules_version: string, questionScope: string,
-    decisionRequired: reapproval_only ? { type: "boolean", enum: [true] } : { type: "boolean" },
-    background: string, goal: string,
+    decisionRequired: { type: "boolean", description: reapproval_only ? approvalMode : approvalMode + informationMode,
+      ...(reapproval_only ? { enum: [true] } : {}) },
+    background: { type: "string", description: "独立的背景说明，不用重复审批标题。" },
+    goal: { type: "string", description: "审批时填写确认人直接看到的简短问题（标题）；提交表单时填写收集信息的目标。" },
     knownFacts: { type: "array", items: schema({ text: string, evidenceRefs: { type: "array", items: string } }, ["text"]) },
-    questions: { type: "array", items: schema({
+    questions: { type: "array", description: "审批模式必须为空数组；提交表单至少一道实际问题。", ...(reapproval_only ? { maxItems: 0 } : { maxItems: 12 }), items: schema({
       id: string, text: string, required: { type: "boolean" }, answerType: { enum: ["text", "choice", "multi_choice", "boolean", "number"] },
       constraints: { type: "array", items: string },
       options: { type: "array", minItems: 1, maxItems: 20, items: schema({ id: string, label: string }, ["id", "label"]) },
@@ -209,10 +219,14 @@ export default function humanTools(pi) {
     proposedAction: string, impactScope: string, ifNotConfirmed: string,
   };
   register(askName, reapproval_only
-    ? "提交修改后的方案，向已选职责对应的确认人请求明确批准。交代修改后的问题、必答项、完成标准、拟执行动作和影响范围。单独调用，成功后等待新批准。"
-    : "向已选职责对应的确认人提问。提交可直接阅读的问题、必答项、完成标准、拟执行动作和影响范围。纯信息表单设置 decisionRequired=false；选择题用 choice 或 multi_choice 并提供 options，文字或数字填空用 text 或 number。只请求同意或拒绝时 questions 传空数组，明确描述拟执行动作和影响范围。单独调用，成功后暂停当前执行段。",
-    schema(questionFields, Object.keys(questionFields).filter(field => field !== "decisionRequired")),
+    ? "提交修改后的方案，向已选职责对应的确认人请求明确批准。交代目标、完成标准、拟执行动作和影响范围。" + approvalMode + "单独调用，成功后等待新批准。"
+    : "向已选职责对应的确认人提问，每次只选一种模式。" + approvalMode + informationMode + "明确写出拟执行动作和影响范围。单独调用，成功后暂停当前执行段。",
+    schema(questionFields, Object.keys(questionFields)),
     async (_id, question, signal) => {
+      const message = askQuestionModeError(question, reapproval_only);
+      if (message) {
+        return result({ status: "invalid_question_mode", code: "human_question_mode_conflict", message }, { isError: true });
+      }
       const credentials = config();
       try {
         const request = await call(credentials, "request", { question }, signal);

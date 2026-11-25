@@ -13,6 +13,11 @@ type humanConfirmationCard struct {
 	Description      string                      `json:"description"`
 	DecisionRequired bool                        `json:"decision_required"`
 	Questions        []humanConfirmationQuestion `json:"questions,omitempty"`
+	Compact          *humanCardCompact           `json:"compact,omitempty"`
+}
+type humanCardCompact struct {
+	Reference string `json:"reference"`
+	Body      string `json:"body"`
 }
 type humanConfirmationQuestion struct {
 	ID         string                    `json:"id"`

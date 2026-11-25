@@ -11,7 +11,7 @@ func (q *HumanQuestion) normalizeStructured() error {
 	invalid := Fail("invalid_human_question", 400, "请填写有效的结构化问题、必答项、完成标准、拟执行动作和影响范围")
 	if !ValidID(q.CandidateID) || q.RecipientID != "" && q.RecipientID != q.CandidateID ||
 		!humanText(strings.TrimSpace(q.QuestionScope), 1000) || q.KnownFacts == nil || len(q.KnownFacts) > 20 ||
-		(len(q.Questions) == 0 && q.DecisionRequired != nil && !*q.DecisionRequired) || len(q.Questions) > 12 || len(q.CompletionCriteria) < 1 ||
+		len(q.Questions) > 12 || len(q.CompletionCriteria) < 1 ||
 		!humanQuestionTexts(q.CompletionCriteria, 16) {
 		return invalid
 	}
@@ -51,12 +51,41 @@ func (q *HumanQuestion) normalizeStructured() error {
 	q.RecipientID, q.Question = q.CandidateID, strings.Join(lines, "\n")
 	if len(lines) == 0 {
 		q.Question = strings.TrimSpace(q.Goal)
+		// questions uses omitempty in storage; preserve exact idempotent
+		// comparison after reading back a zero-question approval.
+		q.Questions = nil
 	}
 	q.AnswerType = "decision"
 	if q.DecisionRequired != nil && !*q.DecisionRequired {
 		q.AnswerType = "information"
+		if len(q.Questions) == 0 {
+			return missingHumanInformationQuestions()
+		}
 	}
 	return nil
+}
+
+// ValidateNewMode applies to creation only. Existing structured decisions may
+// have questions, while older unstructured clients use question/answer_type.
+// Neither historical answers nor exact in-flight replays use the new rules.
+func (q HumanQuestion) ValidateNewMode() error {
+	if q.CandidateID == "" {
+		return nil
+	}
+	if q.DecisionRequired == nil {
+		return Fail("human_question_mode_conflict", 400, "请明确选择「审批」或「提交表单」：审批用 decisionRequired=true、questions=[]；提交表单用 decisionRequired=false，至少有一道实际问题。")
+	}
+	if *q.DecisionRequired && len(q.Questions) != 0 {
+		return Fail("human_question_mode_conflict", 400, "同意／拒绝是审批决定，不是题目选项。请用 decisionRequired=true、questions=[]；如需先收集信息，请用 decisionRequired=false 单独提交表单。")
+	}
+	if !*q.DecisionRequired && len(q.Questions) == 0 {
+		return missingHumanInformationQuestions()
+	}
+	return nil
+}
+
+func missingHumanInformationQuestions() error {
+	return Fail("human_question_mode_conflict", 400, "提交表单时请用 decisionRequired=false 并填写至少一道实际问题；若需审批（同意／拒绝），请用 decisionRequired=true、questions=[]。")
 }
 
 func humanQuestionTexts(values []string, maxCount int) bool {

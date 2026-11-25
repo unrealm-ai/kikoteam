@@ -451,6 +451,15 @@
             "title": {"type": "string"},
             "description": {"type": "string"},
             "decision_required": {"type": "boolean"},
+            "compact": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reference", "body"],
+              "properties": {
+                "reference": {"type": "string"},
+                "body": {"type": "string", "description": "Full display context with question titles, option labels, and reply directions carried separately."}
+              }
+            },
             "questions": {"type": "array", "items": {"$ref": "../modules/manager/human-requests.yaml#/questionItem"}}
           }
         },

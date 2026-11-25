@@ -45,10 +45,14 @@ func scanHumanNotice(row scanner) (service.ChannelDelivery, error) {
 	if err = json.Unmarshal(raw, &q); err != nil {
 		return d, err
 	}
+	code := service.HumanShortCode(request, version)
 	if d.Text == "" {
-		d.Text = humanNoticeText(service.HumanShortCode(request, version), q)
+		d.Text = humanNoticeText(code, q)
 	}
 	d.HumanCard = humanCardPresentation(q, d.Text)
+	if d.Provider == "wecom" && d.HumanCard != nil {
+		d.HumanCard.Compact = &service.HumanCardCompact{Reference: code, Body: compactHumanNoticeBody(q)}
+	}
 	return d, nil
 }
 
@@ -114,8 +118,36 @@ func humanNoticeText(request string, q service.HumanQuestion) string {
 	return strings.Join(lines, "\n")
 }
 
-func humanNoticeQuestion(item service.HumanQuestionItem, required bool) string {
-	text := strings.TrimSpace(item.Text)
+// compactHumanNoticeBody retains the context already shown in the text
+// notice. Native controls carry the title, options and actions separately.
+func compactHumanNoticeBody(q service.HumanQuestion) string {
+	var lines []string
+	if background := strings.TrimSpace(q.Background); background != "" && background != q.Question {
+		lines = append(lines, background)
+	}
+	if action := strings.TrimSpace(q.ProposedAction); action != "" {
+		label := "同意后："
+		if q.AnswerType == "information" {
+			label = "收到答复后："
+		}
+		lines = append(lines, label+action)
+	}
+	if impact := strings.TrimSpace(q.ImpactScope); impact != "" {
+		lines = append(lines, "影响范围："+impact)
+	}
+	for i, item := range q.Questions {
+		if len(q.Questions) == 1 && item.Text != q.Question {
+			lines = append(lines, item.Text)
+		}
+		notes := humanNoticeQuestionNotes(strings.TrimSpace(item.Text), item, item.Required != nil && *item.Required)
+		if len(notes) > 0 {
+			lines = append(lines, fmt.Sprintf("第 %d 题：%s", i+1, strings.Join(notes, "，")))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func humanNoticeQuestionNotes(text string, item service.HumanQuestionItem, required bool) []string {
 	var notes []string
 	if required {
 		notes = append(notes, "必答")
@@ -131,6 +163,12 @@ func humanNoticeQuestion(item service.HumanQuestionItem, required bool) string {
 			notes = append(notes, condition)
 		}
 	}
+	return notes
+}
+
+func humanNoticeQuestion(item service.HumanQuestionItem, required bool) string {
+	text := strings.TrimSpace(item.Text)
+	notes := humanNoticeQuestionNotes(text, item, required)
 	if len(item.Options) > 0 {
 		labels := make([]string, 0, len(item.Options))
 		for _, option := range item.Options {

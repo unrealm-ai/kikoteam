@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	managerrepo "github.com/unrealm-ai/kikoteam/backend/internal/manager/repository"
@@ -326,7 +328,9 @@ func TestHumanRecipientsAcrossChannels(t *testing.T) {
 				t.Fatal(err)
 			}
 			required := true
-			created, err := store.HumanTaskTool(ctx, start(t, task.ID, input), "request", "", &manager.HumanQuestion{
+			// Preserve a historical mixed approval snapshot: new ask_human
+			// requests can't create this shape, but existing answers must work.
+			legacyQuestion := manager.HumanQuestion{
 				CandidateID: recipient.ID, RulesVersion: rules.Version, QuestionScope: recipient.Scope, Background: "有一笔费用待确认",
 				Goal: "确认费用与日期", KnownFacts: []manager.HumanFact{},
 				Questions: []manager.HumanQuestionItem{
@@ -334,11 +338,27 @@ func TestHumanRecipientsAcrossChannels(t *testing.T) {
 					{ID: "date", Text: "哪天开始？", AnswerType: "text", Required: &required},
 				},
 				CompletionCriteria: []string{"金额与日期齐备"}, ProposedAction: "核准计划", ImpactScope: "项目计划", IfNotConfirmed: "保持等待",
+			}
+			if err := legacyQuestion.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			rawLegacy, err := json.Marshal(legacyQuestion)
+			if err != nil {
+				t.Fatal(err)
+			}
+			scope := start(t, task.ID, input)
+			created, err := store.HumanTaskTool(ctx, scope, "request", "", &manager.HumanQuestion{
+				RecipientID: recipient.ID, RulesVersion: rules.Version, Question: "确认费用与日期", AnswerType: "decision",
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
 			request := created.(manager.HumanRequest)
+			reviewExec(t, db, `UPDATE manager_human_requests SET question=$2 WHERE id=$1`, request.ID, rawLegacy)
+			replayed, err := store.HumanTaskTool(ctx, scope, "request", "", &legacyQuestion)
+			if err != nil || replayed.(manager.HumanRequest).ID != request.ID {
+				t.Fatalf("historical in-flight approval replay was not preserved: %+v %v", replayed, err)
+			}
 			reviewExec(t, db, `UPDATE manager_turns SET status='completed',finished_at=now() WHERE input_id=$1`, input)
 			reviewExec(t, db, `UPDATE manager_sessions SET active_turn_id=NULL WHERE id=$1`, task.ID)
 			if items, e := store.ClaimHumanNotices(ctx, 10, false); e != nil || len(items) != 0 {
@@ -500,7 +520,7 @@ func TestHumanRecipientsAcrossChannels(t *testing.T) {
 			t.Fatal(err)
 		}
 		created, err := store.HumanTaskTool(ctx, start(t, task.ID, input), "request", "", &manager.HumanQuestion{
-			RecipientID: recipient.ID, RulesVersion: rules.Version, Question: "是否同意演练？", AnswerType: "decision",
+			RecipientID: recipient.ID, RulesVersion: rules.Version, Question: "是否同意演练？", AnswerType: "decision", Background: strings.Repeat("景", 99),
 		})
 		if err != nil {
 			t.Fatal(err)

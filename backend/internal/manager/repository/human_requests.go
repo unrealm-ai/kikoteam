@@ -293,6 +293,9 @@ func createHumanRequest(ctx context.Context, tx *sql.Tx, scope service.HumanRunt
 	if !isMissing(err) {
 		return out, err
 	}
+	if err = question.ValidateNewMode(); err != nil {
+		return out, err
+	}
 	rules, err := eligibleHumanRecipients(ctx, tx, scope.Workspace, scope.Agent)
 	if err != nil {
 		return out, err

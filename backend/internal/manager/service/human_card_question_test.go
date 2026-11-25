@@ -39,6 +39,9 @@ func TestHumanCardPureDecisionAndLegacyText(t *testing.T) {
 	if err := base.Validate(); err != nil || base.Question != "是否上线？" || base.AnswerType != "decision" {
 		t.Fatalf("pure decision: %+v, %v", base, err)
 	}
+	if err := base.ValidateNewMode(); err != nil {
+		t.Fatal(err)
+	}
 	base.DecisionRequired = &no
 	if err := base.Validate(); err == nil {
 		t.Fatal("accepted empty information form")
@@ -74,6 +77,9 @@ func TestHumanCardEachFormTypeCanStandAlone(t *testing.T) {
 				CompletionCriteria: []string{"收到答复"}, ProposedAction: "收集数据", ImpactScope: "灰度", IfNotConfirmed: "不继续"}
 			if err := q.Validate(); err != nil || q.AnswerType != "information" {
 				t.Fatalf("question=%+v err=%v", q, err)
+			}
+			if err := q.ValidateNewMode(); err != nil {
+				t.Fatal(err)
 			}
 			answer := HumanAnswer{Version: 1, Decision: "information", Answers: []HumanAnswerItem{{QuestionID: "q", Value: test.value, OptionIDs: test.ids}}}
 			if err := answer.Validate(q.AnswerType); err != nil {

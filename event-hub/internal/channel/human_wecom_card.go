@@ -18,23 +18,55 @@ const (
 	wecomHumanDropdownKey  = "kiko_submit_dropdowns"
 	wecomHumanChoiceEmpty  = "kiko_unselected"
 	wecomHumanUpdateAction = "https://work.weixin.qq.com/"
+
+	// Use the accepted mobile display budget, not the SDK's 112-character recommendation.
+	wecomHumanBodyMax          = 160
+	wecomHumanApprovalTitleMax = 32
+	wecomHumanSingleTitleMax   = 16
+	wecomHumanOtherTitleMax    = 26
 )
+
+func wecomHumanTitleMax(card *humanConfirmationCard) int {
+	if card.DecisionRequired {
+		return wecomHumanApprovalTitleMax
+	}
+	if len(card.Questions) == 1 && card.Questions[0].AnswerType == "choice" {
+		return wecomHumanSingleTitleMax
+	}
+	return wecomHumanOtherTitleMax
+}
 
 // renderWecomHumanCard returns provider fields only for a complete, representable
 // confirmation. In particular, never truncate or silently skip material context,
 // questions, or options to fit the provider's smaller native card.
 func renderWecomHumanCard(card *humanConfirmationCard, taskID string) (map[string]any, bool) {
-	if card == nil || !validWecomHumanKey(taskID, 128, true) || !validWecomHumanText(card.Title, 26, false) {
+	if card == nil || !validWecomHumanKey(taskID, 128, true) || !validWecomHumanText(card.Title, wecomHumanTitleMax(card), false) {
 		return nil, false
 	}
 	title := map[string]string{"title": card.Title}
 	out := map[string]any{"main_title": title, "task_id": taskID}
+	description := card.Description
+	if card.Compact != nil {
+		if !validWecomHumanText(card.Compact.Reference, 30, false) {
+			return nil, false
+		}
+		title["desc"] = card.Compact.Reference
+		description = card.Compact.Body
+		if description != "" {
+			if !validWecomHumanText(description, wecomHumanBodyMax, true) {
+				return nil, false
+			}
+			out["sub_title_text"] = description
+		}
+	}
 	if card.DecisionRequired {
-		if len(card.Questions) != 0 || !validWecomHumanText(card.Description, 112, true) {
+		if len(card.Questions) != 0 || (card.Compact == nil && !validWecomHumanText(description, wecomHumanBodyMax, true)) {
 			return nil, false
 		}
 		out["card_type"] = wecomHumanButton
-		out["sub_title_text"] = card.Description
+		if description != "" {
+			out["sub_title_text"] = description
+		}
 		out["button_list"] = []map[string]any{
 			{"text": "同意", "style": 1, "key": "approve"},
 			{"text": "拒绝", "style": 2, "key": "reject"},
@@ -42,14 +74,14 @@ func renderWecomHumanCard(card *humanConfirmationCard, taskID string) (map[strin
 		return out, true
 	}
 	if len(card.Questions) == 0 || len(card.Questions) > 3 ||
-		card.Description != "" && !validWecomHumanText(card.Description, 30, true) {
+		card.Compact == nil && description != "" && !validWecomHumanText(description, 30, true) {
 		return nil, false
 	}
-	if card.Description != "" {
-		title["desc"] = card.Description
+	if card.Compact == nil && description != "" {
+		title["desc"] = description
 	}
 	if len(card.Questions) == 1 {
-		return renderWecomHumanVote(out, card.Questions[0], card.Title, card.Description)
+		return renderWecomHumanVote(out, card.Questions[0], card.Title, description)
 	}
 	return renderWecomHumanDropdowns(out, card.Questions)
 }

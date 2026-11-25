@@ -27,7 +27,7 @@
           "sessionCookie": []
         }
       ],
-      "description": "Owner/admin only. Four provider adapters return employee member/discovered groups, not operator groups. Search by name or external ID literal substring. Stable provider/id cursor binds workspace, actor, employee, provider and q. No conversation/input creation. Feishu cached pages are not proof that all provider pages have been fetched; observed/recent coverage is partial. Current source validity is rechecked each request.",
+      "description": "Owner/admin only. Four provider adapters return employee member/discovered groups, not operator groups. Search by name or external ID literal substring. Stable provider/id cursor binds workspace, actor, employee, provider and q. No conversation/input creation. Explicit Feishu queries return only message-observed groups for the live picker fallback; observed/recent coverage is partial. Current source validity is rechecked each request.",
       "parameters": [
         {
           "name": "provider",

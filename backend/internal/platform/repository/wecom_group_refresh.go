@@ -10,7 +10,7 @@ import (
 
 type WecomGroupRefreshStore struct{ DB *sql.DB }
 
-const wecomRefreshScope = `b.enabled AND b.provider='wecom' AND b.identity_verified_generation=b.connection_generation AND b.external_tenant_id<>'' AND b.connection_generation=j.connection_generation AND b.config_revision=j.config_revision AND b.identity_epoch=j.identity_epoch AND b.external_tenant_id=j.external_tenant_id AND EXISTS(SELECT 1 FROM platform_members m WHERE m.workspace_id=b.workspace_id AND m.user_id=j.requested_by AND m.status='active' AND m.role IN('owner','admin')) AND EXISTS(SELECT 1 FROM platform_agents a WHERE a.id=b.agent_id AND a.enabled)`
+const wecomRefreshScope = `b.enabled AND b.provider='wecom' AND b.identity_verified_generation=b.connection_generation AND b.external_tenant_id<>'' AND b.connection_generation=j.connection_generation AND b.config_revision=j.config_revision AND b.identity_epoch=j.identity_epoch AND b.external_tenant_id=j.external_tenant_id AND (j.requested_by IS NULL OR EXISTS(SELECT 1 FROM platform_members m WHERE m.workspace_id=b.workspace_id AND m.user_id=j.requested_by AND m.status='active' AND m.role IN('owner','admin'))) AND EXISTS(SELECT 1 FROM platform_agents a WHERE a.id=b.agent_id AND a.enabled)`
 
 func (s *WecomGroupRefreshStore) RequestWecomGroups(ctx context.Context, b service.ChannelBinding, actor string) (service.WecomGroupRefreshStatus, error) {
 	out := service.WecomGroupRefreshStatus{}
@@ -51,6 +51,33 @@ func scanWecomRefresh(r interface{ Scan(...any) error }) (service.WecomGroupRefr
 	e := r.Scan(&j.ID, &j.LeaseToken, &j.BindingID, &j.Generation, &j.Revision, &j.IdentityEpoch, &j.TenantID)
 	return j, e
 }
+
+// Automatic discovery runs only in the background claim path: inbox delivery
+// relies solely on its existing observed-group write, not on the provider or this queue.
+const enqueueWecomGroupNames = `INSERT INTO platform_wecom_group_refresh_jobs(id,binding_id,connection_generation,config_revision,identity_epoch,external_tenant_id)
+ SELECT gen_random_uuid(),b.id,b.connection_generation,b.config_revision,b.identity_epoch,b.external_tenant_id
+ FROM platform_channel_bindings b JOIN platform_agents a ON a.id=b.agent_id AND a.enabled
+ LEFT JOIN platform_wecom_group_refresh_jobs old ON old.binding_id=b.id AND old.requested_by IS NULL
+ WHERE b.provider='wecom' AND b.enabled AND b.external_tenant_id<>'' AND b.identity_verified_generation=b.connection_generation
+ AND (old.id IS NULL OR old.created_at<=now()-interval '15 minutes'
+      OR (old.connection_generation,old.config_revision,old.identity_epoch,old.external_tenant_id)
+         <> (b.connection_generation,b.config_revision,b.identity_epoch,b.external_tenant_id))
+ AND EXISTS (SELECT 1 FROM platform_channel_observed_chats x
+   WHERE x.binding_id=b.id AND x.identity_epoch=b.identity_epoch AND x.external_tenant_id=b.external_tenant_id
+   AND btrim(x.display_name)='' AND x.observed_at>=now()-interval '7 days'
+   AND (old.id IS NULL OR old.identity_epoch<>b.identity_epoch OR old.connection_generation<>b.connection_generation
+        OR old.config_revision<>b.config_revision OR x.observed_at>old.created_at)
+   AND manager_channel_group_allowed(b.id,b.identity_epoch,b.external_tenant_id,x.external_chat_id,''))
+ ORDER BY old.created_at NULLS FIRST,b.id LIMIT 1
+ ON CONFLICT(binding_id) WHERE requested_by IS NULL DO UPDATE SET id=EXCLUDED.id,
+ connection_generation=EXCLUDED.connection_generation,config_revision=EXCLUDED.config_revision,
+ identity_epoch=EXCLUDED.identity_epoch,external_tenant_id=EXCLUDED.external_tenant_id,status='pending',
+ error_code=NULL,lease_token=NULL,lease_until=NULL,created_at=EXCLUDED.created_at,deadline=EXCLUDED.deadline
+ WHERE platform_wecom_group_refresh_jobs.created_at<=now()-interval '15 minutes'
+ OR (platform_wecom_group_refresh_jobs.connection_generation,platform_wecom_group_refresh_jobs.config_revision,
+     platform_wecom_group_refresh_jobs.identity_epoch,platform_wecom_group_refresh_jobs.external_tenant_id)
+ <> (EXCLUDED.connection_generation,EXCLUDED.config_revision,EXCLUDED.identity_epoch,EXCLUDED.external_tenant_id)`
+
 func (s *WecomGroupRefreshStore) ClaimWecomGroups(ctx context.Context) ([]service.WecomGroupRefreshJob, error) {
 	out := []service.WecomGroupRefreshJob{}
 	tx, e := s.DB.BeginTx(ctx, nil)
@@ -59,9 +86,28 @@ func (s *WecomGroupRefreshStore) ClaimWecomGroups(ctx context.Context) ([]servic
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
 	var id string
-	e = tx.QueryRowContext(ctx, `SELECT j.id FROM platform_wecom_group_refresh_jobs j JOIN platform_channel_bindings b ON b.id=j.binding_id WHERE (j.status='pending' OR (j.status='leased' AND j.lease_until<now())) AND j.deadline>now() AND `+wecomRefreshScope+` ORDER BY j.created_at,j.id LIMIT 1 FOR UPDATE OF j SKIP LOCKED`).Scan(&id)
-	if errors.Is(e, sql.ErrNoRows) {
-		return out, nil
+	claim := func() error {
+		return tx.QueryRowContext(ctx, `SELECT j.id FROM platform_wecom_group_refresh_jobs j JOIN platform_channel_bindings b ON b.id=j.binding_id
+ WHERE (j.status='pending' OR (j.status='leased' AND j.lease_until<now())) AND j.deadline>now() AND `+wecomRefreshScope+
+			` ORDER BY (j.requested_by IS NULL),j.created_at,j.id LIMIT 1 FOR UPDATE OF j SKIP LOCKED`).Scan(&id)
+	}
+	if e = claim(); errors.Is(e, sql.ErrNoRows) {
+		var added sql.Result
+		if added, e = tx.ExecContext(ctx, enqueueWecomGroupNames); e != nil {
+			return out, e
+		}
+		n, e := added.RowsAffected()
+		if e != nil {
+			return out, e
+		}
+		if n == 0 {
+			return out, nil
+		}
+		if e = claim(); errors.Is(e, sql.ErrNoRows) {
+			return out, tx.Commit()
+		} else if e != nil {
+			return out, e
+		}
 	}
 	if e != nil {
 		return out, e
@@ -117,9 +163,15 @@ func (s *WecomGroupRefreshStore) CompleteWecomGroups(ctx context.Context, id str
 	if e = tx.QueryRowContext(ctx, `SELECT id FROM platform_channel_bindings WHERE id=$1 FOR SHARE`, binding).Scan(&binding); e != nil {
 		return e
 	}
-	var actor string
-	if e = tx.QueryRowContext(ctx, `SELECT m.user_id FROM platform_wecom_group_refresh_jobs j JOIN platform_channel_bindings b ON b.id=j.binding_id JOIN platform_members m ON m.workspace_id=b.workspace_id AND m.user_id=j.requested_by AND m.status='active' AND m.role IN('owner','admin') WHERE j.id=$1 FOR SHARE OF m`, id).Scan(&actor); e != nil {
-		return service.Fail("refresh_changed", 409, "刷新权限已变化")
+	var actor sql.NullString
+	if e = tx.QueryRowContext(ctx, `SELECT requested_by FROM platform_wecom_group_refresh_jobs WHERE id=$1`, id).Scan(&actor); e != nil {
+		return e
+	}
+	if actor.Valid {
+		if e = tx.QueryRowContext(ctx, `SELECT m.user_id FROM platform_channel_bindings b JOIN platform_members m ON m.workspace_id=b.workspace_id
+ WHERE b.id=$1 AND m.user_id=$2 AND m.status='active' AND m.role IN('owner','admin') FOR SHARE OF m`, binding, actor.String).Scan(&actor); e != nil {
+			return service.Fail("refresh_changed", 409, "刷新权限已变化")
+		}
 	}
 	j, e := scanWecomRefresh(tx.QueryRowContext(ctx, `SELECT `+wecomRefreshColumns+` FROM platform_wecom_group_refresh_jobs j JOIN platform_channel_bindings b ON b.id=j.binding_id WHERE j.id=$1 AND j.lease_token=$2 AND j.status='leased' AND j.lease_until>now() AND j.deadline>now() AND `+wecomRefreshScope+` FOR UPDATE OF j`, id, v.LeaseToken))
 	if errors.Is(e, sql.ErrNoRows) {
@@ -129,6 +181,11 @@ func (s *WecomGroupRefreshStore) CompleteWecomGroups(ctx context.Context, id str
 		return e
 	}
 	if v.Status == "completed" {
+		if e = fillWecomObservedNames(ctx, tx, j, v.Items); e != nil {
+			return e
+		}
+	}
+	if v.Status == "completed" && actor.Valid {
 		if _, e = tx.ExecContext(ctx, `DELETE FROM platform_channel_group_candidates WHERE binding_id=$1 AND external_chat_id<>ALL($2::text[])`, binding, ids); e != nil {
 			return e
 		}
@@ -144,4 +201,25 @@ func (s *WecomGroupRefreshStore) CompleteWecomGroups(ctx context.Context, id str
 		return e
 	}
 	return tx.Commit()
+}
+
+// Fill display metadata only; do not change group identity, freshness or grants.
+func fillWecomObservedNames(ctx context.Context, tx *sql.Tx, j service.WecomGroupRefreshJob, items []service.WecomGroupRefreshItem) error {
+	ids, names := []string{}, []string{}
+	for _, g := range items {
+		name := strings.TrimSpace(g.Name)
+		if name != "" && !strings.ContainsAny(name, "\x00\r\n") {
+			ids, names = append(ids, g.ID), append(names, name)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE platform_channel_observed_chats x SET display_name=g.name
+ FROM unnest($4::text[],$5::text[]) AS g(id,name)
+ WHERE x.binding_id=$1 AND x.identity_epoch=$2 AND x.external_tenant_id=$3
+ AND x.external_chat_id=g.id AND btrim(x.display_name)=''
+ AND manager_channel_group_allowed(x.binding_id,x.identity_epoch,x.external_tenant_id,x.external_chat_id,'')`,
+		j.BindingID, j.IdentityEpoch, j.TenantID, ids, names)
+	return err
 }

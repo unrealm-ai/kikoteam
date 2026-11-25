@@ -4016,7 +4016,7 @@ CREATE TABLE public.platform_wecom_control_events (
 CREATE TABLE public.platform_wecom_group_refresh_jobs (
     id uuid NOT NULL,
     binding_id uuid NOT NULL,
-    requested_by uuid NOT NULL,
+    requested_by uuid,
     connection_generation bigint NOT NULL,
     config_revision bigint NOT NULL,
     identity_epoch bigint NOT NULL,
@@ -6667,10 +6667,24 @@ CREATE UNIQUE INDEX platform_web_group_one_owner ON public.platform_web_group_me
 
 
 --
+-- Name: platform_wecom_group_refresh_auto; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX platform_wecom_group_refresh_auto ON public.platform_wecom_group_refresh_jobs USING btree (binding_id) WHERE (requested_by IS NULL);
+
+
+--
 -- Name: platform_wecom_group_refresh_pending; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX platform_wecom_group_refresh_pending ON public.platform_wecom_group_refresh_jobs USING btree (status, created_at);
+
+
+--
+-- Name: platform_wecom_observed_unnamed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_wecom_observed_unnamed ON public.platform_channel_observed_chats USING btree (binding_id, observed_at) WHERE (btrim(display_name) = ''::text);
 
 
 --

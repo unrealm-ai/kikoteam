@@ -16,7 +16,7 @@ func NewGroupSelectorStore(db *sql.DB) *GroupSelectorStore { return &GroupSelect
 // Each adapter contributes an employee-scoped source. No operator group membership
 // is required and no conversation, session, input or outbound message is created.
 const webGroupSelectionSQL = `SELECT g.id,'web'::text AS provider,g.title AS name,'member'::text AS evidence,'all_joined'::text AS coverage,''::text AS binding,''::text AS tenant,g.id::text AS external_id,0::bigint AS identity_epoch,0::bigint AS generation,0::bigint AS revision,g.admission_epoch AS group_epoch,ga.admission_epoch AS agent_epoch FROM platform_web_groups g JOIN platform_web_group_agents ga ON ga.group_id=g.id WHERE g.workspace_id=$1 AND ga.agent_id=$2 AND ga.status='active' AND g.status='active'`
-const observedGroupSelectionSQL = `SELECT x.id,b.provider,x.display_name,'observed'::text,'observed_only'::text,b.id::text,b.external_tenant_id,x.external_chat_id,b.identity_epoch,b.connection_generation,b.config_revision,0::bigint,0::bigint FROM platform_channel_observed_chats x JOIN platform_channel_bindings b ON b.id=x.binding_id WHERE b.workspace_id=$1 AND b.agent_id=$2 AND b.enabled AND b.provider IN ('dingtalk','wecom') AND b.identity_epoch=x.identity_epoch AND b.external_tenant_id=x.external_tenant_id AND b.identity_verified_generation=b.connection_generation AND manager_channel_group_allowed(b.id,b.identity_epoch,b.external_tenant_id,x.external_chat_id,'')`
+const observedGroupSelectionSQL = `SELECT x.id,b.provider,x.display_name,'observed'::text,'observed_only'::text,b.id::text,b.external_tenant_id,x.external_chat_id,b.identity_epoch,b.connection_generation,b.config_revision,0::bigint,0::bigint FROM platform_channel_observed_chats x JOIN platform_channel_bindings b ON b.id=x.binding_id WHERE b.workspace_id=$1 AND b.agent_id=$2 AND b.enabled AND b.provider IN ('feishu','dingtalk','wecom') AND b.identity_epoch=x.identity_epoch AND b.external_tenant_id=x.external_tenant_id AND (b.provider='feishu' OR b.identity_verified_generation=b.connection_generation) AND manager_channel_group_allowed(b.id,b.identity_epoch,b.external_tenant_id,x.external_chat_id,'')`
 const discoveredGroupSelectionSQL = `SELECT x.id,b.provider,x.display_name,'provider_verified'::text,CASE WHEN b.provider='wecom' THEN 'recent_window' ELSE 'all_joined' END,b.id::text,b.external_tenant_id,x.external_chat_id,b.identity_epoch,b.connection_generation,b.config_revision,0::bigint,0::bigint FROM platform_channel_group_candidates x JOIN platform_channel_bindings b ON b.id=x.binding_id WHERE b.workspace_id=$1 AND b.agent_id=$2 AND b.enabled AND b.provider IN ('feishu','wecom') AND b.identity_epoch=x.identity_epoch AND b.external_tenant_id=x.external_tenant_id AND b.connection_generation=x.connection_generation AND b.identity_verified_generation=b.connection_generation AND b.config_revision=x.config_revision AND x.expires_at>now() AND manager_channel_group_allowed(b.id,b.identity_epoch,b.external_tenant_id,x.external_chat_id,'')`
 
 // Adapters expose metadata from their own source; provider networking/refresh is
@@ -29,7 +29,7 @@ type wecomGroupAdapter struct{}
 
 func (webGroupAdapter) sourceSQL() string { return webGroupSelectionSQL }
 func (feishuGroupAdapter) sourceSQL() string {
-	return `SELECT * FROM (` + discoveredGroupSelectionSQL + `) source WHERE provider='feishu'`
+	return `SELECT * FROM (` + observedGroupSelectionSQL + ` UNION ALL ` + discoveredGroupSelectionSQL + `) source WHERE provider='feishu'`
 }
 func (dingtalkGroupAdapter) sourceSQL() string {
 	return `SELECT * FROM (` + observedGroupSelectionSQL + `) source WHERE provider='dingtalk'`
@@ -50,7 +50,7 @@ var groupSelectionSourcesSQL = groupSelectionSources()
 
 // Prefer observed identity for deduplication so refreshing discovery does not
 // replace an already selectable observed reference.
-var groupSelectionSearchSQL = `WITH available AS (` + groupSelectionSourcesSQL + `), canonical AS (SELECT DISTINCT ON(provider,binding,tenant,external_id) * FROM available ORDER BY provider,binding,tenant,external_id,CASE WHEN evidence='observed' THEN 0 ELSE 1 END,id) SELECT * FROM canonical WHERE ($3='' OR provider=$3) AND ($4='' OR strpos(lower(name),lower($4))>0 OR strpos(lower(external_id),lower($4))>0) AND ($6='' OR (provider,id)>($5,NULLIF($6,'')::uuid)) ORDER BY provider,id LIMIT $7`
+var groupSelectionSearchSQL = `WITH available AS (` + groupSelectionSourcesSQL + `), canonical AS (SELECT DISTINCT ON(provider,binding,tenant,external_id) * FROM available ORDER BY provider,binding,tenant,external_id,CASE WHEN evidence='observed' THEN 0 ELSE 1 END,id) SELECT * FROM canonical WHERE ($3='' OR provider=$3) AND ($3<>'feishu' OR evidence='observed') AND ($4='' OR strpos(lower(name),lower($4))>0 OR strpos(lower(external_id),lower($4))>0) AND ($6='' OR (provider,id)>($5,NULLIF($6,'')::uuid)) ORDER BY provider,id LIMIT $7`
 
 func selectionAdmin(ctx context.Context, tx *sql.Tx, w, actor, agent string) error {
 	var exists bool

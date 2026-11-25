@@ -203,7 +203,7 @@
           "sessionCookie": []
         }
       ],
-      "description": "Owner/admin. One official Feishu joined-chats page, current verified binding. Provider call then generation/revision/tenant fence before publishing opaque candidates. Empty next_cursor ends pagination; no partial publication on provider failure. Not a send or authorization grant.",
+      "description": "Owner/admin. Lists one live Feishu joined-chats page without caching that page. Provider unavailability returns observed to indicate that the picker should read the Feishu observed-only selector. A successful empty result is authoritative. An optional actor-bound selection_token verifies a single selected group and registers only that selection for existing configuration save paths.",
       "responses": {
         "200": {
           "description": "Current fact",
@@ -236,12 +236,26 @@
                         },
                         "evidence": {
                           "type": "string"
+                        },
+                        "selection": {
+                          "$ref": "../platform/group-selectors.yaml#/schemas/Group"
+                        },
+                        "selection_token": {
+                          "type": "string",
+                          "maxLength": 4096
                         }
                       }
                     }
                   },
                   "next_cursor": {
                     "type": "string"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "provider",
+                      "observed"
+                    ]
                   }
                 }
               }
@@ -268,6 +282,10 @@
                 "cursor": {
                   "type": "string",
                   "maxLength": 2048
+                },
+                "selection_token": {
+                  "type": "string",
+                  "maxLength": 4096
                 }
               }
             }

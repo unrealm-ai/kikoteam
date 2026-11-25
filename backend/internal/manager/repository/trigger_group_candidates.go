@@ -87,14 +87,13 @@ func resolveChannelNoticeConversation(ctx context.Context, tx *sql.Tx, w, agent 
 	table := "platform_channel_observed_chats"
 	extra := " AND b.identity_verified_generation=b.connection_generation"
 	if q.Provider == "feishu" {
-		table = "platform_channel_group_candidates"
-		extra = " AND x.connection_generation=b.connection_generation AND x.config_revision=b.config_revision AND x.expires_at>now()"
+		extra = ""
 	}
 	var binding, tenant, chat string
 	var epoch int64
 	err := tx.QueryRowContext(ctx, `SELECT b.id,b.identity_epoch,b.external_tenant_id,x.external_chat_id FROM `+table+` x JOIN platform_channel_bindings b ON b.id=x.binding_id WHERE x.id=$1 AND b.workspace_id=$2 AND b.agent_id=$3 AND b.provider=$4 AND b.enabled AND b.identity_epoch=x.identity_epoch AND b.external_tenant_id=x.external_tenant_id AND manager_channel_group_allowed(b.id,b.identity_epoch,b.external_tenant_id,x.external_chat_id,'')`+extra+` FOR SHARE OF b,x`, q.CandidateID, w, agent, q.Provider).Scan(&binding, &epoch, &tenant, &chat)
-	if errors.Is(err, sql.ErrNoRows) && q.Provider == "wecom" {
-		err = tx.QueryRowContext(ctx, `SELECT b.id,b.identity_epoch,b.external_tenant_id,x.external_chat_id FROM platform_channel_group_candidates x JOIN platform_channel_bindings b ON b.id=x.binding_id WHERE x.id=$1 AND b.workspace_id=$2 AND b.agent_id=$3 AND b.provider='wecom' AND b.enabled AND b.identity_epoch=x.identity_epoch AND b.external_tenant_id=x.external_tenant_id AND b.connection_generation=x.connection_generation AND b.identity_verified_generation=b.connection_generation AND b.config_revision=x.config_revision AND x.expires_at>now() AND manager_channel_group_allowed(b.id,b.identity_epoch,b.external_tenant_id,x.external_chat_id,'') FOR SHARE OF b,x`, q.CandidateID, w, agent).Scan(&binding, &epoch, &tenant, &chat)
+	if errors.Is(err, sql.ErrNoRows) && (q.Provider == "wecom" || q.Provider == "feishu") {
+		err = tx.QueryRowContext(ctx, `SELECT b.id,b.identity_epoch,b.external_tenant_id,x.external_chat_id FROM platform_channel_group_candidates x JOIN platform_channel_bindings b ON b.id=x.binding_id WHERE x.id=$1 AND b.workspace_id=$2 AND b.agent_id=$3 AND b.provider=$4 AND b.enabled AND b.identity_epoch=x.identity_epoch AND b.external_tenant_id=x.external_tenant_id AND b.connection_generation=x.connection_generation AND (b.provider='feishu' OR b.identity_verified_generation=b.connection_generation) AND b.config_revision=x.config_revision AND x.expires_at>now() AND manager_channel_group_allowed(b.id,b.identity_epoch,b.external_tenant_id,x.external_chat_id,'') FOR SHARE OF b,x`, q.CandidateID, w, agent, q.Provider).Scan(&binding, &epoch, &tenant, &chat)
 	}
 	if err != nil {
 		return "", visibleError(err)

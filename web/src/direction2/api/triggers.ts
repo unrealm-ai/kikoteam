@@ -13,7 +13,6 @@ const base=(w:string,a:string)=>`/workspaces/${encodeURIComponent(w)}/agents/${e
 const path=(w:string,a:string,id:string)=>`${base(w,a)}/${encodeURIComponent(id)}`;
 export const triggerLabel=(t:Trigger)=>`${t.name?t.name+' · ':''}${t.kind==='schedule'?'定时':'Webhook'} · ${t.config.description?.slice(0,45)||t.id}${t.enabled?'':'（已停用）'}`;
 export const triggersApi={
- discoverFeishuGroups:(w:string,a:string,cursor:string,signal:AbortSignal)=>platformRequest<{items:TriggerGroupCandidate[];next_cursor:string}>(`/workspaces/${encodeURIComponent(w)}/agents/${encodeURIComponent(a)}/channels/feishu/groups/discover`,{...post({cursor}),signal}),
  candidates:(w:string,a:string,cursor:string,signal:AbortSignal)=>platformRequest<{items:TriggerGroupCandidate[];next_cursor:string|null;truncated:boolean}>(`/workspaces/${encodeURIComponent(w)}/agents/${encodeURIComponent(a)}/trigger-group-candidates?${new URLSearchParams({limit:'100',...(cursor?{cursor}:{})})}`,{signal}),
  resolveCandidate:(w:string,a:string,provider:string,id:string,signal:AbortSignal)=>platformRequest<{conversation_id:string}>(`/workspaces/${encodeURIComponent(w)}/agents/${encodeURIComponent(a)}/trigger-group-candidates/resolve`,{...post({provider,candidate_id:id}),signal}),
  targets:(w:string,a:string,signal:AbortSignal)=>platformRequest<{items:TriggerTarget[];truncated:boolean}>(`/workspaces/${encodeURIComponent(w)}/agents/${encodeURIComponent(a)}/trigger-notification-targets?limit=100`,{signal}),

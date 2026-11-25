@@ -5,7 +5,7 @@ import D2ChannelLogo from './D2ChannelLogo.vue';
 import { selectorsApi, selectorKey, type SelectionCandidate, type SelectorPurpose, type PeopleSource } from '../api/selectors';
 import { wecomContactsApi, type WecomVerification } from '../api/wecom-contacts';
 import { feishuDirectoryApi, type FeishuDirectoryStatus } from '../api/feishu';
-import { triggersApi } from '../api/triggers';
+import { filterLiveGroupNames, loadLiveFeishuGroups, selectLiveFeishuGroup } from '../api/feishu-group-selection';
 import { D2ApiError } from '../api/client';
 import type { UsageChannel } from '../api/agent-usage';
 
@@ -30,6 +30,8 @@ const requests = new Map<string, string>();
 const labels = { web: 'Web', feishu: '飞书', dingtalk: '钉钉', wecom: '企微' };
 const directoryStatus = ref<FeishuDirectoryStatus>();
 const trail = ref<SelectionCandidate[]>([]);
+const feishuGroupSource = ref<'provider' | 'observed'>();
+const visibleRows = computed(() => feishuGroupSource.value === 'provider' ? filterLiveGroupNames(rows.value, query.value) : rows.value);
 const sources = ref<PeopleSource[]>([]), snapshotVersion = ref<number>();
 const options = computed(() => Object.entries(labels).filter(([value]) => !props.providers || props.providers.includes(value as UsageChannel)).map(([value, label]) => ({ value, label })));
 const source = computed(() => sources.value.find(s => s.provider === channel.value));
@@ -39,7 +41,7 @@ function reset() {
   ++generation; ++read; controller.abort(); controller = new AbortController();
   rows.value = []; next.value = null; seen = new Set(); error.value = ''; busy.value = false; loaded.value = false; limited.value = false;
   directoryStatus.value = undefined; snapshotVersion.value = undefined; verification.value = undefined;
-  refreshJob.value = ''; refreshStatus.value = ''; discoveryCursor.value = ''; discoverySeen = new Set(); requests.clear();
+  refreshJob.value = ''; refreshStatus.value = ''; discoveryCursor.value = ''; discoverySeen = new Set(); feishuGroupSource.value = undefined; requests.clear();
 }
 function fail(e: unknown) {
   error.value = e instanceof Error ? e.message : '候选读取失败';
@@ -47,6 +49,10 @@ function fail(e: unknown) {
 }
 async function search(more = false) {
   if (!writable.value || (props.kind === 'people' && source.value?.available === false) || (channel.value === 'wecom' && props.kind === 'people' && !query.value.trim())) return;
+  if (props.kind === 'groups' && channel.value === 'feishu') {
+    if (!feishuGroupSource.value) { await refresh(); return; }
+    if (feishuGroupSource.value === 'provider') return; // Search loaded live results locally.
+  }
   const cursor = more ? next.value || '' : '';
   if (more && !cursor) return;
   const g = generation, r = ++read; busy.value = true; error.value = '';
@@ -73,6 +79,11 @@ async function pick(row: SelectionCandidate) {
   if (!writable.value || !row.selectable) return;
   const g = generation; busy.value = true; error.value = '';
   try {
+    if (row.selection_token) {
+      const selected = await selectLiveFeishuGroup(props.workspace, props.employeeId, row.selection_token, controller.signal);
+      if (g === generation && selectorKey(selected.ref) === selectorKey(row.ref)) { emit('pick', selected, false); }
+      return;
+    }
     const result = await selectorsApi.resolve(props.workspace, props.employeeId, props.kind, [row.ref], props.purpose, controller.signal);
     if (g !== generation) return;
     if (!Array.isArray(result.items)) throw new Error('候选核验响应无效');
@@ -143,11 +154,17 @@ async function refresh(more = false) {
   try {
     if (channel.value === 'feishu') {
       const cursor = more ? discoveryCursor.value : '';
-      const result = await triggersApi.discoverFeishuGroups(props.workspace, props.employeeId, cursor, controller.signal);
+      const result = await loadLiveFeishuGroups(props.workspace, props.employeeId, cursor, controller.signal);
       if (g !== generation) return;
-      if (result.next_cursor && (result.next_cursor === cursor || discoverySeen.has(result.next_cursor))) throw new Error('群刷新游标重复');
+      feishuGroupSource.value = result.source;
+      if (result.source === 'observed') {
+        discoveryCursor.value = ''; discoverySeen = new Set(); busy.value = false; await search(); return;
+      }
+      if (result.cursor && (result.cursor === cursor || discoverySeen.has(result.cursor))) throw new Error('群刷新游标重复，请重新搜索');
       if (!more) discoverySeen = new Set();
-      discoverySeen.add(cursor); discoveryCursor.value = result.next_cursor || ''; busy.value = false; await search();
+      discoverySeen.add(cursor); discoveryCursor.value = result.cursor; next.value = null;
+      const kept = more ? rows.value.filter(old => !result.rows.some(row => selectorKey(row.ref) === selectorKey(old.ref))) : [];
+      rows.value = [...kept, ...result.rows]; loaded.value = true; limited.value = false;
     } else if (channel.value === 'wecom') {
       const result = refreshJob.value
         ? await selectorsApi.wecomRefreshStatus(props.workspace, props.employeeId, refreshJob.value, controller.signal)
@@ -174,7 +191,13 @@ async function initialize() {
   }
   await search();
 }
-watch(() => [props.workspace, props.employeeId, props.kind, props.purpose, props.disabled], () => void initialize(), { immediate: true });
+watch(() => [props.workspace, props.employeeId, props.kind, props.purpose], () => void initialize(), { immediate: true });
+watch(() => props.disabled, disabled => {
+  // Parent operations briefly disable picking; do not re-fetch the live
+  // Feishu page if it was already loaded for this employee.
+  if (props.kind === 'groups' && channel.value === 'feishu' && (disabled || feishuGroupSource.value)) return;
+  void initialize();
+});
 watch([channel, departments], () => { query.value = ''; void initialize(); });
 watch(verificationPending, v => { if (!v && verification.value?.status === 'pending') setVerification({ ...verification.value, status: 'expired', code: undefined }); });
 onUnmounted(() => { reset(); clearInterval(timer); });
@@ -220,6 +243,7 @@ onUnmounted(() => { reset(); clearInterval(timer); });
     <div v-if="kind === 'groups' && ['feishu', 'wecom'].includes(channel)" class="actions picker-subbar">
       <NButton size="tiny" secondary :disabled="!writable" @click="refresh()">{{ channel === 'feishu' ? '刷新飞书群' : refreshJob ? '查询企微刷新状态' : '刷新企微近期群' }}</NButton>
       <NButton v-if="channel === 'feishu' && discoveryCursor" size="tiny" secondary :disabled="!writable" @click="refresh(true)">继续刷新飞书群</NButton>
+      <small v-if="feishuGroupSource === 'observed'" class="picker-note">飞书接口暂不可用，显示历史观察到的群，可能不全。</small>
       <small v-if="refreshStatus" class="picker-note">刷新状态：{{ refreshStatus }}</small>
     </div>
 
@@ -231,10 +255,10 @@ onUnmounted(() => { reset(); clearInterval(timer); });
     <p v-if="busy" role="status" class="picker-note">正在读取并核验…</p>
     <NAlert v-if="error" type="error" class="picker-alert">{{ error }}</NAlert>
     <p v-if="limited" class="picker-note" style="color: var(--id-status-warning);">提供方仅返回部分结果，请缩小关键词范围。</p>
-    <p v-if="loaded && !busy && !rows.length && !error" class="picker-empty">没有匹配的可见候选。</p>
+    <p v-if="loaded && !busy && !visibleRows.length && !error" class="picker-empty">没有匹配的可见候选。</p>
 
-    <ul v-if="rows.length" class="picker-list">
-      <li v-for="row in rows" :key="row.search_user_id || selectorKey(row.ref)" class="picker-row">
+    <ul v-if="visibleRows.length" class="picker-list">
+      <li v-for="row in visibleRows" :key="row.search_user_id || selectorKey(row.ref)" class="picker-row">
         <div class="picker-row-info">
           <div class="picker-row-title">
             <D2ChannelLogo :platform="row.ref.provider" :size="15" />

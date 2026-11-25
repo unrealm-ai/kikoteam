@@ -3,7 +3,7 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { NAlert, NButton, NSelect } from 'naive-ui';
 import { selectorsApi, selectorKey, type SelectionCandidate } from '../../api/selectors';
 import { wecomContactsApi, type WecomVerification } from '../../api/wecom-contacts';
-import { triggersApi } from '../../api/triggers';
+import { filterLiveGroupNames, loadLiveFeishuGroups, selectLiveFeishuGroup } from '../../api/feishu-group-selection';
 import { D2ApiError } from '../../api/client';
 import type { UsageChannel } from '../../api/agent-usage';
 
@@ -14,8 +14,10 @@ const snapshotVersion = ref<number>();
 const next = ref<string | null>(null), loading = ref(false), error = ref(''), limited = ref(false), loaded = ref(false);
 const verification = ref<WecomVerification>(), job = ref(''), jobStatus = ref(''), discoveryCursor = ref('');
 const labels = {feishu: '飞书', wecom: '企微'};
+const feishuGroupSource = ref<'provider' | 'observed'>();
+const visibleRows = computed(() => feishuGroupSource.value === 'provider' ? filterLiveGroupNames(rows.value, query.value) : rows.value);
 const channelOptions = Object.entries(labels).map(([value, label]) => ({value, label}));
-const options = computed(() => rows.value.filter(row => row.ref.provider === channel.value && row.ref.provider in labels && row.ref.kind === (props.kind === 'groups' ? 'group' : 'user')).map(row => ({
+const options = computed(() => visibleRows.value.filter(row => row.ref.provider === channel.value && row.ref.provider in labels && row.ref.kind === (props.kind === 'groups' ? 'group' : 'user')).map(row => ({
   value: selectorKey(row.ref), label: row.display_name || row.name || row.ref.external_id || row.search_user_id || '未命名',
   disabled: !row.selectable
 })));
@@ -33,6 +35,10 @@ async function search(more = false) {
   clearTimeout(searchTimer);
   query.value = query.value.trim();
   if (props.kind === 'people' && channel.value === 'wecom' && !query.value) { rows.value = []; return; }
+  if (props.kind === 'groups' && channel.value === 'feishu') {
+    if (!feishuGroupSource.value) { await refresh(); return; }
+    if (feishuGroupSource.value === 'provider') return; // Search loaded live results locally.
+  }
   const cursor = more ? next.value || '' : '';
   if (more && !cursor) return;
   const g = generation, r = ++read; loading.value = true; error.value = '';
@@ -59,6 +65,11 @@ async function pick(key: string) {
   if (!row?.selectable || !(row.ref.provider in labels) || row.ref.provider !== channel.value) return;
   const g = generation; loading.value = true; error.value = '';
   try {
+    if (row.selection_token) {
+      const selected = await selectLiveFeishuGroup(props.workspace, props.employeeId, row.selection_token, controller.signal);
+      if (g === generation && selectorKey(selected.ref) === selectorKey(row.ref)) { emit('pick', selected); }
+      return;
+    }
     const result = await selectorsApi.resolve(props.workspace, props.employeeId, props.kind, [row.ref], 'sharing', controller.signal);
     if (g !== generation) return;
     const current = result.items.find(item => selectorKey(item.ref) === key);
@@ -98,11 +109,17 @@ async function refresh(more = false) {
   try {
     if (channel.value === 'feishu') {
       const cursor = more ? discoveryCursor.value : '';
-      const result = await triggersApi.discoverFeishuGroups(props.workspace, props.employeeId, cursor, controller.signal);
+      const result = await loadLiveFeishuGroups(props.workspace, props.employeeId, cursor, controller.signal);
       if (g !== generation) return;
-      if (result.next_cursor && (result.next_cursor === cursor || discovered.has(result.next_cursor))) throw new Error('群刷新分页异常');
+      feishuGroupSource.value = result.source;
+      if (result.source === 'observed') {
+        discoveryCursor.value = ''; discovered = new Set(); loading.value = false; await search(); return;
+      }
+      if (result.cursor && (result.cursor === cursor || discovered.has(result.cursor))) throw new Error('群刷新游标重复，请重新搜索');
       if (!more) discovered = new Set();
-      discovered.add(cursor); discoveryCursor.value = result.next_cursor || ''; loading.value = false; await search();
+      discovered.add(cursor); discoveryCursor.value = result.cursor; next.value = null;
+      const kept = more ? rows.value.filter(old => !result.rows.some(row => selectorKey(row.ref) === selectorKey(old.ref))) : [];
+      rows.value = [...kept, ...result.rows]; loaded.value = true; limited.value = false;
     } else if (channel.value === 'wecom') {
       const result = job.value
         ? await selectorsApi.wecomRefreshStatus(props.workspace, props.employeeId, job.value, controller.signal)
@@ -119,7 +136,7 @@ function reset() {
   clearTimeout(searchTimer);
   ++generation; ++read; controller.abort(); controller = new AbortController(); rows.value = []; next.value = null;
   loading.value = false; error.value = ''; loaded.value = false; limited.value = false; query.value = '';
-  verification.value = undefined; requests.clear(); job.value = ''; jobStatus.value = ''; discoveryCursor.value = ''; discovered = new Set();
+  verification.value = undefined; requests.clear(); job.value = ''; jobStatus.value = ''; discoveryCursor.value = ''; discovered = new Set(); feishuGroupSource.value = undefined;
 }
 watch(() => [props.workspace, props.employeeId, props.kind, channel.value], () => { reset(); void search(); }, {immediate: true});
 const verificationPoll = setInterval(() => {
@@ -141,6 +158,7 @@ onUnmounted(() => { clearTimeout(searchTimer); clearInterval(verificationPoll); 
         <NButton size="tiny" secondary :disabled="!available" @click="refresh()">{{ channel === 'feishu' ? '刷新飞书群' : job ? '查询刷新状态' : '刷新企微近期群' }}</NButton>
         <NButton v-if="discoveryCursor" size="tiny" secondary :disabled="!available" @click="refresh(true)">继续刷新飞书群</NButton>
         <small v-if="jobStatus">{{ jobStatus }}</small>
+        <small v-if="feishuGroupSource === 'observed'">飞书接口暂不可用，显示历史观察到的群，可能不全。</small>
       </template>
     </div>
     <small v-if="loaded && !loading && !rows.length && !error">没有匹配的候选。</small>

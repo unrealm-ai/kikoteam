@@ -132,3 +132,67 @@ func TestWecomGroupRefreshNeverPublishesPartialOrRevoked(t *testing.T) {
 		})
 	}
 }
+
+func TestWecomObservedGroupNamesRunOffInboxAndOnlyFillObserved(t *testing.T) {
+	db, _, managerStore, workspace, actor, agent, binding := channelManagerFixture(t)
+	ctx := t.Context()
+	reviewExec(t, db, `UPDATE platform_channel_bindings SET provider='wecom',app_id='bot',external_tenant_id='bot',identity_verified_generation=connection_generation WHERE id=$1`, binding)
+	var epoch int64
+	if err := db.QueryRow(`SELECT identity_epoch FROM platform_channel_bindings WHERE id=$1`, binding).Scan(&epoch); err != nil {
+		t.Fatal(err)
+	}
+	receive := func(event, group string) {
+		t.Helper()
+		v := inboundFixture(binding, event, "member")
+		v.ExternalTenantID, v.ExternalChatID, v.ChatType = "bot", group, "group"
+		v.ProviderDirected, v.BotMentioned = true, true
+		v.BotID, v.SenderIDType = "bot", "user_id"
+		out, err := managerStore.ReceiveChannel(ctx, v)
+		if err != nil || out.Status != "accepted" {
+			t.Fatalf("inbound failed: %v %v", out, err)
+		}
+	}
+	receive("first-group-message", "observed")
+	refresh := &WecomGroupRefreshStore{DB: db}
+	claim := func(want int) []service.WecomGroupRefreshJob {
+		t.Helper()
+		jobs, err := refresh.ClaimWecomGroups(ctx)
+		if err != nil || len(jobs) != want {
+			t.Fatalf("claim count %d, expected %d: %v", len(jobs), want, err)
+		}
+		return jobs
+	}
+	job := claim(1)[0]
+	if _, err := refresh.AuthorizeWecomGroups(ctx, job.ID, job.LeaseToken); err != nil {
+		t.Fatal(err)
+	}
+	receive("second-group-message", "observed")
+	claim(0)
+	if err := refresh.CompleteWecomGroups(ctx, job.ID, service.WecomGroupRefreshCompletion{LeaseToken: job.LeaseToken, Status: "failed"}); err != nil {
+		t.Fatal(err)
+	}
+	receive("third-group-message", "observed")
+	claim(0) // Same binding is in cooldown even with another message.
+	reviewExec(t, db, `UPDATE platform_wecom_group_refresh_jobs SET created_at=now()-interval '16 minutes' WHERE id=$1`, job.ID)
+	job = claim(1)[0]
+	reviewExec(t, db, `INSERT INTO platform_channel_observed_chats(binding_id,identity_epoch,external_tenant_id,external_chat_id) VALUES($1,$2,'other-tenant','observed')`, binding, epoch)
+	reviewExec(t, db, `INSERT INTO platform_channel_observed_chats(binding_id,identity_epoch,external_tenant_id,external_chat_id,display_name) VALUES($1,$2,'bot','already-named','Keep this')`, binding, epoch)
+	if err := refresh.CompleteWecomGroups(ctx, job.ID, service.WecomGroupRefreshCompletion{
+		LeaseToken: job.LeaseToken, Status: "completed",
+		Items: []service.WecomGroupRefreshItem{{ID: "observed", Name: " 可搜索群 "}, {ID: "already-named", Name: "Do not overwrite"}, {ID: "not-observed", Name: "Do not publish"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	selector := NewGroupSelectorStore(db)
+	items, _, err := selector.SearchGroups(ctx, workspace, actor, agent, service.GroupSelectionQuery{Provider: "wecom", Q: "可搜索", Limit: 10}, service.GroupSelectionBoundary{})
+	if err != nil || len(items) != 1 || items[0].Name != "可搜索群" || items[0].Ref.ExternalID != "observed" || items[0].Evidence != "observed" {
+		t.Fatalf("unexpected selector result %v %v", items, err)
+	}
+	var unexpected int
+	if err = db.QueryRow(`SELECT (SELECT count(*) FROM platform_channel_group_candidates WHERE binding_id=$1)
+ +(SELECT count(*) FROM platform_channel_observed_chats WHERE binding_id=$1 AND (external_chat_id='not-observed'
+ OR (external_tenant_id='other-tenant' AND display_name<>'') OR (external_chat_id='already-named' AND display_name<>'Keep this')))`, binding).Scan(&unexpected); err != nil || unexpected != 0 {
+		t.Fatalf("unexpected publication or scope change: %d %v", unexpected, err)
+	}
+	claim(0)
+}

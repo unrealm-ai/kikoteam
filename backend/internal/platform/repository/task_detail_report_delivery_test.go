@@ -27,7 +27,7 @@ func TestOrdinaryTaskReportDetailLink(t *testing.T) {
 
 			const result = "已核对三项。详情见链接。"
 			got := callReportDetailTool(t, store, reportScope, task, result)
-			if got["status"] != "queued" || !strings.Contains(got["message"], "尚未确认送达") || got["task_id"] != task {
+			if got["status"] != "accepted" || got["message"] != "任务详情链接已交由系统发送" || got["task_id"] != task {
 				t.Fatalf("report receipt: %+v", got)
 			}
 			_, err = store.QueueTaskDetailCard(ctx, reportScope, task, "repeat")
@@ -146,7 +146,7 @@ func TestOrdinaryTaskReportDetailLinkOnlyDeduplicatesReports(t *testing.T) {
 	task := taskDetailReportTaskID(t, db, issue.SessionID)
 	for range 2 {
 		r, e := store.QueueTaskDetailCard(ctx, *issue.Source, task, "")
-		if e != nil || r.Status != "queued" {
+		if e != nil || r.Status != "accepted" {
 			t.Fatal(r, e)
 		}
 	}
@@ -172,8 +172,8 @@ func TestOrdinaryTaskReportDetailLinkOnlyDeduplicatesReports(t *testing.T) {
 	}
 	queued, guarded := 0, 0
 	for range 2 {
-		switch e := <-results; {
-		case e == nil:
+		switch e := <-results; e {
+		case nil:
 			queued++
 		default:
 			var failure *manager.Error

@@ -83,8 +83,8 @@ func (s *Store) QueueTaskDetailCard(ctx context.Context, scope service.Delegatio
 	if err != nil {
 		return out, err
 	}
-	out.Status = "queued"
-	out.Message = "已请求发送任务详情链接，尚未确认送达"
+	out.Status = "accepted"
+	out.Message = "任务详情链接已交由系统发送"
 	return out, tx.Commit()
 }
 

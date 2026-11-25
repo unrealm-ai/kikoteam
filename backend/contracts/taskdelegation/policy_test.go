@@ -20,7 +20,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := map[string][]string{
-		"send_task_detail_link":        {"authorized channel conversation", "exact task_id", "explicitly asks", "once per task", "only the reported task", "No URL is returned", "never construct or guess", "not delivered"},
+		"send_task_detail_link":        {"authorized channel conversation", "exact task_id", "explicitly asks", "once per task", "only the reported task", "No URL is returned", "never construct or guess", "Do not repeat", "does not mean the message was read or delivered"},
 		"artifact_select":              {"candidate IDs", "pending delivery"},
 		"supplement_todo":              {"unstarted todo", "planning_version"},
 		"work_item_get_current":        {"Read-only", "current employee"},

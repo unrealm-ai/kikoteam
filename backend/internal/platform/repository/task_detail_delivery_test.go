@@ -30,7 +30,7 @@ func TestTaskDetailChannelDispatchAndSilentContext(t *testing.T) {
 					t.Fatal("receipt may not expose the bearer URL")
 				}
 			}
-			send("queued")
+			send("accepted")
 			if _, err := store.QueueTaskDetailCard(ctx, *issue.Source, manager.NewID(), ""); err == nil {
 				t.Fatal("an unrelated task can be sent")
 			}
@@ -80,7 +80,7 @@ func TestTaskDetailChannelDispatchAndSilentContext(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			send("queued")
+			send("accepted")
 			var notes, triggers int
 			var text string
 			err = db.QueryRow(`SELECT count(*), count(*) FILTER (WHERE trigger_agent_loop), COALESCE(max(text),'')

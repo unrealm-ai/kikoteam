@@ -14,7 +14,7 @@ const from = ref(''), to = ref('');
 const employees = ref(new Map<string,string>()), models = ref(new Map<string,string>());
 let request: AbortController | undefined;
 const statuses = {running:'进行中',usage_recorded:'待结算',settled:'已结算',pending_review:'待核对',no_charge:'不收费'};
-const kinds = {signup_bonus:'注册赠送',admin_grant:'管理员赠送',model_charge:'模型消耗'};
+const kinds = {signup_bonus:'注册赠送',referral_bonus:'邀请奖励',admin_grant:'管理员赠送',model_charge:'模型消耗'};
 const statusTone = (value: Usage['status']) => {
   if (value === 'settled') return 'success';
   if (value === 'pending_review') return 'warning';
@@ -22,7 +22,7 @@ const statusTone = (value: Usage['status']) => {
   return 'muted';
 };
 const kindTone = (value: Ledger['kind']) => {
-  if (value === 'signup_bonus' || value === 'admin_grant') return 'success';
+  if (value === 'signup_bonus' || value === 'referral_bonus' || value === 'admin_grant') return 'success';
   return 'muted';
 };
 const formatter = new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'});

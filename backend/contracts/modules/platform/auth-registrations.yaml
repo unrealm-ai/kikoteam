@@ -7,6 +7,8 @@ post:
     atomically and creates email_verified=true. Never overwrites an existing email account.
     Registration atomically creates an owned personal workspace and a session. Invitation
     acceptance is a separate operation; failure does not undo registration.
+    An optional referral code records a reward attribution only for new accounts, never grants workspace membership,
+    and is ignored if invalid, revoked, or the activity is disabled.
   security: []
   responses:
     '201':
@@ -62,6 +64,9 @@ post:
             code:
               type: string
               pattern: ^[0-9]{6}$
+            referral_code:
+              type: string
+              description: Optional UUID from /r/<code>. Codes not eligible for a reward are ignored.
             challenge_id:
               type: string
               format: uuid

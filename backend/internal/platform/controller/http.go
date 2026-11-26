@@ -20,6 +20,7 @@ import (
 )
 
 type Server struct {
+	Referrals        ReferralRepository
 	Catalog          service.ResourceCatalog
 	SharingPolicies  *service.GroupSharingService
 	PeopleSelectors  *service.PeopleSelectorService
@@ -66,6 +67,7 @@ func (s *Server) Handler() http.Handler {
 	s.oauthAppRoutes(m)
 	s.channelDownloadSettingsRoutes(m)
 	s.taskLinkSettingsRoutes(m)
+	s.referralRoutes(m)
 	s.channelRoutes(m)
 	s.wecomContactRoutes(m)
 	s.feishuSetupRoutes(m)
@@ -318,12 +320,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) (any, int, error)
 }
 func (s *Server) register(w http.ResponseWriter, r *http.Request) (any, int, error) {
 	var b struct {
-		Email     string `json:"email"`
-		Name      string `json:"name"`
-		Method    string `json:"method"`
-		Password  string `json:"password"`
-		Code      string `json:"code"`
-		Challenge string `json:"challenge_id"`
+		Email        string `json:"email"`
+		Name         string `json:"name"`
+		Method       string `json:"method"`
+		Password     string `json:"password"`
+		Code         string `json:"code"`
+		Challenge    string `json:"challenge_id"`
+		ReferralCode string `json:"referral_code"`
 	}
 	if e := decode(r, &b); e != nil {
 		return nil, 0, e
@@ -331,14 +334,15 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) (any, int, err
 	var a service.Account
 	var t string
 	var e error
+	ctx := service.WithRegistrationReferral(r.Context(), b.ReferralCode)
 	switch b.Method {
 	case "password":
 		if b.Code != "" || b.Challenge != "" {
 			return nil, 0, service.Fail("invalid_request", 400, "密码注册不能携带验证码")
 		}
-		a, t, e = s.Auth.RegisterWithPassword(r.Context(), b.Email, b.Name, b.Password, s.source(r))
+		a, t, e = s.Auth.RegisterWithPassword(ctx, b.Email, b.Name, b.Password, s.source(r))
 	case "", "code":
-		a, t, e = s.Auth.Register(r.Context(), b.Email, b.Name, b.Password, b.Code, b.Challenge, s.source(r))
+		a, t, e = s.Auth.Register(ctx, b.Email, b.Name, b.Password, b.Code, b.Challenge, s.source(r))
 	default:
 		return nil, 0, service.Fail("invalid_method", 400, "注册方式无效")
 	}

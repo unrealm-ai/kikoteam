@@ -3234,7 +3234,7 @@ CREATE TABLE public.platform_credit_ledger (
     operator_id uuid,
     reason text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT platform_credit_ledger_check CHECK ((((kind = 'signup_bonus'::text) AND (amount_units >= 0) AND (usage_id IS NULL) AND (agent_id IS NULL)) OR ((kind = 'admin_grant'::text) AND (amount_units > 0) AND (operator_id IS NOT NULL) AND (reason IS NOT NULL) AND (usage_id IS NULL) AND (agent_id IS NULL)) OR ((kind = 'model_charge'::text) AND (amount_units <= 0) AND (usage_id IS NOT NULL) AND (agent_id IS NOT NULL)))),
+    CONSTRAINT platform_credit_ledger_check CHECK ((((kind = 'signup_bonus'::text) AND (amount_units >= 0) AND (usage_id IS NULL) AND (agent_id IS NULL)) OR ((kind = 'admin_grant'::text) AND (amount_units > 0) AND (operator_id IS NOT NULL) AND (reason IS NOT NULL) AND (usage_id IS NULL) AND (agent_id IS NULL)) OR ((kind = 'model_charge'::text) AND (amount_units <= 0) AND (usage_id IS NOT NULL) AND (agent_id IS NOT NULL)) OR ((kind = 'referral_bonus'::text) AND (amount_units = 100000000) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (operator_id IS NULL)))),
     CONSTRAINT platform_credit_ledger_wallet_version_check CHECK ((wallet_version > 0))
 );
 
@@ -3249,7 +3249,10 @@ CREATE TABLE public.platform_credit_settings (
     version bigint DEFAULT 1 NOT NULL,
     updated_by uuid,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    referral_rewards_enabled boolean DEFAULT false NOT NULL,
+    referral_rewards_version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT platform_credit_settings_id_check CHECK ((id = 1)),
+    CONSTRAINT platform_credit_settings_referral_rewards_version_check CHECK ((referral_rewards_version >= 0)),
     CONSTRAINT platform_credit_settings_signup_bonus_units_check CHECK ((signup_bonus_units >= 0)),
     CONSTRAINT platform_credit_settings_version_check CHECK ((version > 0))
 );
@@ -3809,6 +3812,32 @@ CREATE TABLE public.platform_rate_limits (
     key text NOT NULL,
     window_end timestamp with time zone NOT NULL,
     count integer NOT NULL
+);
+
+
+--
+-- Name: platform_referral_attributions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_referral_attributions (
+    new_account_id uuid NOT NULL,
+    referral_code uuid NOT NULL,
+    rewards_version bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    rewarded_at timestamp with time zone,
+    CONSTRAINT platform_referral_attributions_rewards_version_check CHECK ((rewards_version > 0))
+);
+
+
+--
+-- Name: platform_referral_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_referral_links (
+    code uuid NOT NULL,
+    inviter_account_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    revoked_at timestamp with time zone
 );
 
 
@@ -5792,6 +5821,30 @@ ALTER TABLE ONLY public.platform_rate_limits
 
 
 --
+-- Name: platform_referral_attributions platform_referral_attributions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_referral_attributions
+    ADD CONSTRAINT platform_referral_attributions_pkey PRIMARY KEY (new_account_id);
+
+
+--
+-- Name: platform_referral_links platform_referral_links_inviter_account_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_referral_links
+    ADD CONSTRAINT platform_referral_links_inviter_account_id_key UNIQUE (inviter_account_id);
+
+
+--
+-- Name: platform_referral_links platform_referral_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_referral_links
+    ADD CONSTRAINT platform_referral_links_pkey PRIMARY KEY (code);
+
+
+--
 -- Name: platform_removed_members platform_removed_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6637,6 +6690,13 @@ CREATE INDEX platform_plugins_list_idx ON public.platform_plugins USING btree (w
 --
 
 CREATE UNIQUE INDEX platform_proxy_models_default ON public.platform_proxy_models USING btree (is_default) WHERE is_default;
+
+
+--
+-- Name: platform_referral_attributions_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_referral_attributions_code ON public.platform_referral_attributions USING btree (referral_code);
 
 
 --
@@ -9294,6 +9354,30 @@ ALTER TABLE ONLY public.platform_plugins
 
 ALTER TABLE ONLY public.platform_proxy_models
     ADD CONSTRAINT platform_proxy_models_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: platform_referral_attributions platform_referral_attributions_new_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_referral_attributions
+    ADD CONSTRAINT platform_referral_attributions_new_account_id_fkey FOREIGN KEY (new_account_id) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: platform_referral_attributions platform_referral_attributions_referral_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_referral_attributions
+    ADD CONSTRAINT platform_referral_attributions_referral_code_fkey FOREIGN KEY (referral_code) REFERENCES public.platform_referral_links(code);
+
+
+--
+-- Name: platform_referral_links platform_referral_links_inviter_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_referral_links
+    ADD CONSTRAINT platform_referral_links_inviter_account_id_fkey FOREIGN KEY (inviter_account_id) REFERENCES public.platform_accounts(id);
 
 
 --

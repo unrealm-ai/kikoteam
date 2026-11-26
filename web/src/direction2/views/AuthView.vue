@@ -15,6 +15,7 @@ const props = defineProps<{
   initialMethod?: 'password' | 'forgot';
   initialEmail?: string;
   preferCodeRegistration?: boolean;
+  referralCode?: string;
 }>();
 
 const emit = defineEmits<{
@@ -429,7 +430,7 @@ async function handleRegister() {
       name: registerModel.name.trim(),
       email: registerModel.email.trim(),
       code: registerModel.code.trim(),
-      ...(realPlatform ? { method: registrationNeedsCode.value ? 'code' as const : 'password' as const } : {}),
+      ...(realPlatform ? { method: registrationNeedsCode.value ? 'code' as const : 'password' as const, ...(props.referralCode ? { referral_code: props.referralCode } : {}) } : {}),
       password: registerModel.password
     });
     message.success('注册成功，已登录');

@@ -1,0 +1,84 @@
+link:
+  get:
+    operationId: getOwnReferralLink
+    summary: Read referral activity and the current account's link if already created
+    security:
+    - sessionCookie: []
+    responses:
+      '200': { $ref: '#/linkResponse' }
+      default: { $ref: '#/error' }
+  post:
+    operationId: ensureOwnReferralLink
+    summary: Ensure a stable referral link for the current account
+    description: Idempotently reuses the same link. Returns enabled false without issuing a code when the activity is disabled.
+    security:
+    - sessionCookie: []
+    parameters:
+    - $ref: '#/csrf'
+    responses:
+      '200': { $ref: '#/linkResponse' }
+      default: { $ref: '#/error' }
+settings:
+  get:
+    operationId: getPlatformReferralSettings
+    summary: Read referral reward settings as a platform administrator
+    security:
+    - sessionCookie: []
+    responses:
+      '200': { $ref: '#/settingsResponse' }
+      default: { $ref: '#/error' }
+  patch:
+    operationId: updatePlatformReferralSettings
+    summary: Change referral reward settings as a platform administrator
+    description: A stale version returns 409. Turning off rewards invalidates pending rewards from that activation and does not revoke links or change previously awarded credits.
+    security:
+    - sessionCookie: []
+    parameters:
+    - $ref: '#/csrf'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [expected_version, enabled]
+            properties:
+              expected_version: { type: integer, minimum: 0 }
+              enabled: { type: boolean }
+    responses:
+      '200': { $ref: '#/settingsResponse' }
+      default: { $ref: '#/error' }
+csrf:
+  name: X-CSRF-Protection
+  in: header
+  required: true
+  schema: { type: string, const: '1' }
+linkResponse:
+  description: Current referral availability and optional code, not an authentication credential.
+  content:
+    application/json:
+      schema:
+        type: object
+        additionalProperties: false
+        required: [enabled]
+        properties:
+          enabled: { type: boolean }
+          code: { type: string, format: uuid }
+settingsResponse:
+  description: Current activity switch and configuration version, initially disabled at version zero.
+  content:
+    application/json:
+      schema:
+        type: object
+        additionalProperties: false
+        required: [enabled, version]
+        properties:
+          enabled: { type: boolean, default: false }
+          version: { type: integer, minimum: 0 }
+error:
+  description: Structured error
+  content:
+    application/json:
+      schema:
+        $ref: ../../openapi.yaml#/components/schemas/Error

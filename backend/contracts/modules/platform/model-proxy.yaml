@@ -113,7 +113,7 @@ ledger:
       - &modelFilter {name: model_id, in: query, schema: *uuid}
       - &from {name: from, in: query, description: Inclusive beginning, schema: {type: string, format: date-time}}
       - &to {name: to, in: query, description: Exclusive end, schema: {type: string, format: date-time}}
-      - {name: kind, in: query, schema: &kind {type: string, enum: [signup_bonus, admin_grant, model_charge]}}
+      - {name: kind, in: query, schema: &kind {type: string, enum: [signup_bonus, admin_grant, model_charge, referral_bonus]}}
       - &cursor {name: cursor, in: query, schema: {type: string, maxLength: 512}}
       - &limit {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
     responses:

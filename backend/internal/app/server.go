@@ -78,7 +78,7 @@ func Run(stderr io.Writer, version string) int {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(30 * time.Minute)
 	fallbackMailPolicy := service.MailPolicy{Enabled: cfg.Mail.Enabled, VerificationRequired: cfg.Auth.RequireEmailVerification}
-	authStore := &repository.AuthStore{DB: db, InitCredits: mprepo.Signup, MailFallback: &fallbackMailPolicy}
+	authStore := &repository.AuthStore{DB: db, InitCredits: mprepo.Signup, RewardReferral: mprepo.RewardReferral, MailFallback: &fallbackMailPolicy}
 	mailSettings := &service.MailSettingsService{
 		Store: &repository.MailSettingsStore{DB: db}, Secret: []byte(secret), AllowTest: authStore.Allow,
 		Fallback: service.MailSettingsDraft{Password: cfg.SMTPPassword, MailSettings: service.MailSettings{
@@ -155,7 +155,7 @@ func Run(stderr io.Writer, version string) int {
 	admins := &service.AdminService{Store: &repository.AdminStore{DB: db}}
 	wecomGroupStore := &repository.WecomGroupRefreshStore{DB: db}
 	taskLinks := &service.TaskLinkSettingsService{Store: &repository.TaskLinkSettingsStore{DB: db}}
-	api := (&controller.Server{TaskLinks: taskLinks, Catalog: &repository.ResourceCatalog{DB: db, Assets: assets, Plugins: plugins}, SharingPolicies: &service.GroupSharingService{Store: &repository.GroupSharingStore{DB: db}}, PeopleSelectors: &service.PeopleSelectorService{Secret: []byte(secret), Channels: channels, Wecom: wecomContacts, Store: repository.NewPeopleSelectorStore(db, []byte(secret))}, GroupSelectors: &service.GroupSelectorService{Store: repository.NewGroupSelectorStore(db), Secret: []byte(secret)}, WecomGroups: &service.WecomGroupRefresh{Channels: channels, Store: wecomGroupStore}, ChannelGroups: &service.ChannelGroupDiscovery{Channels: channels, Store: &repository.ChannelGroupCache{DB: db}, Provider: &feishugroups.Client{}, Secret: []byte(secret)}, AgentUsage: &service.AgentUsageService{Store: &repository.AgentUsageStore{DB: db}}, WebGroups: &service.WebGroupService{Store: &repository.WebGroupStore{DB: db}}, WecomContacts: wecomContacts, Official: official, Templates: templates, Admin: admins, Channels: channels, FeishuSetup: feishuSetup, DingTalkSetup: dingtalkSetup, Skills: skills, Plugins: plugins, Packages: packages, Agents: &service.AgentService{Store: &repository.AgentStore{DB: db, EnsureKey: proxySecrets.EnsureKey}}, Models: models, Auth: auth, Workspaces: ws, Origin: origin, SecureCookies: u.Scheme == "https", Logger: log, TrustedProxies: proxies, MailSettings: mailSettings, OAuthApps: oauthApps, ChannelDownloads: &service.ChannelDownloadSettingsService{Store: &repository.ChannelDownloadSettingsStore{DB: db}}}).Handler()
+	api := (&controller.Server{TaskLinks: taskLinks, Referrals: &repository.ReferralStore{DB: db}, Catalog: &repository.ResourceCatalog{DB: db, Assets: assets, Plugins: plugins}, SharingPolicies: &service.GroupSharingService{Store: &repository.GroupSharingStore{DB: db}}, PeopleSelectors: &service.PeopleSelectorService{Secret: []byte(secret), Channels: channels, Wecom: wecomContacts, Store: repository.NewPeopleSelectorStore(db, []byte(secret))}, GroupSelectors: &service.GroupSelectorService{Store: repository.NewGroupSelectorStore(db), Secret: []byte(secret)}, WecomGroups: &service.WecomGroupRefresh{Channels: channels, Store: wecomGroupStore}, ChannelGroups: &service.ChannelGroupDiscovery{Channels: channels, Store: &repository.ChannelGroupCache{DB: db}, Provider: &feishugroups.Client{}, Secret: []byte(secret)}, AgentUsage: &service.AgentUsageService{Store: &repository.AgentUsageStore{DB: db}}, WebGroups: &service.WebGroupService{Store: &repository.WebGroupStore{DB: db}}, WecomContacts: wecomContacts, Official: official, Templates: templates, Admin: admins, Channels: channels, FeishuSetup: feishuSetup, DingTalkSetup: dingtalkSetup, Skills: skills, Plugins: plugins, Packages: packages, Agents: &service.AgentService{Store: &repository.AgentStore{DB: db, EnsureKey: proxySecrets.EnsureKey}}, Models: models, Auth: auth, Workspaces: ws, Origin: origin, SecureCookies: u.Scheme == "https", Logger: log, TrustedProxies: proxies, MailSettings: mailSettings, OAuthApps: oauthApps, ChannelDownloads: &service.ChannelDownloadSettingsService{Store: &repository.ChannelDownloadSettingsStore{DB: db}}}).Handler()
 	mux := http.NewServeMux()
 	controller.ChannelInternalRoutes(mux, channels, hubToken)
 	controller.WecomGroupRefreshInternalRoutes(mux, wecomGroupStore, hubToken)
@@ -336,7 +336,7 @@ func webFiles(dir string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/tasks/") {
+		if strings.HasPrefix(r.URL.Path, "/tasks/") || strings.HasPrefix(r.URL.Path, "/r/") {
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Referrer-Policy", "no-referrer")
 			w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")

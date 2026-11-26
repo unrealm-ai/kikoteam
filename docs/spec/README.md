@@ -5,6 +5,7 @@
 | 模块 | 行为基线 | 验证范围 |
 | --- | --- | --- |
 | 平台服务配置 | [邮件与注册、GitHub 插件 OAuth](platform-service-settings.md) | 自动化夹具和隔离 PostgreSQL；未验证真实 SMTP 送达或真实 GitHub 授权 |
+| 账号拉新邀请 | [独立推荐链接、归因与积分](account-referrals.md) | 真实 PostgreSQL、HTTP 流程、Web 请求契约；邮件走夹具 |
 | 本地启动器 | [无宿主机 Python 的 Compose 启停与安装引导](local-launcher.md) | macOS 真机 Compose；macOS/Linux CLI 黑盒（含模拟 Docker 安装） |
 | 镜像发布 | [主分支与版本标签的 AMD64 镜像发布](tagged-multiarch-release.md) | 推送到主分支后构建三个服务镜像，通过 AMD64 验收后更新部署指针 |
 | 渠道接收反应 | [飞书、钉钉原消息接收反应](channel-receipt-reactions.md) | 隔离 PostgreSQL、供应商 HTTP 夹具与钉钉实测通过；飞书真实贴表情待验 |

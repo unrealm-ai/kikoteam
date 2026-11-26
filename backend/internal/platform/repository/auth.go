@@ -11,13 +11,15 @@ import (
 )
 
 type AuthStore struct {
-	DB           *sql.DB
-	MailFallback *service.MailPolicy
-	InitCredits  func(context.Context, *sql.Tx, string) error
+	DB             *sql.DB
+	MailFallback   *service.MailPolicy
+	InitCredits    func(context.Context, *sql.Tx, string) error
+	RewardReferral func(context.Context, *sql.Tx, string, string) error
 }
 type authTx struct {
-	tx          *sql.Tx
-	initCredits func(context.Context, *sql.Tx, string) error
+	tx             *sql.Tx
+	initCredits    func(context.Context, *sql.Tx, string) error
+	rewardReferral func(context.Context, *sql.Tx, string, string) error
 }
 
 func (s *AuthStore) Allow(ctx context.Context, key string, limit int, window time.Duration) error {
@@ -104,7 +106,7 @@ func (s *AuthStore) Consume(ctx context.Context, c service.Challenge, fn func(se
 		}
 		return invalidCode()
 	}
-	if e = fn(&authTx{tx: tx, initCredits: s.InitCredits}); e != nil {
+	if e = fn(&authTx{tx: tx, initCredits: s.InitCredits, rewardReferral: s.RewardReferral}); e != nil {
 		return e
 	}
 	_, e = tx.ExecContext(ctx, `UPDATE platform_email_challenges SET consumed_at=now() WHERE id::text=$1`, c.ID)
@@ -147,10 +149,15 @@ func (t *authTx) CreateAccount(ctx context.Context, a service.Account) error {
 	if errors.As(e, &pe) && pe.Code == "23505" {
 		return service.Fail("account_exists", 409, "该邮箱已注册，请登录")
 	}
-	if e == nil && t.initCredits != nil {
-		return t.initCredits(ctx, t.tx, a.ID)
+	if e != nil {
+		return e
 	}
-	return e
+	if t.initCredits != nil {
+		if e = t.initCredits(ctx, t.tx, a.ID); e != nil {
+			return e
+		}
+	}
+	return t.recordReferral(ctx, a)
 }
 func (t *authTx) SetPassword(ctx context.Context, id, hash string) error {
 	_, e := t.tx.ExecContext(ctx, `UPDATE platform_accounts SET password_hash=$2 WHERE id=$1`, id, hash)
@@ -197,7 +204,7 @@ func (s *AuthStore) PasswordSession(ctx context.Context, email, expectedHash, to
 	if e = lockAdminInitialization(ctx, tx); e != nil {
 		return e
 	}
-	a, e := (&authTx{tx: tx, initCredits: s.InitCredits}).FindAccount(ctx, email)
+	a, e := (&authTx{tx: tx, initCredits: s.InitCredits, rewardReferral: s.RewardReferral}).FindAccount(ctx, email)
 	if e != nil {
 		return e
 	}
@@ -261,7 +268,7 @@ func (s *AuthStore) RegisterPassword(ctx context.Context, a service.Account, wor
 			return service.Fail("email_verification_required", 403, "当前部署要求邮箱验证码注册")
 		}
 	}
-	auth := &authTx{tx: tx, initCredits: s.InitCredits}
+	auth := &authTx{tx: tx, initCredits: s.InitCredits, rewardReferral: s.RewardReferral}
 	if e = auth.CreateAccount(ctx, a); e != nil {
 		return e
 	}
@@ -275,7 +282,10 @@ func (s *AuthStore) RegisterPassword(ctx context.Context, a service.Account, wor
 }
 func (t *authTx) VerifyEmail(ctx context.Context, id string) error {
 	_, e := t.tx.ExecContext(ctx, `UPDATE platform_accounts SET email_verified=true WHERE id=$1`, id)
-	return e
+	if e != nil {
+		return e
+	}
+	return t.settleReferral(ctx, id)
 }
 
 func (t *authTx) CreatePersonalWorkspace(ctx context.Context, accountID string, w service.Workspace) error {

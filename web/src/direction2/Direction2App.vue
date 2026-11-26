@@ -18,6 +18,8 @@ import ResourcesView from './views/ResourcesView.vue';
 import SettingsView from './views/SettingsView.vue';
 import AuthView from './views/AuthView.vue';
 import InvitationView from './views/InvitationView.vue';
+import ReferralInvite from './views/ReferralInvite.vue';
+import { referralCodeFromPath } from './api/referrals';
 import { readInvitationToken, realPlatform, platformRequest, post, workspaceFromWire, type WorkspaceWire } from './api/platform';
 import { activeWorkspaceId, pendingApprovalsCount, clearAuthToken, D2ApiError } from './api/client';
 import { authApi, dashboardApi } from './api';
@@ -89,7 +91,14 @@ function readInitialSidebarCollapsed(): boolean {
 
 const defaultView: RailView = realPlatform ? 'market' : 'employees';
 const currentView = ref<RailView>(defaultView);
-const invitationToken = ref(readInvitationToken());
+const referralEntry = ref(realPlatform && window.location.pathname.startsWith('/r/'));
+const referralCode = computed(() => referralEntry.value ? referralCodeFromPath(window.location.pathname) : '');
+const invitationToken = ref(referralEntry.value ? '' : readInvitationToken());
+function leaveReferralEntry() {
+  if (!referralEntry.value) return;
+  window.history.replaceState(null, '', '/');
+  referralEntry.value = false;
+}
 const showCreateWorkspace = ref(false);
 const newWorkspaceName = ref('');
 const creatingWorkspace = ref(false);
@@ -206,6 +215,7 @@ async function enterAuthenticatedShell(me: UserProfile, wsList: WorkspaceInfo[])
   }
   const routeState = readStateFromHash();
   currentUser.value = me;
+  if (me) leaveReferralEntry();
   workspaces.value = wsList;
   if (routeState.ws && wsList.some(w => w.id === routeState.ws)) {
     activeWorkspaceId.value = routeState.ws;
@@ -666,6 +676,8 @@ function openApproval(id: string) {
       <InvitationView v-if="realPlatform && invitationToken" :token="invitationToken" :user="currentUser" @authenticated="handleAuthenticated" @session-invalidated="invalidateLocalSession" @completed="invitationCompleted" @signout="performLogout" />
       <AuthView
         v-else-if="shellStatus === 'unauthenticated'"
+        :initial-tab="referralEntry ? 'register' : 'login'"
+        :referral-code="referralCode"
         @authenticated="handleAuthenticated"
       />
       <div v-else class="d2-shell">
@@ -744,6 +756,7 @@ function openApproval(id: string) {
           </div>
 
           <div class="topbar-right">
+            <ReferralInvite v-if="realPlatform && currentUser" :key="currentUser.id" />
             <!-- 待处理提醒入口 (人在回路全局统一入口：直达任务中心待确认审批流) -->
             <button
               type="button"

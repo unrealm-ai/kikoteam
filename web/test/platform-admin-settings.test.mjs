@@ -33,6 +33,7 @@ const root = '/api/v1/platform';
 const mail = root+'/mail-settings';
 const github = root+'/oauth-apps/github';
 const channelDownloads = root+'/channel-download-settings';
+const referralSettings = root+'/referral-settings';
 const baseMail = {
   version:4,source:'database',enabled:true,registration_verification_required:false,address:'smtp.example.test:587',
   host:'smtp.example.test',username:'notify@example.test',from:'notify@example.test',implicit_tls:false,password_configured:true,
@@ -49,6 +50,7 @@ async function mount(handle) {
     requests.push(request);
     if (url.includes('/accounts?')) return Response.json({items:[],total:0});
     if (url.endsWith('/credit-settings')) return Response.json({signup_bonus:'0',version:1});
+    if (url === referralSettings && request.method === 'GET') return Response.json({enabled:false,version:0});
     return handle(request);
   };
   const host = document.createElement('div'); document.body.appendChild(host);
@@ -97,7 +99,7 @@ test('SMTP test uses the unsaved draft without saving or revealing the stored pa
     throw new Error('Unexpected endpoint');
   });
   try {
-    assert.ok(!m.requests.some(r => r.url.startsWith(root)));
+    assert.ok(!m.requests.some(r => r.url === mail || r.url === mail+'/test'));
     m.button('邮件与注册').click(); await wait();
     assert.equal(m.input('platform-smtp-password').value, '');
     assert.equal(m.input('platform-smtp-password').type, 'password');
@@ -510,4 +512,27 @@ test('SMTP receipt expiry blocks saves again without resetting the form', async 
     assert.ok(!m.requests.some(r=>r.method==='PATCH'));
     assert.deepEqual(m.errors,[]);
   } finally { globalThis.setTimeout = originalTimeout; await m.close(); }
+});
+
+test('Referral rewards are off by default, save an explicit switch, and notify the workbench', async () => {
+  let changed = 0;
+  const listener = () => { changed++; };
+  window.addEventListener('kiko:referral-settings-changed', listener);
+  const m = await mount(r => {
+    if (r.url === referralSettings && r.method === 'PATCH') return Response.json({enabled:true,version:1});
+    throw new Error('Unexpected endpoint');
+  });
+  try {
+    assert.ok(m.button('保存邀请设置').disabled);
+    await m.choose('开启奖励','.n-checkbox');
+    m.button('保存邀请设置').click(); await wait();
+    const write = m.requests.find(r => r.url === referralSettings && r.method === 'PATCH');
+    assert.deepEqual(write?.body, {expected_version:0,enabled:true});
+    assert.equal(changed, 1);
+    assert.match(m.host.textContent, /邀请奖励设置已保存/);
+    assert.deepEqual(m.errors,[]);
+  } finally {
+    window.removeEventListener('kiko:referral-settings-changed', listener);
+    await m.close();
+  }
 });

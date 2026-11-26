@@ -175,3 +175,7 @@ Backend 投递循环在处理邮件时读取运行配置，关闭邮件时不领
 邮件链接来自可信PublicURL配置而非请求Host。outbox正文（含收件人和链接）AES-GCM加密，用AUTH_SECRET经专用固定域派生密钥，AAD绑定邀请ID；不存明文token、不写日志。多实例AUTH_SECRET必须一致且无默认值。轮换AUTH_SECRET会使既有待发密文无法解密，明确失败且不发送；需在受控操作下恢复原密钥处理待发记录，或撤销旧邀请并重建，不可降级读取明文。历史已经sent状态不因密钥变更重发。
 
 本轮仅fake SMTP测试，不向真实收件人发信；不宣称真实邮件已送达。
+
+## 账号拉新邀请
+
+拉新与工作区入组独立。登录用户通过 `GET /api/v1/referrals/me` 查询活动状态，`POST /api/v1/referrals/me` 幂等生成当前账号的推荐码。平台管理员用 `GET/PATCH /api/v1/platform/referral-settings` 读写活动开关。注册链接 `/r/<code>` 复用注册页面；只有 `POST /api/v1/auth/registrations` 接受可选的 `referral_code`，登录不接受该字段。奖励记入邀请人钱包，不改变双方任何工作区权限。具体开关边界和邮箱验证规则见[行为规范](../../docs/spec/account-referrals.md)。

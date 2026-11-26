@@ -57,6 +57,15 @@ func Signup(ctx context.Context, tx *sql.Tx, id string) error {
 	return e
 }
 
+// RewardReferral adds to the inviter wallet inside the account transaction.
+func RewardReferral(ctx context.Context, tx *sql.Tx, inviter, newAccount string) error {
+	if err := EnsureWallet(ctx, tx, inviter); err != nil {
+		return err
+	}
+	_, err := entry(ctx, tx, inviter, 100*proxy.Units, "referral_bonus", "referral:"+newAccount, "", "", "邀请新用户", "", "")
+	return err
+}
+
 func (s Store) Grant(ctx context.Context, actor, account, key, reason string, amount int64) (v Entry, replay bool, e error) {
 	key = fmt.Sprintf("grant:%x", sha256.Sum256([]byte(actor+":"+account+":"+key)))
 	fingerprint := fmt.Sprintf("%x", sha256.Sum256(fmt.Appendf(nil, "%d:%s", amount, reason)))

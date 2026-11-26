@@ -60,7 +60,7 @@ export const platformAuth = {
     challenges.set(key(p.email, p.purpose), result.challenge_id);
     return { sent: true, ...p, expiresInSeconds: Math.max(0, Math.floor((Date.parse(result.expires_at) - Date.now()) / 1000)), resendAfterSeconds: result.resend_after };
   },
-  registerWithEmail: async (p: { email: string; name: string; code: string; password: string; method?: 'password' | 'code' }) => sessionFromWire(await platformRequest<SessionWire>('/auth/registrations', post(p.method === 'password' ? { email: p.email, name: p.name, password: p.password, method: 'password' } : { ...p, method: 'code', challenge_id: challenges.get(key(p.email, 'register')) }))),
+  registerWithEmail: async (p: { email: string; name: string; code: string; password: string; method?: 'password' | 'code'; referral_code?: string }) => sessionFromWire(await platformRequest<SessionWire>('/auth/registrations', post(p.method === 'password' ? { email: p.email, name: p.name, password: p.password, method: 'password', referral_code: p.referral_code } : { ...p, method: 'code', challenge_id: challenges.get(key(p.email, 'register')) }))),
   resetPassword: async (p: { email: string; code: string; newPassword: string }) => { await platformRequest('/auth/password-reset', post({ email: p.email, code: p.code, new_password: p.newPassword, challenge_id: challenges.get(key(p.email, 'reset_password')) })); return { ok: true, email: p.email }; },
   logout: async () => { await platformRequest('/auth/session', { method: 'DELETE' }); return { ok: true }; }
 };

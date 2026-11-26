@@ -215,7 +215,7 @@ func creditFilters(q url.Values, ledger bool) (f repo.Filter, e error) {
 				f.To = &at
 			}
 		case "kind":
-			if !ledger || v != "signup_bonus" && v != "admin_grant" && v != "model_charge" {
+			if !ledger || v != "signup_bonus" && v != "admin_grant" && v != "referral_bonus" && v != "model_charge" {
 				return f, invalidCreditRequest()
 			}
 			f.Kind = v

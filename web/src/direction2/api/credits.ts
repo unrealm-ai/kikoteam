@@ -17,7 +17,7 @@ export interface Usage {
 }
 export interface Ledger {
   id: string;
-  kind: 'signup_bonus' | 'admin_grant' | 'model_charge';
+  kind: 'signup_bonus' | 'referral_bonus' | 'admin_grant' | 'model_charge';
   amount: string;
   balance_after: string;
   reason: string | null;

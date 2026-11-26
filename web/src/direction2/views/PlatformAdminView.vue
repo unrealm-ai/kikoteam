@@ -8,6 +8,7 @@ import OfficialModelsView from './OfficialModelsView.vue';
 import MyCreditsView from './MyCreditsView.vue';
 import PlatformMailSettings from './PlatformMailSettings.vue';
 import PlatformGithubOAuthSettings from './PlatformGithubOAuthSettings.vue';
+import PlatformReferralSettings from './PlatformReferralSettings.vue';
 import PlatformTaskLinkSettings from './PlatformTaskLinkSettings.vue';
 import PlatformChannelDownloadSettings from './PlatformChannelDownloadSettings.vue';
 
@@ -145,6 +146,8 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
       </form>
       <NAlert v-if="settingsError" type="error">{{settingsError}} <NButton text @click="readSettings">重新读取设置</NButton></NAlert>
       <NAlert v-if="settingsNotice" type="success">{{settingsNotice}}</NAlert>
+
+      <PlatformReferralSettings />
 
       <div class="members-table-card">
         <div class="accounts-toolbar">

@@ -9,9 +9,10 @@ import {downloadProjectFile,getChatAttachment,type ProjectAttachment,type Sessio
 import SessionMarkdown from './SessionMarkdown.vue';
 import SessionToolCall from './SessionToolCall.vue';
 import SessionTaskReport from './SessionTaskReport.vue';
+import D2EmployeeAvatar from './D2EmployeeAvatar.vue';
 import { clockTime, eventText, presentationRows, sessionStatus as status, taskReport, toolTaskTarget, type TaskNavigationTarget } from '../utils/session-presentation';
 import { classifyArtifact, formatArtifactSize } from '../utils/artifact-preview';
-const props = defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined; artifacts?: TaskArtifact[] | undefined; initialInputText?: string | undefined; initialInputTime?: string | undefined; selectedArtifactId?: string | undefined }>();
+const props = defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; subtitle?: string | undefined; agentAvatar?: string | undefined; agentId?: string | undefined; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined; artifacts?: TaskArtifact[] | undefined; initialInputText?: string | undefined; initialInputTime?: string | undefined; selectedArtifactId?: string | undefined }>();
 const emit = defineEmits<{ changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [target: TaskNavigationTarget, turn?: string]; selectArtifact: [file: TaskArtifact]; downloadArtifact: [file: TaskArtifact] }>();
 const flow = useSessionEvents(toRef(props, 'workspace'), toRef(props, 'sessionId'), () => emit('changed'), toRef(props, 'turnId'));
 const { session } = flow;
@@ -171,6 +172,7 @@ async function confirm(requestID: string, confirmed: boolean) {
   }
 }
 const stopUnavailable = computed(() => !writable.value || !!props.turnId || controlBusy.value || submitting.value || held.value || (props.publicDetail ? !shared.value?.can_stop : props.stopDisabled || !session.value || session.value.lifecycle === 'archived'));
+const isActiveExecution = computed(() => ['running', 'queued', 'stopping'].includes(session.value?.execution.state || ''));
 async function stop() {
   if (stopUnavailable.value) return;
   const id = props.sessionId, w = props.workspace; controlBusy.value = true; actionError.value = ''; notice.value = '';
@@ -246,7 +248,21 @@ watch(rows, async (nextRows, prevRows) => {
 </script>
 <template>
   <section class="session-panel" :aria-label="title">
-    <header v-if="!embedded"><div class="session-heading"><span class="eyebrow">{{ task ? '任务执行过程' : '与你的 AI 员工协作' }}</span><strong>{{ title }}</strong></div><span class="connection muted"><i :class="{ connected: connection === '已连接' }" aria-hidden="true" />{{ connection || '正在连接' }} · {{ status(session?.execution.state) }}</span><NButton v-if="task" size="small" @click="emit('close')">关闭任务详情</NButton></header>
+    <header v-if="!embedded" class="unified-session-header">
+      <slot name="header-prefix" />
+      <D2EmployeeAvatar v-if="!task && agentId" :name="title" :preset="agentAvatar" :identity-key="agentId" size="sm" />
+      <div class="session-heading">
+        <div class="session-heading-top">
+          <strong>{{ title }}</strong>
+          <span class="connection muted"><i :class="{ connected: connection === '已连接' }" aria-hidden="true" />{{ connection || '正在连接' }} · {{ status(session?.execution.state) }}</span>
+        </div>
+        <span class="eyebrow">{{ subtitle || (task ? '任务执行过程' : '与你的 AI 员工协作') }}</span>
+      </div>
+      <div class="header-actions">
+        <slot name="header-actions" />
+        <NButton v-if="task" size="small" @click="emit('close')">关闭任务详情</NButton>
+      </div>
+    </header>
     <p v-if="session?.execution.block_reason" class="warning">{{ status(session.execution.block_reason) }}</p>
     <div v-if="error" class="error" role="alert">{{ error }} <NButton size="small" @click="reload">重新加载</NButton></div>
     <div class="session-content"><div ref="scroll" class="messages" @scroll="onMessagesScroll">
@@ -257,14 +273,14 @@ watch(rows, async (nextRows, prevRows) => {
         <p class="body">{{ initialInputText }}</p>
       </article>
       <p v-if="!loading && !rows.length && !initialInputText" class="empty muted">{{ taskCenter || task ? '暂无执行记录。' : '暂无消息，发送工作需求开始协作。' }}</p>
-      <article v-for="{ event: row, replies } in messages" :key="messageKey(row)" :data-history-key="messageKey(row)" :class="['event', { user: isUser(row), tool: !!row.tool_use_id, report: row.source_kind === 'task_report', 'turn-event': row.type === 'turn.updated', 'error-event': row.type === 'session.error' }]">
+      <article v-for="{ event: row, replies } in messages" :key="messageKey(row)" :data-history-key="messageKey(row)" :class="['event', { user: isUser(row), tool: !!row.tool_use_id, thinking: row.type === 'agent.thinking', report: row.source_kind === 'task_report', 'turn-event': row.type === 'turn.updated', 'error-event': row.type === 'session.error' }]">
         <template v-if="row.action"><strong>{{ row.action.title }}</strong><p class="body">{{ row.action.message }}</p></template>
         <SessionToolCall v-else-if="row.tool_use_id" :event="row" :task-title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!toolTaskTarget(row)" @open-task="emit('openTask', $event)" />
         <SessionTaskReport v-else-if="row.source_kind === 'task_report'" :event="row" :reply="replies" :title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!taskReport(row)?.task" @open-task="emit('openTask', $event, taskReport(row)?.turnID)" />
         <template v-else-if="row.type === 'turn.updated'"><div class="turn-divider"><span class="muted">{{ status(row.status) }}</span></div><p v-if="row.error" class="error">{{ row.error.message }}</p></template>
         <template v-else>
           <div class="message-meta"><strong>{{ row.source_kind === 'work_item_amendment' ? '事项要求更新' : row.source_kind === 'work_item_notice' || row.source_kind === 'work_item_assignment' || row.source_kind === 'work_item_result' ? '事项交接' : isUser(row) ? (publicDetail ? '任务输入' : '你') : row.type === 'session.error' ? '会话提示' : title }}</strong><time v-if="row.occurred_at" :datetime="row.occurred_at">{{ clockTime(row.occurred_at) }}</time><span v-if="row.type === 'agent.thinking'" class="thinking-badge">思考过程</span></div>
-          <p v-if="isUser(row)" class="body">{{ eventText(row) }}</p><details v-else-if="row.type === 'agent.thinking'" class="thinking"><summary>查看思考过程</summary><SessionMarkdown :text="eventText(row)" /></details><SessionMarkdown v-else :text="eventText(row)" />
+          <p v-if="isUser(row)" class="body">{{ eventText(row) }}</p><details v-else-if="row.type === 'agent.thinking'" class="thinking-box"><summary>查看思考过程</summary><SessionMarkdown :text="eventText(row)" /></details><SessionMarkdown v-else :text="eventText(row)" />
           <template v-for="(file, index) in row.attachments" :key="file.id || file.path || index">
             <button v-if="!publicDetail && liveAttachment(file).status !== 'failed' && (liveAttachment(file).path || file.id && attachmentLookup)" class="attachment-link" :title="liveAttachment(file).path" :disabled="!!file.id && readingAttachments.has(file.id)" @click="downloadAttachment(file)">▤ {{ liveAttachment(file).name }} · {{ liveAttachment(file).path || liveAttachment(file).status === 'ready' ? (file.size_bytes/1024).toFixed(1) + ' KB ↓' : '准备中，点击查看状态' }}</button>
             <span v-else class="attachment-link" role="status">▤ {{ liveAttachment(file).name }} · {{ liveAttachment(file).status === 'failed' ? '附件不可用' : liveAttachment(file).status === 'ready' ? '已就绪' : '正在准备附件' }}</span>
@@ -298,23 +314,46 @@ watch(rows, async (nextRows, prevRows) => {
       <p v-if="actionError" class="error" role="alert">{{ actionError }}</p><p v-if="notice" class="muted" role="status">{{ notice }}</p>
       <p v-if="session && !session.accepts_input" class="warning">{{ session.lifecycle === 'archived' ? '此会话已归档，历史仍可查看，不能继续发送。' : `暂不能输入：${session.input_block_reason || session.lifecycle}` }}</p>
       <p v-if="held" class="warning">当前任务在等待确认或交接。补充会先排队，暂不能停止。</p>
-      <slot name="attachments" />
-      <div class="composer-card" :class="{ disabled: !canCompose }">
+      <div class="composer-card" :class="{ disabled: !canCompose, 'is-active': isActiveExecution }">
+        <div v-if="$slots.attachments" class="composer-attachments"><slot name="attachments" /></div>
         <NInput v-model:value="text" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" :disabled="!canCompose || submitting || controlBusy" :placeholder="continuing ? '填写新一轮的要求' : task ? '给此任务补充要求，按顺序接续执行...' : '发送消息，任务执行期间仍可继续对话'" @keydown.enter.exact="onEnter" />
-        <div class="actions"><span class="composer-hint">Enter 发送 · Shift + Enter 换行</span><NSelect v-if="!continuing && (!held || !publicDetail)" v-model:value="deliveryMode" aria-label="输入处理方式" :options="deliveryOptions" size="small" style="width:150px" :disabled="!canCompose || submitting" /><NButton v-if="!publicDetail || shared?.can_stop" size="small" :loading="controlBusy" :disabled="stopUnavailable" @click="stop">{{ task ? '停止此任务' : '停止主对话' }}</NButton><NButton size="small" type="primary" :loading="submitting" :disabled="attachmentPending || (!text.trim() && !attachmentPaths?.length && !attachmentIds?.length) || !canCompose || submitting || controlBusy" @click="send">{{ continuing ? '提交并重新开始' : actionError && pending ? '重试发送' : '发送' }}</NButton></div>
+        <div class="actions"><span class="composer-hint">Enter 发送 · Shift + Enter 换行</span><NSelect v-if="!continuing && (!held || !publicDetail)" v-model:value="deliveryMode" class="delivery-select" :class="{ muted: !isActiveExecution }" aria-label="输入处理方式" :options="deliveryOptions" size="small" style="width:144px" :disabled="!canCompose || submitting" /><NButton v-if="!publicDetail || shared?.can_stop" size="small" :secondary="!isActiveExecution" :type="isActiveExecution ? 'error' : 'default'" class="stop-exec-btn" :class="{ quiet: !isActiveExecution }" :loading="controlBusy" :disabled="stopUnavailable" @click="stop">{{ task ? '停止此任务' : '停止主对话' }}</NButton><NButton size="small" type="primary" :loading="submitting" :disabled="attachmentPending || (!text.trim() && !attachmentPaths?.length && !attachmentIds?.length) || !canCompose || submitting || controlBusy" @click="send">{{ continuing ? '提交并重新开始' : actionError && pending ? '重试发送' : '发送' }}</NButton></div>
       </div>
     </footer>
   </section>
 </template>
 <style scoped>
-.attachment-link{border:1px solid var(--id-border-subtle);background:var(--id-bg-surface);color:inherit;padding:6px 10px;border-radius:6px;cursor:pointer;margin:4px}.confirmation{padding:12px 0;border-bottom:1px solid var(--id-border-subtle);overflow-wrap:anywhere}.confirmation p{white-space:pre-wrap}.session-panel{min-width:0;flex:1;display:flex;flex-direction:column;border:1px solid var(--id-border-subtle);border-radius:var(--id-radius-lg);background:var(--id-bg-surface);overflow:hidden;height:100%;min-height:420px}.session-panel>header{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--id-border-subtle);flex-wrap:wrap}.session-heading{flex:1;min-width:100px}.session-heading strong{display:block;font-size:14px}.eyebrow{font-size:10px;color:var(--id-text-muted)}.connection{display:flex;align-items:center;gap:5px}.connection i{width:5px;height:5px;border-radius:50%;background:var(--id-text-muted)}.connection i.connected{background:var(--id-status-success)}.messages{flex:1;min-height:0;overflow:auto;padding:24px clamp(16px,3vw,40px);background:var(--id-bg-subtle);display:flex;flex-direction:column;gap:18px;scrollbar-gutter:stable}.event{width:100%;min-width:0;max-width:780px;align-self:center;font-size:13px;overflow-wrap:anywhere}.event.user{align-self:flex-end;max-width:min(85%,680px);width:fit-content;padding:12px 16px;border-radius:14px 14px 4px 14px;background:var(--id-bg-muted);border:1px solid var(--id-border-subtle)}.message-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--id-text-muted);margin-bottom:8px}.message-meta strong{font-weight:500;color:var(--id-text-secondary)}.message-meta time{font-size:10px}.body{white-space:pre-wrap;word-break:break-word;margin:0;line-height:1.8}.event small{display:block;margin-top:6px}.turn-event{padding-top:4px;font-size:11px}
+.attachment-link{border:1px solid var(--id-border-subtle);background:var(--id-bg-surface);color:inherit;padding:6px 10px;border-radius:var(--id-radius-md);cursor:pointer;margin:4px;font-size:12px;transition:border-color var(--id-transition-fast)}
+.attachment-link:hover{border-color:var(--id-border-strong)}
+.confirmation{padding:12px 0;border-bottom:1px solid var(--id-border-subtle);overflow-wrap:anywhere}
+.confirmation p{white-space:pre-wrap}
+.session-panel{min-width:0;flex:1;display:flex;flex-direction:column;border:1px solid var(--id-border-subtle);border-radius:var(--id-radius-lg);background:var(--id-bg-surface);overflow:hidden;height:100%;min-height:420px}
+.unified-session-header{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--id-border-subtle);background:var(--id-bg-surface);flex-wrap:wrap}
+.session-heading{flex:1;min-width:120px;display:flex;flex-direction:column;gap:2px}
+.session-heading-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.session-heading strong{font-size:14px;font-weight:600;color:var(--id-text-primary)}
+.header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.eyebrow{font-size:12px;color:var(--id-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.connection{display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:var(--id-radius-pill);background:var(--id-bg-subtle);border:1px solid var(--id-border-subtle);font-size:11px}
+.connection i{width:6px;height:6px;border-radius:50%;background:var(--id-text-muted)}
+.connection i.connected{background:var(--id-status-success-dot)}
+.messages{flex:1;min-height:0;overflow:auto;padding:20px clamp(16px,3vw,36px);background:var(--id-bg-subtle);display:flex;flex-direction:column;gap:14px;scrollbar-gutter:stable}
+.event{width:100%;min-width:0;max-width:780px;align-self:center;font-size:13px;overflow-wrap:anywhere}
+.event.tool,.event.thinking{padding-left:14px;border-left:2px solid var(--id-border-subtle)}
+.event.user{align-self:flex-end;max-width:min(85%,660px);width:fit-content;padding:11px 15px;border-radius:14px 14px 4px 14px;background:var(--id-bg-muted);border:1px solid var(--id-border-subtle)}
+.message-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--id-text-muted);margin-bottom:6px}
+.message-meta strong{font-weight:600;color:var(--id-text-secondary)}
+.message-meta time{font-size:11px;font-family:var(--id-font-mono)}
+.body{white-space:pre-wrap;word-break:break-word;margin:0;line-height:1.75}
+.event small{display:block;margin-top:6px}
+.turn-event{padding-top:4px;font-size:11px}
 .turn-divider{display:flex;align-items:center;gap:10px;color:var(--id-text-muted)}
 .turn-divider::before,.turn-divider::after{content:"";flex:1;height:1px;background:var(--id-border-subtle)}
 .turn-event .muted{font-size:11px}
 .error-event{border-left:2px solid var(--id-status-danger);padding-left:12px}
-.thinking{padding:10px 12px;border-radius:var(--id-radius-md);background:var(--id-bg-surface);border:1px solid var(--id-border-subtle);border-left:2px solid var(--id-accent-primary-border)}
-.thinking summary{color:var(--id-text-secondary);font-size:12px;font-weight:500;cursor:pointer}
-.thinking[open] summary{margin-bottom:10px}
+.thinking-box{padding:8px 12px;border-radius:var(--id-radius-md);background:var(--id-bg-surface);border:1px solid var(--id-border-subtle)}
+.thinking-box summary{color:var(--id-text-secondary);font-size:12px;font-weight:500;cursor:pointer}
+.thinking-box[open] summary{margin-bottom:8px}
 .thinking-badge{padding:1px 6px;border-radius:var(--id-radius-pill);background:var(--id-bg-muted);border:1px solid var(--id-border-subtle);font-size:10px}
 .msg-state-tag{display:inline-block;margin-top:6px;padding:1px 6px;border-radius:var(--id-radius-sm);background:var(--id-bg-surface);border:1px solid var(--id-border-subtle)}
 .inline-artifacts{margin-top:4px;padding:12px 14px;border-radius:12px;background:var(--id-bg-surface);border:1px solid var(--id-border-subtle)}
@@ -334,12 +373,18 @@ watch(rows, async (nextRows, prevRows) => {
 .artifact-info small{margin-top:0;font-size:11px}
 .artifact-preview-cue{flex-shrink:0;font-size:11px;font-weight:500;color:var(--id-accent-primary)}
 small,.muted{font-size:12px;color:var(--id-text-muted)}.empty{margin:auto;text-align:center}.error,.warning{padding:8px 12px;font-size:13px}.error{color:var(--id-status-danger)}.warning{color:var(--id-status-warning)}
-.session-panel>footer{padding:12px 18px 16px;background:var(--id-bg-subtle);border-top:1px solid var(--id-border-subtle)}
+.session-panel>footer{padding:10px 18px 14px;background:var(--id-bg-subtle);border-top:1px solid var(--id-border-subtle)}
 .composer-card{background:var(--id-bg-surface);border:1px solid var(--id-border-subtle);border-radius:12px;padding:10px 12px;box-shadow:var(--id-shadow-sm);transition:border-color var(--id-transition-fast),box-shadow var(--id-transition-fast)}
 .composer-card:focus-within{border-color:var(--id-accent-primary-border);box-shadow:var(--id-focus-ring)}
 .composer-card.disabled{opacity:0.78;background:var(--id-bg-muted)}
+.composer-attachments{padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid var(--id-border-hairline)}
 .composer-card :deep(.n-input){--n-border:none !important;--n-border-hover:none !important;--n-border-focus:none !important;--n-box-shadow-focus:none !important;--n-color:transparent !important;--n-color-disabled:transparent !important}
 .composer-card :deep(.n-input__textarea-el){padding:2px 4px}
-.actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--id-border-hairline);flex-wrap:wrap}.composer-hint{margin-right:auto;color:var(--id-text-muted);font-size:10px}@media(max-width:1200px){.composer-hint{display:none}}@media(max-width:640px){.messages{padding:16px 12px}.session-panel>header,.session-panel>footer{padding:12px}.connection{font-size:10px}.actions{gap:6px}.event.user{max-width:94%}}
+.actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--id-border-hairline);flex-wrap:wrap}
+.composer-hint{margin-right:auto;color:var(--id-text-muted);font-size:11px}
+.delivery-select.muted{opacity:0.78}
+.stop-exec-btn.quiet{opacity:0.72}
+@media(max-width:1200px){.composer-hint{display:none}}
+@media(max-width:640px){.messages{padding:16px 12px}.unified-session-header,.session-panel>footer{padding:12px}.connection{font-size:10px}.actions{gap:6px}.event.user{max-width:94%}}
 .session-content{display:flex;flex:1;min-height:0;min-width:0}
 </style>

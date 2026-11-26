@@ -586,3 +586,51 @@ test('history prepend preserves the visible event even when live SSE appends dur
     assert.deepEqual(rows().map(row=>row.dataset.historyKey),[1,2,3,4,5,6].map(i=>'message:m'+i));
   } finally {await m.cleanup();}
 });
+
+test('artifacts surface supports preview/source toggle, copy action, and drawer artifact tab without fullscreen', async () => {
+  const prevClipboard = navigator.clipboard;
+  const copied = [];
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: async (text) => { copied.push(text); } },
+  });
+  const artifacts = [
+    { id: 'art-md', name: '归因报告.md', size: 64 },
+    { id: 'art-csv', name: '退货明细.csv', size: 48 },
+  ];
+  const m = await mount(List, (url) => {
+    if (url.endsWith('/tasks/one')) return Response.json({ ...task(), artifacts });
+    if (url.endsWith('/tasks/one/artifacts/art-md')) return new Response('# Q4 结论\n**正常**', { headers: { 'Content-Type': 'text/markdown' } });
+    if (url.endsWith('/tasks/one/artifacts/art-csv')) return new Response('仓别,退货率\n苏州仓,7.4%', { headers: { 'Content-Type': 'text/csv' } });
+    return null;
+  }, { selectedTaskId: 'one' });
+  try {
+    assert.ok(m.host.querySelector('.task-id-code'));
+    assert.match(m.host.querySelector('.task-id-code').textContent, /^#one$/);
+    const artifactTab = [...document.querySelectorAll('.drawer-nav button')].find(b => b.textContent.includes('产物详情'));
+    assert.ok(artifactTab);
+    artifactTab.click();
+    await wait();
+
+    const preview = document.querySelector('[aria-label="产物预览画布"]');
+    assert.ok(preview);
+    assert.equal(preview.querySelector('h1').textContent, 'Q4 结论');
+    button('源码').click();
+    await nextTick();
+    assert.match(preview.querySelector('.surface-code-block').textContent, /# Q4 结论/);
+    button('复制内容').click();
+    await wait();
+    assert.deepEqual(copied, ['# Q4 结论\n**正常**']);
+
+    const csvBtn = [...document.querySelectorAll('.artifact-row-select')].find(el => el.textContent.includes('退货明细.csv'));
+    csvBtn.click();
+    await wait();
+    assert.match(preview.querySelector('.surface-csv-table').textContent, /苏州仓/);
+    button('源码').click();
+    await nextTick();
+    assert.match(preview.querySelector('.surface-code-block').textContent, /仓别,退货率/);
+  } finally {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: prevClipboard });
+    await m.cleanup();
+  }
+});

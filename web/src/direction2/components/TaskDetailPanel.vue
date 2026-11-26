@@ -344,6 +344,7 @@ function visible() { if (!document.hidden) void refresh(); }
 // Right Surface: Artifact Selection & Inline Preview
 const PREVIEW_TEXT_LIMIT = 2 * 1024 * 1024;
 const selectedArtifact = ref<TaskArtifact | null>(null);
+const artifactViewMode = ref<'preview' | 'source'>('preview');
 const previewLoading = ref(false);
 const previewError = ref('');
 const previewText = ref('');
@@ -362,11 +363,22 @@ function revokePreviewImage() {
 function clearArtifactPreview() {
   previewSeq++;
   selectedArtifact.value = null;
+  artifactViewMode.value = 'preview';
   previewLoading.value = false;
   previewError.value = '';
   previewText.value = '';
   previewCsvRows.value = [];
   revokePreviewImage();
+}
+
+async function copyArtifactContent() {
+  if (!previewText.value) return;
+  try {
+    await copyText(previewText.value);
+    notice.value = '产物内容已复制';
+  } catch {
+    actionError.value = '复制失败';
+  }
 }
 
 async function readArtifactBlob(file: TaskArtifact): Promise<Blob> {
@@ -383,6 +395,7 @@ async function selectArtifactForPreview(file: TaskArtifact, reveal = true) {
   surfaceTab.value = 'artifacts';
   tab.value = showDualSurface.value ? 'process' : 'artifacts';
   selectedArtifact.value = file;
+  artifactViewMode.value = 'preview';
   const seq = ++previewSeq;
   previewError.value = '';
   previewText.value = '';
@@ -406,11 +419,10 @@ async function selectArtifactForPreview(file: TaskArtifact, reveal = true) {
     }
     const content = await blob.text();
     if (seq !== previewSeq) return;
+    previewText.value = content;
     if (meta.kind === 'csv') {
       const delimiter = fileExtension(file.name) === 'tsv' ? '\t' : ',';
       previewCsvRows.value = parseCsvRows(content, delimiter, 200);
-    } else {
-      previewText.value = content;
     }
   } catch (e) {
     if (seq === previewSeq) {
@@ -468,6 +480,10 @@ function selectTab(next: 'process' | 'artifacts' | 'status' | 'inputs' | 'report
     return;
   }
   tab.value = next;
+  if (next === 'artifacts' && !selectedArtifact.value && artifacts.value.length) {
+    const preferred = pickDefaultArtifact(artifacts.value);
+    if (preferred) void selectArtifactForPreview(preferred, false);
+  }
 }
 
 type TabId = 'process' | 'artifacts' | 'status' | 'inputs' | 'reports' | 'work';
@@ -488,6 +504,8 @@ const navTabs = computed(() => {
       ]
     : [
         { id: 'process', label: '执行过程' },
+        { id: 'artifacts', label: artifacts.value.length ? `产物详情 (${artifacts.value.length})` : '产物详情' },
+        { id: 'status', label: '任务状态' },
         { id: 'inputs', label: '输入记录' },
         { id: 'reports', label: '主会话回报' },
       ];
@@ -674,7 +692,7 @@ onUnmounted(() => {
           </nav>
 
           <!-- Surface Pane 1: Artifacts & Inline Preview -->
-          <div v-if="showDualSurface && surfaceTab === 'artifacts'" class="surface-content">
+          <div v-if="isTabActive('artifacts')" class="surface-content artifacts-surface">
             <div v-if="!artifacts.length" class="surface-empty">
               <strong>暂无任务产物</strong>
               <p class="muted">任务执行产出报告、表格、代码或图片后，将自动展示在此处并支持在线预览。</p>
@@ -686,7 +704,7 @@ onUnmounted(() => {
                   :key="file.id"
                   :class="['artifact-row', { active: selectedArtifact?.id === file.id }]"
                 >
-                  <button type="button" class="artifact-row-select" @click="selectArtifactForPreview(file)">
+                  <button type="button" class="artifact-row-select" @click="selectArtifactForPreview(file, false)">
                     <span class="artifact-badge" :class="classifyArtifact(file).kind">{{ classifyArtifact(file).badge }}</span>
                     <span class="artifact-meta">
                       <strong>{{ file.name }}</strong>
@@ -703,11 +721,24 @@ onUnmounted(() => {
                     <strong>{{ selectedArtifact.name }}</strong>
                     <small>{{ classifyArtifact(selectedArtifact).label }}<template v-if="selectedArtifact.size != null"> · {{ formatArtifactSize(selectedArtifact.size) }}</template></small>
                   </div>
-                  <NButton size="tiny" type="primary" secondary :loading="downloadBusyId === selectedArtifact.id" @click="downloadArtifact(selectedArtifact)">下载原文件</NButton>
+                  <div class="preview-toolbar-actions">
+                    <div
+                      v-if="!previewLoading && !previewError && previewText && (classifyArtifact(selectedArtifact).kind === 'markdown' || classifyArtifact(selectedArtifact).kind === 'csv')"
+                      class="preview-mode-switch"
+                      role="group"
+                      aria-label="产物视图切换"
+                    >
+                      <button type="button" :class="{ active: artifactViewMode === 'preview' }" @click="artifactViewMode = 'preview'">预览</button>
+                      <button type="button" :class="{ active: artifactViewMode === 'source' }" @click="artifactViewMode = 'source'">源码</button>
+                    </div>
+                    <NButton v-if="!previewLoading && !previewError && previewText" size="tiny" secondary @click="copyArtifactContent">复制内容</NButton>
+                    <NButton size="tiny" type="primary" secondary :loading="downloadBusyId === selectedArtifact.id" @click="downloadArtifact(selectedArtifact)">下载原文件</NButton>
+                  </div>
                 </header>
                 <div class="preview-body">
                   <NSkeleton v-if="previewLoading" text :repeat="6" />
                   <p v-else-if="previewError" class="error">{{ previewError }}</p>
+                  <pre v-else-if="artifactViewMode === 'source' && previewText" class="surface-code-block">{{ previewText }}</pre>
                   <SessionMarkdown v-else-if="classifyArtifact(selectedArtifact).kind === 'markdown'" :text="previewText" />
                   <div v-else-if="classifyArtifact(selectedArtifact).kind === 'csv'" class="csv-preview-wrap">
                     <table v-if="previewCsvRows.length" class="surface-csv-table">
@@ -737,7 +768,7 @@ onUnmounted(() => {
           </div>
 
           <!-- Surface Pane 2: Task Status Summary (Keep mounted cleanly in DOM so summary facts remain accessible) -->
-          <div v-show="showDualSurface && surfaceTab === 'status'" class="surface-content status-surface">
+          <div v-show="isTabActive('status')" class="surface-content status-surface">
             <div class="surface-card">
               <h3>任务状态摘要</h3>
               <TaskProgressSummary v-if="progress" :progress="progress" />
@@ -1055,18 +1086,23 @@ nav button[aria-current=page] {
 }
 .artifact-selector-list {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   gap: 6px;
   flex-shrink: 0;
+  padding-bottom: 2px;
 }
 .artifact-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--id-radius-md);
   border: 1px solid var(--id-border-subtle);
   background: var(--id-bg-subtle);
+  flex: 0 0 auto;
+  max-width: 240px;
   transition: border-color var(--id-transition-fast), background-color var(--id-transition-fast);
 }
 .artifact-row.active {
@@ -1078,7 +1114,7 @@ nav button[aria-current=page] {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: transparent;
   border: 0;
   padding: 0;
@@ -1089,10 +1125,10 @@ nav button[aria-current=page] {
 }
 .artifact-badge {
   flex-shrink: 0;
-  min-width: 36px;
+  min-width: 32px;
   text-align: center;
-  padding: 3px 6px;
-  border-radius: 6px;
+  padding: 2px 5px;
+  border-radius: 5px;
   font-family: var(--id-font-mono);
   font-size: 10px;
   font-weight: 700;
@@ -1109,7 +1145,7 @@ nav button[aria-current=page] {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 .artifact-meta strong {
   font-size: 12px;
@@ -1119,7 +1155,8 @@ nav button[aria-current=page] {
   white-space: nowrap;
 }
 .artifact-meta small {
-  font-size: 11px;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .artifact-preview-surface {
@@ -1137,9 +1174,39 @@ nav button[aria-current=page] {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--id-border-subtle);
   background: var(--id-bg-surface);
+  flex-wrap: wrap;
+}
+.preview-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.preview-mode-switch {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--id-radius-sm);
+  border: 1px solid var(--id-border-subtle);
+  background: var(--id-bg-subtle);
+}
+.preview-mode-switch button {
+  border: 0;
+  background: transparent;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--id-text-secondary);
+  cursor: pointer;
+}
+.preview-mode-switch button.active {
+  background: var(--id-bg-surface);
+  color: var(--id-text-primary);
+  font-weight: 600;
+  box-shadow: var(--id-shadow-xs);
 }
 .preview-title {
   min-width: 0;

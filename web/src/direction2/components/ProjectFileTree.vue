@@ -134,12 +134,12 @@ defineExpose({ refresh });
 </template>
 <style scoped>
 .file-tree {
-  width: clamp(235px, 23vw, 350px);
+  width: clamp(248px, 24vw, 340px);
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
+  gap: 10px;
+  padding: 12px 14px;
   background: var(--id-bg-surface);
   border: 1px solid var(--id-border-subtle);
   border-radius: var(--id-radius-lg);
@@ -148,51 +148,83 @@ defineExpose({ refresh });
 .file-tree header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--id-border-hairline);
 }
 .file-tree strong {
   flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--id-text-primary);
 }
 .file-tree button {
   background: transparent;
   border: 0;
-  color: inherit;
+  color: var(--id-text-secondary);
   cursor: pointer;
-  padding: 6px;
-  border-radius: 5px;
+  padding: 5px 7px;
+  border-radius: var(--id-radius-md);
+  font-size: 12px;
+  transition: background-color var(--id-transition-fast), color var(--id-transition-fast);
+}
+.file-tree button:hover:not(:disabled) {
+  background: var(--id-bg-hover);
+  color: var(--id-text-primary);
 }
 .file-tree button:disabled {
   opacity: 0.45;
   cursor: default;
 }
 .file-tree .wide {
-  background: #edf8f1;
-  border: 1px solid #a2c7ae;
-  color: #216943;
+  background: var(--id-accent-primary-soft);
+  border: 1px solid var(--id-accent-primary-border);
+  color: var(--id-accent-primary);
+  font-weight: 500;
   width: 100%;
+  padding: 7px 10px;
+}
+.file-tree .wide:hover:not(:disabled) {
+  background: var(--id-accent-primary);
+  border-color: var(--id-accent-primary);
+  color: var(--id-text-inverse);
 }
 .file-tree nav {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  flex: 1;
   min-height: 65px;
   overflow: auto;
 }
 .file-tree nav button {
   text-align: left;
   overflow-wrap: anywhere;
+  color: var(--id-text-primary);
+  line-height: 1.45;
 }
 .file-tree nav span {
-  margin-right: 8px;
+  margin-right: 6px;
+  color: var(--id-text-muted);
 }
 .file-tree nav .selected {
-  background: #ddf2e5;
+  background: var(--id-accent-primary-soft);
+  color: var(--id-accent-primary);
+  font-weight: 500;
+}
+.file-tree nav .selected span {
+  color: var(--id-accent-primary);
 }
 .file-tree footer {
   border-top: 1px solid var(--id-border-subtle);
-  padding-top: 12px;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .file-tree [role='alert'] {
   color: var(--id-status-danger);
+  font-size: 12px;
 }
 @media (max-width: 1200px) {
   .file-tree {

@@ -51,25 +51,58 @@ const picker = ref<HTMLInputElement>();
 .chip {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 .attachment-bar {
-  margin: 6px 0;
+  margin: 0 0 6px;
 }
-.chip,
 .pick {
   border: 1px solid var(--id-border-subtle);
   background: var(--id-bg-subtle);
-  border-radius: 6px;
-  padding: 5px 8px;
+  color: var(--id-text-secondary);
+  border-radius: var(--id-radius-md);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--id-transition-fast), border-color var(--id-transition-fast), color var(--id-transition-fast);
+}
+.pick:hover:not(:disabled) {
+  background: var(--id-bg-hover);
+  border-color: var(--id-border-strong);
+  color: var(--id-text-primary);
+}
+.pick:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.chip {
+  border: 1px solid var(--id-border-subtle);
+  background: var(--id-bg-muted);
+  color: var(--id-text-primary);
+  border-radius: var(--id-radius-md);
+  padding: 4px 8px;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+.chip [role='alert'] {
+  color: var(--id-status-danger);
+}
+.chip [role='status'] {
+  color: var(--id-accent-primary);
+  font-family: var(--id-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 .chip button {
   background: transparent;
   border: 0;
-  color: inherit;
+  color: var(--id-text-muted);
   cursor: pointer;
+  padding: 0 2px;
+  border-radius: 4px;
+}
+.chip button:hover:not(:disabled) {
+  color: var(--id-text-primary);
 }
 </style>

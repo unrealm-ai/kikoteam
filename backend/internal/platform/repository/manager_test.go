@@ -39,9 +39,18 @@ func TestManagerConversationAdmissionPaginationAndIsolation(t *testing.T) {
 	if _, err = db.ExecContext(ctx, `UPDATE manager_conversations SET created_at='2026-01-01T00:00:00Z' WHERE workspace_id=$1`, w); err != nil {
 		t.Fatal(err)
 	}
+	var replied string
+	if err = db.QueryRowContext(ctx, `UPDATE manager_conversations SET last_message_at='2026-02-01T00:00:00Z' WHERE id=(
+ SELECT id FROM manager_conversations WHERE workspace_id=$1 ORDER BY id LIMIT 1
+ ) RETURNING id`, w).Scan(&replied); err != nil {
+		t.Fatal(err)
+	}
 	page, err := s.ListConversations(ctx, w, owner, "", "active", "", 1)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != replied || page.Items[0].LastMessageAt == nil {
+		t.Fatalf("latest reply must precede creation/id order: %+v", page)
 	}
 	firstCursor := page.NextCursor
 	seen := map[string]bool{}

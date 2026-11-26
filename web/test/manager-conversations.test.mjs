@@ -533,3 +533,71 @@ test('conversation sidebar fullscreen expands into dual-pane workspace and prese
    assert.equal(FakeSource.all.filter(s => s.url.includes('/task1/')).length, initialTaskStreams);
  } finally { await m.cleanup(); }
 });
+
+test('unstarted employees stay out of the active sidebar until launched via start-chat modal', async () => {
+ window.localStorage?.clear?.();
+ const agents = [
+   { id: 'a1', name: '已聊员工', role: '分析', avatar: 'cn-v2-01', enabled: true },
+   { id: 'a2', name: '未聊助手', role: '交付', avatar: 'cn-v2-02', enabled: true },
+ ];
+ const m = await mount({
+   override: (url, init) => {
+     if (url.includes('/agents?')) return Response.json({ items: agents, total: 2, page: 1, page_size: 20 });
+     if (url.includes('/conversations?')) return Response.json({ items: [{ id: 'c1', agent_id: 'a1', chat_session_id: 'chat1', lifecycle: 'active' }], next_cursor: null });
+     if (url.endsWith('/web-direct')) {
+       const body = JSON.parse(init.body);
+       return Response.json({ id: 'c-' + body.agent_id, agent_id: body.agent_id, chat_session_id: body.agent_id === 'a1' ? 'chat1' : null, lifecycle: 'active' });
+     }
+     return null;
+   },
+ });
+ try {
+   const sidebarButtons = () => [...m.host.querySelectorAll('.employee-list .employee')].map(b => b.textContent);
+   assert.equal(sidebarButtons().length, 1);
+   assert.match(sidebarButtons()[0], /已聊员工/);
+   assert.doesNotMatch(m.host.querySelector('.employee-list').textContent, /未聊助手/);
+
+   button('+ 发起对话').click();
+   await pause();
+   const pick = [...document.querySelectorAll('.modal-agent-item')].find(el => el.textContent.includes('未聊助手'));
+   assert.ok(pick);
+   pick.click();
+   await pause();
+
+   assert.equal(sidebarButtons().length, 2);
+   assert.match(m.host.querySelector('.employee-list').textContent, /未聊助手/);
+   assert.match(m.host.querySelector('.chat-area').textContent, /与「未聊助手」开始协作/);
+ } finally {
+   window.localStorage?.clear?.();
+   await m.cleanup();
+ }
+});
+
+test('sidebar preserves server recency and never reads another account or legacy cache',async()=>{
+ const second={...agent,id:'b',name:'最近回复员工'};
+ const third={...agent,id:'c-local',name:'另一账号已打开员工'};
+ Object.defineProperty(globalThis,'localStorage',{configurable:true,value:window.localStorage});
+ try{
+  window.localStorage.setItem('kiko:started-chats:w',JSON.stringify([third.id]));
+  window.localStorage.setItem('kiko:started-chats:v2:someone-else:w',JSON.stringify([third.id]));
+  const override=url=>{
+   if(url.includes('/agents?'))return Response.json({items:[agent,second,third],total:3,page:1,page_size:20});
+   if(url.includes('/conversations?'))return Response.json({items:[{agent_id:'b',chat_session_id:'chat-b'},{agent_id:'a',chat_session_id:'chat'}],next_cursor:'ignored'});
+   return null;
+  };
+  const m=await mount({props:{accountId:'owner'},override});
+  try{
+   const entries=[...m.host.querySelectorAll('.sidebar-items .employee strong')].map(e=>e.textContent);
+   assert.deepEqual(entries,[second.name,agent.name]);
+   assert.equal(m.calls.filter(c=>c.url.includes('/conversations?')).length,1);
+  }finally{await m.cleanup()}
+ }finally{window.localStorage.clear();delete globalThis.localStorage;}
+});
+
+test('default employee is not counted as history before a conversation is opened',async()=>{
+ const m=await mount({chat:null,override:url=>url.includes('/conversations?')?Response.json({items:[],next_cursor:null}):null});
+ try{
+  assert.equal(m.host.querySelectorAll('.sidebar-items .employee').length,0);
+  assert.match(m.host.querySelector('.chat-area').textContent,/开始协作/);
+ }finally{await m.cleanup()}
+});

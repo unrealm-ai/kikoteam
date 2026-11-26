@@ -1680,6 +1680,7 @@ CREATE TABLE public.manager_conversations (
     web_group_agent_epoch bigint,
     web_group_boundary bigint DEFAULT 0 NOT NULL,
     system_owned boolean DEFAULT false NOT NULL,
+    last_message_at timestamp with time zone,
     CONSTRAINT manager_channel_thread_check CHECK (((channel_binding_id IS NOT NULL) OR (channel_thread_id = ''::text))),
     CONSTRAINT manager_conversation_channel CHECK ((((channel_created_by IS NULL) OR (channel_binding_id IS NOT NULL)) AND ((channel_binding_id IS NULL) OR (((channel_created_by IS NOT NULL) OR system_owned) AND (web_user_id IS NULL) AND (external_chat_id IS NOT NULL) AND (channel_chat_type IS NOT NULL))))),
     CONSTRAINT manager_conversation_creator CHECK ((((((created_by IS NOT NULL))::integer + ((channel_created_by IS NOT NULL))::integer) + (system_owned)::integer) = 1)),
@@ -6157,7 +6158,7 @@ CREATE UNIQUE INDEX manager_confirmation_answer ON public.manager_inputs USING b
 -- Name: manager_conversations_list; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX manager_conversations_list ON public.manager_conversations USING btree (workspace_id, created_at DESC, id DESC);
+CREATE INDEX manager_conversations_list ON public.manager_conversations USING btree (workspace_id, COALESCE(last_message_at, created_at) DESC, id DESC) WHERE ((web_group_id IS NULL) AND (channel_binding_id IS NULL));
 
 
 --

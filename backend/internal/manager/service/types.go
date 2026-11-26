@@ -22,6 +22,7 @@ type Conversation struct {
 	CleanupPending   bool       `json:"cleanup_pending"`
 	CreatedAt        time.Time  `json:"created_at"`
 	ArchivedAt       *time.Time `json:"archived_at"`
+	LastMessageAt    *time.Time `json:"last_message_at"`
 }
 
 // Configuration is immutable and contains no credential. Live credentials are

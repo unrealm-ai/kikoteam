@@ -1,5 +1,5 @@
 import { platformRequest, post } from './platform';
-export interface Conversation { web_user_id?: string | null; id: string; agent_id: string; lifecycle: string; chat_session_id: string | null; cleanup_pending: boolean }
+export interface Conversation { web_user_id?: string | null; id: string; agent_id: string; lifecycle: string; chat_session_id: string | null; cleanup_pending: boolean; last_message_at?: string | null }
 export interface RequiredAction { type: 'confirmation' | 'human_confirmation' | 'work_item'; request_id: string; title: string; message: string; turn_id: string; expires_at?: string }
 export interface Execution { required_actions?: RequiredAction[]; state: string; active_turn_id: string | null; queued_input_count: number; background_process_count: number | null; block_reason: string | null }
 export interface ManagerSession { id: string; created_at?: string; conversation_id: string; task_id: string | null; mode: 'chat' | 'task'; title: string | null; lifecycle: string; accepts_input: boolean; input_block_reason: string | null; execution: Execution }
@@ -11,6 +11,7 @@ const sessionPath = (w: string, s: string) => `${base(w)}/sessions/${encodeURICo
 const query = (p: Record<string, string>) => new URLSearchParams(p).toString();
 export const managerApi = {
   direct: (w: string, agent: string, signal?: AbortSignal) => platformRequest<Conversation>(`${base(w)}/conversations/web-direct`, { ...post({ agent_id: agent }), ...(signal ? { signal } : {}) }),
+  conversations: (w: string, cursor = '', signal?: AbortSignal) => platformRequest<Page<Conversation>>(`${base(w)}/conversations?${query({ limit: '50', ...(cursor ? { cursor } : {}) })}`, { ...(signal ? { signal } : {}) }),
   conversation: (w: string, id: string, signal?: AbortSignal) => platformRequest<Conversation>(`${base(w)}/conversations/${encodeURIComponent(id)}`, { ...(signal ? { signal } : {}) }),
   createChat: (w: string, conversation: string, text: string, key: string, signal?: AbortSignal, paths: string[] = [], ids: string[] = []) => platformRequest<ManagerSession>(`${base(w)}/sessions`, { ...post({ conversation_id: conversation, mode: 'chat', input: { text, ...(paths.length ? {attachment_paths:paths}: {}), ...(ids.length ? {attachment_ids:ids}: {}) } }), headers: { 'Idempotency-Key': key }, ...(signal ? { signal } : {}) }),
   session: (w: string, id: string, signal?: AbortSignal) => platformRequest<ManagerSession>(sessionPath(w, id), { ...(signal ? { signal } : {}) }),

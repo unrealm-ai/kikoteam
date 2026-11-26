@@ -62,9 +62,9 @@ func (s *Store) Refresh(ctx context.Context, a Assignment) (Work, error) {
 	return v, err
 }
 func (s *Store) transaction(ctx context.Context, w Work, fn func(*sql.Tx) error) error {
-	return s.scopedTransaction(ctx, w, false, fn)
+	return s.scopedTransaction(ctx, w, false, false, fn)
 }
-func (s *Store) scopedTransaction(ctx context.Context, w Work, admission bool, fn func(*sql.Tx) error) error {
+func (s *Store) scopedTransaction(ctx context.Context, w Work, admission, lockConversation bool, fn func(*sql.Tx) error) error {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -79,6 +79,13 @@ func (s *Store) scopedTransaction(ctx context.Context, w Work, admission bool, f
 			return err
 		}
 		if err = lockOwner(ctx, tx, w, false).Scan(&id); err != nil {
+			return err
+		}
+	}
+	// Manager writes lock the parent before the session. Keep the same order
+	// for an assistant reply, which also updates the conversation row.
+	if lockConversation {
+		if err = tx.QueryRowContext(ctx, `SELECT id FROM manager_conversations WHERE id=$1 AND workspace_id=$2 FOR NO KEY UPDATE`, w.ConversationID, w.WorkspaceID).Scan(&id); err != nil {
 			return err
 		}
 	}
@@ -214,7 +221,8 @@ func (s *Store) SetNative(ctx context.Context, w Work, id string) error {
 	})
 }
 func (s *Store) Event(ctx context.Context, w Work, t Turn, kind string, fields map[string]any) error {
-	return s.transaction(ctx, w, func(tx *sql.Tx) error {
+	reply := w.Mode == "chat" && w.ConversationID != "" && kind == "agent.message" && fields["status"] == "completed"
+	return s.scopedTransaction(ctx, w, false, reply, func(tx *sql.Tx) error {
 		var active *string
 		if err := tx.QueryRowContext(ctx, `SELECT active_turn_id FROM manager_sessions WHERE id=$1`, w.SessionID).Scan(&active); err != nil {
 			return err
@@ -227,7 +235,11 @@ func (s *Store) Event(ctx context.Context, w Work, t Turn, kind string, fields m
 				return err
 			}
 		}
-		return emit(ctx, tx, w, kind, &t.Input.ID, &t.ID, fields)
+		if err := emit(ctx, tx, w, kind, &t.Input.ID, &t.ID, fields); err != nil || !reply {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE manager_conversations SET last_message_at=GREATEST(last_message_at,now()) WHERE id=$1 AND workspace_id=$2`, w.ConversationID, w.WorkspaceID)
+		return err
 	})
 }
 

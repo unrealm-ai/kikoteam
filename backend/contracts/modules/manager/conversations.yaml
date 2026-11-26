@@ -3,7 +3,7 @@ collection:
     - $ref: '#/parameters/workspace'
   get:
     operationId: listConversations
-    description: Active workspace members list conversations in stable created_at DESC,id DESC order. Cursor binds workspace, actor and filters.
+    description: Active workspace members list conversations in descending last completed assistant reply time (created_at when absent), then id DESC. Cursor binds workspace, actor and filters; restart from the first page if a cursor was issued under the old sort.
     parameters:
       - {name: agent_id, in: query, schema: {type: string, format: uuid}}
       - {name: lifecycle, in: query, schema: {type: string, enum: [active, archived]}}
@@ -98,7 +98,7 @@ schemas:
   Conversation:
     type: object
     additionalProperties: false
-    required: [id, workspace_id, agent_id, created_by, title, lifecycle, chat_session_id, cleanup_pending, created_at, archived_at]
+    required: [id, workspace_id, agent_id, created_by, title, lifecycle, chat_session_id, cleanup_pending, created_at, archived_at, last_message_at]
     properties:
       id: {type: string, format: uuid}
       workspace_id: {type: string, format: uuid}
@@ -111,6 +111,7 @@ schemas:
       cleanup_pending: {type: boolean}
       created_at: {type: string, format: date-time}
       archived_at: {type: [string, 'null'], format: date-time}
+      last_message_at: {type: [string, 'null'], format: date-time, description: Last completed assistant reply in the main chat.}
 
 webDirect:
   parameters:

@@ -488,6 +488,9 @@ request_id 与当前响应 X-Request-ID 相同；details 仅返回有权查看�
 
 后端 Conversation/chat/task 手动归档均保留原有停稳规则，Web 默认不提供归档入口。固定私聊或主 chat 经 API 手动归档后，Resolve 始终返回原 Conversation（含原 chat_session_id 和 lifecycle），保持只读历史，不另建、替换或自动恢复；前端按 lifecycle/accepts_input 禁止发送，无 chat 的已归档 Conversation 也不能创建首条会话。迁移不会把已有 generic/已归档会话自动认作私聊，不丢弃或更换历史；新增 nullable owner 字段和部分唯一索引由 Event Hub 版本化迁移执行。未来渠道/群聊使用独立映射，不能复用此私聊唯一键。
 
+协作会话侧栏使用 Conversation 列表的第一页（至多 50 条服务端记录），按 `(COALESCE(last_message_at, created_at) DESC, id DESC)` 读取。主 chat 正常结束的助手消息持久化时，同事务推进 `last_message_at`；用户输入、工具事件、执行任务正文与未完成的助手消息不改变它。迁移从已有主 chat 消息回填。没有已完成回复时回退创建时间；变更前签发的列表游标需要从第一页重新开始。打开服务端列表之外的员工仍按固定私聊查找，显式打开记录在当前登录账号与工作区的本地历史，不使用跨账号的旧缓存。
+
+
 历史 `GET /sessions/{id}/events?direction=backward` 首次冻结高水位 H，取最近 limit 个可靠事件，但页内仍按 seq 升序。`next_cursor` 向更旧事件分页；`resume_cursor` 每页均指向同一个 H，可在第一页返回后立即订阅 SSE。后续旧页必须继续带 direction=backward；历史 cursor 与实时 cursor 分离，旧页不能覆盖实时进度。翻页期间新增事件由 SSE 从 H 之后补齐，前端按 session_id/seq 去重。默认 forward 及末页续流语义兼容。
 
 ### 隐私变更的部署与回退边界

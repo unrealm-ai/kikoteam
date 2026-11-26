@@ -68,7 +68,7 @@ func (s *Service) ListConversations(ctx context.Context, workspace, actor, agent
 		return page, Fail("invalid_argument", 400, "分页或筛选参数无效")
 	}
 	f := ConversationFilter{AgentID: agent, Lifecycle: lifecycle, Limit: limit + 1}
-	scope := "conversations:" + workspace + ":" + actor + ":" + agent + ":" + lifecycle
+	scope := "conversations:recent:" + workspace + ":" + actor + ":" + agent + ":" + lifecycle
 	if rawCursor != "" {
 		v, err := s.decodeCursor(rawCursor, scope)
 		if err != nil {
@@ -87,7 +87,11 @@ func (s *Service) ListConversations(ctx context.Context, workspace, actor, agent
 	if len(items) > limit {
 		items = items[:limit]
 		last := items[len(items)-1]
-		next, err := s.encodeCursor(cursor{Scope: scope, Time: last.CreatedAt, ID: last.ID})
+		at := last.CreatedAt
+		if last.LastMessageAt != nil {
+			at = *last.LastMessageAt
+		}
+		next, err := s.encodeCursor(cursor{Scope: scope, Time: at, ID: last.ID})
 		if err != nil {
 			return page, err
 		}

@@ -13,6 +13,7 @@ import { useTaskEmployees } from '../composables/useTaskEmployees';
 import { taskApi, type TaskRecord, type TaskFilters } from '../api/tasks';
 import TaskDetailPanel from '../components/TaskDetailPanel.vue';
 import D2EmployeeAvatar from '../components/D2EmployeeAvatar.vue';
+import { copyText } from '../utils/clipboard';
 import { sessionStatus, workItemProgress } from '../utils/session-presentation';
 const props = defineProps<{
   selectedTaskId?: string | undefined;
@@ -38,9 +39,11 @@ const tasks = ref<TaskRecord[]>([]),
   error = ref('');
 const selected = ref(props.selectedTaskId || ''),
   drawerFullscreen = ref(false),
+  copiedTaskId = ref(''),
   cursor = ref(''),
   next = ref<string | null>(null),
   previous = ref<string[]>([]);
+let copyTimer: ReturnType<typeof setTimeout> | undefined;
 let generation = 0,
   controller = new AbortController(),
   timer: ReturnType<typeof setInterval> | undefined,
@@ -170,6 +173,7 @@ onUnmounted(() => {
   controller.abort();
   if (timer) clearInterval(timer);
   if (debounce) clearTimeout(debounce);
+  if (copyTimer) clearTimeout(copyTimer);
   document.removeEventListener('visibilitychange', visibility);
 });
 defineExpose({ refresh: load });
@@ -178,7 +182,17 @@ function elapsed(t: TaskRecord) {
   if (!turn?.finished_at) return '—';
   const seconds =
     (Date.parse(turn.finished_at) - Date.parse(turn.started_at)) / 1000;
-  return seconds >= 0 ? seconds.toFixed(1) + ' 秒' : '—';
+  return seconds >= 0 ? seconds.toFixed(1) + 's' : '—';
+}
+async function copyTaskId(id: string) {
+  try {
+    await copyText(id);
+    copiedTaskId.value = id;
+    if (copyTimer) clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => {
+      if (copiedTaskId.value === id) copiedTaskId.value = '';
+    }, 1800);
+  } catch { /* clipboard unavailable */ }
 }
 function openWork(id: string) {
   emit('navigate', 'tasks', 'work-items', id, 'work-item');
@@ -257,14 +271,10 @@ function openWork(id: string) {
         <thead>
           <tr>
             <th>任务</th>
+            <th>执行阶段与状态</th>
             <th>执行员工</th>
-            <th>当前执行</th>
-            <th>最近一次处理</th>
-            <th>来源</th>
-            <th>本轮耗时</th>
-            <th>创建时间</th>
-            <th>关联业务事项</th>
-            <th>操作</th>
+            <th>来源与关联事项</th>
+            <th class="col-right">耗时与操作</th>
           </tr>
         </thead>
         <tbody>
@@ -275,30 +285,56 @@ function openWork(id: string) {
             @click="open(task.task_id)"
           >
             <td>
-              <button class="task-title" @click.stop="open(task.task_id)">
-                {{ task.title || '未命名任务' }}</button
-              ><small
-                >{{ task.task_id }} · {{ sessionStatus(task.lifecycle) }}</small
-              >
-            </td>
-            <td>
-              <span class="agent"
-                ><D2EmployeeAvatar
-                  :name="task.agent.name"
-                  :preset="task.agent.avatar"
-                  :identity-key="task.agent.id"
-                  size="sm"
-                />{{ task.agent.name }}</span
-              >
+              <div class="task-title-line">
+                <span
+                  class="row-dot"
+                  :class="{
+                    running: task.execution.state === 'running',
+                    blocked:
+                      task.execution.state === 'blocked' ||
+                      !!task.execution.required_actions?.length,
+                    completed: task.latest_turn?.status === 'completed',
+                    failed: task.latest_turn?.status === 'failed',
+                  }"
+                  aria-hidden="true"
+                />
+                <button class="task-title" @click.stop="open(task.task_id)">
+                  {{ task.title || '未命名任务' }}
+                </button>
+                <span v-if="task.lifecycle === 'archived'" class="lifecycle-chip"
+                  >已归档</span
+                >
+              </div>
+              <div class="task-sub-meta">
+                <button
+                  type="button"
+                  class="task-id-code"
+                  :title="'点击复制完整任务 ID：' + task.task_id"
+                  @click.stop="copyTaskId(task.task_id)"
+                >
+                  {{
+                    copiedTaskId === task.task_id
+                      ? '已复制'
+                      : '#' + task.task_id.slice(0, 8)
+                  }}
+                </button>
+                <span>{{ sessionStatus(task.lifecycle) }}</span>
+              </div>
             </td>
             <td>
               <span
                 class="status-pill"
                 :class="{
                   info: task.execution.state === 'running',
-                  warning: task.execution.state === 'blocked',
+                  warning:
+                    task.execution.state === 'blocked' ||
+                    !!task.execution.required_actions?.length,
+                  success:
+                    task.execution.state === 'idle' &&
+                    task.latest_turn?.status === 'completed',
+                  danger: task.latest_turn?.status === 'failed',
                 }"
-                >{{
+                ><span class="status-dot" />{{
                   task.planning_state === 'planned'
                     ? '待办：尚未启动'
                     : task.planning_state === 'canceled'
@@ -310,69 +346,85 @@ function openWork(id: string) {
                             ? '当前无执行轮次'
                             : sessionStatus(task.execution.state))
                 }}</span
-              ><small v-if="task.execution.queued_input_count"
-                >{{ task.execution.queued_input_count }} 条输入待处理</small
-              ><small
-                v-if="
-                  task.execution.background_process_count === null ||
-                  task.execution.background_process_count
-                "
-                >{{
-                  task.execution.background_process_count === null
-                    ? '后台活动待核对'
-                    : `${task.execution.background_process_count} 个后台进程`
-                }}</small
-              ><small v-if="task.execution.block_reason">{{
-                sessionStatus(task.execution.block_reason)
-              }}</small>
+              >
+              <small class="stage-subline">
+                最近：{{
+                  task.latest_turn
+                    ? sessionStatus(task.latest_turn.status)
+                    : task.latest_input
+                      ? sessionStatus(task.latest_input.status)
+                      : '尚未开始'
+                }}<template v-if="task.latest_turn?.has_unknown_tool_results">
+                  · 有工具结果待核对</template
+                ><template v-if="task.execution.queued_input_count">
+                  · {{ task.execution.queued_input_count }} 条排队</template
+                ><template
+                  v-if="
+                    task.execution.background_process_count === null ||
+                    task.execution.background_process_count
+                  "
+                >
+                  ·
+                  {{
+                    task.execution.background_process_count === null
+                      ? '后台活动待核对'
+                      : `${task.execution.background_process_count} 个后台进程`
+                  }}</template
+                ><template v-if="task.execution.block_reason">
+                  · {{ sessionStatus(task.execution.block_reason) }}</template
+                >
+              </small>
             </td>
             <td>
-              {{
-                task.latest_turn
-                  ? sessionStatus(task.latest_turn.status)
-                  : task.latest_input
-                    ? sessionStatus(task.latest_input.status)
-                    : '尚未开始'
-              }}<small v-if="task.latest_turn?.has_unknown_tool_results"
-                >有工具结果待核对</small
+              <span class="agent"
+                ><D2EmployeeAvatar
+                  :name="task.agent.name"
+                  :preset="task.agent.avatar"
+                  :identity-key="task.agent.id"
+                  size="sm"
+                /><span class="emp-cell-name">{{ task.agent.name }}</span></span
               >
             </td>
             <td>
-              <button
-                v-if="task.source.chat_session_id"
-                class="text-link"
-                @click.stop="
-                  emit(
-                    'navigate',
-                    'chat',
-                    task.conversation_id,
-                    task.agent.id,
-                    'employee',
-                  )
-                "
-              >
-                主对话 ↗</button
-              ><span v-else>{{
-                task.task_space_id ? '任务空间' : '未指定'
-              }}</span>
+              <div class="source-work-col">
+                <button
+                  v-if="task.source.chat_session_id"
+                  class="text-link"
+                  @click.stop="
+                    emit(
+                      'navigate',
+                      'chat',
+                      task.conversation_id,
+                      task.agent.id,
+                      'employee',
+                    )
+                  "
+                >
+                  主对话 ↗</button
+                ><span v-else class="source-muted">{{
+                  task.task_space_id ? '任务空间' : '未指定'
+                }}</span>
+                <button
+                  v-if="task.work_item_id"
+                  class="jump-work-item-btn"
+                  @click.stop="openWork(task.work_item_id)"
+                >
+                  前往事项 ↗
+                </button>
+              </div>
             </td>
-            <td class="mono-num">{{ elapsed(task) }}</td>
-            <td class="time">
-              {{ new Date(task.created_at).toLocaleString('zh-CN') }}
-            </td>
-            <td>
-              <button
-                v-if="task.work_item_id"
-                class="jump-work-item-btn"
-                @click.stop="openWork(task.work_item_id)"
-              >
-                前往事项</button
-              ><span v-else>—</span>
-            </td>
-            <td>
-              <NButton size="tiny" secondary @click.stop="open(task.task_id)"
-                >日志与产物</NButton
-              >
+            <td class="col-right">
+              <div class="time-action-cell">
+                <div class="time-meta">
+                  <span class="mono-num">{{ elapsed(task) }}</span>
+                  <small class="time">{{
+                    new Date(task.created_at).toLocaleString('zh-CN')
+                  }}</small>
+                </div>
+                <NButton size="tiny" secondary @click.stop="open(task.task_id)"
+                  >日志与产物</NButton
+                >
+              </div>
             </td>
           </tr>
         </tbody>
@@ -396,7 +448,7 @@ function openWork(id: string) {
     </footer>
     <NDrawer
       :show="!!selected"
-      :width="drawerFullscreen ? '100vw' : 'min(720px, 95vw)'"
+      :width="drawerFullscreen ? '100vw' : 'min(920px, 95vw)'"
       @update:show="
         (v) => {
           if (!v) close();
@@ -484,13 +536,90 @@ function openWork(id: string) {
 .task-id-code {
   font-family: var(--id-font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: 11px;
   background: var(--id-bg-muted);
-  border: 1px solid var(--id-border-hairline);
-  padding: 2px 6px;
+  border: 1px solid var(--id-border-subtle);
+  padding: 1px 6px;
   border-radius: var(--id-radius-sm);
-  color: var(--id-text-primary);
+  color: var(--id-text-secondary);
   white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--id-transition-fast), color var(--id-transition-fast);
+}
+.task-id-code:hover {
+  border-color: var(--id-border-strong);
+  color: var(--id-text-primary);
+}
+.task-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.row-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--id-text-muted);
+}
+.row-dot.running { background: var(--id-status-info-dot); }
+.row-dot.blocked { background: var(--id-status-warning-dot); }
+.row-dot.completed { background: var(--id-status-success-dot); }
+.row-dot.failed { background: var(--id-status-danger-dot); }
+.lifecycle-chip {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--id-radius-sm);
+  background: var(--id-bg-muted);
+  border: 1px solid var(--id-border-subtle);
+  color: var(--id-text-muted);
+  white-space: nowrap;
+}
+.task-sub-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  padding-left: 15px;
+  font-size: 11px;
+  color: var(--id-text-muted);
+}
+.stage-subline {
+  margin-top: 5px;
+}
+.source-work-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+.source-muted {
+  font-size: 12px;
+  color: var(--id-text-secondary);
+}
+.col-right {
+  text-align: right;
+}
+.time-action-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.time-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.time-meta .mono-num {
+  font-family: var(--id-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--id-text-primary);
+}
+.time-meta .time {
+  margin-top: 2px;
 }
 .emp-cell-name {
   font-weight: 500;

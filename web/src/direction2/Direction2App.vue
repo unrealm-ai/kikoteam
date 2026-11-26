@@ -1001,7 +1001,7 @@ function openApproval(id: string) {
                 @navigate="navigate"
                 @open-approval="openApproval"
               />
-              <PlatformConversationsView v-else-if="realPlatform && currentView === 'chat'" :key="'manager-chat-' + activeWorkspaceId" :selected-employee-id="targetEmployeeId" :selected-conversation-id="subParam" />
+              <PlatformConversationsView v-else-if="realPlatform && currentView === 'chat'" :key="'manager-chat-' + currentUser?.id + '-' + activeWorkspaceId" :account-id="currentUser?.id" :selected-employee-id="targetEmployeeId" :selected-conversation-id="subParam" />
               <ConversationsView
                 v-else-if="currentView === 'chat'"
                 :key="'chat-' + activeWorkspaceId"

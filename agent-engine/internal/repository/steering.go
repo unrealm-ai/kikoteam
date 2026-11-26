@@ -10,7 +10,7 @@ import (
 // their own Turn, including reports accepted with the legacy steer mode.
 func (s *Store) ClaimSteering(ctx context.Context, w Work, t Turn) (*Input, error) {
 	var out *Input
-	err := s.scopedTransaction(ctx, w, true, func(tx *sql.Tx) error {
+	err := s.scopedTransaction(ctx, w, true, false, func(tx *sql.Tx) error {
 		// Serialize the batch admission with channel binding reconfiguration,
 		// matching the ordinary Claim path's lock order.
 		if _, err := tx.ExecContext(ctx, `SELECT b.id FROM platform_channel_bindings b JOIN manager_conversations c ON c.channel_binding_id=b.id WHERE c.id=NULLIF($1,'')::uuid FOR SHARE OF b`, w.ConversationID); err != nil {

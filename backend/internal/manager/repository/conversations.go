@@ -26,11 +26,11 @@ type scanner interface{ Scan(...any) error }
 
 const conversationColumns = `c.id,c.workspace_id,c.agent_id,COALESCE(c.created_by::text,''),c.title,c.lifecycle,
  (SELECT s.id FROM manager_sessions s WHERE s.conversation_id=c.id AND s.mode='chat'),
- (c.lifecycle='archived' AND (EXISTS(SELECT 1 FROM manager_sessions s WHERE s.conversation_id=c.id AND (s.active_turn_id IS NOT NULL OR s.applied_stop_revision<s.stop_revision OR s.background_process_count IS NULL OR s.background_process_count>0 OR s.block_reason IS NOT NULL)) OR EXISTS(SELECT 1 FROM manager_conversation_sandboxes e WHERE e.conversation_id=c.id AND e.state<>'stopped'))),c.created_at,c.archived_at,c.web_user_id,c.channel_created_by,c.channel_binding_id`
+ (c.lifecycle='archived' AND (EXISTS(SELECT 1 FROM manager_sessions s WHERE s.conversation_id=c.id AND (s.active_turn_id IS NOT NULL OR s.applied_stop_revision<s.stop_revision OR s.background_process_count IS NULL OR s.background_process_count>0 OR s.block_reason IS NOT NULL)) OR EXISTS(SELECT 1 FROM manager_conversation_sandboxes e WHERE e.conversation_id=c.id AND e.state<>'stopped'))),c.created_at,c.archived_at,c.web_user_id,c.channel_created_by,c.channel_binding_id,c.last_message_at`
 
 func scanConversation(row scanner) (service.Conversation, error) {
 	var v service.Conversation
-	err := row.Scan(&v.ID, &v.WorkspaceID, &v.AgentID, &v.CreatedBy, &v.Title, &v.Lifecycle, &v.ChatSessionID, &v.CleanupPending, &v.CreatedAt, &v.ArchivedAt, &v.WebUserID, &v.ChannelCreatedBy, &v.ChannelBindingID)
+	err := row.Scan(&v.ID, &v.WorkspaceID, &v.AgentID, &v.CreatedBy, &v.Title, &v.Lifecycle, &v.ChatSessionID, &v.CleanupPending, &v.CreatedAt, &v.ArchivedAt, &v.WebUserID, &v.ChannelCreatedBy, &v.ChannelBindingID, &v.LastMessageAt)
 	return v, visibleError(err)
 }
 func visibleError(err error) error {
@@ -70,7 +70,7 @@ func (s *Store) Conversation(ctx context.Context, workspace, actor, id string) (
 }
 
 func (s *Store) Conversations(ctx context.Context, workspace, actor string, f service.ConversationFilter) ([]service.Conversation, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT `+conversationColumns+` FROM manager_conversations c WHERE c.workspace_id=$1 AND c.web_group_id IS NULL AND c.channel_binding_id IS NULL AND (c.web_user_id IS NULL OR c.web_user_id=$2) AND EXISTS(SELECT 1 FROM platform_members m WHERE m.workspace_id=c.workspace_id AND m.user_id=$2 AND m.status='active') AND ($3='' OR c.agent_id::text=$3) AND ($4='' OR c.lifecycle=$4) AND ($5='' OR (c.created_at,c.id)<($6::timestamptz,NULLIF($5,'')::uuid)) ORDER BY c.created_at DESC,c.id DESC LIMIT $7`, workspace, actor, f.AgentID, f.Lifecycle, f.BeforeID, f.BeforeTime, f.Limit)
+	rows, err := s.DB.QueryContext(ctx, `SELECT `+conversationColumns+` FROM manager_conversations c WHERE c.workspace_id=$1 AND c.web_group_id IS NULL AND c.channel_binding_id IS NULL AND (c.web_user_id IS NULL OR c.web_user_id=$2) AND EXISTS(SELECT 1 FROM platform_members m WHERE m.workspace_id=c.workspace_id AND m.user_id=$2 AND m.status='active') AND ($3='' OR c.agent_id::text=$3) AND ($4='' OR c.lifecycle=$4) AND ($5='' OR (COALESCE(c.last_message_at,c.created_at),c.id)<($6::timestamptz,NULLIF($5,'')::uuid)) ORDER BY COALESCE(c.last_message_at,c.created_at) DESC,c.id DESC LIMIT $7`, workspace, actor, f.AgentID, f.Lifecycle, f.BeforeID, f.BeforeTime, f.Limit)
 	if err != nil {
 		return nil, err
 	}

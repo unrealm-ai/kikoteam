@@ -43,7 +43,7 @@ func (s *Store) RequestConfirmation(ctx context.Context, w Work, action Required
 // delivery and must never turn the same answer into a second model prompt.
 func (s *Store) ClaimConfirmation(ctx context.Context, w Work, t Turn, request string, expires *time.Time) (*bool, error) {
 	var answer *bool
-	err := s.scopedTransaction(ctx, w, true, func(tx *sql.Tx) error {
+	err := s.scopedTransaction(ctx, w, true, false, func(tx *sql.Tx) error {
 		var id string
 		err := tx.QueryRowContext(ctx, `UPDATE manager_inputs i SET status='started',started_at=now(),turn_id=$2,context_state=NULL
  FROM manager_sessions s,platform_agents a,manager_inputs root

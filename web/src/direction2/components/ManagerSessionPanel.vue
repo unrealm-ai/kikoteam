@@ -10,8 +10,9 @@ import SessionMarkdown from './SessionMarkdown.vue';
 import SessionToolCall from './SessionToolCall.vue';
 import SessionTaskReport from './SessionTaskReport.vue';
 import { clockTime, eventText, presentationRows, sessionStatus as status, taskReport, toolTaskTarget, type TaskNavigationTarget } from '../utils/session-presentation';
-const props = defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined }>();
-const emit = defineEmits<{ changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [target: TaskNavigationTarget, turn?: string] }>();
+import { classifyArtifact, formatArtifactSize } from '../utils/artifact-preview';
+const props = defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined; artifacts?: TaskArtifact[] | undefined; initialInputText?: string | undefined; initialInputTime?: string | undefined; selectedArtifactId?: string | undefined }>();
+const emit = defineEmits<{ changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [target: TaskNavigationTarget, turn?: string]; selectArtifact: [file: TaskArtifact]; downloadArtifact: [file: TaskArtifact] }>();
 const flow = useSessionEvents(toRef(props, 'workspace'), toRef(props, 'sessionId'), () => emit('changed'), toRef(props, 'turnId'));
 const { session } = flow;
 const loading = computed(() => props.publicDetail?.loading.value ?? flow.loading.value);
@@ -21,7 +22,40 @@ const error = computed(() => props.publicDetail?.executionError.value ?? flow.er
 const connection = computed(() => props.publicDetail?.connection.value ?? flow.connection.value);
 const shared = computed(() => props.publicDetail?.task.value);
 const rows = computed(() => props.publicDetail?.rows.value ?? flow.rows.value);
-function reload() { return props.publicDetail ? props.publicDetail.load() : flow.reload(); }
+const scroll = ref<HTMLElement | null>(null);
+const stickToBottom = ref(true);
+const initialBottomPending = ref(true);
+type HistoryAnchor = { key: string; offset: number };
+let prepend: { anchor: HistoryAnchor | undefined } | undefined;
+const messageKey = (row: SessionEvent) => row.action ? `action:${row.action.request_id}`
+  : row.message_id ? `message:${row.message_id}`
+  : row.tool_use_id ? `tool:${row.tool_use_id}`
+  : row.type === 'turn.updated' && row.turn_id ? `turn:${row.turn_id}`
+  : `event:${row.seq}`;
+
+function visibleHistoryAnchor(el: HTMLElement | null): HistoryAnchor | undefined {
+  if (!el || !el.clientHeight) return;
+  const viewport = el.getBoundingClientRect();
+  for (const node of el.querySelectorAll<HTMLElement>('[data-history-key]')) {
+    const bounds = node.getBoundingClientRect();
+    if (bounds.bottom > viewport.top && bounds.top < viewport.bottom && node.dataset.historyKey) {
+      return { key: node.dataset.historyKey, offset: bounds.top - viewport.top };
+    }
+  }
+}
+let lastScrollTop = 0;
+
+function resetScrollState() {
+  stickToBottom.value = true;
+  initialBottomPending.value = true;
+  prepend = undefined;
+  lastScrollTop = 0;
+}
+
+function reload() {
+  resetScrollState();
+  return props.publicDetail ? props.publicDetail.load() : flow.reload();
+}
 const writable = computed(() => !props.publicDetail || shared.value?.permission === 'write');
 const canCompose = computed(() => writable.value && !props.readOnly && (props.publicDetail ? !!(shared.value?.can_append || shared.value?.can_continue) : !!session.value?.accepts_input));
 const continuing = computed(() => Boolean(shared.value?.can_continue));
@@ -35,11 +69,16 @@ function prefillTrial(){if(typeof sessionStorage==='undefined'||typeof location=
 if (!props.taskCenter && !props.publicDetail) prefillTrial();
 const deliveryMode = ref<'steer' | 'queue'>('steer');
 const deliveryOptions = [{ label: '引导当前执行', value: 'steer' }, { label: '排队到下一轮', value: 'queue' }];
-const scroll = ref<HTMLElement | null>(null);
 const downloadError = ref('');
 const artifactBusy = ref('');
-async function downloadSharedArtifact(file: TaskArtifact) {
-  if (!props.publicDetail || artifactBusy.value) return;
+const effectiveArtifacts = computed(() => props.artifacts?.length ? props.artifacts : shared.value?.artifacts || []);
+const hasUserMessage = computed(() => messages.value.some(({ event }) => isUser(event)));
+async function triggerArtifactDownload(file: TaskArtifact) {
+  if (!props.publicDetail) {
+    emit('downloadArtifact', file);
+    return;
+  }
+  if (artifactBusy.value) return;
   artifactBusy.value = file.id; downloadError.value = '';
   try { await props.publicDetail.download(file); }
   catch { downloadError.value = '文件不可用，请重新加载后重试。'; }
@@ -49,6 +88,7 @@ const refreshedAttachments = ref<Record<string, SessionAttachment>>({});
 const readingAttachments = ref(new Set<string>());
 let downloads = new AbortController();
 watch(() => [props.workspace, props.sessionId], () => {
+  resetScrollState();
   downloads.abort(); downloads = new AbortController(); downloadError.value = '';
   refreshedAttachments.value = {}; readingAttachments.value = new Set();
 });
@@ -140,35 +180,115 @@ async function stop() {
   catch (e) { if (id === props.sessionId && w === props.workspace) actionError.value = e instanceof Error ? e.message : '停止失败'; }
   finally { controlBusy.value = false; }
 }
-async function older() { const el = scroll.value, before = el?.scrollHeight || 0; await (props.publicDetail ? props.publicDetail.older() : flow.older()); await nextTick(); if (el) el.scrollTop += el.scrollHeight - before; }
-watch(rows, async () => { const el = scroll.value; const bottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 100; const paging = loadingOlder.value; await nextTick(); if (el && bottom && !paging) el.scrollTop = el.scrollHeight; });
+function onMessagesScroll() {
+  const el = scroll.value;
+  if (!el || loading.value || prepend || loadingOlder.value) return;
+  initialBottomPending.value = false;
+  const currentTop = el.scrollTop;
+  const scrolledUp = currentTop < lastScrollTop;
+  lastScrollTop = currentTop;
+  const distanceFromBottom = el.scrollHeight - currentTop - el.clientHeight;
+  stickToBottom.value = distanceFromBottom <= 80;
+  if (currentTop <= 60 && olderCursor.value && el.scrollHeight > el.clientHeight && (scrolledUp || !stickToBottom.value)) {
+    void older();
+  }
+}
+
+async function older() {
+  if (!olderCursor.value || loadingOlder.value || prepend) return;
+  const el = scroll.value;
+  const pending = { anchor: visibleHistoryAnchor(el) };
+  prepend = pending;
+  initialBottomPending.value = false;
+  stickToBottom.value = false;
+  try {
+    await (props.publicDetail ? props.publicDetail.older() : flow.older());
+    await nextTick();
+    if (prepend !== pending || !el || scroll.value !== el) return;
+    const anchor = pending.anchor;
+    if (anchor && el.clientHeight) {
+      const node = Array.from(el.querySelectorAll<HTMLElement>('[data-history-key]'))
+        .find(item => item.dataset.historyKey === anchor.key);
+      if (node) {
+        // Adjust only the visible row's displacement. Live events below it
+        // and any anchoring already applied by the browser are not prepends.
+        el.scrollTop += node.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset;
+      }
+    }
+    lastScrollTop = el.scrollTop;
+  } finally {
+    if (prepend === pending) prepend = undefined;
+  }
+}
+
+watch(rows, async (nextRows, prevRows) => {
+  if (prepend) {
+    // Vue's pre-update watcher sees the old DOM. Capture the reader's
+    // current position even if they kept scrolling during the request.
+    prepend.anchor = visibleHistoryAnchor(scroll.value) ?? prepend.anchor;
+    return;
+  }
+  if (loadingOlder.value) return;
+  const elBefore = scroll.value;
+  const firstLoad = initialBottomPending.value && nextRows.length > 0 && (!prevRows || prevRows.length === 0);
+  const atBottomBefore = !elBefore || elBefore.scrollHeight === 0 || (elBefore.scrollHeight - elBefore.scrollTop - elBefore.clientHeight <= 80);
+  const shouldFollow = firstLoad || (stickToBottom.value && atBottomBefore);
+  await nextTick();
+  const el = scroll.value;
+  if (!el || !el.clientHeight || prepend || loadingOlder.value) return;
+  if (shouldFollow && (firstLoad || stickToBottom.value)) {
+    el.scrollTop = el.scrollHeight;
+    lastScrollTop = el.scrollTop;
+    stickToBottom.value = true;
+    if (nextRows.length > 0) initialBottomPending.value = false;
+  }
+}, { immediate: true });
 </script>
 <template>
   <section class="session-panel" :aria-label="title">
     <header v-if="!embedded"><div class="session-heading"><span class="eyebrow">{{ task ? '任务执行过程' : '与你的 AI 员工协作' }}</span><strong>{{ title }}</strong></div><span class="connection muted"><i :class="{ connected: connection === '已连接' }" aria-hidden="true" />{{ connection || '正在连接' }} · {{ status(session?.execution.state) }}</span><NButton v-if="task" size="small" @click="emit('close')">关闭任务详情</NButton></header>
     <p v-if="session?.execution.block_reason" class="warning">{{ status(session.execution.block_reason) }}</p>
     <div v-if="error" class="error" role="alert">{{ error }} <NButton size="small" @click="reload">重新加载</NButton></div>
-    <div class="session-content"><div ref="scroll" class="messages">
+    <div class="session-content"><div ref="scroll" class="messages" @scroll="onMessagesScroll">
       <NSkeleton v-if="loading" text :repeat="4" />
       <NButton v-if="olderCursor" size="small" :loading="loadingOlder" @click="older">加载更早历史消息</NButton>
-      <p v-if="!loading && !rows.length" class="empty muted">{{ taskCenter || task ? '暂无执行记录。' : '暂无消息，发送工作需求开始协作。' }}</p>
-      <article v-for="{ event: row, replies } in messages" :key="row.action?.request_id || row.message_id || row.tool_use_id || row.turn_id || row.seq" :class="['event', { user: isUser(row), tool: !!row.tool_use_id, report: row.source_kind === 'task_report', 'turn-event': row.type === 'turn.updated', 'error-event': row.type === 'session.error' }]">
+      <article v-if="task && initialInputText && !hasUserMessage && !turnId" class="event user initial-prompt">
+        <div class="message-meta"><strong>{{ publicDetail ? '任务输入' : '你' }}</strong><time v-if="initialInputTime" :datetime="initialInputTime">{{ clockTime(initialInputTime) }}</time></div>
+        <p class="body">{{ initialInputText }}</p>
+      </article>
+      <p v-if="!loading && !rows.length && !initialInputText" class="empty muted">{{ taskCenter || task ? '暂无执行记录。' : '暂无消息，发送工作需求开始协作。' }}</p>
+      <article v-for="{ event: row, replies } in messages" :key="messageKey(row)" :data-history-key="messageKey(row)" :class="['event', { user: isUser(row), tool: !!row.tool_use_id, report: row.source_kind === 'task_report', 'turn-event': row.type === 'turn.updated', 'error-event': row.type === 'session.error' }]">
         <template v-if="row.action"><strong>{{ row.action.title }}</strong><p class="body">{{ row.action.message }}</p></template>
         <SessionToolCall v-else-if="row.tool_use_id" :event="row" :task-title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!toolTaskTarget(row)" @open-task="emit('openTask', $event)" />
         <SessionTaskReport v-else-if="row.source_kind === 'task_report'" :event="row" :reply="replies" :title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!taskReport(row)?.task" @open-task="emit('openTask', $event, taskReport(row)?.turnID)" />
-        <template v-else-if="row.type === 'turn.updated'"><span class="muted">本轮：{{ status(row.status) }}</span><p v-if="row.error" class="error">{{ row.error.message }}</p></template>
+        <template v-else-if="row.type === 'turn.updated'"><div class="turn-divider"><span class="muted">{{ status(row.status) }}</span></div><p v-if="row.error" class="error">{{ row.error.message }}</p></template>
         <template v-else>
-          <div class="message-meta"><strong>{{ row.source_kind === 'work_item_amendment' ? '事项要求更新' : row.source_kind === 'work_item_notice' || row.source_kind === 'work_item_assignment' || row.source_kind === 'work_item_result' ? '事项交接' : isUser(row) ? (publicDetail ? '任务输入' : '你') : row.type === 'session.error' ? '会话提示' : title }}</strong><time v-if="row.occurred_at" :datetime="row.occurred_at">{{ clockTime(row.occurred_at) }}</time><span v-if="row.type === 'agent.thinking'">思考过程</span></div>
+          <div class="message-meta"><strong>{{ row.source_kind === 'work_item_amendment' ? '事项要求更新' : row.source_kind === 'work_item_notice' || row.source_kind === 'work_item_assignment' || row.source_kind === 'work_item_result' ? '事项交接' : isUser(row) ? (publicDetail ? '任务输入' : '你') : row.type === 'session.error' ? '会话提示' : title }}</strong><time v-if="row.occurred_at" :datetime="row.occurred_at">{{ clockTime(row.occurred_at) }}</time><span v-if="row.type === 'agent.thinking'" class="thinking-badge">思考过程</span></div>
           <p v-if="isUser(row)" class="body">{{ eventText(row) }}</p><details v-else-if="row.type === 'agent.thinking'" class="thinking"><summary>查看思考过程</summary><SessionMarkdown :text="eventText(row)" /></details><SessionMarkdown v-else :text="eventText(row)" />
           <template v-for="(file, index) in row.attachments" :key="file.id || file.path || index">
             <button v-if="!publicDetail && liveAttachment(file).status !== 'failed' && (liveAttachment(file).path || file.id && attachmentLookup)" class="attachment-link" :title="liveAttachment(file).path" :disabled="!!file.id && readingAttachments.has(file.id)" @click="downloadAttachment(file)">▤ {{ liveAttachment(file).name }} · {{ liveAttachment(file).path || liveAttachment(file).status === 'ready' ? (file.size_bytes/1024).toFixed(1) + ' KB ↓' : '准备中，点击查看状态' }}</button>
             <span v-else class="attachment-link" role="status">▤ {{ liveAttachment(file).name }} · {{ liveAttachment(file).status === 'failed' ? '附件不可用' : liveAttachment(file).status === 'ready' ? '已就绪' : '正在准备附件' }}</span>
           </template>
-          <small v-if="isUser(row) || row.status && row.status !== 'completed'">{{ row.status === 'queued' && row.delivery_mode === 'steer' ? '待引导' : status(row.status) }}</small>
+          <small v-if="isUser(row) || row.status && row.status !== 'completed'" class="msg-state-tag">{{ row.status === 'queued' && row.delivery_mode === 'steer' ? '待引导' : status(row.status) }}</small>
         </template>
       </article>
-    </div>
-    <aside v-if="shared?.artifacts.length" aria-label="任务产物"><strong>任务产物</strong><ul><li v-for="file in shared.artifacts" :key="file.id"><NButton text :disabled="Boolean(artifactBusy)" @click="downloadSharedArtifact(file)">{{ file.name }}</NButton><small v-if="file.size != null">{{ Math.ceil(file.size / 1024) }} KB</small></li></ul></aside></div>
+      <section v-if="effectiveArtifacts.length" class="event inline-artifacts" aria-label="本任务产物">
+        <div class="inline-artifacts-head"><span>任务产物 ({{ effectiveArtifacts.length }})</span><small>点击在右侧画布预览或下载</small></div>
+        <div class="inline-artifacts-grid">
+          <div v-for="file in effectiveArtifacts" :key="file.id" :class="['artifact-surface-card', { selected: selectedArtifactId === file.id }]">
+            <button type="button" class="artifact-card-main" @click="emit('selectArtifact', file)">
+              <span class="artifact-badge" :class="classifyArtifact(file).kind">{{ classifyArtifact(file).badge }}</span>
+              <span class="artifact-info">
+                <strong>{{ file.name }}</strong>
+                <small>{{ classifyArtifact(file).label }}<template v-if="file.size != null"> · {{ formatArtifactSize(file.size) }}</template></small>
+              </span>
+              <span class="artifact-preview-cue">{{ classifyArtifact(file).previewable ? '预览 →' : '仅下载' }}</span>
+            </button>
+            <NButton size="tiny" secondary :disabled="Boolean(artifactBusy)" @click="triggerArtifactDownload(file)">下载</NButton>
+          </div>
+        </div>
+      </section>
+    </div></div>
     <p v-if="downloadError" class="error" role="alert">{{ downloadError }}</p>
     <footer v-if="!turnId && writable">
       <section v-for="action in session?.execution.required_actions" :key="action.request_id" class="confirmation">
@@ -179,17 +299,47 @@ watch(rows, async () => { const el = scroll.value; const bottom = !el || el.scro
       <p v-if="session && !session.accepts_input" class="warning">{{ session.lifecycle === 'archived' ? '此会话已归档，历史仍可查看，不能继续发送。' : `暂不能输入：${session.input_block_reason || session.lifecycle}` }}</p>
       <p v-if="held" class="warning">当前任务在等待确认或交接。补充会先排队，暂不能停止。</p>
       <slot name="attachments" />
-      <NInput v-model:value="text" type="textarea" :rows="2" :disabled="!canCompose || submitting || controlBusy" :placeholder="continuing ? '填写新一轮的要求' : task ? '给此任务补充要求' : '发送消息，任务执行期间仍可继续对话'" @keydown.enter.exact="onEnter" />
-      <div class="actions"><span class="composer-hint">Enter 发送 · Shift + Enter 换行</span><NSelect v-if="!continuing && (!held || !publicDetail)" v-model:value="deliveryMode" aria-label="输入处理方式" :options="deliveryOptions" style="width:160px" :disabled="!canCompose || submitting" /><NButton v-if="!publicDetail || shared?.can_stop" :loading="controlBusy" :disabled="stopUnavailable" @click="stop">{{ task ? '停止此任务' : '停止主对话' }}</NButton><NButton type="primary" :loading="submitting" :disabled="attachmentPending || (!text.trim() && !attachmentPaths?.length && !attachmentIds?.length) || !canCompose || submitting || controlBusy" @click="send">{{ continuing ? '提交并重新开始' : actionError && pending ? '重试发送' : '发送' }}</NButton></div>
+      <div class="composer-card" :class="{ disabled: !canCompose }">
+        <NInput v-model:value="text" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" :disabled="!canCompose || submitting || controlBusy" :placeholder="continuing ? '填写新一轮的要求' : task ? '给此任务补充要求，按顺序接续执行...' : '发送消息，任务执行期间仍可继续对话'" @keydown.enter.exact="onEnter" />
+        <div class="actions"><span class="composer-hint">Enter 发送 · Shift + Enter 换行</span><NSelect v-if="!continuing && (!held || !publicDetail)" v-model:value="deliveryMode" aria-label="输入处理方式" :options="deliveryOptions" size="small" style="width:150px" :disabled="!canCompose || submitting" /><NButton v-if="!publicDetail || shared?.can_stop" size="small" :loading="controlBusy" :disabled="stopUnavailable" @click="stop">{{ task ? '停止此任务' : '停止主对话' }}</NButton><NButton size="small" type="primary" :loading="submitting" :disabled="attachmentPending || (!text.trim() && !attachmentPaths?.length && !attachmentIds?.length) || !canCompose || submitting || controlBusy" @click="send">{{ continuing ? '提交并重新开始' : actionError && pending ? '重试发送' : '发送' }}</NButton></div>
+      </div>
     </footer>
   </section>
 </template>
 <style scoped>
-.attachment-link{border:1px solid var(--id-border-subtle);background:var(--id-bg-surface);color:inherit;padding:6px 10px;border-radius:6px;cursor:pointer;margin:4px}.confirmation{padding:12px 0;border-bottom:1px solid var(--id-border-subtle);overflow-wrap:anywhere}.confirmation p{white-space:pre-wrap}.session-panel{min-width:0;flex:1;display:flex;flex-direction:column;border:1px solid var(--id-border-subtle);border-radius:var(--id-radius-lg);background:var(--id-bg-surface);overflow:hidden;height:100%;min-height:420px}.session-panel>header{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--id-border-subtle);flex-wrap:wrap}.session-heading{flex:1;min-width:100px}.session-heading strong{display:block;font-size:14px}.eyebrow{font-size:10px;color:var(--id-text-muted)}.connection{display:flex;align-items:center;gap:5px}.connection i{width:5px;height:5px;border-radius:50%;background:var(--id-text-muted)}.connection i.connected{background:var(--id-status-success)}.messages{flex:1;min-height:0;overflow:auto;padding:24px clamp(16px,3vw,40px);background:var(--id-bg-subtle);display:flex;flex-direction:column;gap:18px;scrollbar-gutter:stable}.event{width:100%;min-width:0;max-width:780px;align-self:center;font-size:13px;overflow-wrap:anywhere}.event.user{align-self:flex-end;max-width:min(85%,680px);width:fit-content;padding:12px 16px;border-radius:14px 14px 4px 14px;background:var(--id-bg-muted);border:1px solid var(--id-border-subtle)}.message-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--id-text-muted);margin-bottom:8px}.message-meta strong{font-weight:500;color:var(--id-text-secondary)}.message-meta time{font-size:10px}.body{white-space:pre-wrap;word-break:break-word;margin:0;line-height:1.8}.event small{display:block;margin-top:6px}.turn-event{border-top:1px solid var(--id-border-subtle);padding-top:8px;font-size:11px}.turn-event .muted{font-size:11px}.error-event{border-left:2px solid var(--id-status-danger);padding-left:12px}.thinking summary{color:var(--id-text-muted);font-size:12px;cursor:pointer}.thinking[open] summary{margin-bottom:10px}small,.muted{font-size:12px;color:var(--id-text-muted)}.empty{margin:auto;text-align:center}.error,.warning{padding:8px 12px;font-size:13px}.error{color:var(--id-status-danger)}.warning{color:var(--id-status-warning)}.session-panel>footer{padding:14px 20px;border-top:1px solid var(--id-border-subtle)}.actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:10px;flex-wrap:wrap}.composer-hint{margin-right:auto;color:var(--id-text-muted);font-size:10px}@media(max-width:1200px){.composer-hint{display:none}}@media(max-width:640px){.messages{padding:16px 12px}.session-panel>header,.session-panel>footer{padding:12px}.connection{font-size:10px}.actions{gap:6px}.event.user{max-width:94%}}
+.attachment-link{border:1px solid var(--id-border-subtle);background:var(--id-bg-surface);color:inherit;padding:6px 10px;border-radius:6px;cursor:pointer;margin:4px}.confirmation{padding:12px 0;border-bottom:1px solid var(--id-border-subtle);overflow-wrap:anywhere}.confirmation p{white-space:pre-wrap}.session-panel{min-width:0;flex:1;display:flex;flex-direction:column;border:1px solid var(--id-border-subtle);border-radius:var(--id-radius-lg);background:var(--id-bg-surface);overflow:hidden;height:100%;min-height:420px}.session-panel>header{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--id-border-subtle);flex-wrap:wrap}.session-heading{flex:1;min-width:100px}.session-heading strong{display:block;font-size:14px}.eyebrow{font-size:10px;color:var(--id-text-muted)}.connection{display:flex;align-items:center;gap:5px}.connection i{width:5px;height:5px;border-radius:50%;background:var(--id-text-muted)}.connection i.connected{background:var(--id-status-success)}.messages{flex:1;min-height:0;overflow:auto;padding:24px clamp(16px,3vw,40px);background:var(--id-bg-subtle);display:flex;flex-direction:column;gap:18px;scrollbar-gutter:stable}.event{width:100%;min-width:0;max-width:780px;align-self:center;font-size:13px;overflow-wrap:anywhere}.event.user{align-self:flex-end;max-width:min(85%,680px);width:fit-content;padding:12px 16px;border-radius:14px 14px 4px 14px;background:var(--id-bg-muted);border:1px solid var(--id-border-subtle)}.message-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--id-text-muted);margin-bottom:8px}.message-meta strong{font-weight:500;color:var(--id-text-secondary)}.message-meta time{font-size:10px}.body{white-space:pre-wrap;word-break:break-word;margin:0;line-height:1.8}.event small{display:block;margin-top:6px}.turn-event{padding-top:4px;font-size:11px}
+.turn-divider{display:flex;align-items:center;gap:10px;color:var(--id-text-muted)}
+.turn-divider::before,.turn-divider::after{content:"";flex:1;height:1px;background:var(--id-border-subtle)}
+.turn-event .muted{font-size:11px}
+.error-event{border-left:2px solid var(--id-status-danger);padding-left:12px}
+.thinking{padding:10px 12px;border-radius:var(--id-radius-md);background:var(--id-bg-surface);border:1px solid var(--id-border-subtle);border-left:2px solid var(--id-accent-primary-border)}
+.thinking summary{color:var(--id-text-secondary);font-size:12px;font-weight:500;cursor:pointer}
+.thinking[open] summary{margin-bottom:10px}
+.thinking-badge{padding:1px 6px;border-radius:var(--id-radius-pill);background:var(--id-bg-muted);border:1px solid var(--id-border-subtle);font-size:10px}
+.msg-state-tag{display:inline-block;margin-top:6px;padding:1px 6px;border-radius:var(--id-radius-sm);background:var(--id-bg-surface);border:1px solid var(--id-border-subtle)}
+.inline-artifacts{margin-top:4px;padding:12px 14px;border-radius:12px;background:var(--id-bg-surface);border:1px solid var(--id-border-subtle)}
+.inline-artifacts-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;font-size:12px;font-weight:600;color:var(--id-text-primary)}
+.inline-artifacts-head small{font-weight:400;margin-top:0}
+.inline-artifacts-grid{display:flex;flex-direction:column;gap:8px}
+.artifact-surface-card{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;border:1px solid var(--id-border-subtle);background:var(--id-bg-subtle);transition:border-color var(--id-transition-fast),background-color var(--id-transition-fast)}
+.artifact-surface-card:hover,.artifact-surface-card.selected{border-color:var(--id-accent-primary);background:var(--id-accent-primary-soft)}
+.artifact-card-main{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:transparent;border:0;padding:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
+.artifact-badge{flex-shrink:0;min-width:36px;text-align:center;padding:3px 6px;border-radius:6px;font-family:var(--id-font-mono);font-size:10px;font-weight:700;background:var(--id-bg-muted);color:var(--id-text-secondary);border:1px solid var(--id-border-subtle)}
+.artifact-badge.markdown{background:var(--id-accent-primary-soft);color:var(--id-accent-primary);border-color:var(--id-accent-primary-border)}
+.artifact-badge.csv{background:var(--id-status-success-soft);color:var(--id-status-success);border-color:var(--id-status-success-border)}
+.artifact-badge.code{background:var(--id-status-info-soft);color:var(--id-status-info);border-color:var(--id-status-info-border)}
+.artifact-badge.image{background:var(--id-status-warning-soft);color:var(--id-status-warning);border-color:var(--id-status-warning-border)}
+.artifact-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.artifact-info strong{font-size:12px;font-weight:600;color:var(--id-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.artifact-info small{margin-top:0;font-size:11px}
+.artifact-preview-cue{flex-shrink:0;font-size:11px;font-weight:500;color:var(--id-accent-primary)}
+small,.muted{font-size:12px;color:var(--id-text-muted)}.empty{margin:auto;text-align:center}.error,.warning{padding:8px 12px;font-size:13px}.error{color:var(--id-status-danger)}.warning{color:var(--id-status-warning)}
+.session-panel>footer{padding:12px 18px 16px;background:var(--id-bg-subtle);border-top:1px solid var(--id-border-subtle)}
+.composer-card{background:var(--id-bg-surface);border:1px solid var(--id-border-subtle);border-radius:12px;padding:10px 12px;box-shadow:var(--id-shadow-sm);transition:border-color var(--id-transition-fast),box-shadow var(--id-transition-fast)}
+.composer-card:focus-within{border-color:var(--id-accent-primary-border);box-shadow:var(--id-focus-ring)}
+.composer-card.disabled{opacity:0.78;background:var(--id-bg-muted)}
+.composer-card :deep(.n-input){--n-border:none !important;--n-border-hover:none !important;--n-border-focus:none !important;--n-box-shadow-focus:none !important;--n-color:transparent !important;--n-color-disabled:transparent !important}
+.composer-card :deep(.n-input__textarea-el){padding:2px 4px}
+.actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--id-border-hairline);flex-wrap:wrap}.composer-hint{margin-right:auto;color:var(--id-text-muted);font-size:10px}@media(max-width:1200px){.composer-hint{display:none}}@media(max-width:640px){.messages{padding:16px 12px}.session-panel>header,.session-panel>footer{padding:12px}.connection{font-size:10px}.actions{gap:6px}.event.user{max-width:94%}}
 .session-content{display:flex;flex:1;min-height:0;min-width:0}
-.session-content>aside{width:clamp(155px,24%,240px);overflow:auto;flex-shrink:0;padding:14px;border-left:1px solid var(--id-border-subtle);font-size:13px}
-.session-content>aside ul{list-style:none;margin:10px 0;padding:0}
-.session-content>aside li{display:flex;flex-direction:column;align-items:flex-start;margin-block:8px;overflow-wrap:anywhere}
-.session-content>aside li :deep(.n-button__content){white-space:normal;overflow-wrap:anywhere}
-@media(max-width:640px){.session-content{flex-direction:column}.session-content>aside{width:100%;max-height:120px;border-left:0;border-top:1px solid var(--id-border-subtle)}}
 </style>

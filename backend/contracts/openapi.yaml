@@ -209,6 +209,8 @@ paths:
     $ref: ./modules/manager/tasks.yaml#/item
   /api/v1/workspaces/{workspace_id}/tasks/{task_id}/reports:
     $ref: ./modules/manager/tasks.yaml#/reports
+  /api/v1/workspaces/{workspace_id}/tasks/{task_id}/artifacts/{artifact_id}:
+    $ref: ./modules/manager/tasks.yaml#/artifact
   /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/directory:
     $ref: ./modules/platform/channel-directory.yaml#/status
   /api/v1/workspaces/{workspace_id}/agents/{agent_id}/channels/feishu/directory/sync:

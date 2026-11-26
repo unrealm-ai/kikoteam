@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 
 	repo "github.com/unrealm-ai/kikoteam/backend/internal/manager/repository"
 	manager "github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/integration/skillasset"
 )
 
 func TestTaskReadsPaginationPrivateOwnershipAndReports(t *testing.T) {
@@ -169,6 +171,39 @@ func TestTaskReadsPaginationPrivateOwnershipAndReports(t *testing.T) {
 	}
 	if _, err = s.ListTaskReports(ctx, w, other, *one.TaskID, "", manager.ReportFilter{}); err == nil {
 		t.Fatal("other member read reports")
+	}
+	// Completed turn artifacts are returned in authenticated task detail and downloadable by authorized owner only.
+	assets, err := skillasset.NewStore(ctx, skillasset.Config{LocalRoot: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Store.(*repo.Store).WorkAssets = assets
+	artifactBytes := []byte("# Q3 归因报告\n总额 184200")
+	artifactVer, err := assets.PutWorkFile(ctx, w, artifactBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactID := manager.NewID()
+	if _, err = db.ExecContext(ctx, `INSERT INTO manager_task_artifacts(id,turn_id,path,name,media_type,version,size_bytes) VALUES($1,$2,'outputs/report.md','report.md','text/markdown',$3,$4)`, artifactID, turn, artifactVer, len(artifactBytes)); err != nil {
+		t.Fatal(err)
+	}
+	detail = get(base+"/"+*one.TaskID, 200)
+	artifacts := detail["artifacts"].([]any)
+	if len(artifacts) != 1 || artifacts[0].(map[string]any)["id"] != artifactID || artifacts[0].(map[string]any)["name"] != "report.md" {
+		t.Fatalf("unexpected authenticated artifacts: %v", artifacts)
+	}
+	dlReq := httptest.NewRequest("GET", base+"/"+*one.TaskID+"/artifacts/"+artifactID, nil)
+	dlReq.Header.Set("Cookie", cookie)
+	dlRes := httptest.NewRecorder()
+	mux.ServeHTTP(dlRes, dlReq)
+	if dlRes.Code != 200 || !bytes.Equal(dlRes.Body.Bytes(), artifactBytes) || !strings.HasPrefix(dlRes.Header().Get("Content-Disposition"), "attachment;") {
+		t.Fatalf("artifact download failed: %d %q", dlRes.Code, dlRes.Body.String())
+	}
+	if _, _, err = s.TaskArtifact(ctx, w, other, *one.TaskID, artifactID); err == nil {
+		t.Fatal("other member downloaded private task artifact")
+	}
+	if _, _, err = s.TaskArtifact(ctx, w, actor, *two.TaskID, artifactID); err == nil {
+		t.Fatal("cross-task artifact download succeeded")
 	}
 	if _, err = db.ExecContext(ctx, `UPDATE platform_members SET status='disabled' WHERE workspace_id=$1 AND user_id=$2`, w, actor); err != nil {
 		t.Fatal(err)

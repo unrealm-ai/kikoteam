@@ -177,7 +177,7 @@ test('a late task refresh cannot give a stale title draft a newer revision', asy
   } finally { await m.cleanup(); }
 });
 
-test('task center honors independent input, stop and archive permissions, including historical turns', async () => {
+test('task center honors independent input, stop and archive permissions and keeps full session stream when initialTurnId is given', async () => {
   const m = await mount(Detail, url => url.endsWith('/tasks/one') ? Response.json({...task(), accepts_input:true,
     actions:{supplement:{allowed:false,reason:'system_managed_input'},rename:{allowed:true}, stop:{allowed:true}, archive:{allowed:false}}}) : null, {taskCenter:true});
   try {
@@ -187,8 +187,11 @@ test('task center honors independent input, stop and archive permissions, includ
     assert.ok(button('归档任务').disabled);
     m.props.value = {...m.props.value,initialTurnId:'old-turn'};
     await wait();
-    assert.equal(document.querySelector('textarea'),null);
-    assert.equal(button('停止此任务'),undefined);
+    assert.ok(document.querySelector('textarea').disabled);
+    assert.match(m.host.textContent,/此任务的输入由系统派发/);
+    assert.equal(button('停止此任务').disabled,false);
+    assert.ok(button('归档任务').disabled);
+    assert.ok(!m.calls.some(c => c.url.includes('/events?') && c.url.includes('turn_id=')));
     assert.ok(m.calls.every(c => !c.init.method || c.init.method === 'GET'));
   } finally { await m.cleanup(); }
 });
@@ -215,9 +218,17 @@ test('archive refreshes task permissions even when a pre-archive read finishes l
     assert.equal(reads, 3);
   } finally { await m.cleanup(); }
 });
-test('historical report selection binds history and stream to its Turn and hides current composer',async()=>{
+test('historical report selection opens full Session waterfall without turn filtering and keeps composer available',async()=>{
   const m=await mount(Detail,()=>null,{initialTurnId:'old-turn'});
-  try {assert.ok(m.calls.some(c=>c.url.includes('/events?')&&c.url.includes('turn_id=old-turn')));assert.match(Source.all[0].url,/turn_id=old-turn/);assert.equal(m.host.querySelector('textarea'),null);assert.match(m.host.textContent,/最近：本轮完成/);assert.doesNotMatch(m.host.textContent,/任务已完成/);}finally{await m.cleanup();}
+  try {
+    assert.ok(m.calls.some(c=>c.url.includes('/events?')&&!c.url.includes('turn_id=')));
+    assert.ok(Source.all[0] && !/turn_id=/.test(Source.all[0].url));
+    assert.equal(m.host.querySelector('.turn-focus-bar'),null);
+    assert.equal(m.host.querySelector('[aria-label="选择执行轮次"]'),null);
+    assert.ok(m.host.querySelector('textarea'));
+    assert.match(m.host.textContent,/最近：本轮完成/);
+    assert.doesNotMatch(m.host.textContent,/任务已完成/);
+  } finally { await m.cleanup(); }
 });
 test('input records withdraw only queued inputs and report states preserve pending, historical and suppressed facts',async()=>{
   const m=await mount(Detail,url=>url.includes('/inputs?')?Response.json({items:[{id:'q',seq:'1',status:'queued',text:'补充要求',delivery_mode:'queue',turn_id:null},{id:'p',seq:'2',status:'processed',text:'已处理输入',delivery_mode:'steer',turn_id:'t'}],next_cursor:null}):url.includes('/reports?')?Response.json({items:[{source_input_id:'i1',source_input_seq:'1',status:'not_enabled',outcome:'completed'},{source_input_id:'i2',source_input_seq:'2',status:'suppressed',outcome:'failed',reason:'target_archived'},{source_input_id:'i3',source_input_seq:'3',status:'pending',outcome:'completed'}],next_cursor:null}):null);
@@ -241,6 +252,7 @@ test('planned and canceled todos are not presented as idle execution and expose 
 
 test('historical result fetches same-Turn supplement receipts, without claiming adoption',async()=>{
   const m=await mount(Detail,url=>{
+    if(url.includes('/turns?'))return Response.json({items:[{id:'old-turn',started_at:'2026-11-17T00:00:00Z',finished_at:'2026-11-17T00:00:07Z'}],next_cursor:null});
     if(url.includes('/reports?')&&url.includes('turn_id=old-turn'))return Response.json({items:[{
       source_turn_id:'old-turn',source_input_id:'starter',outcome:'completed',status:'not_applicable',
       supplement_receipts:[{input_id:'steer-b',input_seq:'2',context_state:'committed'},{input_id:'steer-u',input_seq:'3',context_state:'unknown'}],
@@ -253,12 +265,17 @@ test('historical result fetches same-Turn supplement receipts, without claiming 
   try {
     const receipts=m.host.querySelector('.process .task-supplements');
     assert.ok(receipts);
-    assert.match(receipts.textContent,/输入 2：已进入本轮上下文/);
-    assert.match(receipts.textContent,/输入 3：接收状态待核对/);
-    assert.match(receipts.textContent,/不代表模型采纳/);
-    assert.doesNotMatch(receipts.textContent,/输入 [45]/);
+    assert.match(receipts.textContent,/输入 5：已进入本轮上下文/);
+    assert.doesNotMatch(receipts.textContent,/输入 [234]/);
+    assert.match(m.host.querySelector('.task-summary').textContent,/用时 42\.0 秒/);
     button('主会话回报').click();await wait();
-    assert.match(m.host.querySelector('.records .task-supplements').textContent,/输入 5：已进入本轮上下文/);
+    const reports=[...m.host.querySelectorAll('.records .task-supplements')];
+    assert.equal(reports.length,2);
+    assert.match(reports[0].textContent,/输入 5：已进入本轮上下文/);
+    assert.match(reports[1].textContent,/输入 2：已进入本轮上下文/);
+    assert.match(reports[1].textContent,/输入 3：接收状态待核对/);
+    assert.match(reports[1].textContent,/不代表模型采纳/);
+    assert.doesNotMatch(reports[1].textContent,/输入 [45]/);
   }finally{await m.cleanup();}
 });
 
@@ -328,4 +345,244 @@ test('task detail separates root, handoff and delivery state without opening ano
     assert.match(summary.textContent, /钉钉 · 发送结果暂未确认/);
     assert.equal(summary.querySelector('a,button'), null);
   } finally { await m.cleanup(); }
+});
+
+test('task detail removes turn selector, opens drawer fullscreen, and previews markdown & csv artifacts on right surface', async () => {
+  const artifacts = [
+    { id: 'art-md', name: '归因报告.md', size: 64 },
+    { id: 'art-csv', name: '退货明细.csv', size: 48 },
+  ];
+  const m = await mount(List, (url) => {
+    if (url.endsWith('/tasks/one')) return Response.json({ ...task(), artifacts });
+    if (url.endsWith('/tasks/one/artifacts/art-md')) return new Response('# Q3 归因结论\n总额 **184200**', { headers: { 'Content-Type': 'text/markdown' } });
+    if (url.endsWith('/tasks/one/artifacts/art-csv')) return new Response('仓别,退货率\n苏州仓,7.4%\n杭州仓,2.0%', { headers: { 'Content-Type': 'text/csv' } });
+    return null;
+  }, { selectedTaskId: 'one' });
+  try {
+    assert.equal(document.querySelector('[aria-label="选择执行轮次"]'), null);
+    assert.match(document.body.textContent, /归因报告\.md/);
+    const expandBtn = [...document.querySelectorAll('button')].find(b => b.textContent.includes('放大全屏'));
+    assert.ok(expandBtn);
+    expandBtn.click();
+    await wait();
+    assert.ok(button('← 返回任务列表'));
+    assert.ok(button('⤡ 退出全屏'));
+    const preview = document.querySelector('[aria-label="产物预览画布"]');
+    assert.ok(preview);
+    assert.equal(preview.querySelector('h1').textContent, 'Q3 归因结论');
+    assert.match(preview.textContent, /184200/);
+
+    const csvSelect = [...document.querySelectorAll('.artifact-row-select')].find(el => el.textContent.includes('退货明细.csv'));
+    assert.ok(csvSelect);
+    csvSelect.click();
+    await wait();
+    const table = preview.querySelector('.surface-csv-table');
+    assert.ok(table);
+    assert.equal(table.querySelectorAll('tbody tr').length, 2);
+    assert.match(table.textContent, /苏州仓/);
+
+    button('⤡ 退出全屏').click();
+    await wait();
+    assert.equal(button('← 返回任务列表'), undefined);
+  } finally { await m.cleanup(); }
+});
+
+test('header badge and status summary consistently prioritize progress.phase over idle execution state', async () => {
+  const cases = [
+    ['completed', '已完成'],
+    ['waiting_confirmation', '等待人工确认'],
+    ['waiting_handoff', '已交接，等待处理结果'],
+    ['waiting_resume', '已收到答复，等待继续执行'],
+  ];
+  for (const [phase, expected] of cases) {
+    const m = await mount(Detail, url => url.endsWith('/tasks/one')
+      ? Response.json({ ...task(), execution: { ...task().execution, state: 'idle' }, progress: { phase, assignee: '小析' } })
+      : null);
+    try {
+      const badge = m.host.querySelector('.status-badge');
+      assert.ok(badge);
+      assert.equal(badge.textContent.trim(), expected);
+      assert.doesNotMatch(badge.textContent, /当前无执行轮次/);
+      const summary = m.host.querySelector('[aria-label="任务状态摘要"]');
+      assert.ok(summary);
+      assert.match(summary.textContent, new RegExp(expected));
+    } finally { await m.cleanup(); }
+  }
+});
+
+test('svg artifacts are download-only and never rendered as inline image previews', async () => {
+  const artifacts = [
+    { id: 'art-svg', name: 'architecture.svg', size: 128 },
+    { id: 'art-md', name: '总结.md', size: 48 },
+  ];
+  const m = await mount(List, (url) => {
+    if (url.endsWith('/tasks/one')) return Response.json({ ...task(), artifacts });
+    if (url.endsWith('/tasks/one/artifacts/art-md')) return new Response('# 默认选中可预览文件', { headers: { 'Content-Type': 'text/markdown' } });
+    return null;
+  }, { selectedTaskId: 'one' });
+  try {
+    const svgInlineCard = [...document.querySelectorAll('.artifact-surface-card')].find(el => el.textContent.includes('architecture.svg'));
+    assert.ok(svgInlineCard);
+    assert.match(svgInlineCard.textContent, /仅下载/);
+    assert.doesNotMatch(svgInlineCard.textContent, /预览 →/);
+
+    const expandBtn = [...document.querySelectorAll('button')].find(b => b.textContent.includes('放大全屏'));
+    expandBtn.click();
+    await wait();
+    const preview = document.querySelector('[aria-label="产物预览画布"]');
+    assert.equal(preview.querySelector('h1')?.textContent, '默认选中可预览文件');
+    assert.ok(!m.calls.some(c => c.url.includes('/artifacts/art-svg')));
+
+    const svgRow = [...document.querySelectorAll('.artifact-row-select')].find(el => el.textContent.includes('architecture.svg'));
+    assert.ok(svgRow);
+    svgRow.click();
+    await wait();
+    assert.equal(preview.querySelector('.image-preview-wrap img'), null);
+    assert.ok(preview.querySelector('.binary-preview-card'));
+    assert.match(preview.textContent, /暂不支持浏览器内联渲染，请直接下载查看/);
+    assert.ok(!m.calls.some(c => c.url.includes('/artifacts/art-svg')));
+  } finally { await m.cleanup(); }
+});
+
+test('session waterfall lands at bottom, auto-loads older on upward scroll while keeping offset, and does not yank on SSE while reading history', async () => {
+  let releaseInitial;
+  let scrollHeight = 900;
+  let olderPrependDelta = 0;
+  const msg = (seq, text) => ({ type: 'agent.message', seq: String(seq), session_id: 's-one', message_id: `m-${seq}`, content: [{ type: 'text', text }], occurred_at: '2026-11-26T01:00:00Z' });
+  const m = await mount(Detail, (url) => {
+    if (url.includes('/events?') && !url.includes('cursor=')) {
+      return new Promise(resolve => {
+        releaseInitial = () => resolve(Response.json({
+          items: [msg(10, '第十条'), msg(11, '第十一条')],
+          next_cursor: 'page-older-1',
+          resume_cursor: 'H11',
+        }));
+      });
+    }
+    if (url.includes('/events?') && url.includes('cursor=page-older-1')) {
+      scrollHeight += olderPrependDelta;
+      return Response.json({
+        items: [msg(5, '第五条'), msg(6, '第六条')],
+        next_cursor: 'page-older-2',
+        resume_cursor: 'H11',
+      });
+    }
+    if (url.includes('/events?') && url.includes('cursor=page-older-2')) {
+      scrollHeight += 300;
+      return Response.json({
+        items: [msg(1, '第一条')],
+        next_cursor: null,
+        resume_cursor: 'H11',
+      });
+    }
+    return null;
+  });
+  try {
+    const scroller = m.host.querySelector('.messages');
+    assert.ok(scroller);
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: () => scrollHeight });
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 300 });
+    assert.equal(typeof releaseInitial, 'function');
+    releaseInitial();
+    await wait();
+
+    assert.equal(scroller.scrollTop, 900);
+
+    // Scroll into middle history (not near top yet): SSE new message must NOT pull back to bottom
+    scroller.scrollTop = 250;
+    scroller.dispatchEvent(new window.Event('scroll'));
+    await nextTick();
+
+    scrollHeight = 1020;
+    const stream = Source.all.find(s => s.url.includes('/s-one/'));
+    assert.ok(stream);
+    stream.listeners.get('agent.message')?.({
+      data: JSON.stringify(msg(12, '第十二条新消息')),
+      lastEventId: 'H12',
+    });
+    await wait();
+    assert.equal(scroller.scrollTop, 250);
+    assert.match(m.host.textContent, /第十二条新消息/);
+
+    const rowSizes = {'message:m-5':250,'message:m-6':250,'message:m-1':300};
+    scroller.getBoundingClientRect=()=>({top:0,bottom:300});
+    function installRowGeometry() {
+      const rows=()=>[...scroller.querySelectorAll('[data-history-key]')];
+      for (const node of rows()) node.getBoundingClientRect=()=>{
+        const all=rows(), height=rowSizes[node.dataset.historyKey]||300;
+        const top=all.slice(0,all.indexOf(node)).reduce((sum,row)=>sum+(rowSizes[row.dataset.historyKey]||300),0)-scroller.scrollTop;
+        return {top,bottom:top+height};
+      };
+    }
+    installRowGeometry();
+
+    // Scroll near top: should automatically load older page and preserve scroll offset (+500)
+    olderPrependDelta = 500;
+    scroller.scrollTop = 30;
+    scroller.dispatchEvent(new window.Event('scroll'));
+    await wait();
+
+    assert.ok(m.calls.some(c => c.url.includes('cursor=page-older-1')));
+    assert.match(m.host.textContent, /第五条/);
+    assert.equal(scroller.scrollTop, 530);
+
+    // SSE event arriving while still looking at prepended history must NOT pull back to bottom
+    scrollHeight += 120;
+    stream.listeners.get('agent.message')?.({
+      data: JSON.stringify(msg(13, '第十三条新消息')),
+      lastEventId: 'H13',
+    });
+    await wait();
+    assert.equal(scroller.scrollTop, 530);
+
+    installRowGeometry();
+    // Manual fallback button remains available for earlier page
+    const manualBtn = [...m.host.querySelectorAll('button')].find(b => b.textContent.trim() === '加载更早历史消息');
+    assert.ok(manualBtn);
+    manualBtn.click();
+    await wait();
+    assert.ok(m.calls.some(c => c.url.includes('cursor=page-older-2')));
+    assert.match(m.host.textContent, /第一条/);
+    assert.equal(scroller.scrollTop, 830);
+  } finally { await m.cleanup(); }
+});
+
+test('history prepend preserves the visible event even when live SSE appends during the request', async () => {
+  let release;
+  const item = (seq, text) => ({type:'agent.message',seq:String(seq),session_id:'s-one',message_id:'m'+seq,content:[{type:'text',text}]});
+  const m = await mount(Detail, url => {
+    if (!url.includes('/events?')) return null;
+    if (url.includes('cursor=older')) return new Promise(resolve => { release = resolve; });
+    return Response.json({items:[item(3,'起始可见消息'),item(4,'近期消息'),item(5,'末尾消息')],next_cursor:'older',resume_cursor:'live'});
+  });
+  try {
+    const timeline = m.host.querySelector('.messages');
+    const geometry = (top, height) => ({top,bottom:top+height,height});
+    const rows = () => [...timeline.querySelectorAll('[data-history-key]')];
+    Object.defineProperty(timeline,'clientHeight',{get:()=>80});
+    Object.defineProperty(timeline,'scrollHeight',{get:()=>rows().length*40});
+    timeline.getBoundingClientRect=()=>geometry(0,80);
+    function installLayout() {
+      for (const node of rows()) node.getBoundingClientRect=()=>geometry(rows().indexOf(node)*40-timeline.scrollTop,40);
+    }
+    installLayout();
+    timeline.scrollTop=40;
+    timeline.dispatchEvent(new window.Event('scroll'));
+    timeline.scrollTop=20;
+    const anchor = rows()[0];
+    assert.equal(anchor.getBoundingClientRect().top,-20);
+    // Trigger the actual upward-scroll load, then append while it is pending.
+    timeline.dispatchEvent(new window.Event('scroll'));
+    await nextTick();
+    assert.equal(typeof release,'function');
+    Source.all[0].listeners.get('agent.message')({data:JSON.stringify(item(6,'并发来的实时消息')),lastEventId:'live-6'});
+    await nextTick();
+    installLayout();
+    // Newly inserted rows need no mocked geometry for the existing anchor's displacement.
+    release(Response.json({items:[item(1,'历史第一页'),item(2,'历史第二条')],next_cursor:null,resume_cursor:'live'}));
+    await wait();
+    assert.equal(timeline.scrollTop,100);
+    assert.equal(anchor.getBoundingClientRect().top,-20);
+    assert.deepEqual(rows().map(row=>row.dataset.historyKey),[1,2,3,4,5,6].map(i=>'message:m'+i));
+  } finally {await m.cleanup();}
 });

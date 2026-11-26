@@ -397,7 +397,7 @@ test('creation with only task_id opens off-list task using business lookup, not 
  } finally { await m.cleanup(); }
 });
 
-test('task_id-only report preserves the source execution turn and channel card receipt is not falsely delivered', async () => {
+test('task_id-only report opens full session waterfall without turn_id filtering and channel card receipt is not falsely delivered', async () => {
  const task_id='business-task2';
  const report = reportEvent({content:[{type:'text',text:'平台任务回报\n'+JSON.stringify({
    task_id,turn_id:'source-turn',outcome:'completed',result:'# 新回报正文',background_process_count:0,queued_input_count:0,
@@ -412,7 +412,12 @@ test('task_id-only report preserves the source execution turn and channel card r
    assert.equal(m.host.querySelector('.report-original h1').textContent,'新回报正文');
    assert.match(m.host.querySelector('.report-card h3').textContent,/task2/);
    button('查看任务与执行过程 ↗').click(); await pause();
-   assert.ok(FakeSource.all.find(s=>s.url.includes('/task2/')&&s.url.includes('turn_id=source-turn')));
+   const taskStream = FakeSource.all.find(s=>s.url.includes('/task2/'));
+   assert.ok(taskStream);
+   assert.ok(!taskStream.url.includes('turn_id='));
+   assert.ok(!m.calls.some(c=>c.url.includes('/task2/events?')&&c.url.includes('turn_id=')));
+   assert.equal(m.host.querySelector('.turn-focus-bar'), null);
+   assert.ok(m.host.querySelector('.task-detail-panel textarea'));
    assert.ok(!m.calls.some(c=>c.url.endsWith('/sessions/'+task_id)));
  } finally { await m.cleanup(); }
 });
@@ -449,5 +454,82 @@ test('query, supplement and stop tool outputs use task_id without depending on h
    assert.ok(FakeSource.all.find(s=>s.url.includes('/task2/')));
    assert.ok(!m.calls.some(c=>c.url.endsWith('/sessions/business-task2')));
    assert.ok(!m.calls.some(c=>c.url.endsWith('/stop')), 'viewing a stop receipt does not issue a second stop');
+ } finally { await m.cleanup(); }
+});
+
+test('conversation sidebar fullscreen expands into dual-pane workspace and preserves task, scroll position, and draft on exit', async () => {
+ const m = await mount({
+   override: url => url.endsWith('/tasks/business-task1')
+     ? Response.json({
+         ...taskDetail('business-task1'),
+         progress: { phase: 'completed' },
+         artifacts: [{ id: 'art-1', name: '分析说明.md', size: 32 }],
+       })
+     : url.endsWith('/tasks/business-task1/artifacts/art-1')
+       ? new Response('# 全屏分析说明', { headers: { 'Content-Type': 'text/markdown' } })
+       : null,
+ });
+ try {
+   button('会话任务 (2)').click(); await pause();
+   [...document.querySelectorAll('button')].find(b=>b.textContent.includes('task1')).click(); await pause();
+
+   const panel = m.host.querySelector('.task-detail-panel');
+   assert.ok(panel);
+   assert.equal(panel.querySelector('.status-badge').textContent.trim(), '已完成');
+   assert.equal(button('返回来源对话'), undefined);
+
+   const scroller = panel.querySelector('.messages');
+   Object.defineProperty(scroller, 'scrollHeight', { configurable: true, writable: true, value: 1200 });
+   Object.defineProperty(scroller, 'clientHeight', { configurable: true, writable: true, value: 320 });
+   scroller.scrollTop = 240;
+   scroller.dispatchEvent(new window.Event('scroll'));
+
+   const box = panel.querySelector('textarea');
+   box.value = '全屏前保留的草稿';
+   box.dispatchEvent(new window.Event('input', { bubbles: true }));
+   await nextTick();
+
+   const initialTaskStreams = FakeSource.all.filter(s => s.url.includes('/task1/')).length;
+   const expandBtn = [...panel.querySelectorAll('button')].find(b => b.textContent.includes('放大全屏'));
+   assert.ok(expandBtn);
+   expandBtn.click();
+   await pause();
+
+   assert.ok(m.host.querySelector('.tasks.is-fullscreen'));
+   assert.ok(panel.classList.contains('is-fullscreen'));
+   assert.ok(panel.querySelector('.workspace-body.dual-pane'));
+   assert.ok(panel.querySelector('[aria-label="产物预览画布"]'));
+   assert.equal(panel.querySelector('.status-badge').textContent.trim(), '已完成');
+   assert.equal(scroller.scrollTop, 240);
+   assert.equal(box.value, '全屏前保留的草稿');
+   assert.equal(FakeSource.all.filter(s => s.url.includes('/task1/')).length, initialTaskStreams);
+
+   box.value = '全屏修改后的草稿';
+   box.dispatchEvent(new window.Event('input', { bubbles: true }));
+   scroller.scrollTop = 180;
+   scroller.dispatchEvent(new window.Event('scroll'));
+   await nextTick();
+
+   button('⤡ 退出全屏').click();
+   await pause();
+   assert.equal(m.host.querySelector('.tasks.is-fullscreen'), null);
+   assert.equal(panel.classList.contains('is-fullscreen'), false);
+   assert.ok(m.host.querySelector('.tasks.has-detail'));
+   assert.equal(scroller.scrollTop, 180);
+   assert.equal(box.value, '全屏修改后的草稿');
+
+   expandBtn.click();
+   await pause();
+   assert.ok(panel.classList.contains('is-fullscreen'));
+   const backBtn = [...panel.querySelectorAll('button')].find(b => b.textContent.trim() === '← 返回对话');
+   assert.ok(backBtn);
+   backBtn.click();
+   await pause();
+
+   assert.equal(m.host.querySelector('.tasks.is-fullscreen'), null);
+   assert.ok(m.host.querySelector('.tasks.has-detail'));
+   assert.equal(scroller.scrollTop, 180);
+   assert.equal(box.value, '全屏修改后的草稿');
+   assert.equal(FakeSource.all.filter(s => s.url.includes('/task1/')).length, initialTaskStreams);
  } finally { await m.cleanup(); }
 });

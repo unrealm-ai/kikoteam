@@ -1,5 +1,6 @@
 import { platformRequest, post } from './platform';
 import type { Execution, Page } from './manager';
+import type { TaskArtifact } from './public-task';
 export interface TaskInput { confirmation_request_id?: string; id: string; seq: string; text: string; status: string; delivery_mode: 'steer' | 'queue'; turn_id: string | null; created_at: string; rejection_reason?: string | null; cancel_reason?: string | null }
 export interface TaskTurn { id: string; turn_no: string; status: string; started_at: string; finished_at: string | null; has_unknown_tool_results: boolean }
 type TaskAction = { allowed: boolean; reason: string | null };
@@ -17,7 +18,7 @@ export interface TaskProgress {
   phase: string; assignee?: string; confirmation?: { recipient?: string; question?: string };
   handoffs?: { assignee: string; phase: string }[]; delivery?: { channel: string; phase: string }[];
 }
-export interface TaskDetail extends TaskRecord { progress?: TaskProgress; initial_input: TaskInput | null; latest_result: { turn_id: string; text: string; truncated: boolean } | null }
+export interface TaskDetail extends TaskRecord { progress?: TaskProgress; artifacts?: TaskArtifact[]; initial_input: TaskInput | null; latest_result: { turn_id: string; text: string; truncated: boolean } | null }
 export interface TaskSupplementReceipt { input_id: string; input_seq: string; context_state: "pending" | "committed" | "unknown" | "absent" | null }
 export interface TaskReport { supplement_receipts?: TaskSupplementReceipt[]; supplement_receipts_truncated?: boolean; report_id: string | null; source_input_id: string; source_input_seq: string; source_turn_id: string | null; outcome: string; status: string; reason: string | null; created_at: string | null; target: { session_id: string; input_id: string; input_status: string; context_state: string | null; turn_id: string | null; turn_status: string | null } | null }
 export type TaskFilters = Partial<Record<'q' | 'work_item_id' | 'agent_id' | 'conversation_id' | 'task_space_id' | 'execution_state' | 'latest_turn_status' | 'lifecycle', string>>;
@@ -34,5 +35,22 @@ export const taskApi = {
   turns: (w: string, id: string, cursor = '', signal?: AbortSignal) => platformRequest<Page<TaskTurn>>(`${session(w, id)}/turns?${query({ cursor, limit: '50' })}`, options(signal)),
   withdraw: (w: string, id: string, input: string) => platformRequest<TaskInput>(`${session(w, id)}/inputs/${encodeURIComponent(input)}/withdraw`, post({})),
   rename: (w: string, id: string, title: string, revision: string) => platformRequest(`${session(w, id)}`, { method: 'PATCH', body: JSON.stringify({ title, expected_revision: revision }) }),
-  archive: (w: string, id: string) => platformRequest(`${session(w, id)}/archive`, post({}))
+  archive: (w: string, id: string) => platformRequest(`${session(w, id)}/archive`, post({})),
+  artifactBlob: async (w: string, id: string, artifactId: string, signal?: AbortSignal): Promise<Blob> => {
+    const res = await fetch('/api/v1' + task(w, id) + '/artifacts/' + encodeURIComponent(artifactId), {
+      credentials: 'include',
+      cache: 'no-store',
+      ...(signal ? { signal } : {})
+    });
+    if (!res.ok) throw new Error('产物暂不可读');
+    return res.blob();
+  },
+  downloadArtifact: async (w: string, id: string, file: TaskArtifact, signal?: AbortSignal) => {
+    const blob = await taskApi.artifactBlob(w, id, file.id, signal);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.name;
+    try { link.click(); } finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
+  }
 };

@@ -127,7 +127,9 @@ func (s *Server) wrap(route string, op operation) http.HandlerFunc {
 				w.Header().Set("Location", v.Location)
 			}
 		}
-		if d, ok := value.(projectDownload); ok {
+		if d, ok := value.(interface {
+			serve(http.ResponseWriter, *http.Request)
+		}); ok {
 			d.serve(w, r)
 			return
 		}

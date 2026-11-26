@@ -150,6 +150,7 @@ func scanTasks(rows *sql.Rows) ([]service.Task, error) {
 	}
 	return items, rows.Err()
 }
+
 func (s *Store) Task(ctx context.Context, w, actor, id string) (service.TaskDetail, error) {
 	var out service.TaskDetail
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
@@ -166,6 +167,14 @@ func (s *Store) Task(ctx context.Context, w, actor, id string) (service.TaskDeta
 	}
 	if out.Progress, err = authenticatedTaskProgress(ctx, tx, w, actor, v, preparing, stopped); err != nil {
 		return out, err
+	}
+	artifacts, err := taskDetailArtifactRows(ctx, tx, service.TaskDetailGrant{SessionID: v.SessionID}, "")
+	if err != nil {
+		return out, err
+	}
+	out.Artifacts = make([]service.TaskDetailArtifact, 0, len(artifacts))
+	for _, a := range artifacts {
+		out.Artifacts = append(out.Artifacts, service.TaskDetailArtifact{ID: a.ID, Name: a.Name, Size: a.Size})
 	}
 	if err = tx.Commit(); err != nil {
 		return out, err
@@ -251,4 +260,47 @@ func (s *Store) TaskReports(ctx context.Context, w, actor, id string, f service.
 		items = append(items, v)
 	}
 	return items, rows.Err()
+}
+
+func (s *Store) TaskArtifactDownload(ctx context.Context, w, actor, taskID, artifactID string) (service.Artifact, []byte, error) {
+	readSession := func() (string, error) {
+		var sessionID string
+		err := s.DB.QueryRowContext(ctx, `SELECT s.id`+sessionFrom+` JOIN manager_tasks k ON k.id=s.task_id WHERE s.workspace_id=$1 AND `+sessionRead(ctx, actor)+` AND k.id=$3`, w, actor, taskID).Scan(&sessionID)
+		if err != nil {
+			return "", visibleError(err)
+		}
+		return sessionID, nil
+	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return service.Artifact{}, nil, err
+	}
+	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Preserve the operational error.
+	var sessionID string
+	err = tx.QueryRowContext(ctx, `SELECT s.id`+sessionFrom+` JOIN manager_tasks k ON k.id=s.task_id WHERE s.workspace_id=$1 AND `+sessionRead(ctx, actor)+` AND k.id=$3`, w, actor, taskID).Scan(&sessionID)
+	if err != nil {
+		return service.Artifact{}, nil, visibleError(err)
+	}
+	rows, err := taskDetailArtifactRows(ctx, tx, service.TaskDetailGrant{SessionID: sessionID}, artifactID)
+	if err != nil || len(rows) != 1 {
+		if err == nil {
+			err = service.Fail("resource_not_found", 404, "产物不存在")
+		}
+		return service.Artifact{}, nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return service.Artifact{}, nil, err
+	}
+	if s.WorkAssets == nil {
+		return service.Artifact{}, nil, service.Fail("artifacts_unavailable", 503, "产物暂不可读")
+	}
+	a := rows[0]
+	data, err := s.WorkAssets.GetWorkFile(ctx, w, a.Version, a.Size)
+	if err != nil {
+		return service.Artifact{}, nil, err
+	}
+	if _, err = readSession(); err != nil {
+		return service.Artifact{}, nil, err
+	}
+	return a, data, nil
 }

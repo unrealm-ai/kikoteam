@@ -62,9 +62,10 @@ type TaskAction struct {
 }
 type TaskDetail struct {
 	Task
-	Progress     *TaskProgress      `json:"progress,omitempty"`
-	InitialInput *Input             `json:"initial_input"`
-	LatestResult *TaskResultPreview `json:"latest_result"`
+	Progress     *TaskProgress        `json:"progress,omitempty"`
+	Artifacts    []TaskDetailArtifact `json:"artifacts,omitempty"`
+	InitialInput *Input               `json:"initial_input"`
+	LatestResult *TaskResultPreview   `json:"latest_result"`
 }
 type TaskResultPreview struct {
 	TurnID    string `json:"turn_id"`
@@ -115,6 +116,10 @@ type TaskStore interface {
 	Tasks(context.Context, string, string, TaskFilter) ([]Task, error)
 	Task(context.Context, string, string, string) (TaskDetail, error)
 	TaskReports(context.Context, string, string, string, ReportFilter) ([]TaskReportEntry, error)
+}
+
+type TaskArtifactStore interface {
+	TaskArtifactDownload(ctx context.Context, workspace, actor, taskID, artifactID string) (Artifact, []byte, error)
 }
 
 func taskLimit(n int) (int, error) {
@@ -181,6 +186,17 @@ func (s *Service) GetTask(ctx context.Context, w, actor, id string) (TaskDetail,
 		return TaskDetail{}, Fail("resource_not_found", 404, "任务不存在")
 	}
 	return s.Store.Task(ctx, w, actor, id)
+}
+
+func (s *Service) TaskArtifact(ctx context.Context, w, actor, taskID, artifactID string) (Artifact, []byte, error) {
+	if !ValidID(taskID) || !ValidID(artifactID) {
+		return Artifact{}, nil, Fail("resource_not_found", 404, "产物不存在")
+	}
+	store, ok := s.Store.(TaskArtifactStore)
+	if !ok {
+		return Artifact{}, nil, Fail("artifacts_unavailable", 503, "产物暂不可读")
+	}
+	return store.TaskArtifactDownload(ctx, w, actor, taskID, artifactID)
 }
 func (s *Service) ListTaskReports(ctx context.Context, w, actor, id, raw string, f ReportFilter) (Page[TaskReportEntry], error) {
 	out := Page[TaskReportEntry]{Items: []TaskReportEntry{}}

@@ -252,3 +252,213 @@ test('public timeout retry keeps the draft and reuses its request key', async ()
     assert.equal(writes[0].init.headers.get('Idempotency-Key'), writes[1].init.headers.get('Idempotency-Key'));
   } finally { m.cleanup(); }
 });
+
+test('public task detail renders sequential stream and inline markdown/csv artifact surface without navigation leaks', async () => {
+  const initial = detail({
+    artifacts: [
+      { id: 'pub-md', name: '公开报告.md', size: 42 },
+      { id: 'pub-csv', name: '数据表.csv', size: 36 },
+    ],
+  });
+  const m = await fixture({
+    initial,
+    snapshotResponse: () => initial,
+  });
+  const baseFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    if (url === path + '/artifacts/pub-md') return new Response('# 免登产物报告\n验证通过', { headers: { 'Content-Type': 'application/octet-stream' } });
+    if (url === path + '/artifacts/pub-csv') return new Response('项目,数值\n营收,9800', { headers: { 'Content-Type': 'application/octet-stream' } });
+    return baseFetch(url, init);
+  };
+  try {
+    const mdCard = [...m.host.querySelectorAll('.artifact-card-main')].find(el => el.textContent.includes('公开报告.md'));
+    assert.ok(mdCard);
+    mdCard.click();
+    await pause(80);
+    assert.equal(m.host.querySelector('[aria-label="选择执行轮次"]'), null);
+    assert.equal(button(m.host, '← 返回任务列表'), undefined);
+    const preview = m.host.querySelector('[aria-label="产物预览画布"]');
+    assert.ok(preview);
+    assert.equal(preview.querySelector('h1')?.textContent, '免登产物报告');
+    const csvCard = [...m.host.querySelectorAll('.artifact-card-main')].find(el => el.textContent.includes('数据表.csv'));
+    assert.ok(csvCard);
+    csvCard.click();
+    await pause(80);
+    assert.match(preview.querySelector('.surface-csv-table').textContent, /9800/);
+  } finally { m.cleanup(); }
+});
+
+test('public task detail unifies progress.phase status, keeps svg download-only, and preserves waterfall scroll state', async () => {
+  let scrollHeight = 800;
+  let initialExecutionRelease;
+  const initial = detail({
+    status: 'idle',
+    progress: { phase: 'waiting_confirmation' },
+    artifacts: [{ id: 'pub-svg', name: 'topology.svg', size: 88 }],
+  });
+  let state = initial;
+  const calls = [];
+  let executionStreamController;
+  let taskStreamController;
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url, init });
+    if (url === path) return Response.json(state);
+    if (url === path + '/execution') {
+      return new Promise(resolve => {
+        initialExecutionRelease = () => resolve(Response.json({
+          items: [eventRow('agent.message', '10', { message_id: 'm10', content: [{ type: 'text', text: '最新一条输出' }] })],
+          next_cursor: 'pub-older-1',
+          resume_cursor: 'pub-exec-10',
+        }));
+      });
+    }
+    if (url === path + '/execution?cursor=pub-older-1') {
+      scrollHeight += 420;
+      return Response.json({
+        items: [eventRow('agent.message', '2', { message_id: 'm2', content: [{ type: 'text', text: '较早一条输出' }] })],
+        next_cursor: 'pub-older-2',
+        resume_cursor: 'pub-exec-10',
+      });
+    }
+    if (url === path + '/execution?cursor=pub-older-2') {
+      scrollHeight += 240;
+      return Response.json({
+        items: [eventRow('agent.message', '1', { message_id: 'm1', content: [{ type: 'text', text: '最早一条输出' }] })],
+        next_cursor: null,
+        resume_cursor: 'pub-exec-10',
+      });
+    }
+    if (url === path + '/events' || url === path + '/execution/stream') {
+      const body = new ReadableStream({ start(controller) {
+        if (url.endsWith('/events')) taskStreamController = controller;
+        else executionStreamController = controller;
+        init.signal.addEventListener('abort', () => { try { controller.close(); } catch {} }, { once: true });
+      } });
+      return new Response(body, { headers: { 'Content-Type': 'text/event-stream' } });
+    }
+    throw new Error('Unexpected request: ' + url);
+  };
+
+  const host = document.createElement('div');
+  document.body.append(host);
+  const app = createApp({ render: () => h(App) });
+  app.mount(host);
+  await pause(60);
+
+  try {
+    // 1. Unified status badge prioritizes progress.phase
+    const badge = host.querySelector('.status-badge');
+    assert.equal(badge.textContent.trim(), '等待人工确认');
+    for (const [phase, expected] of [
+      ['completed', '已完成'],
+      ['waiting_handoff', '已交接，等待处理结果'],
+      ['waiting_resume', '已收到答复，等待继续执行'],
+    ]) {
+      const next = detail({ cursor: 'c-' + phase, status: 'idle', progress: { phase }, artifacts: initial.artifacts });
+      taskStreamController.enqueue(new TextEncoder().encode(`id: ${next.cursor}\r\nevent: task.updated\r\ndata: ${JSON.stringify(next)}\r\n\r\n`));
+      await pause(40);
+      assert.equal(badge.textContent.trim(), expected);
+    }
+
+    // 2. SVG artifact is download-only (never fetched for inline preview, never renders <img>)
+    const svgInlineCard = [...host.querySelectorAll('.artifact-surface-card')].find(el => el.textContent.includes('topology.svg'));
+    assert.ok(svgInlineCard);
+    assert.match(svgInlineCard.textContent, /仅下载/);
+    assert.doesNotMatch(svgInlineCard.textContent, /预览 →/);
+    const preview = host.querySelector('[aria-label="产物预览画布"]');
+    assert.ok(preview);
+    assert.equal(preview.querySelector('.image-preview-wrap img'), null);
+    assert.ok(preview.querySelector('.binary-preview-card'));
+    assert.ok(!calls.some(c => c.url.includes('/artifacts/pub-svg')));
+
+    // 3. Waterfall scroll mechanics on public view
+    const scroller = host.querySelector('.messages');
+    assert.ok(scroller);
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: () => scrollHeight });
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 300 });
+    assert.equal(typeof initialExecutionRelease, 'function');
+    initialExecutionRelease();
+    await pause(80);
+    assert.equal(scroller.scrollTop, 800);
+
+    // Scroll up into middle history -> SSE arrival does not yank back to bottom
+    scroller.scrollTop = 200;
+    scroller.dispatchEvent(new window.Event('scroll'));
+    await nextTick();
+    scrollHeight = 900;
+    executionStreamController.enqueue(new TextEncoder().encode(
+      `id: pub-exec-11\r\nevent: agent.message\r\ndata: ${JSON.stringify(eventRow('agent.message', '11', { message_id: 'm11', content: [{ type: 'text', text: '免登实时新增消息' }] }))}\r\n\r\n`,
+    ));
+    await pause(60);
+    assert.equal(scroller.scrollTop, 200);
+    assert.match(host.textContent, /免登实时新增消息/);
+
+    const rowSizes = {'message:m2':420,'message:m1':240};
+    scroller.getBoundingClientRect=()=>({top:0,bottom:300});
+    function installRowGeometry() {
+      const rows=()=>[...scroller.querySelectorAll('[data-history-key]')];
+      for (const node of rows()) node.getBoundingClientRect=()=>{
+        const all=rows(), height=rowSizes[node.dataset.historyKey]||300;
+        const top=all.slice(0,all.indexOf(node)).reduce((sum,row)=>sum+(rowSizes[row.dataset.historyKey]||300),0)-scroller.scrollTop;
+        return {top,bottom:top+height};
+      };
+    }
+    installRowGeometry();
+
+    // Scroll near top -> auto loads pub-older-1 and retains offset (+420)
+    scroller.scrollTop = 25;
+    scroller.dispatchEvent(new window.Event('scroll'));
+    await pause(80);
+    assert.ok(calls.some(c => c.url.endsWith('/execution?cursor=pub-older-1')));
+    assert.match(host.textContent, /较早一条输出/);
+    assert.equal(scroller.scrollTop, 445);
+
+    installRowGeometry();
+    // Manual button fallback still loads pub-older-2
+    const olderBtn = button(host, '加载更早历史消息');
+    assert.ok(olderBtn);
+    olderBtn.click();
+    await pause(80);
+    assert.ok(calls.some(c => c.url.endsWith('/execution?cursor=pub-older-2')));
+    assert.match(host.textContent, /最早一条输出/);
+    assert.equal(scroller.scrollTop, 685);
+  } finally {
+    app.unmount();
+    host.remove();
+  }
+});
+
+test('mobile task detail switches to an artifact and returns without remounting the writable timeline', async () => {
+  const nativeMatch = window.matchMedia;
+  window.matchMedia = () => ({matches:true,addEventListener(){},removeEventListener(){}});
+  const initial=detail({permission:'write',can_append:true,artifacts:[{id:'mobile-md',name:'手机报告.md',size:42}]});
+  const m=await fixture({initial});
+  const baseFetch=globalThis.fetch;
+  globalThis.fetch=(url,init={})=>url===path+'/artifacts/mobile-md'
+    ? Promise.resolve(new Response('# 手机报告内容'))
+    : baseFetch(url,init);
+  try {
+    const process=m.host.querySelector('.process');
+    const surface=m.host.querySelector('.surface-pane');
+    assert.notEqual(process.style.display,'none');
+    assert.equal(surface.style.display,'none');
+    const draft=enterText(m.host,'返回后还没发送');
+    const timeline=m.host.querySelector('.messages');
+    timeline.scrollTop=32;
+    m.host.querySelector('.artifact-card-main').click();
+    await pause();
+    assert.equal(process.style.display,'none');
+    assert.notEqual(surface.style.display,'none');
+    assert.match(surface.querySelector('.artifact-preview-surface').textContent,/手机报告内容/);
+    button(m.host,'返回执行过程').click();
+    await pause();
+    assert.notEqual(process.style.display,'none');
+    assert.equal(surface.style.display,'none');
+    assert.equal(m.host.querySelector('.messages'),timeline);
+    assert.equal(timeline.scrollTop,32);
+    assert.equal(m.host.querySelector('textarea'),draft);
+    assert.equal(draft.value,'返回后还没发送');
+    assert.equal(button(m.host,'返回来源对话'),undefined);
+    assert.equal(m.calls.filter(c=>c.url===path+'/execution/stream').length,1);
+  } finally {m.cleanup();window.matchMedia=nativeMatch;}
+});

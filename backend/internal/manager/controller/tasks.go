@@ -1,8 +1,10 @@
 package controller
 
 import (
-	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
+	"mime"
 	"net/http"
+
+	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 )
 
 func (s *Server) taskRoutes(mux *http.ServeMux) {
@@ -10,6 +12,25 @@ func (s *Server) taskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+base, s.wrap("listTasks", s.listTasks))
 	mux.HandleFunc("GET "+base+"/{task_id}", s.wrap("getTask", s.getTask))
 	mux.HandleFunc("GET "+base+"/{task_id}/reports", s.wrap("listTaskReports", s.listTaskReports))
+	mux.HandleFunc("GET "+base+"/{task_id}/artifacts/{artifact_id}", s.wrap("downloadTaskArtifact", s.downloadTaskArtifact))
+}
+
+type taskArtifactDownload struct {
+	Item service.Artifact
+	Data []byte
+}
+
+func (d taskArtifactDownload) serve(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": d.Item.Name}))
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_, _ = w.Write(d.Data) //nolint:errcheck // The recipient may disconnect during download.
 }
 func taskQuery(r *http.Request, allowed ...string) error {
 	known := map[string]bool{}
@@ -57,6 +78,17 @@ func (s *Server) listTaskReports(r *http.Request, a string) (any, int, error) {
 	q := r.URL.Query()
 	v, err := s.Service.ListTaskReports(r.Context(), workspace(r), a, r.PathValue("task_id"), q.Get("cursor"), service.ReportFilter{Turn: q.Get("turn_id"), Input: q.Get("input_id"), Limit: n})
 	return v, 200, err
+}
+
+func (s *Server) downloadTaskArtifact(r *http.Request, a string) (any, int, error) {
+	if err := taskQuery(r); err != nil {
+		return nil, 400, err
+	}
+	item, data, err := s.Service.TaskArtifact(r.Context(), workspace(r), a, r.PathValue("task_id"), r.PathValue("artifact_id"))
+	if err != nil {
+		return nil, 0, err
+	}
+	return taskArtifactDownload{Item: item, Data: data}, http.StatusOK, nil
 }
 
 func includeCounts(r *http.Request) (bool, error) {

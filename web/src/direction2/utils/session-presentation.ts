@@ -11,6 +11,42 @@ export function workItemProgress(execution?: { required_actions?: { type: string
   return execution?.required_actions?.find(action => action.type === 'work_item')?.message;
 }
 
+export const taskPhases: Record<string, string> = {
+  planned: '待办：尚未启动',
+  todo_canceled: '待办已取消（未执行）',
+  queued: '排队中',
+  preparing_environment: '环境准备中',
+  running: '执行中',
+  background_active: '后台步骤仍在执行',
+  preparing_confirmation: '正在准备人工确认',
+  waiting_confirmation: '等待人工确认',
+  waiting_for_confirmation: '等待人工确认',
+  waiting_resume: '已收到答复，等待继续执行',
+  waiting_handoff: '已交接，等待处理结果',
+  waiting_for_handoff: '已交接，等待处理结果',
+  waiting_acceptance: '已提交成果，等待原任务验收',
+  handoff_failed: '交接处理失败',
+  completed: '已完成',
+  success: '已完成',
+  failed: '失败',
+  stopping: '正在停止',
+  stopped: '已停止',
+  canceled: '已取消',
+  cancelled: '已取消',
+  interrupted: '执行中断',
+  archived: '已归档',
+  blocked: '执行受阻',
+  idle: '当前无执行轮次',
+  waiting_for_action: '等待处理',
+  rejected: '未能开始执行',
+  engine_recovery_pending: '正在恢复执行环境，等待旧引擎交还执行权',
+  unknown: '状态暂未确认',
+};
+
+export function taskPhaseLabel(phase?: string): string {
+  return taskPhases[phase || ''] || '状态暂未确认';
+}
+
 export function sessionStatus(value?: string): string {
   return ({ engine_recovery_pending: '正在恢复执行环境，等待旧引擎交还执行权', awaiting_confirmation: '等待用户确认', queued: '已排队', started: '处理中', processed: '已处理', canceled: '已取消', rejected: '已拒绝', running: '运行中', stopping: '正在停止', stopped: '已停止', waiting_for_action: '等待确认或交接', waiting_for_confirmation: '等待确认', waiting_for_handoff: '等待交接结果', input_applied: '执行轮已接收', completed: '本轮完成', failed: '失败', interrupted: '已中断', idle: '等待输入', blocked: '受阻', unknown: '结果未知', active: '可继续', planned: '待办', todo_canceled: '待办已取消', background_active: '后台仍在运行', archived: '已归档' } as Record<string, string>)[value || ''] || value || '等待状态';
 }

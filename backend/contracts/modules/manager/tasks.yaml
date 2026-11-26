@@ -49,6 +49,11 @@ item:
                   properties:
                     work_item_id: {type: string, format: uuid, description: Latest related handoff item}
                     progress: {$ref: '#/schemas/TaskProgress'}
+                    artifacts:
+                      type: array
+                      maxItems: 100
+                      items:
+                        $ref: '#/schemas/TaskArtifact'
                     initial_input:
                       oneOf:
                         - $ref: './session-schemas.yaml#/Input'
@@ -85,11 +90,34 @@ reports:
                 items: {type: array, items: {$ref: '#/schemas/Report'}}
                 next_cursor: {type: [string, 'null']}
       default: {$ref: './sessions.yaml#/responses/Error'}
+artifact:
+  parameters:
+    - $ref: './conversations.yaml#/parameters/workspace'
+    - $ref: '#/parameters/task'
+    - {name: artifact_id, in: path, required: true, schema: {type: string, format: uuid}}
+  get:
+    operationId: downloadTaskArtifact
+    description: Download a completed turn artifact belonging to an authorized task.
+    responses:
+      '200':
+        description: Authorized task artifact content.
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+      default: {$ref: './sessions.yaml#/responses/Error'}
 parameters:
   task: {name: task_id, in: path, required: true, schema: {type: string, format: uuid}}
   cursor: {name: cursor, in: query, schema: {type: string}, description: Opaque signed cursor. Reusing it with other scope or filters returns invalid_cursor.}
   limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
 schemas:
+  TaskArtifact:
+    type: object
+    additionalProperties: false
+    required: [id, name, size]
+    properties:
+      id: {type: string, format: uuid}
+      name: {type: string}
+      size: {type: integer, minimum: 0}
   TaskProgress:
     type: object
     required: [phase]

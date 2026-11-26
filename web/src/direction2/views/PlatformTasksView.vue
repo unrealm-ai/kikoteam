@@ -37,6 +37,7 @@ const tasks = ref<TaskRecord[]>([]),
   loading = ref(false),
   error = ref('');
 const selected = ref(props.selectedTaskId || ''),
+  drawerFullscreen = ref(false),
   cursor = ref(''),
   next = ref<string | null>(null),
   previous = ref<string[]>([]);
@@ -124,10 +125,12 @@ function page(forward: boolean) {
   void load();
 }
 function open(id: string) {
+  drawerFullscreen.value = false;
   selected.value = id;
   emit('navigate', 'tasks', 'tasks', id, 'task');
 }
 function close() {
+  drawerFullscreen.value = false;
   selected.value = '';
   emit('navigate', 'tasks', 'tasks');
 }
@@ -393,7 +396,7 @@ function openWork(id: string) {
     </footer>
     <NDrawer
       :show="!!selected"
-      :width="'min(660px, 95vw)'"
+      :width="drawerFullscreen ? '100vw' : 'min(720px, 95vw)'"
       @update:show="
         (v) => {
           if (!v) close();
@@ -405,6 +408,7 @@ function openWork(id: string) {
         ><TaskDetailPanel
           v-if="selected"
           :key="selected"
+          v-model:fullscreen="drawerFullscreen"
           :workspace-id="activeWorkspaceId"
           :task-id="selected"
           presentation="drawer"

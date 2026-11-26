@@ -225,10 +225,19 @@ export function usePublicTaskDetail(token: string) {
     }
   }
 
-  async function download(file: TaskArtifact) {
+  async function readArtifact(file: TaskArtifact): Promise<Blob> {
     try {
       const response = await publicTaskApi.artifact(token, file.id, lifetime.signal);
-      const blob = await response.blob();
+      return await response.blob();
+    } catch (err) {
+      if (isDenied(err)) void load();
+      throw err;
+    }
+  }
+
+  async function download(file: TaskArtifact) {
+    try {
+      const blob = await readArtifact(file);
       if (lifetime.signal.aborted) return;
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a'); link.href = url; link.download = file.name;
@@ -238,7 +247,7 @@ export function usePublicTaskDetail(token: string) {
 
   onScopeDispose(() => { abandon(); lifetime.abort(); mutationKeys.clear(); });
   if (token) void load();
-  return { task, loading, error, connection, load, mutate, download, rows: computed(() => projectEvents(events.value)), older, olderCursor, loadingOlder, executionError };
+  return { task, loading, error, connection, load, mutate, readArtifact, download, rows: computed(() => projectEvents(events.value)), older, olderCursor, loadingOlder, executionError };
 }
 
 export type PublicTaskDetailFlow = ReturnType<typeof usePublicTaskDetail>;

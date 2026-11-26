@@ -15,5 +15,5 @@ defineProps<{ token: string }>();
 </template>
 
 <style scoped>
-.public-task { width: min(1150px, 100%); height: 100vh; height: 100dvh; margin-inline: auto; }
+.public-task { width: 100%; max-width: 1600px; height: 100vh; height: 100dvh; margin-inline: auto; }
 </style>

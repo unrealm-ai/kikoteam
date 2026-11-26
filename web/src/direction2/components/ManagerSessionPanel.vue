@@ -355,7 +355,7 @@ watch(rows, async (nextRows, prevRows) => {
 .thinking-box summary{color:var(--id-text-secondary);font-size:12px;font-weight:500;cursor:pointer}
 .thinking-box[open] summary{margin-bottom:8px}
 .thinking-badge{padding:1px 6px;border-radius:var(--id-radius-pill);background:var(--id-bg-muted);border:1px solid var(--id-border-subtle);font-size:10px}
-.msg-state-tag{display:inline-block;margin-top:6px;padding:1px 6px;border-radius:var(--id-radius-sm);background:var(--id-bg-surface);border:1px solid var(--id-border-subtle)}
+.msg-state-tag{width:fit-content;padding:1px 6px;border-radius:var(--id-radius-sm);background:var(--id-bg-surface);border:1px solid var(--id-border-subtle)}
 .inline-artifacts{margin-top:4px;padding:12px 14px;border-radius:12px;background:var(--id-bg-surface);border:1px solid var(--id-border-subtle)}
 .inline-artifacts-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;font-size:12px;font-weight:600;color:var(--id-text-primary)}
 .inline-artifacts-head small{font-weight:400;margin-top:0}

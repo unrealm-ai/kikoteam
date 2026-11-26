@@ -867,7 +867,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 18rem;
 }
 .task-summary {
   min-width: 0;
@@ -900,6 +900,7 @@ onUnmounted(() => {
 .status-badge {
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
   padding: 2px 8px;
   border-radius: var(--id-radius-pill);
   font-size: 11px;

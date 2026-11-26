@@ -180,61 +180,106 @@ defineExpose({ dirty, save, discard });
 
 <template>
   <section class="platform-settings-editor" aria-label="邮件与注册设置">
-    <h2>邮件与注册</h2>
-    <p>配置平台发信和注册验证。测试邮件只发送到当前管理员的登录邮箱，不保存草稿。</p>
+    <header class="editor-card-head">
+      <div class="editor-title-block">
+        <h2>邮件与注册</h2>
+        <p class="editor-desc">配置平台发信和注册验证。测试邮件只发送到当前管理员的登录邮箱，不保存草稿。</p>
+      </div>
+      <div v-if="snapshot || dirty" class="editor-meta-pills">
+        <template v-if="snapshot">
+          <NTag size="small">{{ snapshot.source === 'database' ? '平台已保存' : isFirstSetup(snapshot) ? '尚未配置' : '部署环境配置' }}</NTag>
+          <span class="mono-pill tabular-num">版本 {{ snapshot.version }}</span>
+        </template>
+        <span v-if="dirty" class="status-pill status-pill--warning">
+          <span class="status-dot dot--warning"></span>
+          <span>未保存</span>
+        </span>
+      </div>
+    </header>
+
     <NAlert v-if="error" type="error" role="alert">{{ error }}</NAlert>
     <NAlert v-if="notice" type="success" role="status">{{ notice }}</NAlert>
-    <p v-if="snapshot">
-      <NTag size="small">{{ snapshot.source === 'database' ? '平台已保存' : isFirstSetup(snapshot) ? '尚未配置' : '部署环境配置' }}</NTag>
-      <span>　版本 {{ snapshot.version }}</span>
-    </p>
-    <p v-else-if="busy === 'read'">正在读取邮件设置…</p>
-    <NButton v-if="!draft" :loading="busy === 'read'" @click="load()">重新读取</NButton>
-    <NForm v-if="draft" :disabled="Boolean(busy)" label-placement="top" @submit.prevent="save()">
-      <div class="checks">
-        <NCheckbox :checked="draft.enabled" @update:checked="v => edit({enabled: v, registration_verification_required: v && draft?.registration_verification_required === true})">启用邮件</NCheckbox>
-        <NCheckbox :checked="draft.registration_verification_required" :disabled="!draft.enabled"
-          @update:checked="v => edit({registration_verification_required: v})">注册时必须验证邮箱</NCheckbox>
+
+    <div v-if="!draft && busy === 'read'" class="editor-loading-state">
+      <span>正在读取邮件设置…</span>
+    </div>
+    <div v-else-if="!draft" class="editor-loading-state">
+      <span>尚未加载邮件设置</span>
+      <NButton size="small" :loading="busy === 'read'" @click="load()">重新读取</NButton>
+    </div>
+
+    <NForm v-if="draft" :disabled="Boolean(busy)" label-placement="top" class="editor-form-stack" @submit.prevent="save()">
+      <div class="setting-toggle-box">
+        <div class="setting-toggle-row">
+          <NCheckbox :checked="draft.enabled" @update:checked="v => edit({enabled: v, registration_verification_required: v && draft?.registration_verification_required === true})">启用邮件</NCheckbox>
+          <NCheckbox :checked="draft.registration_verification_required" :disabled="!draft.enabled"
+            @update:checked="v => edit({registration_verification_required: v})">注册时必须验证邮箱</NCheckbox>
+        </div>
+        <p v-if="!draft.enabled" class="setting-toggle-help">停用邮件时保留已保存的连接设置。</p>
       </div>
+
       <NAlert v-if="draft.profile.provider === 'legacy'" type="warning">
         现有 SMTP 配置不符合简化表单，仍保留原有配置。选择服务商并填写新连接和凭据后才能替换，也可直接停用邮件。
         <p v-if="snapshot?.address">现有地址：{{ snapshot.address }}；发件邮箱：{{ snapshot.from || '未设置' }}</p>
       </NAlert>
-      <template v-if="draft.enabled">
+
+      <div v-if="draft.enabled" class="editor-subpanel">
         <NFormItem label="邮箱服务商">
           <NRadioGroup :value="draft.profile.provider" aria-label="邮箱服务商" @update:value="v => switchProvider(v as '163' | 'custom')">
             <NRadio value="163">网易 163 邮箱</NRadio>
             <NRadio value="custom">自定义 SMTP</NRadio>
           </NRadioGroup>
         </NFormItem>
-        <template v-if="draft.profile.provider !== 'legacy'">
+        <div v-if="draft.profile.provider !== 'legacy'" class="mail-fields-grid">
           <NFormItem label="发件邮箱" for="platform-smtp-from">
             <NInput :value="draft.profile.email" :input-props="{id:'platform-smtp-from'}" :placeholder="draft.profile.provider === '163' ? 'name@163.com' : 'notify@example.com'" @update:value="editEmail"/>
           </NFormItem>
           <NFormItem v-if="draft.profile.provider === 'custom'" label="SMTP 服务器地址" for="platform-smtp-address">
             <NInput :value="draft.profile.address" :input-props="{id:'platform-smtp-address'}" placeholder="smtp.example.com:465 或 :587" @update:value="editAddress"/>
           </NFormItem>
-          <NFormItem :label="passwordLabel" for="platform-smtp-password">
-            <NInput type="password" :value="draft.password" :input-props="{id:'platform-smtp-password', autocomplete:'new-password'}"
+          <NFormItem :label="passwordLabel" for="platform-smtp-password" class="mail-field-full">
+            <NInput type="password" show-password-on="click" :value="draft.password" :input-props="{id:'platform-smtp-password', autocomplete:'new-password'}"
               :placeholder="canKeepCode ? '同一 SMTP 连接留空保留' : '输入' + passwordLabel" @update:value="v => edit({password: v})"/>
           </NFormItem>
-        </template>
-      </template>
-      <p v-else>停用邮件时保留已保存的连接设置。</p>
-      <p v-if="enabledSaveBlocked && draft.profile.provider !== 'legacy'">启用邮件前，请先发测试邮件；测试成功后才能保存。</p>
-      <footer>
-        <NButton :loading="busy === 'read'" @click="load(dirty)">读取最新版本</NButton>
-        <NButton :disabled="!draft.enabled || draft.profile.provider === 'legacy' || conflict" :loading="busy === 'test'" @click="sendTest">发测试邮件到我的邮箱</NButton>
-        <NButton v-if="importable && !dirty" :disabled="conflict || enabledSaveBlocked" :loading="busy === 'write'" type="primary" @click="save(true)">迁入邮件设置</NButton>
-        <NButton v-else :disabled="!dirty || conflict || enabledSaveBlocked" :loading="busy === 'write'" type="primary" attr-type="submit">保存邮件设置</NButton>
+        </div>
+      </div>
+
+      <div v-if="enabledSaveBlocked && draft.profile.provider !== 'legacy'" class="scope-notice-strip scope-notice-strip--warning">
+        <p class="notice-text">启用邮件前，请先发测试邮件；测试成功后才能保存。</p>
+      </div>
+      <div v-else-if="draft.enabled && testReceipt && draft.profile.provider !== 'legacy'" class="scope-notice-strip scope-notice-strip--success">
+        <p class="notice-text">当前配置已通过测试验证（10 分钟内有效），可点击保存使其生效。</p>
+      </div>
+
+      <footer class="editor-footer">
+        <NButton size="small" secondary :loading="busy === 'read'" @click="load(dirty)">读取最新版本</NButton>
+        <div class="editor-footer-primary">
+          <NButton size="small" secondary :disabled="!draft.enabled || draft.profile.provider === 'legacy' || conflict" :loading="busy === 'test'" @click="sendTest">发测试邮件到我的邮箱</NButton>
+          <NButton v-if="importable && !dirty" size="small" :disabled="conflict || enabledSaveBlocked" :loading="busy === 'write'" type="primary" @click="save(true)">迁入邮件设置</NButton>
+          <NButton v-else size="small" :disabled="!dirty || conflict || enabledSaveBlocked" :loading="busy === 'write'" type="primary" attr-type="submit">保存邮件设置</NButton>
+        </div>
       </footer>
     </NForm>
   </section>
 </template>
 
 <style scoped>
-.platform-settings-editor { max-width: 640px; }
-.platform-settings-editor > p { color: var(--id-text-secondary); margin: 10px 0 14px; }
-.platform-settings-editor > :deep(.n-alert) { margin: 10px 0; }
-.checks, footer { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 16px; }
+.mail-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 12px;
+}
+.mail-field-full {
+  grid-column: span 2;
+}
+@media (max-width: 760px) {
+  .mail-fields-grid {
+    grid-template-columns: 1fr;
+  }
+  .mail-field-full {
+    grid-column: span 1;
+  }
+}
 </style>
+
+<style scoped src="../components/workspace-settings-shared.css"></style>

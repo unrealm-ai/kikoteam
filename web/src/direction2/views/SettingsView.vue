@@ -219,6 +219,15 @@ async function generateInviteLink() {
   }
 }
 
+async function copyWorkspaceId() {
+  try {
+    await copyText(props.workspaceId);
+    message.success('工作区 ID 已复制到剪贴板');
+  } catch {
+    message.error('复制失败，请手动复制工作区 ID');
+  }
+}
+
 async function copyInviteLink() {
   try {
     await copyText(generatedInviteLink.value);
@@ -302,9 +311,25 @@ async function confirmMemberAction() {
 <template>
   <div class="d2-settings">
     <div class="settings-header">
-      <div>
-        <h2 class="view-title">工作区设置</h2>
-        <p class="view-subtitle">管理当前工作区的基本信息、团队成员和邀请。</p>
+      <div class="settings-header-copy">
+        <h2 class="view-title">{{ activeTab === 'platform-admin' ? '系统与平台设置' : '工作区设置' }}</h2>
+        <p class="view-subtitle">
+          {{ activeTab === 'platform-admin'
+            ? '管理平台全局用户、官方托管模型、系统发信与安全集成配置。'
+            : '管理当前工作区的基本信息、团队成员和邀请。' }}
+        </p>
+      </div>
+      <div class="settings-context-pills">
+        <span v-if="activeTab === 'platform-admin'" class="role-badge role-badge--admin">平台管理员 · 全局配置</span>
+        <template v-else-if="workspace">
+          <span
+            class="role-badge"
+            :class="owner ? 'role-badge--owner' : workspace.role === 'admin' ? 'role-badge--admin' : 'role-badge--member'"
+          >
+            {{ owner ? '所有者' : workspace.role === 'admin' ? '管理员' : '普通成员' }}
+          </span>
+          <span class="mono-pill tabular-num">版本 v{{ workspace.version }}</span>
+        </template>
       </div>
     </div>
 
@@ -346,6 +371,8 @@ async function confirmMemberAction() {
           <section class="settings-card">
             <div class="card-head">
               <h3 class="card-title">基本信息</h3>
+              <span v-if="!canManage" class="card-meta">仅工作区所有者与管理员可修改</span>
+              <span v-else-if="workspace" class="mono-pill tabular-num">版本 v{{ workspace.version }}</span>
             </div>
             <div class="form-grid">
               <div class="field-item">
@@ -354,7 +381,10 @@ async function confirmMemberAction() {
               </div>
               <div class="field-item">
                 <label>工作区 ID</label>
-                <NInput :value="workspaceId" disabled class="mono-input" />
+                <div class="inline-input-copy">
+                  <NInput :value="workspaceId" disabled class="mono-input" />
+                  <NButton size="small" secondary @click="copyWorkspaceId">复制 ID</NButton>
+                </div>
               </div>
               <div class="field-item full-width">
                 <label>工作区描述</label>
@@ -370,11 +400,24 @@ async function confirmMemberAction() {
           </NAlert>
           <div v-if="canManage" class="workspace-save-bar">
             <div class="ws-save-info">
-              <strong>保存工作区设置</strong>
+              <template v-if="realPlatform">
+                <div class="ws-save-status">
+                  <span class="status-dot" :class="dirty ? 'dot--warning' : 'dot--success'"></span>
+                  <strong>{{ dirty ? '存在未保存的修改' : '当前配置已与服务器同步' }}</strong>
+                </div>
+                <span>{{ dirty ? '请保存工作区信息，离开页面前未保存内容将会弹窗提示。' : '修改工作区名称或描述后可在此提交保存。' }}</span>
+              </template>
+              <template v-else>
+                <strong>工作区基本配置</strong>
+                <span>修改工作区名称或描述后点击保存。</span>
+              </template>
             </div>
-            <NButton type="primary" size="small" :disabled="realPlatform && (!dirty || !validFields)" :loading="isSavingSettings" @click="saveWorkspaceSettings">
-              {{ conflict ? '确认用当前输入保存' : '保存工作区设置' }}
-            </NButton>
+            <div class="ws-save-actions">
+              <NButton v-if="realPlatform && dirty" size="small" secondary :disabled="isSavingSettings" @click="resetFields">放弃修改</NButton>
+              <NButton type="primary" size="small" :disabled="realPlatform && (!dirty || !validFields)" :loading="isSavingSettings" @click="saveWorkspaceSettings">
+                {{ conflict ? '确认用当前输入保存' : '保存工作区设置' }}
+              </NButton>
+            </div>
           </div>
         </div>
       </NTabPane>
@@ -392,7 +435,10 @@ async function confirmMemberAction() {
           </div>
 
           <div class="panel-top-actions">
-            <span class="sub-desc">查看团队成员，管理工作区角色和访问权限。</span>
+            <div class="panel-top-copy">
+              <strong>工作区成员列表</strong>
+              <span class="sub-desc">查看团队成员，管理工作区角色和访问权限。</span>
+            </div>
             <NButton v-if="canManage" type="primary" size="small" @click="openInviteModal">+ 邀请成员</NButton>
           </div>
 
@@ -417,14 +463,24 @@ async function confirmMemberAction() {
                 </tr>
                 <tr v-for="m in members" :key="m.id" :class="{ disabled: m.status === 'disabled' }">
                   <td>
-                    <span class="member-name" :title="m.name">{{ m.name }}</span>
+                    <div class="member-cell">
+                      <span class="member-avatar" aria-hidden="true">{{ (m.name || m.email || '?').slice(0, 1) }}</span>
+                      <span class="member-name" :title="m.name">{{ m.name }}</span>
+                      <span v-if="m.id === props.user?.id" class="self-tag">我</span>
+                    </div>
                   </td>
                   <td><code class="mono-text" :title="m.email">{{ m.email }}</code></td>
                   <td>
-                    <span v-if="m.role === 'owner'" class="role-badge-owner">
+                    <span v-if="m.role === 'owner'" class="role-badge role-badge--owner">
                       所有者
                     </span>
-                    <span v-else-if="realPlatform && (!owner || !canEdit(m))">{{ m.role === 'admin' ? '管理员' : '普通成员' }}</span>
+                    <span
+                      v-else-if="realPlatform && (!owner || !canEdit(m))"
+                      class="role-badge"
+                      :class="m.role === 'admin' ? 'role-badge--admin' : 'role-badge--member'"
+                    >
+                      {{ m.role === 'admin' ? '管理员' : '普通成员' }}
+                    </span>
                     <div v-else class="role-select-wrap">
                       <NSelect
                         :value="m.role"
@@ -470,10 +526,12 @@ async function confirmMemberAction() {
     </NTabs>
     <NModal :show="Boolean(pendingSettingsTab)" preset="card" title="平台配置尚未保存"
       style="width: min(440px, 94vw)" @update:show="show => { if (!show) pendingSettingsTab = undefined }">
-      请在平台管理内保存，或放弃本次修改后再切换页签。
+      <p class="modal-body-copy">请在平台管理内保存，或放弃本次修改后再切换页签。</p>
       <template #footer>
-        <NButton @click="pendingSettingsTab = undefined">继续编辑</NButton>
-        <NButton type="error" @click="discardAdminAndSwitch">放弃并切换</NButton>
+        <div class="modal-footer-actions">
+          <NButton @click="pendingSettingsTab = undefined">继续编辑</NButton>
+          <NButton type="error" @click="discardAdminAndSwitch">放弃并切换</NButton>
+        </div>
       </template>
     </NModal>
 
@@ -502,7 +560,7 @@ async function confirmMemberAction() {
         </div>
       </NForm>
       <template #footer>
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <div class="modal-footer-actions">
           <NButton @click="showInviteModal = false">关闭</NButton>
           <NButton type="primary" :loading="isGeneratingInvite" @click="generateInviteLink">生成邀请链接</NButton>
         </div>
@@ -516,16 +574,30 @@ async function confirmMemberAction() {
       :title="realPlatform ? '确认修改成员权限' : pendingMemberAction?.kind === 'status' ? (pendingMemberAction.nextStatus === 'disabled' ? '确认禁用成员账号' : '确认恢复成员账号') : '确认变更成员权限角色'"
       style="width: min(460px, 94vw);"
     >
-      <div v-if="pendingMemberAction" style="display: flex; flex-direction: column; gap: 10px;">
+      <div v-if="pendingMemberAction" class="modal-body-stack">
         <template v-if="realPlatform">
-          <strong>{{ pendingMemberAction.member.name }} · {{ pendingMemberAction.member.email }}</strong>
+          <div class="member-confirm-summary">
+            <span class="member-avatar" aria-hidden="true">{{ (pendingMemberAction.member.name || pendingMemberAction.member.email || '?').slice(0, 1) }}</span>
+            <div class="member-confirm-meta">
+              <strong>{{ pendingMemberAction.member.name }}</strong>
+              <span class="mono-text">{{ pendingMemberAction.member.email }}</span>
+            </div>
+            <span class="role-badge" :class="pendingMemberAction.member.role === 'admin' ? 'role-badge--admin' : 'role-badge--member'">
+              {{ pendingMemberAction.member.role === 'admin' ? '管理员' : '普通成员' }}
+            </span>
+          </div>
           <NForm label-placement="top">
             <NFormItem v-if="owner" label="工作区角色"><NSelect :virtual-scroll="false" v-model:value="pendingMemberAction.nextRole" :options="memberOptions" :disabled="isUpdatingMember" /></NFormItem>
             <NFormItem label="使用状态"><NSelect v-model:value="pendingMemberAction.nextStatus" :options="statusOptions" :disabled="isUpdatingMember" /></NFormItem>
           </NForm>
-          <p v-if="pendingMemberAction.nextStatus === 'disabled'">停用后，该成员将无法访问本工作区。</p>
+          <NAlert v-if="pendingMemberAction.nextStatus === 'disabled'" type="warning" :show-icon="true">
+            停用后，该成员将无法访问本工作区。
+          </NAlert>
+          <NAlert v-else type="info" :show-icon="true">
+            {{ pendingMemberAction.nextRole === 'admin' ? '管理员可配置工作区 AI 员工、技能、插件与常规设置。' : '普通成员可参与工作区对话与查看任务，不能修改工作区管理配置。' }}
+          </NAlert>
         </template>
-        <p v-else style="margin: 0; font-size: 13px; color: var(--id-text-primary); line-height: 1.6;">
+        <p v-else class="modal-body-copy">
           <template v-if="pendingMemberAction.kind === 'status'">
             确定要<strong>{{ pendingMemberAction.nextStatus === 'disabled' ? '禁用' : '恢复' }}</strong>成员「<strong>{{ pendingMemberAction.member.name }}</strong> ({{ pendingMemberAction.member.email }})」的工作区访问权限吗？
           </template>
@@ -550,7 +622,7 @@ async function confirmMemberAction() {
         </NAlert>
       </div>
       <template #footer>
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <div class="modal-footer-actions">
           <NButton @click="showMemberConfirmModal = false">取消</NButton>
           <NButton
             :type="pendingMemberAction?.kind === 'status' && pendingMemberAction?.nextStatus === 'disabled' ? 'error' : 'primary'"
@@ -575,14 +647,31 @@ async function confirmMemberAction() {
   gap: 16px;
 }
 .settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
   padding: 4px 0 8px 0;
+}
+.settings-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.settings-context-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .view-title {
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--id-text-primary);
-  margin: 0 0 4px 0;
+  margin: 0;
 }
 .view-subtitle {
   font-size: 13px;
@@ -655,64 +744,6 @@ async function confirmMemberAction() {
   padding-top: 12px;
 }
 
-.sub-desc {
-  font-size: 13px;
-  color: var(--id-text-secondary);
-}
-
-/* 通知提示条（替代饱和蓝 NAlert） */
-.scope-notice-strip {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 16px;
-  background: var(--id-bg-surface);
-  border: 1px solid var(--id-border-subtle);
-  border-radius: var(--id-radius-lg);
-}
-.notice-icon {
-  color: var(--id-text-muted);
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.notice-text {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--id-text-secondary);
-}
-.notice-text strong {
-  color: var(--id-text-primary);
-  font-weight: 600;
-}
-
-/* 1. 工作区卡片 */
-.settings-card {
-  background: var(--id-bg-surface);
-  border: 1px solid var(--id-border-subtle);
-  border-radius: var(--id-radius-lg);
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.card-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--id-text-primary);
-  margin: 0;
-}
-.card-meta {
-  font-size: 12px;
-  color: var(--id-text-muted);
-}
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -734,9 +765,6 @@ async function confirmMemberAction() {
 .mono-input :deep(input) {
   font-family: var(--id-font-mono);
 }
-.tabular-num {
-  font-variant-numeric: tabular-nums;
-}
 
 /* 保存栏 */
 .workspace-save-bar {
@@ -753,7 +781,12 @@ async function confirmMemberAction() {
 .ws-save-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+}
+.ws-save-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .ws-save-info strong {
   font-size: 13px;
@@ -761,84 +794,78 @@ async function confirmMemberAction() {
 }
 .ws-save-info span {
   font-size: 12px;
-  color: var(--id-text-secondary);
+  color: var(--id-text-muted);
+}
+.ws-save-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* 2. 成员表格 */
-
-.col-actions {
-  text-align: right;
+.member-cell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.member-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--id-bg-muted);
+  border: 1px solid var(--id-border-subtle);
+  color: var(--id-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  text-transform: uppercase;
 }
 .member-name {
   font-weight: 600;
   color: var(--id-text-primary);
 }
-.mono-text {
-  font-family: var(--id-font-mono);
-  font-size: 12px;
-  color: var(--id-text-secondary);
-}
-.muted-text {
-  color: var(--id-text-muted);
+.self-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  height: 18px;
+  border-radius: var(--id-radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--id-accent-primary);
+  background: var(--id-accent-primary-soft);
+  border: 1px solid var(--id-accent-primary-border);
+  flex-shrink: 0;
 }
 .role-select-wrap {
   width: 176px;
   min-width: 176px;
 }
-.role-badge-owner {
-  display: inline-flex;
+.member-confirm-summary {
+  display: flex;
   align-items: center;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--id-bg-muted);
-  color: var(--id-text-primary);
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--id-bg-subtle);
   border: 1px solid var(--id-border-subtle);
+  border-radius: var(--id-radius-md);
 }
-
-/* 6px 语义状态点微标签 */
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  white-space: nowrap;
+.member-confirm-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
-.status-pill--success {
-  background: var(--id-status-success-soft);
-  color: var(--id-status-success);
-  border-color: var(--id-status-success-border);
+.member-confirm-meta strong {
+  font-size: 13px;
+  color: var(--id-text-primary);
 }
-.status-pill--warning {
-  background: var(--id-status-warning-soft);
-  color: var(--id-status-warning);
-  border-color: var(--id-status-warning-border);
-}
-.status-pill--error {
-  background: var(--id-status-danger-soft);
-  color: var(--id-status-danger);
-  border-color: var(--id-status-danger-border);
-}
-.status-pill--muted {
-  background: var(--id-bg-muted);
-  color: var(--id-text-muted);
-  border-color: var(--id-border-subtle);
-}
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.dot--success { background: var(--id-status-success-dot); }
-.dot--warning { background: var(--id-status-warning-dot); }
-.dot--error { background: var(--id-status-danger-dot); }
-.dot--muted { background: var(--id-text-placeholder); }
 
 /* 邀请链接 */
 .il-label {
@@ -864,11 +891,6 @@ async function confirmMemberAction() {
   .field-item.full-width {
     grid-column: span 1;
   }
-  .panel-top-actions {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
   .settings-error-card,
   .stale-banner {
     flex-direction: column;
@@ -879,8 +901,9 @@ async function confirmMemberAction() {
     align-items: stretch;
     gap: 12px;
   }
-  .workspace-save-bar :deep(.n-button) {
+  .ws-save-actions {
     width: 100%;
+    justify-content: flex-end;
   }
   .custom-d2-table {
     min-width: 680px;

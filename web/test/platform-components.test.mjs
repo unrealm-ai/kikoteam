@@ -258,4 +258,46 @@ test('Member controls follow actor role and combined changes use one versioned P
  }
 });
 
+test('Invitation link copy button selects modal input and falls back to execCommand when clipboard API rejects', async t => {
+ const inviteUrl='https://example.test/?invitation_token=fallback-copy-test';
+ const originalClipboard=Object.getOwnPropertyDescriptor(navigator,'clipboard');
+ Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw new Error('denied');}}});
+ t.after(()=>{if(originalClipboard)Object.defineProperty(navigator,'clipboard',originalClipboard);else delete navigator.clipboard;});
+ let copiedText='';
+ const originalCommand=Object.getOwnPropertyDescriptor(document,'execCommand');
+ Object.defineProperty(document,'execCommand',{configurable:true,value:command=>{
+  assert.equal(command,'copy');
+  const active=document.activeElement;
+  assert.ok(active instanceof HTMLInputElement);
+  copiedText=active.value.slice(active.selectionStart,active.selectionEnd);
+  return true;
+ }});
+ t.after(()=>{if(originalCommand)Object.defineProperty(document,'execCommand',originalCommand);else delete document.execCommand;});
+ globalThis.fetch=async(url,init)=>{
+  if(init.method==='POST')return Response.json({id:'i',kind:'link',link:inviteUrl});
+  if(url.includes('/members?')||url.includes('/invitations?'))return Response.json({items:[],total:0});
+  return Response.json({id:'w',name:'Workspace',role:'owner',version:1});
+ };
+ const host=document.createElement('div');document.body.appendChild(host);
+ const app=createApp({render:()=>h(NMessageProvider,null,{default:()=>h(SettingsView,{workspaceId:'w',user:{id:'u'},initialTab:'members'})})});
+ app.provide('d2DraftGuard',{register(){},unregister(){}});app.mount(host);
+ try{
+  await new Promise(r=>setTimeout(r,50));await nextTick();
+  [...host.querySelectorAll('button')].find(b=>b.textContent.includes('邀请成员')).click();
+  await new Promise(r=>setTimeout(r,40));await nextTick();
+  [...document.querySelectorAll('button')].find(b=>b.textContent.includes('生成邀请链接')).click();
+  await new Promise(r=>setTimeout(r,40));await nextTick();
+  const readonlyInput=document.querySelector('.n-modal input[readonly]');
+  assert.ok(readonlyInput);
+  assert.equal(readonlyInput.value,inviteUrl);
+  const copyBtn=[...document.querySelectorAll('.n-modal button')].find(b=>b.textContent.trim()==='复制链接');
+  assert.ok(copyBtn);
+  copyBtn.click();
+  await new Promise(r=>setTimeout(r,40));await nextTick();
+  assert.equal(copiedText,inviteUrl);
+  assert.equal(document.activeElement,readonlyInput);
+  assert.equal(copyBtn.textContent.trim(),'已复制');
+ }finally{app.unmount();host.remove();await new Promise(r=>setTimeout(r,30));}
+});
+
 test.after(()=>window.happyDOM.close());

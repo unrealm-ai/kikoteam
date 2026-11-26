@@ -28,7 +28,7 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | `backend` | `ghcr.io/unrealm-ai/kikoteam/backend` | `8080`（HTTP API、Web 静态资源、`/healthz`、`/readyz`） | **可水平扩展多副本** | 唯一对外接收公网流量的服务；多副本必须共用同一个 `DATABASE_URL` 与 `KIKO_AUTH_SECRET` |
 | `event-hub` | `ghcr.io/unrealm-ai/kikoteam/event-hub` | `8081`（`/healthz`、`/readyz`）<br>`8082`（内部控制端口） | **全局单活（可部署热备实例）** | 通过 PostgreSQL 会话级 Advisory Lock 自动选主；当选实例自动执行数据库迁移、维护飞书/钉钉/企微长连接与定时触发 |
-| `agent-engine` | `ghcr.io/unrealm-ai/kikoteam/agent-engine` | `8083`（本机 `/readyz`） | **可多实例扩展** | 每个实例需设置唯一且稳定的 `KIKO_ENGINE_HOST_ID`，通过 `KIKO_ENGINE_CAPACITY`（默认 `8`）控制单实例并发活跃会话上限 |
+| `agent-engine` | `ghcr.io/unrealm-ai/kikoteam/agent-engine` | `8083`（本机 `/readyz`） | **可多实例扩展** | 每个实例需设置唯一且稳定的 `KIKO_ENGINE_HOST_ID`，通过 `KIKO_ENGINE_CAPACITY`（默认 `100`）控制单实例同时绑定的会话数 |
 | `postgres` | `postgres:16.6` | `5432` | 主从高可用或托管 PG | 存储所有业务事实、配置版本、加密凭据引用与会话事件 |
 
 ## 2. 反向代理与必须屏蔽的内部路径
@@ -203,7 +203,7 @@ server {
 | `KIKO_ENGINE_TOKEN` | **是** | — | 与 Backend 一致的内部认证 Token（32 字节以上） |
 | `KIKO_ENGINE_HOST_ID` | 推荐显式设置 | 宿主机 hostname | **每个 Engine 实例必须稳定且唯一**；容器重建后保持相同 `KIKO_ENGINE_HOST_ID` 才能继续关联原有的本地沙箱与 Pi 历史 |
 | `KIKO_ENGINE_ADDRESS` | 否 | `127.0.0.1:8083` | Engine 探针（`/readyz`）监听地址 |
-| `KIKO_ENGINE_CAPACITY` | 否 | `8` | 单实例允许同时承载的最大活跃执行 Session 数量 |
+| `KIKO_ENGINE_CAPACITY` | 否 | `100` | 单实例同时绑定的 Session 上限。已绑定的空闲或受阻 Session 在释放前仍占一个名额 |
 | `KIKO_ENGINE_IDLE_TIMEOUT` | 否 | `1m` | 无后台进程活动时释放空闲 Pi RPC 进程的等待时间 |
 | `KIKO_STORAGE_LOCAL_ROOT` | 否 | `~/.kiko`（容器内 `/mnt/kikoteam`） | 持久沙箱与原生会话根目录 |
 

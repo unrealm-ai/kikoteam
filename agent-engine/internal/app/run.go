@@ -30,7 +30,7 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	c := Config{DSN: os.Getenv("DATABASE_URL"), BackendURL: strings.TrimRight(os.Getenv("KIKO_BACKEND_URL"), "/"), Token: os.Getenv("KIKO_ENGINE_TOKEN"), Address: os.Getenv("KIKO_ENGINE_ADDRESS"), HostID: os.Getenv("KIKO_ENGINE_HOST_ID"), Root: os.Getenv("KIKO_STORAGE_LOCAL_ROOT"), RepoRoot: os.Getenv("KIKO_REPO_ROOT"), Capacity: 8, Idle: time.Minute}
+	c := Config{DSN: os.Getenv("DATABASE_URL"), BackendURL: strings.TrimRight(os.Getenv("KIKO_BACKEND_URL"), "/"), Token: os.Getenv("KIKO_ENGINE_TOKEN"), Address: os.Getenv("KIKO_ENGINE_ADDRESS"), HostID: os.Getenv("KIKO_ENGINE_HOST_ID"), Root: os.Getenv("KIKO_STORAGE_LOCAL_ROOT"), RepoRoot: os.Getenv("KIKO_REPO_ROOT"), Capacity: 100, Idle: time.Minute}
 	if c.DSN == "" || c.BackendURL == "" || len(c.Token) < 32 {
 		return c, errors.New("DATABASE_URL, KIKO_BACKEND_URL and KIKO_ENGINE_TOKEN (32+ bytes) required")
 	}

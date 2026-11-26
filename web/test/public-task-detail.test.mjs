@@ -102,6 +102,16 @@ test('public route extracts only the bearer path and shares the actual read-only
     assert.match(m.host.textContent, /最新可见结果/);
     assert.match(m.host.textContent, /只读/);
     assert.equal(m.host.querySelector('textarea'), null);
+    const signIn = m.host.querySelector('[aria-label="KIKO 登录引导"] a');
+    assert.ok(signIn);
+    assert.equal(signIn.textContent.trim(), '登录 KIKO');
+    assert.equal(signIn.getAttribute('href'), '/');
+    assert.equal(signIn.target, '_blank');
+    assert.equal(signIn.getAttribute('referrerpolicy'), 'no-referrer');
+    assert.ok(signIn.relList.contains('noopener'));
+    assert.ok(signIn.relList.contains('noreferrer'));
+    assert.match(signIn.closest('aside').textContent, /查看你有权限的任务/);
+    assert.equal(m.host.querySelector('.task-detail-panel a'), null);
     for (const name of ['发送', '停止此任务', '提交并重新开始', '归档任务', '撤回此输入', '修改标题']) assert.equal(button(m.host, name), undefined);
     for (const c of m.calls) {
       assert.equal(c.init.headers.get('Authorization'), 'Bearer ' + token);

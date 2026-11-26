@@ -1,4 +1,5 @@
 import { D2ApiError } from './client';
+import type { EventPage } from './manager';
 import type { TaskProgress } from './tasks';
 
 export interface TaskActivity { kind: string; text: string; occurred_at: string }
@@ -57,6 +58,11 @@ export function parseTaskSnapshot(value: unknown): PublicTask {
 export const publicTaskApi = {
   snapshot: async (token: string, signal: AbortSignal) => readTaskSnapshot(await request(token, signal)),
   stream: (token: string, cursor: string, signal: AbortSignal) => request(token, signal, '/events', {
+    headers: { 'Accept': 'text/event-stream', 'Last-Event-ID': cursor },
+  }),
+  history: async (token: string, cursor: string, signal: AbortSignal): Promise<EventPage> =>
+    (await request(token, signal, '/execution' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''))).json(),
+  execution: (token: string, cursor: string, signal: AbortSignal) => request(token, signal, '/execution/stream', {
     headers: { 'Accept': 'text/event-stream', 'Last-Event-ID': cursor },
   }),
   call: async (token: string, op: 'append' | 'stop' | 'continue', body: Record<string, unknown>, key: string, signal: AbortSignal) =>

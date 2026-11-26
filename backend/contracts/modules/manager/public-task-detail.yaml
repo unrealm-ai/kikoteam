@@ -28,6 +28,52 @@ events:
             schema: { type: string }
       default:
         $ref: '#/error'
+execution:
+  get:
+    operationId: getPublicTaskExecution
+    summary: Read a page of Web-equivalent execution events for the granted task
+    description: The grant selects the task Session and, for a trigger notification, its source Turn. No caller-supplied task or Session identifier is used.
+    security:
+    - taskDetailBearer: []
+    parameters:
+    - name: cursor
+      in: query
+      schema: { type: string }
+    responses:
+      '200':
+        description: Latest or earlier execution history in chronological order with grant-bound cursors.
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, next_cursor, resume_cursor]
+              properties:
+                items:
+                  type: array
+                  items: { type: object }
+                next_cursor: { type: [string, 'null'] }
+                resume_cursor: { type: string }
+      default:
+        $ref: '#/error'
+executionStream:
+  get:
+    operationId: streamPublicTaskExecution
+    summary: Follow reliable execution events for the granted task
+    description: Streams the same execution event envelopes as Web. Resume with the history resume_cursor or the last applied event ID for this grant. Revoked, expired, or unrecognized grants cannot stream.
+    security:
+    - taskDetailBearer: []
+    parameters:
+    - name: Last-Event-ID
+      in: header
+      schema: { type: string }
+    responses:
+      '200':
+        description: Server-sent execution events or a structured stream.error before close.
+        content:
+          text/event-stream:
+            schema: { type: string }
+      default:
+        $ref: '#/error'
 append:
   post:
     operationId: appendPublicTaskInput

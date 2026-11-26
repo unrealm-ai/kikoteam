@@ -213,6 +213,24 @@ func verifyTriggerDetailGrant(t *testing.T, store *managerrepo.Store, d manager.
 	if err != nil || result.CanWrite() || result.TriggerNotificationID != d.ID || result.Destination.ChatID != d.ChatID {
 		t.Fatalf("bad result grant: %q %v", result.Scope, err)
 	}
+	var sourceTurn string
+	if err := store.DB.QueryRowContext(t.Context(), `SELECT source_turn_id FROM manager_trigger_notifications WHERE id=$1`, d.ID).Scan(&sourceTurn); err != nil {
+		t.Fatal(err)
+	}
+	otherTurn := manager.NewID()
+	for _, sample := range []struct{ turn, value string }{{sourceTurn, "AUTHORIZED_NOTICE_TURN"}, {otherTurn, "OTHER_TURN"}, {"", "SESSION_ONLY"}} {
+		reviewExec(t, store.DB, `WITH s AS (UPDATE manager_sessions SET last_event_seq=last_event_seq+1 WHERE id=$1 RETURNING *)
+ INSERT INTO manager_session_events(workspace_id,session_id,seq,event)
+ SELECT workspace_id,id,last_event_seq,jsonb_build_object('session_id',id,'seq',last_event_seq::text,'type','agent.tool_result','turn_id',NULLIF($2::text,''),'output',$3::text) FROM s`, result.SessionID, sample.turn, sample.value)
+	}
+	svc := &manager.Service{Store: store, CursorSecret: []byte(strings.Repeat("s", 32))}
+	history, err := svc.PublicTaskEventHistory(t.Context(), token, "")
+	blob, marshalErr := json.Marshal(history.Items)
+	if err != nil || marshalErr != nil || !strings.Contains(string(blob), "AUTHORIZED_NOTICE_TURN") ||
+		strings.Contains(string(blob), "OTHER_TURN") || strings.Contains(string(blob), "SESSION_ONLY") {
+		t.Fatalf("trigger grant did not pin its execution history to the source turn: %s %v %v", blob, err, marshalErr)
+	}
+
 }
 
 func verifyTriggerDetailContexts(t *testing.T, store *managerrepo.Store) {

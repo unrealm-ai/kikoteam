@@ -1,13 +1,13 @@
 # 任务详情链接与共享 Web 详情
 
-本功能打开既有执行 Task Session，不新建会话。飞书、钉钉、企微可发外部详情链接；登录态 Web 对话使用自身任务详情，消息中不发 bearer。任务导航／任务中心、对话内任务和 token 页面共用详情与执行过程组件，分别使用登录态接口和公开最小投影接口。三入口共享[任务状态摘要](../../backend/docs/task-records.md#详情页状态摘要只读)：登录态显示获准的交接和送达摘要，不跳转接手任务；免登录页只补充授权范围内的阶段，并通过原有 SSE 快照更新。
+本功能打开既有执行 Task Session，不新建会话。飞书、钉钉、企微可发外部详情链接；登录态 Web 对话使用自身任务详情，消息中不发 bearer。任务导航／任务中心、对话内任务和 token 页面共用详情与执行过程组件，分别使用登录态接口和限定到该任务的 token 接口。三入口共享[任务状态摘要](../../backend/docs/task-records.md#详情页状态摘要只读)：登录态显示获准的交接和送达摘要，不跳转接手任务；免登录页通过原有 SSE 更新阶段和操作状态，并通过执行事件 SSE 实时显示授权任务的执行过程。
 
 | 编号 | 行为 |
 | --- | --- |
 | TDL-01 配置 | 严格按已保存的任务链接地址与发送开关生效，两者同时有效才签发。设置由平台管理员读写，保存检查版本；默认地址为空、勾选开启。地址为空时界面置灰但保留勾选值；不回退到部署 Origin。接受显式 HTTP/HTTPS DNS 或 IP Origin，可附端口和根斜杠，归一化、不探测网络。关开关或清空只阻止新签发和未送出投递，不自动撤销已发链接。 |
 | TDL-02 签发 | `/tasks/<token>` 是可转发的持有凭证，默认 72 小时，不登录、不换 Cookie、不续期，不暴露内部任务路径。数据库存随机凭证摘要，同一任务允许多个独立 grant。外部群只读；同一个有权限的原渠道发起人从私聊发卡才可获得可写范围，否则不提权。操作记为某 grant 提交，发送目标与原执行授权主体分别记录；无法由 bearer 判断实际点击者。 |
-| TDL-03 只读投影 | 公网只给当前 grant 的安全状态、活动和产物，不开放原始工具记录、思考、空间列表或工作区 API。最近活动最多 120 条，可标记截断；列表最多 100 个可见产物。普通群展示通用执行状态和曾确认送达该群／话题的结果，不展示未公开任务原文或标题。私聊可查看原渠道发起主体、代次及当前权限匹配的已完成轮次结果和该 grant 提交的输入。Hook/定时链接只见对应已确认通知的结果状态及文本，不见任务随后的轮次；当前无通知产物发布证据，因此不开放该链接的产物。 |
-| TDL-04 产物与实时 | 私聊仅授权主体的已完成且结果明确的轮次产物可读；群须有该会话、绑定、代次和话题一致的已确认发送证据，不以 artifact ID 本身授权。下载复验同一投影资格。公开 SSE 以 Authorization 请求头和 grant 绑定的快照游标续接；推送是新的有界快照，不保证补齐断线期间的逐条事件。过期或撤销停止流并拒绝新读写。 |
+| TDL-03 免登录执行过程 | 新签发的普通私聊、群聊链接读取其唯一 Task Session 的 Web 同口径执行历史、工具参数／进度／结果及失败事件，不另做免登录过滤。定时与 Hook 只读已送达通知的来源轮次。后端只从 grant 解析 Session／轮次，链接不授权关联任务、工作区 API 或任务列表。迁移 101 撤销旧链接；仅新版签发的完整执行授权可读。 |
+| TDL-04 产物与实时 | 同一授权范围内已完成且结果明确的执行轮次，其任务产物可列出和下载，包含群聊只读链接；不是授权任务或轮次的产物拒绝。文件下载后再次核验授权。状态快照 SSE 与执行事件 SSE 分开；执行历史和流复用登录态的可靠事件与分页，从绑定 grant 的游标断点续读。过期或撤销停止推流并拒绝新读写。 |
 | TDL-05 两种写入主体 | 登录态补充和停止以当前登录账号及既有会话、工作区和 Web 使用权限裁定；保持既有 TaskSpace 授权规则，不为停止增加能力包检查。可写 token 使用原任务发起人的原渠道身份，不使用访问者身份或投递目标；每次核验 grant、来源及当前授权。只读 token 隐藏写控件，直接调用亦拒绝。 |
 | TDL-06 挂起、停止、继续 | 人工确认或事项交接挂起时，两类详情均按各自权限接收排队补充，不代答、不撤回或解除挂起；在同一 Session 锁内拒绝从两类页面停止（`task_waiting_for_action`），登录态 Web 的直接任务归档同样受该保护，避免借其内部停止取消挂起工作；token 不提供归档入口。不改变普通 IM MCP 停止和上层会话生命周期编排。普通 token 补充默认 steer。停止后须有停稳证据、匹配停止版本并显式继续，才可在原任务新开轮次；迟到普通补充、陈旧双标签及未知停止或工具副作用不自动继续。幂等重试不重复追加或二次停止。 |
 | TDL-07 上下文与回告 | 成功接受网页追加或继续后，以真实 Input 关联原来源主对话的非触发系统记录；未受理不记为成功。原任务真正回告按原来源路由，并按源 Input 幂等，不因网页提交者或卡片收件目标改路由。记录只标明统一业务 `task_id`，附 JSON 引用的原文；显式继续注明已提交新一轮。新主动回告同样只以 `task_id` 定位业务任务。无 bearer，不独立开轮，也不把此系统 Input 当作用户授权。 |
@@ -21,7 +21,7 @@
 
 ## 部署与验证
 
-- 公网用 HTTPS。内网单机允许 HTTP/IP:端口；HTTP 不加密，客户端要能实际访问该地址。首次打开路径含可操作凭证：应用设置禁缓存、禁索引、无 referrer；浏览器 API 请求不携带 Cookie、拒绝重定向。启用前必须依照[反向代理说明](../deployment.md#nginx-反向代理配置示例)确认所有入口不记录 `/tasks/` 原始路径或 bearer，且不缓冲 SSE；应用头不能替代代理、CDN 或 APM 配置。
+- 迁移 101 随 Event Hub 先执行，再更新 Backend 和 Web；旧链接请重新发放。持有新链接可查看已授权任务中的工具输入和输出及产物，不能把发往外部群的链接视为仅公开摘要。公网用 HTTPS。内网单机允许 HTTP/IP:端口；HTTP 不加密，客户端要能实际访问该地址。首次打开路径含可操作凭证：应用设置禁缓存、禁索引、无 referrer；浏览器 API 请求不携带 Cookie、拒绝重定向。启用前必须依照[反向代理说明](../deployment.md#nginx-反向代理配置示例)确认所有入口不记录 `/tasks/` 原始路径或 bearer，且不缓冲 SSE；应用头不能替代代理、CDN 或 APM 配置。
 - [外部详情 OpenAPI](../../backend/contracts/modules/manager/public-task-detail.yaml) · [管理员设置 OpenAPI](../../backend/contracts/modules/platform/task-link-settings.yaml) · [工具契约](../../backend/contracts/taskdelegation/tools.json)。
 - 隔离 PostgreSQL 与 HTTP/SSE 夹具：[设置权限和并发](../../backend/internal/platform/repository/task_link_settings_test.go)、[实例、有效期、来源与触发目标](../../backend/internal/platform/repository/task_detail_grants_test.go)、[详情、挂起禁停、原渠道补充和撤销续接](../../backend/internal/platform/repository/task_detail_page_test.go)、[外部投递和非触发同步](../../backend/internal/platform/repository/task_detail_delivery_test.go) 已通过针对性验证。
 - [渠道协议及混版](../../event-hub/internal/channel/task_detail_delivery_test.go) 的供应商夹具覆盖三家卡片编码、确认拒绝后的降级、结果未知不重发及旧 Hub 兼容；Event Hub 隔离全量竞态、lint、构建通过。Web [共享入口、只读控件、快照恢复](../../web/test/public-task-detail.test.mjs)、[模型工具清单隔离](../../backend/internal/manager/mcp/taskdelegation/catalog_test.go) 的针对性测试及 Web 构建通过。[应用首屏安全头](../../backend/internal/app/task_detail_landing_test.go) 有专门用例。已用 Chrome 在纯 HTTP 的本地浏览器夹具验证只读隐藏、Bearer 与文件下载、SSE 更新、普通补充、挂起时可补充但不可停止，以及停稳后的显式继续按钮。该夹具不连接真实 Manager 或 IM；真实渠道客户端打开详情 URL、目标部署的外部代理日志配置尚未验收。
@@ -29,3 +29,9 @@
 - TDL-11：[三渠道卡片正文、同链接降级与未知回执](../../event-hub/internal/channel/trigger_result_card_test.go)、[飞书锚点](../../event-hub/internal/channelhistory/anchor_test.go)夹具及新版 Event Hub 全量 race 通过。Manager [隔离 PostgreSQL 专项](../../backend/internal/platform/repository/task_detail_delivery_test.go)通过，覆盖 Hook／定时结果卡片和链接回执、旧 Hub、未启用、飞书不触发且无 bearer 的结果记录；[既有 Web、unknown 回归](../../backend/internal/platform/repository/trigger_notifications_test.go)通过。真实渠道客户端显示、链接跳转尚未验收。
 
 - TDL-08／12：[真实 MCP 与隔离 PostgreSQL](../../backend/internal/platform/repository/task_detail_report_delivery_test.go)覆盖用户轮不去重、同会话错任务拒绝、回告并发占位、有效链接去重和过期重发、异常用户追加不改变回告根、未知不重发、失败或旧 Hub 不认领保留正文；[三渠道测试](../../event-hub/internal/channel/task_detail_delivery_test.go)覆盖正文、同链接降级和未知回执；[Web 对话历史组件测试](../../web/test/manager-conversations.test.mjs)确认显示新工具名且入队不等于送达。
+
+### 免登录执行过程回归
+
+- [PostgreSQL／真实 HTTP 流](../../backend/internal/platform/repository/task_detail_page_test.go)：群聊只读 grant 在工具结果写入之前收到工具开始事件；用事件游标续读结果与下一步；另一个 grant 不能使用原游标；撤销后关闭流。旧授权不可读取；同任务产物可下载，其他会话的产物不可下载。
+- [定时与 Hook 通知](../../backend/internal/platform/repository/task_detail_delivery_test.go)：只有送达后可用，执行历史固定为通知来源轮次，不包含其他轮次或无轮次记录。
+- [Web 回归](../../web/test/public-task-detail.test.mjs)：工具卡片在免登录页逐步渲染，结果更新同一张卡片；重连使用执行游标，撤销时清空页面。另用隔离 Chrome 和模拟 SSE 验证实际构建的页面、只读下载及可写补充；未连接真实渠道。

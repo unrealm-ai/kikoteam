@@ -40,25 +40,10 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 	defer tick.Stop()
 	lastHeartbeat := time.Now()
 	for {
-		for _, data := range items {
-			var event struct {
-				Type string `json:"type"`
-				Seq  string `json:"seq"`
-			}
-			if json.Unmarshal(data, &event) != nil {
-				return
-			}
-			seq, e := strconv.ParseInt(event.Seq, 10, 64)
-			if e != nil {
-				return
-			}
-			id, e := s.Service.EventID(workspace(r), actor, sessionID(r), q.Get("turn_id"), q.Get("type"), seq)
-			if e != nil {
-				return
-			}
-			if e = s.writeSSE(control, w, fmt.Sprintf("id: %s\nevent: %s\ndata: %s\n\n", id, event.Type, data)); e != nil {
-				return
-			}
+		if !s.writeSessionEventBatch(control, w, items, func(seq int64) (string, error) {
+			return s.Service.EventID(workspace(r), actor, sessionID(r), q.Get("turn_id"), q.Get("type"), seq)
+		}) {
+			return
 		}
 		if time.Since(lastHeartbeat) >= 15*time.Second {
 			if _, err = s.authorize(r); err != nil {
@@ -85,6 +70,27 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func (s *Server) writeSessionEventBatch(control *http.ResponseController, w http.ResponseWriter, items []json.RawMessage, eventID func(int64) (string, error)) bool {
+	for _, data := range items {
+		var event struct {
+			Type string `json:"type"`
+			Seq  string `json:"seq"`
+		}
+		if json.Unmarshal(data, &event) != nil {
+			return false
+		}
+		seq, err := strconv.ParseInt(event.Seq, 10, 64)
+		if err != nil {
+			return false
+		}
+		id, err := eventID(seq)
+		if err != nil || s.writeSSE(control, w, fmt.Sprintf("id: %s\nevent: %s\ndata: %s\n\n", id, event.Type, data)) != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) writeSSE(control *http.ResponseController, w http.ResponseWriter, text string) error {

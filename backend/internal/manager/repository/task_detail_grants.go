@@ -24,7 +24,7 @@ const taskDetailGrantJoins = ` FROM manager_task_detail_grants g
  LEFT JOIN manager_inputs i ON i.id=g.source_input_id AND i.session_id=g.source_chat_session_id
  LEFT JOIN platform_channel_bindings b ON b.id=g.destination_binding_id AND b.workspace_id=g.workspace_id AND b.id=c.channel_binding_id
  LEFT JOIN manager_trigger_notifications n ON n.id=g.trigger_notification_id AND n.task_id=g.task_id AND n.conversation_id=c.id
- WHERE g.revoked_at IS NULL AND g.expires_at>clock_timestamp()
+ WHERE g.full_execution AND g.revoked_at IS NULL AND g.expires_at>clock_timestamp()
  AND ((g.destination_channel='web' AND c.web_group_id IS NOT NULL
        AND EXISTS (SELECT 1 FROM platform_web_groups wg JOIN platform_web_group_agents ga ON ga.group_id=wg.id
                    WHERE wg.id=c.web_group_id AND ga.agent_id=c.agent_id AND wg.status='active' AND ga.status='active'

@@ -44,8 +44,8 @@ func (s *Store) IssueTaskDetailGrantTx(ctx context.Context, tx *sql.Tx, issue se
 	digest := sha256.Sum256(random[:])
 	d := g.Destination
 	err = tx.QueryRowContext(ctx, `WITH tick AS (SELECT clock_timestamp() t)
- INSERT INTO manager_task_detail_grants(id,token_digest,workspace_id,session_id,task_id,source_input_id,source_chat_session_id,trigger_notification_id,destination_conversation_id,destination_channel,destination_binding_id,destination_chat_type,destination_chat_id,destination_topic_id,destination_generation,scope,issued_at,expires_at)
- SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,t,t+make_interval(secs=>$17) FROM tick
+ INSERT INTO manager_task_detail_grants(id,token_digest,workspace_id,session_id,task_id,source_input_id,source_chat_session_id,trigger_notification_id,destination_conversation_id,destination_channel,destination_binding_id,destination_chat_type,destination_chat_id,destination_topic_id,destination_generation,scope,issued_at,expires_at,full_execution)
+ SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,t,t+make_interval(secs=>$17),true FROM tick
  RETURNING expires_at`, g.ID, digest[:], g.WorkspaceID, g.SessionID, g.TaskID, nullID(g.SubjectInputID), nullID(g.SourceChatSessionID),
 		nullID(g.TriggerNotificationID), d.ConversationID, d.Channel, nullID(d.BindingID), d.ChatType, d.ChatID, d.TopicID, d.Generation, g.Scope, taskDetailGrantTTL.Seconds()).Scan(&g.ExpiresAt)
 	if err != nil {

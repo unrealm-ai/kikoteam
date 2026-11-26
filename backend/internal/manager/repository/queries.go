@@ -94,6 +94,11 @@ func (s *Store) Events(ctx context.Context, w, actor, session string, f service.
 		return nil, 0, err
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Read-only transaction; rollback releases the snapshot.
+	return readSessionEvents(ctx, tx, w, session, f)
+}
+
+func readSessionEvents(ctx context.Context, tx *sql.Tx, w, session string, f service.EventFilter) ([]json.RawMessage, int64, error) {
+	var err error
 	high := f.High
 	if high < 0 {
 		if err = tx.QueryRowContext(ctx, `SELECT last_event_seq FROM manager_sessions WHERE id=$1`, session).Scan(&high); err != nil {

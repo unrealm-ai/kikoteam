@@ -46,7 +46,7 @@ defineExpose({ dirty, save, discard });
       </NFormItem>
       <NCheckbox :checked="draft?.enabled" :disabled="!draft?.origin.trim()" :aria-disabled="!draft?.origin.trim()" aria-describedby="task-link-help"
         @update:checked="editEnabled">允许发送任务详情卡片</NCheckbox>
-      <p id="task-link-help">打开链接的设备须能直接访问此地址。使用 HTTP 时链接和任务数据会明文传输，请只在可信内网使用；公网使用 HTTPS。未配置地址时不能发卡，但会保留勾选状态。新卡片链接默认有效 3 天。</p>
+      <p id="task-link-help">打开链接的设备须能直接访问此地址。使用 HTTP 时链接和任务数据会明文传输，请只在可信内网使用；公网使用 HTTPS。未配置地址时不能发卡，但会保留勾选状态。新链接默认有效 3 天。持有者可以查看授权任务的执行过程和产物；请勿把链接发给不应查看这些数据的人。</p>
       <footer>
         <NButton :loading="busy === 'read'" @click="load(dirty)">读取最新版本</NButton>
         <NButton :disabled="!dirty || conflict" :loading="busy === 'write'" type="primary" attr-type="submit">保存任务详情链接设置</NButton>

@@ -11,6 +11,10 @@ paths:
     $ref: ./modules/manager/public-task-detail.yaml#/snapshot
   /api/v1/public/task-detail/events:
     $ref: ./modules/manager/public-task-detail.yaml#/events
+  /api/v1/public/task-detail/execution:
+    $ref: ./modules/manager/public-task-detail.yaml#/execution
+  /api/v1/public/task-detail/execution/stream:
+    $ref: ./modules/manager/public-task-detail.yaml#/executionStream
   /api/v1/public/task-detail/append:
     $ref: ./modules/manager/public-task-detail.yaml#/append
   /api/v1/public/task-detail/stop:

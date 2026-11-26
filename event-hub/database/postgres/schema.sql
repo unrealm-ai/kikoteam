@@ -2188,6 +2188,7 @@ CREATE TABLE public.manager_task_detail_grants (
     issued_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
+    full_execution boolean DEFAULT false NOT NULL,
     CONSTRAINT manager_task_detail_grants_check CHECK ((expires_at > issued_at)),
     CONSTRAINT manager_task_detail_grants_check1 CHECK (((source_input_id IS NULL) = (source_chat_session_id IS NULL))),
     CONSTRAINT manager_task_detail_grants_check2 CHECK (((trigger_notification_id IS NULL) = (source_input_id IS NOT NULL))),

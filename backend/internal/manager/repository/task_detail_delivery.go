@@ -128,7 +128,7 @@ func checkPriorReportCard(ctx context.Context, tx *sql.Tx, t taskDetailDispatchT
  FROM manager_task_detail_deliveries dt JOIN manager_task_detail_grants g ON g.id=dt.grant_id
  JOIN manager_channel_deliveries ch ON ch.id=dt.delivery_id
  WHERE g.session_id=$1 AND g.destination_conversation_id=$2 AND g.destination_generation=$3
- AND g.revoked_at IS NULL AND g.expires_at>clock_timestamp()`, t.session, t.destination.ConversationID, t.destination.Generation).Scan(&sent, &pending)
+ AND g.full_execution AND g.revoked_at IS NULL AND g.expires_at>clock_timestamp()`, t.session, t.destination.ConversationID, t.destination.Generation).Scan(&sent, &pending)
 	if err != nil {
 		return err
 	}

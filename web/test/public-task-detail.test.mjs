@@ -38,15 +38,19 @@ function detail(overrides = {}) {
 }
 
 async function fixture({initial, write, streamResponse, snapshotResponse} = {}) {
-  let state = initial || detail(), stream;
+  let state = initial || detail(), stream, execution;
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
     calls.push({url, init, body: init.body ? JSON.parse(init.body) : null});
-    if (url === path + '/events') {
-      const override = streamResponse?.(init);
+    if (url === path + '/execution') return Response.json({
+      items: [eventRow('agent.message','1',{message_id:'initial',content:[{type:'text',text:'## 最新可见结果'}]})],
+      next_cursor: null, resume_cursor: 'execution-start',
+    });
+    if (url === path + '/events' || url === path + '/execution/stream') {
+      const override = url.endsWith('/events') ? streamResponse?.(init) : undefined;
       if (override) return override;
       const body = new ReadableStream({ start(controller) {
-        stream = controller;
+        if (url.endsWith('/events')) stream = controller; else execution = controller;
         init.signal.addEventListener('abort', () => {
           try { controller.close(); } catch { /* closed independently */ }
         }, {once:true});
@@ -64,14 +68,19 @@ async function fixture({initial, write, streamResponse, snapshotResponse} = {}) 
   return {
     host, calls,
     setState(next) { state = next; },
-    emit(event, data, id = '') {
+    emit(event, data, id = '', live = false) {
       const lines = `${id ? 'id: '+id+'\r\n' : ''}event: ${event}\r\ndata: ${JSON.stringify(data)}\r\n\r\n`;
       const bytes = new TextEncoder().encode(lines);
-      stream.enqueue(bytes.slice(0, 13)); stream.enqueue(bytes.slice(13));
+      const channel = live ? execution : stream;
+      channel.enqueue(bytes.slice(0, 13)); channel.enqueue(bytes.slice(13));
     },
-    breakStream() { stream.close(); },
+    breakStream(live = false) { (live ? execution : stream).close(); },
     cleanup() { app.unmount(); host.remove(); },
   };
+}
+
+function eventRow(type, seq, data) {
+  return {type, seq, session_id:'bound-session', occurred_at:'2026-11-24T00:00:00Z', ...data};
 }
 
 function enterText(host, value) {
@@ -88,7 +97,6 @@ test('public route extracts only the bearer path and shares the actual read-only
   window.localStorage.setItem('kiko:d2:auth-token', 'unrelated-login');
   const m = await fixture({initial:detail({activity_truncated:true})});
   try {
-    assert.match(m.host.textContent, /仅显示近期执行记录/);
     assert.ok(m.host.querySelector('.task-detail-panel .session-panel'));
     assert.ok(m.host.querySelector('h2, h3'));
     assert.match(m.host.textContent, /最新可见结果/);
@@ -101,7 +109,8 @@ test('public route extracts only the bearer path and shares the actual read-only
       assert.equal(c.init.referrerPolicy, 'no-referrer');
       assert.doesNotMatch(c.url, /synthetic-token|workspaces/);
     }
-    assert.equal(m.calls[1].init.headers.get('Last-Event-ID'), 'current');
+    assert.equal(m.calls.find(c => c.url === path + '/events').init.headers.get('Last-Event-ID'), 'current');
+    assert.equal(m.calls.find(c => c.url === path + '/execution/stream').init.headers.get('Last-Event-ID'), 'execution-start');
   } finally { m.cleanup(); }
 });
 
@@ -110,7 +119,7 @@ test('a confirmed public SSE cursor is used on resume, and revoke clears the sha
   try {
     const next = detail({cursor:'next', activities:[{kind:'output', text:'订阅中的结果', occurred_at:'2026-11-24T00:00:00Z'}]});
     m.emit('task.updated', next, 'next'); await pause();
-    assert.match(m.host.textContent, /订阅中的结果/);
+    assert.match(m.host.textContent, /最新可见结果/);
     m.breakStream(); await pause(1130);
     const streams = m.calls.filter(c => c.url.endsWith('/events'));
     assert.ok(streams.length >= 2);
@@ -118,7 +127,7 @@ test('a confirmed public SSE cursor is used on resume, and revoke clears the sha
     m.emit('stream.error', {error:{code:'task_detail_link_unavailable', message:'revoked'}});
     await pause();
     assert.match(m.host.textContent, /无效、已过期或已撤销/);
-    assert.doesNotMatch(m.host.textContent, /订阅中的结果|同一任务/);
+    assert.doesNotMatch(m.host.textContent, /最新可见结果|同一任务/);
   } finally { m.cleanup(); }
 });
 
@@ -134,6 +143,8 @@ test('public write submits steer normally, queues when held, and requires a clic
     const held = detail({cursor:'held', status:'waiting_for_action', permission:'write', can_append:true,
       activities:[{kind:'input_queued', text:'旧补充', occurred_at:'2026-11-24T00:00:00Z'}]});
     m.setState(held); m.emit('task.updated', held, 'held'); await pause();
+    m.emit('user.message', eventRow('user.message','2',{message_id:'supplement',status:'queued',content:[{type:'text',text:'旧补充'}]}),'execution-2',true);
+    await pause();
     assert.match(m.host.querySelector('.event.user').textContent, /任务输入.*旧补充.*已排队/);
     assert.equal(button(m.host, '停止此任务'), undefined);
     enterText(m.host, '挂起时补充'); await nextTick();
@@ -149,6 +160,29 @@ test('public write submits steer normally, queues when held, and requires a clic
     const call = m.calls.find(c => c.url === path + '/continue');
     assert.deepEqual(call.body, {text:'明确开始新一轮', stop_version:'77'});
     assert.ok(call.init.headers.get('Idempotency-Key'));
+  } finally { m.cleanup(); }
+});
+
+test('public tools update in place before completion and resume without duplicating a step', async () => {
+  const m = await fixture();
+  try {
+    const tool = {tool_use_id:'tool-1', name:'run_report', status:'running', input_state:'available', input:{report:'sample'}};
+    m.emit('agent.tool_use', eventRow('agent.tool_use','2',tool), 'execution-2', true);
+    await pause();
+    assert.match(m.host.querySelector('.event.tool').textContent, /run_report/);
+    assert.equal(m.host.querySelectorAll('.event.tool').length, 1);
+    m.breakStream(true); await pause(1130);
+    const streams = m.calls.filter(c => c.url.endsWith('/execution/stream'));
+    assert.equal(streams.at(-1).init.headers.get('Last-Event-ID'), 'execution-2');
+    m.emit('agent.tool_result', eventRow('agent.tool_result','3',{...tool,status:'completed',output_state:'available',output:'report-ready'}), 'execution-3', true);
+    m.emit('agent.tool_use', eventRow('agent.tool_use','4',{...tool,tool_use_id:'tool-2',name:'save_pdf'}),'execution-4',true);
+    await pause();
+    assert.equal(m.host.querySelectorAll('.event.tool').length, 2);
+    assert.match(m.host.textContent, /save_pdf/);
+    m.emit('stream.error', {error:{code:'task_detail_link_unavailable'}}, '', true);
+    await pause();
+    assert.match(m.host.textContent, /无效、已过期或已撤销/);
+    assert.doesNotMatch(m.host.textContent, /run_report|save_pdf/);
   } finally { m.cleanup(); }
 });
 

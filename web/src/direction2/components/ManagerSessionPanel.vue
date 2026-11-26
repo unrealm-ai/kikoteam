@@ -13,15 +13,15 @@ import { clockTime, eventText, presentationRows, sessionStatus as status, taskRe
 const props = defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined }>();
 const emit = defineEmits<{ changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [target: TaskNavigationTarget, turn?: string] }>();
 const flow = useSessionEvents(toRef(props, 'workspace'), toRef(props, 'sessionId'), () => emit('changed'), toRef(props, 'turnId'));
-const { session, loading, loadingOlder, error, connection, olderCursor } = flow;
+const { session } = flow;
+const loading = computed(() => props.publicDetail?.loading.value ?? flow.loading.value);
+const loadingOlder = computed(() => props.publicDetail?.loadingOlder.value ?? flow.loadingOlder.value);
+const olderCursor = computed(() => props.publicDetail ? props.publicDetail.olderCursor.value : flow.olderCursor.value);
+const error = computed(() => props.publicDetail?.executionError.value ?? flow.error.value);
+const connection = computed(() => props.publicDetail?.connection.value ?? flow.connection.value);
 const shared = computed(() => props.publicDetail?.task.value);
-const rows = computed<SessionEvent[]>(() => props.publicDetail ? (shared.value?.activities || []).map((item, index) => ({
-  type: ['input', 'input_queued', 'input_applied'].includes(item.kind) ? 'user.message' : 'agent.message',
-  ...(item.kind === 'input_queued' ? { status: 'queued' } : item.kind === 'input_applied' ? { status: 'input_applied' } : {}),
-  // These keys are local to the presentation; the guest API need not expose internal IDs.
-  session_id: '', seq: String(index + 1), occurred_at: item.occurred_at,
-  content: [{ type: 'text', text: item.text }],
-})) : flow.rows.value);
+const rows = computed(() => props.publicDetail?.rows.value ?? flow.rows.value);
+function reload() { return props.publicDetail ? props.publicDetail.load() : flow.reload(); }
 const writable = computed(() => !props.publicDetail || shared.value?.permission === 'write');
 const canCompose = computed(() => writable.value && !props.readOnly && (props.publicDetail ? !!(shared.value?.can_append || shared.value?.can_continue) : !!session.value?.accepts_input));
 const continuing = computed(() => Boolean(shared.value?.can_continue));
@@ -140,29 +140,28 @@ async function stop() {
   catch (e) { if (id === props.sessionId && w === props.workspace) actionError.value = e instanceof Error ? e.message : '停止失败'; }
   finally { controlBusy.value = false; }
 }
-async function older() { const el = scroll.value, before = el?.scrollHeight || 0; await flow.older(); await nextTick(); if (el) el.scrollTop += el.scrollHeight - before; }
+async function older() { const el = scroll.value, before = el?.scrollHeight || 0; await (props.publicDetail ? props.publicDetail.older() : flow.older()); await nextTick(); if (el) el.scrollTop += el.scrollHeight - before; }
 watch(rows, async () => { const el = scroll.value; const bottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 100; const paging = loadingOlder.value; await nextTick(); if (el && bottom && !paging) el.scrollTop = el.scrollHeight; });
 </script>
 <template>
   <section class="session-panel" :aria-label="title">
     <header v-if="!embedded"><div class="session-heading"><span class="eyebrow">{{ task ? '任务执行过程' : '与你的 AI 员工协作' }}</span><strong>{{ title }}</strong></div><span class="connection muted"><i :class="{ connected: connection === '已连接' }" aria-hidden="true" />{{ connection || '正在连接' }} · {{ status(session?.execution.state) }}</span><NButton v-if="task" size="small" @click="emit('close')">关闭任务详情</NButton></header>
     <p v-if="session?.execution.block_reason" class="warning">{{ status(session.execution.block_reason) }}</p>
-    <div v-if="error" class="error" role="alert">{{ error }} <NButton size="small" @click="flow.reload">重新加载</NButton></div>
+    <div v-if="error" class="error" role="alert">{{ error }} <NButton size="small" @click="reload">重新加载</NButton></div>
     <div class="session-content"><div ref="scroll" class="messages">
       <NSkeleton v-if="loading" text :repeat="4" />
-      <p v-if="shared?.activity_truncated" class="muted" role="note">仅显示近期执行记录。</p>
       <NButton v-if="olderCursor" size="small" :loading="loadingOlder" @click="older">加载更早历史消息</NButton>
       <p v-if="!loading && !rows.length" class="empty muted">{{ taskCenter || task ? '暂无执行记录。' : '暂无消息，发送工作需求开始协作。' }}</p>
       <article v-for="{ event: row, replies } in messages" :key="row.action?.request_id || row.message_id || row.tool_use_id || row.turn_id || row.seq" :class="['event', { user: isUser(row), tool: !!row.tool_use_id, report: row.source_kind === 'task_report', 'turn-event': row.type === 'turn.updated', 'error-event': row.type === 'session.error' }]">
         <template v-if="row.action"><strong>{{ row.action.title }}</strong><p class="body">{{ row.action.message }}</p></template>
-        <SessionToolCall v-else-if="row.tool_use_id" :event="row" :task-title="linkedTask(row)?.title || undefined" :can-open-task="!!toolTaskTarget(row)" @open-task="emit('openTask', $event)" />
-        <SessionTaskReport v-else-if="row.source_kind === 'task_report'" :event="row" :reply="replies" :title="linkedTask(row)?.title || undefined" :can-open-task="!!taskReport(row)?.task" @open-task="emit('openTask', $event, taskReport(row)?.turnID)" />
+        <SessionToolCall v-else-if="row.tool_use_id" :event="row" :task-title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!toolTaskTarget(row)" @open-task="emit('openTask', $event)" />
+        <SessionTaskReport v-else-if="row.source_kind === 'task_report'" :event="row" :reply="replies" :title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!taskReport(row)?.task" @open-task="emit('openTask', $event, taskReport(row)?.turnID)" />
         <template v-else-if="row.type === 'turn.updated'"><span class="muted">本轮：{{ status(row.status) }}</span><p v-if="row.error" class="error">{{ row.error.message }}</p></template>
         <template v-else>
           <div class="message-meta"><strong>{{ row.source_kind === 'work_item_amendment' ? '事项要求更新' : row.source_kind === 'work_item_notice' || row.source_kind === 'work_item_assignment' || row.source_kind === 'work_item_result' ? '事项交接' : isUser(row) ? (publicDetail ? '任务输入' : '你') : row.type === 'session.error' ? '会话提示' : title }}</strong><time v-if="row.occurred_at" :datetime="row.occurred_at">{{ clockTime(row.occurred_at) }}</time><span v-if="row.type === 'agent.thinking'">思考过程</span></div>
           <p v-if="isUser(row)" class="body">{{ eventText(row) }}</p><details v-else-if="row.type === 'agent.thinking'" class="thinking"><summary>查看思考过程</summary><SessionMarkdown :text="eventText(row)" /></details><SessionMarkdown v-else :text="eventText(row)" />
           <template v-for="(file, index) in row.attachments" :key="file.id || file.path || index">
-            <button v-if="liveAttachment(file).status !== 'failed' && (liveAttachment(file).path || file.id && attachmentLookup)" class="attachment-link" :title="liveAttachment(file).path" :disabled="!!file.id && readingAttachments.has(file.id)" @click="downloadAttachment(file)">▤ {{ liveAttachment(file).name }} · {{ liveAttachment(file).path || liveAttachment(file).status === 'ready' ? (file.size_bytes/1024).toFixed(1) + ' KB ↓' : '准备中，点击查看状态' }}</button>
+            <button v-if="!publicDetail && liveAttachment(file).status !== 'failed' && (liveAttachment(file).path || file.id && attachmentLookup)" class="attachment-link" :title="liveAttachment(file).path" :disabled="!!file.id && readingAttachments.has(file.id)" @click="downloadAttachment(file)">▤ {{ liveAttachment(file).name }} · {{ liveAttachment(file).path || liveAttachment(file).status === 'ready' ? (file.size_bytes/1024).toFixed(1) + ' KB ↓' : '准备中，点击查看状态' }}</button>
             <span v-else class="attachment-link" role="status">▤ {{ liveAttachment(file).name }} · {{ liveAttachment(file).status === 'failed' ? '附件不可用' : liveAttachment(file).status === 'ready' ? '已就绪' : '正在准备附件' }}</span>
           </template>
           <small v-if="isUser(row) || row.status && row.status !== 'completed'">{{ row.status === 'queued' && row.delivery_mode === 'steer' ? '待引导' : status(row.status) }}</small>

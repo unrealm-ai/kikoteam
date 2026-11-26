@@ -1,4 +1,5 @@
-import { onScopeDispose, ref, shallowRef } from 'vue';
+import { computed, onScopeDispose, ref, shallowRef } from 'vue';
+import { eventTypes, mergeEvents, projectEvents, type SessionEvent } from '../api/manager';
 import { D2ApiError } from '../api/client';
 import { parseTaskSnapshot, publicTaskApi, type PublicTask, type TaskArtifact } from '../api/public-task';
 
@@ -52,6 +53,9 @@ function requestKey() {
 
 export function usePublicTaskDetail(token: string) {
   const task = shallowRef<PublicTask | null>(null), loading = ref(false), error = ref(''), connection = ref('');
+  const events = shallowRef<SessionEvent[]>([]), olderCursor = ref<string | null>(null), loadingOlder = ref(false), executionError = ref('');
+  let executionTimer: ReturnType<typeof setTimeout> | undefined;
+  let session = '';
   const lifetime = new AbortController();
   let current: AbortController | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   let cursor = '', attemptedCursorRecovery = false, generation = 0, attempts = 0;
@@ -62,11 +66,14 @@ export function usePublicTaskDetail(token: string) {
     current?.abort();
     if (timer) clearTimeout(timer);
     timer = undefined;
+    if (executionTimer) clearTimeout(executionTimer);
+    executionTimer = undefined;
+    loadingOlder.value = false;
   }
 
   function deny() {
     abandon();
-    task.value = null; loading.value = false; cursor = '';
+    task.value = null; events.value = []; session = ''; olderCursor.value = null; executionError.value = ''; loading.value = false; cursor = '';
     connection.value = '订阅已停止'; error.value = '此任务详情链接无效、已过期或已撤销。';
   }
 
@@ -113,18 +120,87 @@ export function usePublicTaskDetail(token: string) {
     }
   }
 
+  function merge(incoming: SessionEvent[]) {
+    if (!session && incoming.length) session = incoming[0]!.session_id;
+    if (incoming.length && !session) throw new Error('任务事件缺少会话标识');
+    events.value = mergeEvents(events.value, incoming, session);
+  }
+
+  async function execution(g: number, signal: AbortSignal, after: string, retries = 0) {
+    try {
+      const response = await publicTaskApi.execution(token, after, signal);
+      if (g !== generation) return;
+      executionError.value = '';
+      await readTaskStream(response, frame => {
+        if (g !== generation) return;
+        if (frame.event === 'stream.error') {
+          const value = JSON.parse(frame.data).error;
+          throw new D2ApiError(value?.code === 'task_detail_link_unavailable' ? 404 : 0, value?.code || '', value?.message || '执行事件连接中断');
+        }
+        if (!eventTypes.includes(frame.event) || !frame.id) throw new Error('无效的执行事件');
+        const item = JSON.parse(frame.data) as SessionEvent;
+        if (item.type !== frame.event) throw new Error('执行事件类型不一致');
+        merge([item]); after = frame.id; retries = 0;
+      });
+      throw new Error('执行事件连接中断');
+    } catch (err) {
+      if (g !== generation) return;
+      if (isDenied(err)) { deny(); return; }
+      if (err instanceof D2ApiError && err.code === 'invalid_cursor' && retries < 3) {
+        await loadExecution(g, signal, true);
+        return;
+      }
+      if (retries >= 3) { executionError.value = '执行过程连接已断开，请重新加载。'; return; }
+      executionTimer = setTimeout(() => void execution(g, signal, after, retries + 1), 1000 * (retries + 1));
+    }
+  }
+
+  async function loadExecution(g: number, signal: AbortSignal, recover = false) {
+    try {
+      const page = await publicTaskApi.history(token, '', AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
+      if (g !== generation) return;
+      if (!page.resume_cursor) throw new Error('执行历史缺少续读游标');
+      if (recover) { events.value = []; session = ''; }
+      merge(page.items);
+      olderCursor.value = page.next_cursor;
+      void execution(g, signal, page.resume_cursor, recover ? 3 : 0);
+    } catch (err) {
+      if (g !== generation) return;
+      if (isDenied(err)) deny();
+      else executionError.value = '无法读取执行过程，请重新加载。';
+    }
+  }
+
+  async function older() {
+    const id = olderCursor.value, g = generation, signal = current?.signal;
+    if (!id || !signal || loadingOlder.value) return;
+    loadingOlder.value = true;
+    try {
+      const page = await publicTaskApi.history(token, id, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
+      if (g !== generation) return;
+      if (page.next_cursor === id) throw new Error('执行历史游标重复');
+      merge(page.items);
+      olderCursor.value = page.next_cursor;
+    } catch (err) {
+      if (g !== generation) return;
+      if (isDenied(err)) deny();
+      else executionError.value = '无法读取更早的执行记录，请重新加载。';
+    } finally { if (g === generation) loadingOlder.value = false; }
+  }
+
   async function load(reset = true) {
     if (!token || lifetime.signal.aborted) return;
     abandon(); attempts = 0;
     if (reset) attemptedCursorRecovery = false;
     const g = generation, handler = current = new AbortController();
     loading.value = !task.value;
-    error.value = '';
+    error.value = ''; executionError.value = '';
     try {
       const snapshot = await publicTaskApi.snapshot(token, AbortSignal.any([handler.signal, AbortSignal.timeout(15_000)]));
       if (g !== generation) return;
       task.value = snapshot; cursor = snapshot.cursor;
       void connect(g, handler.signal);
+      void loadExecution(g, handler.signal);
     } catch (err) {
       if (g !== generation) return;
       if (isDenied(err)) deny();
@@ -162,7 +238,7 @@ export function usePublicTaskDetail(token: string) {
 
   onScopeDispose(() => { abandon(); lifetime.abort(); mutationKeys.clear(); });
   if (token) void load();
-  return { task, loading, error, connection, load, mutate, download };
+  return { task, loading, error, connection, load, mutate, download, rows: computed(() => projectEvents(events.value)), older, olderCursor, loadingOlder, executionError };
 }
 
 export type PublicTaskDetailFlow = ReturnType<typeof usePublicTaskDetail>;

@@ -18,6 +18,8 @@ const publicTaskDetail = "/api/v1/public/task-detail"
 func (s *Server) publicTaskDetailRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+publicTaskDetail, s.getPublicTaskDetail)
 	mux.HandleFunc("GET "+publicTaskDetail+"/events", s.streamPublicTaskDetail)
+	mux.HandleFunc("GET "+publicTaskDetail+"/execution", s.publicTaskExecutionHistory)
+	mux.HandleFunc("GET "+publicTaskDetail+"/execution/stream", s.streamPublicTaskExecution)
 	mux.HandleFunc("GET "+publicTaskDetail+"/artifacts/{artifact_id}", s.downloadPublicTaskArtifact)
 	for _, action := range []string{"append", "stop", "continue"} {
 		mux.HandleFunc("POST "+publicTaskDetail+"/"+action, func(w http.ResponseWriter, r *http.Request) {

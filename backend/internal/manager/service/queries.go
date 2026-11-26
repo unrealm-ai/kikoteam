@@ -228,7 +228,13 @@ func (s *Service) StreamEvents(ctx context.Context, w, actor, id, turn, types, a
 	if err != nil {
 		return nil, "", err
 	}
-	scope := eventScope(w, actor, id, turn, types)
+	return s.readEventStream(eventScope(w, actor, id, turn, types), after, func(f EventFilter) ([]json.RawMessage, int64, error) {
+		f.Turn, f.Type = turn, types
+		return s.Store.Events(ctx, w, actor, id, f)
+	})
+}
+
+func (s *Service) readEventStream(scope, after string, load loadEvents) ([]json.RawMessage, string, error) {
 	seq := int64(0)
 	if after != "" {
 		v, e := s.decodeCursor(after, scope)
@@ -240,7 +246,7 @@ func (s *Service) StreamEvents(ctx context.Context, w, actor, id, turn, types, a
 		}
 		seq = v.Seq
 	}
-	items, high, err := s.Store.Events(ctx, w, actor, id, EventFilter{Turn: turn, Type: types, After: seq, High: -1, Limit: 200})
+	items, high, err := load(EventFilter{After: seq, High: -1, Limit: 200})
 	if err != nil {
 		return nil, "", err
 	}

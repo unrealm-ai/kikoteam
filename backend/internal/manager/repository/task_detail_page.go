@@ -57,12 +57,11 @@ const taskDetailSteps = `SELECT 'progress', CASE event->>'status'
  OR (event->>'type'='agent.tool_result' AND event->>'status' IN ('completed','failed','canceled','unknown')))`
 
 const taskDetailArtifacts = `SELECT f.id,f.version,f.name,f.media_type,f.size_bytes FROM manager_task_artifacts f
- JOIN manager_turns t ON t.id=f.turn_id JOIN manager_inputs i ON i.id=t.input_id
- WHERE t.session_id=$1 AND ($2::uuid IS NULL OR f.id=$2) AND NOT t.has_unknown_tool_results
- AND ($3 AND t.status='completed' AND i.channel_principal_id=$4::uuid AND i.channel_generation=$5 AND manager_input_actor_allowed(i.id)
-      OR $6 AND EXISTS(SELECT FROM manager_channel_deliveries d JOIN manager_channel_inbox n ON n.id=d.inbox_id
-         WHERE d.artifact_id=f.id AND d.status='sent' AND d.confirmed_at IS NOT NULL AND n.conversation_id=$7
-         AND d.binding_id=$8::uuid AND n.external_chat_id=$9 AND n.thread_id=$10 AND d.connection_generation=$11))
+ JOIN manager_turns t ON t.id=f.turn_id
+ WHERE t.session_id=$1 AND ($2::uuid IS NULL OR f.id=$2)
+ AND t.status='completed' AND NOT t.has_unknown_tool_results
+ AND ($3::uuid IS NULL OR EXISTS (SELECT FROM manager_trigger_notifications n
+     WHERE n.id=$3 AND n.source_turn_id=t.id AND n.status='sent' AND n.confirmed_at IS NOT NULL))
  ORDER BY f.created_at DESC,f.id DESC LIMIT 100`
 
 func ownTaskDetail(g service.TaskDetailGrant) bool {
@@ -168,12 +167,8 @@ func taskDetailActivities(ctx context.Context, tx *sql.Tx, g service.TaskDetailG
 }
 
 func taskDetailArtifactRows(ctx context.Context, tx *sql.Tx, g service.TaskDetailGrant, id string) ([]service.Artifact, error) {
-	d := g.Destination
-	// Current trigger notices carry no published artifact attachment fact.
-	groupPublished := g.TriggerNotificationID == "" && d.ChatType == "group"
 	artifacts := []service.Artifact{}
-	rows, err := tx.QueryContext(ctx, taskDetailArtifacts, g.SessionID, nullID(id), ownTaskDetail(g), nullID(g.SubjectID),
-		g.SubjectGeneration, groupPublished, d.ConversationID, nullID(d.BindingID), d.ChatID, d.TopicID, d.Generation)
+	rows, err := tx.QueryContext(ctx, taskDetailArtifacts, g.SessionID, nullID(id), nullID(g.TriggerNotificationID))
 	if err != nil {
 		return nil, err
 	}

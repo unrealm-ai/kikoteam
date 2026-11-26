@@ -177,6 +177,18 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', visibility);
 });
 defineExpose({ refresh: load });
+function taskStatusTone(task: TaskRecord) {
+  const execution = task.execution;
+  if (task.planning_state === 'planned' || task.planning_state === 'canceled') return 'neutral';
+  if (execution.state === 'blocked' || execution.required_actions?.length) return 'warning';
+  if (execution.state === 'queued' || execution.state === 'running' || execution.state === 'stopping' ||
+      (execution.state === 'idle' && (execution.background_process_count ?? 0) > 0)) return 'info';
+  if (execution.state !== 'idle') return 'neutral';
+  if (task.latest_turn?.status === 'completed') return 'success';
+  if (task.latest_turn?.status === 'failed') return 'danger';
+  return 'neutral';
+}
+const rowDotClass = { info: 'running', warning: 'blocked', success: 'completed', danger: 'failed', neutral: '' };
 function elapsed(t: TaskRecord) {
   const turn = t.latest_turn;
   if (!turn?.finished_at) return '—';
@@ -288,14 +300,7 @@ function openWork(id: string) {
               <div class="task-title-line">
                 <span
                   class="row-dot"
-                  :class="{
-                    running: task.execution.state === 'running',
-                    blocked:
-                      task.execution.state === 'blocked' ||
-                      !!task.execution.required_actions?.length,
-                    completed: task.latest_turn?.status === 'completed',
-                    failed: task.latest_turn?.status === 'failed',
-                  }"
+                  :class="rowDotClass[taskStatusTone(task)]"
                   aria-hidden="true"
                 />
                 <button class="task-title" @click.stop="open(task.task_id)">
@@ -324,16 +329,7 @@ function openWork(id: string) {
             <td>
               <span
                 class="status-pill"
-                :class="{
-                  info: task.execution.state === 'running',
-                  warning:
-                    task.execution.state === 'blocked' ||
-                    !!task.execution.required_actions?.length,
-                  success:
-                    task.execution.state === 'idle' &&
-                    task.latest_turn?.status === 'completed',
-                  danger: task.latest_turn?.status === 'failed',
-                }"
+                :class="taskStatusTone(task)"
                 ><span class="status-dot" />{{
                   task.planning_state === 'planned'
                     ? '待办：尚未启动'

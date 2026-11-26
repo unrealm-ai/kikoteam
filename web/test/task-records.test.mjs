@@ -634,3 +634,31 @@ test('artifacts surface supports preview/source toggle, copy action, and drawer 
     await m.cleanup();
   }
 });
+
+test('task list colors current work before the latest finished turn and keeps both indicators in sync', async () => {
+  const cases = [
+    ['queued', 'failed', {}, 'info', 'running'],
+    ['running', 'failed', {}, 'info', 'running'],
+    ['stopping', 'completed', {}, 'info', 'running'],
+    ['blocked', 'failed', {}, 'warning', 'blocked'],
+    ['idle', 'failed', {required_actions:[{type:'human_confirmation',message:'请确认'}]}, 'warning', 'blocked'],
+    ['idle', 'completed', {required_actions:[{type:'work_item',message:'等待交接'}]}, 'warning', 'blocked'],
+    ['idle', 'failed', {background_process_count:1}, 'info', 'running'],
+    ['idle', 'completed', {}, 'success', 'completed'],
+    ['idle', 'failed', {}, 'danger', 'failed'],
+  ];
+  const items = cases.map(([state, status, pending], i) => {
+    const t = task('tone-' + i);
+    return {...t, execution:{...t.execution, state, ...pending}, latest_turn:{...t.latest_turn,status}};
+  });
+  const m = await mount(List, url => url.includes('/tasks?') ? Response.json({items,next_cursor:null}) : null);
+  try {
+    const rows = [...m.host.querySelectorAll('tbody tr')];
+    assert.equal(rows.length,cases.length);
+    cases.forEach(([, status, , tone, dot], i) => {
+      assert.equal(rows[i].querySelector('.status-pill').className,'status-pill ' + tone);
+      assert.equal(rows[i].querySelector('.row-dot').className,'row-dot ' + dot);
+      assert.match(rows[i].querySelector('.stage-subline').textContent,status === 'failed' ? /最近：.*失败/s : /最近：.*本轮完成/s);
+    });
+  } finally {await m.cleanup();}
+});

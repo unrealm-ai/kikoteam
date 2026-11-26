@@ -64,7 +64,7 @@ task 的创建请求将 mode 改为 task，保持同一个 Conversation。通常
 
 Runner 的 Backend 配置领取 token 只允许读取指定环境/管理 Engine 的配置；Engine→Runner 管理随机 token 与 MCP token 各自独立。builtin 仅监听 loopback 动态端口；每 Session 使用独立进程和 Token，可信执行窗口带 assignment/generation/Harness/Turn。工具参数不能覆盖这些身份。管理路径见 [Runner 契约](../../sandbox-runner/contracts/openapi.yaml)，Backend 内部注册/分配/环境配置见[内部契约](../../backend/contracts/internal/openapi.yaml)。
 
-Backend 每秒扫描待办/分配，并先拒绝停用/旧受理代次或已撤权主体的排队 Input，不为其启动执行资源。Engine 每秒取自己的分配，每 Session 串行领取。默认最多 8 个 Session（KIKO_ENGINE_CAPACITY）；无活动和后台工作后默认 1 分钟释放 Pi、所属 builtin 与分配（KIKO_ENGINE_IDLE_TIMEOUT，至少 1s）。Token 和账本保留，后续 Input 加载原生历史并重建端点。Runner 独立常驻；父归档、全部 Session 停稳并释放后回收 Runner，project 与历史继续保留。
+Backend 每秒扫描待办/分配，并先拒绝停用/旧受理代次或已撤权主体的排队 Input，不为其启动执行资源。Engine 每秒取自己的分配，每 Session 串行领取。每个 Engine 默认最多同时绑定 100 个 Session（KIKO_ENGINE_CAPACITY）；无活动和后台工作后默认 1 分钟释放 Pi、所属 builtin 与分配（KIKO_ENGINE_IDLE_TIMEOUT，至少 1s）。Token 和账本保留，后续 Input 加载原生历史并重建端点。Runner 独立常驻；父归档、全部 Session 停稳并释放后回收 Runner，project 与历史继续保留。
 
 正常退出后新 Engine 可在相同 host_id 取得已确认 stopped 的环境，加载原生历史；MCP Token 不轮换。原生数据不可用不重建空会话。意外失联且旧执行结果未知时不自动接管，不按历史 PID 杀进程；保留分配/账本并报告无法确认，需先人工核对。没有自动检查点、自动重放或跨机恢复。
 

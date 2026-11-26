@@ -120,6 +120,7 @@ services:
       KIKO_ENGINE_TOKEN: ${KIKO_ENGINE_TOKEN:-}
       KIKO_ENGINE_ADDRESS: 127.0.0.1:8083
       KIKO_ENGINE_HOST_ID: ${COMPOSE_PROJECT_NAME}
+      KIKO_ENGINE_CAPACITY: ${KIKO_ENGINE_CAPACITY:-}
     depends_on:
       event-hub:
         condition: service_healthy

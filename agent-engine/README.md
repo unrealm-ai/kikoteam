@@ -6,7 +6,7 @@
 
 **实施进度（2026-11-17）**：已接通注册/心跳、Backend 分配、chat/task 串行执行、可靠事件、停止和原生历史继续。使用未修改的 Pi 1.5.2，通过原生 `--mode rpc` 直连；runtime 管 Conversation Runner 和 Session Pi/builtin 窗口。chat 挂载 task_delegation，Web 固定私聊按输入挂载[人工确认 MCP](../backend/docs/human-requests.md#内部-mcp-接口)。task 支持自身 builtin、固定版本 Skill、免认证及通过 Backend 业务连接访问的远程 MCP，并通过 Pi 公开扩展钩子逐调用授权。实际范围和验收见[运行说明](../docs/operations/minimal-agent-runtime.md)。
 
-开发启动：在仓库根目录设置 DATABASE_URL、KIKO_BACKEND_URL、KIKO_ENGINE_TOKEN（32 字节以上）、KIKO_REPO_ROOT，再运行 `go run ./cmd/agent-engine`（工作目录 agent-engine）。KIKO_STORAGE_LOCAL_ROOT 默认为 ~/.kiko，KIKO_ENGINE_HOST_ID 默认为宿主名，KIKO_ENGINE_CAPACITY 默认为 8。Backend 同时设置相同 KIKO_ENGINE_TOKEN 才开启分配。部署须将同一份支持跨宿主文件锁的 KIKO_STORAGE_LOCAL_ROOT 挂载给 Backend 与所有 Engine，宿主名用于诊断。
+开发启动：在仓库根目录设置 DATABASE_URL、KIKO_BACKEND_URL、KIKO_ENGINE_TOKEN（32 字节以上）、KIKO_REPO_ROOT，再运行 `go run ./cmd/agent-engine`（工作目录 agent-engine）。KIKO_STORAGE_LOCAL_ROOT 默认为 ~/.kiko，KIKO_ENGINE_HOST_ID 默认为宿主名，KIKO_ENGINE_CAPACITY 默认为 100，表示每个 Engine 同时绑定的 Session 上限。Backend 同时设置相同 KIKO_ENGINE_TOKEN 才开启分配。部署须将同一份支持跨宿主文件锁的 KIKO_STORAGE_LOCAL_ROOT 挂载给 Backend 与所有 Engine，宿主名用于诊断。
 
 > **2026-11-16 关系与生命周期已确认**：一 Task 一 task Session，共享环境归 Conversation；创建、停止、归档、首版放置及三层回收按[业务会话与共享环境生命周期](../docs/architecture/conversation-lifecycle.md)。下文保留完整目标范围；当前最小实现与限制见仓库运行说明和实施计划。
 

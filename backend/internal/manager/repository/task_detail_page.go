@@ -38,7 +38,7 @@ const taskDetailOwnSubmissions = `SELECT CASE WHEN i.status='queued' THEN 'input
  AND manager_input_actor_allowed(i.id)`
 
 // Read only the event status, not any result, tool payload, text, diagnostic
-// reason or embedded task identity. Trigger notifications are fixed results.
+// reason or embedded task identity.
 const taskDetailProgress = `SELECT 'progress',CASE event->>'status'
  WHEN 'running' THEN '开始执行' WHEN 'stopping' THEN '正在停止' WHEN 'completed' THEN '本轮执行完成'
  WHEN 'failed' THEN '本轮执行失败' WHEN 'canceled' THEN '本轮执行已取消'
@@ -60,8 +60,6 @@ const taskDetailArtifacts = `SELECT f.id,f.version,f.name,f.media_type,f.size_by
  JOIN manager_turns t ON t.id=f.turn_id
  WHERE t.session_id=$1 AND ($2::uuid IS NULL OR f.id=$2)
  AND t.status='completed' AND NOT t.has_unknown_tool_results
- AND ($3::uuid IS NULL OR EXISTS (SELECT FROM manager_trigger_notifications n
-     WHERE n.id=$3 AND n.source_turn_id=t.id AND n.status='sent' AND n.confirmed_at IS NOT NULL))
  ORDER BY f.created_at DESC,f.id DESC LIMIT 100`
 
 func ownTaskDetail(g service.TaskDetailGrant) bool {
@@ -99,15 +97,6 @@ func (s *Store) TaskDetailProjection(ctx context.Context, grant service.TaskDeta
 	if !ownTaskDetail(g) {
 		view.Title = "任务详情"
 	}
-	// A notification grants access to that published outcome, not future turns
-	// or a mutable task title that was not shown in that notification.
-	if g.TriggerNotificationID != "" {
-		view.Title = "任务结果"
-		if err = tx.QueryRowContext(ctx, `SELECT result_status FROM manager_trigger_notifications
- WHERE id=$1 AND task_id=$2 AND conversation_id=$3 AND status='sent' AND confirmed_at IS NOT NULL`, g.TriggerNotificationID, g.TaskID, g.Destination.ConversationID).Scan(&view.Status); err != nil {
-			return service.TaskDetailSnapshot{}, visibleError(err)
-		}
-	}
 	if view.Progress, err = publicTaskProgress(ctx, tx, g, st, view.Status); err != nil {
 		return service.TaskDetailSnapshot{}, err
 	}
@@ -133,15 +122,14 @@ func (s *Store) TaskDetailProjection(ctx context.Context, grant service.TaskDeta
 func taskDetailActivities(ctx context.Context, tx *sql.Tx, g service.TaskDetailGrant) ([]service.TaskDetailActivity, bool, error) {
 	d := g.Destination
 	query, args := taskDetailPublished, []any{g.TaskID, nullID(g.TriggerNotificationID), d.ConversationID, nullID(d.BindingID), d.ChatID, d.TopicID, d.Generation}
-	if g.TriggerNotificationID == "" {
-		// Progress uses the Session, while the publication filters use Task.
-		query += " UNION ALL " + taskDetailProgress
-		args = append(args, g.SessionID)
-		if ownTaskDetail(g) {
-			query += " UNION ALL " + taskDetailSteps + " UNION ALL " + taskDetailOwnResults
-			query += " UNION ALL " + taskDetailOwnSubmissions
-			args = append(args, g.SubjectID, g.SubjectGeneration, g.ID)
-		}
+	// Keep notification text bound to its original delivery, but show live
+	// milestones from the same Session for all task-detail grants.
+	query += " UNION ALL " + taskDetailProgress
+	args = append(args, g.SessionID)
+	if ownTaskDetail(g) {
+		query += " UNION ALL " + taskDetailSteps + " UNION ALL " + taskDetailOwnResults
+		query += " UNION ALL " + taskDetailOwnSubmissions
+		args = append(args, g.SubjectID, g.SubjectGeneration, g.ID)
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT kind,text,ts FROM (`+query+`) AS activity(kind,text,ts) WHERE text IS NOT NULL AND ts IS NOT NULL ORDER BY ts DESC,kind,text LIMIT 121`, args...)
 	if err != nil {
@@ -168,7 +156,7 @@ func taskDetailActivities(ctx context.Context, tx *sql.Tx, g service.TaskDetailG
 
 func taskDetailArtifactRows(ctx context.Context, tx *sql.Tx, g service.TaskDetailGrant, id string) ([]service.Artifact, error) {
 	artifacts := []service.Artifact{}
-	rows, err := tx.QueryContext(ctx, taskDetailArtifacts, g.SessionID, nullID(id), nullID(g.TriggerNotificationID))
+	rows, err := tx.QueryContext(ctx, taskDetailArtifacts, g.SessionID, nullID(id))
 	if err != nil {
 		return nil, err
 	}

@@ -200,9 +200,6 @@ func authenticatedTaskProgress(ctx context.Context, tx *sql.Tx, workspace, actor
 // Public links preserve their existing grant projection: no employee or
 // recipient labels, questions, assignment details or unrelated receipts.
 func publicTaskProgress(ctx context.Context, tx *sql.Tx, g service.TaskDetailGrant, st service.SessionState, status string) (*service.PublicTaskProgress, error) {
-	if g.TriggerNotificationID != "" {
-		return &service.PublicTaskProgress{Phase: status}, nil
-	}
 	phase := visibleTaskBlock(status, st.Session.Execution)
 	if status == "queued" {
 		var preparing bool
@@ -230,6 +227,18 @@ func publicTaskProgress(ctx context.Context, tx *sql.Tx, g service.TaskDetailGra
 				}
 				return &service.PublicTaskProgress{Phase: phase}, nil
 			}
+		}
+	}
+	if status == "idle" && g.TriggerNotificationID != "" {
+		var last string
+		err := tx.QueryRowContext(ctx, `SELECT `+taskVisibleTurnStatus+` FROM manager_sessions s WHERE s.id=$1 AND s.workspace_id=$2`, g.SessionID, g.WorkspaceID).Scan(&last)
+		if err != nil {
+			return nil, err
+		}
+		if last == "unknown" {
+			phase = last
+		} else if last != "" {
+			phase = service.TaskProgressPhase("started", "active", status, last, false, false)
 		}
 	}
 	if status == "idle" && ownTaskDetail(g) {

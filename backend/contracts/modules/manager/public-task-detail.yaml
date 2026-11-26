@@ -32,7 +32,7 @@ execution:
   get:
     operationId: getPublicTaskExecution
     summary: Read a page of Web-equivalent execution events for the granted task
-    description: The grant selects the task Session and, for a trigger notification, its source Turn. No caller-supplied task or Session identifier is used.
+    description: The grant selects one full task Session, including confirmed scheduled and Hook result notifications. No caller-supplied task, Session, or Turn identifier is used.
     security:
     - taskDetailBearer: []
     parameters:

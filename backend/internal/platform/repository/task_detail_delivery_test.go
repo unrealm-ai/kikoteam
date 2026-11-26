@@ -1,12 +1,21 @@
 package repository
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	managercontroller "github.com/unrealm-ai/kikoteam/backend/internal/manager/controller"
 
 	managerrepo "github.com/unrealm-ai/kikoteam/backend/internal/manager/repository"
 	manager "github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/integration/skillasset"
 )
 
 func TestTaskDetailChannelDispatchAndSilentContext(t *testing.T) {
@@ -153,6 +162,7 @@ VALUES($1,$2,$3,true,$4,1,'tenant','group',$5)`, target, w, agent, binding, dest
 	if err != nil || len(claims) != 4 {
 		t.Fatalf("notification claims: %d %v", len(claims), err)
 	}
+	var card, fallback manager.ChannelDelivery
 	for _, chat := range []string{"old-hub-group", "new-hub-group", "fallback-group", "disabled-group"} {
 		for _, d := range claims {
 			if d.TaskDetailURL != "" {
@@ -181,6 +191,9 @@ VALUES($1,$2,$3,true,$4,1,'tenant','group',$5)`, target, w, agent, binding, dest
 				presentation := manager.TaskDetailCardPresentation
 				if chat == "fallback-group" {
 					presentation = manager.TaskDetailLinkPresentation
+					fallback = d
+				} else {
+					card = d
 				}
 				verifyTriggerDetailGrant(t, store, d, presentation)
 			}
@@ -188,6 +201,7 @@ VALUES($1,$2,$3,true,$4,1,'tenant','group',$5)`, target, w, agent, binding, dest
 	}
 	reviewExec(t, db, `UPDATE platform_task_link_settings SET enabled=true WHERE singleton`)
 	verifyTriggerDetailContexts(t, store)
+	verifyTriggerDetailSession(t, store, actor, card, fallback)
 	var grants int
 	if err = db.QueryRow(`SELECT count(*) FROM manager_task_detail_grants WHERE task_id=$1`, task).Scan(&grants); err != nil || grants != 2 {
 		t.Fatalf("unexpected issuance count %d: %v", grants, err)
@@ -213,24 +227,151 @@ func verifyTriggerDetailGrant(t *testing.T, store *managerrepo.Store, d manager.
 	if err != nil || result.CanWrite() || result.TriggerNotificationID != d.ID || result.Destination.ChatID != d.ChatID {
 		t.Fatalf("bad result grant: %q %v", result.Scope, err)
 	}
-	var sourceTurn string
-	if err := store.DB.QueryRowContext(t.Context(), `SELECT source_turn_id FROM manager_trigger_notifications WHERE id=$1`, d.ID).Scan(&sourceTurn); err != nil {
+}
+
+func verifyTriggerDetailSession(t *testing.T, store *managerrepo.Store, actor string, d, fallback manager.ChannelDelivery) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
+	defer cancel()
+	token := strings.TrimPrefix(d.TaskDetailURL, "https://tasks.example.test/tasks/")
+	peerToken := strings.TrimPrefix(fallback.TaskDetailURL, "https://tasks.example.test/tasks/")
+	g, err := store.ResolveTaskDetailGrant(ctx, token)
+	if err != nil {
 		t.Fatal(err)
 	}
-	otherTurn := manager.NewID()
-	for _, sample := range []struct{ turn, value string }{{sourceTurn, "AUTHORIZED_NOTICE_TURN"}, {otherTurn, "OTHER_TURN"}, {"", "SESSION_ONLY"}} {
-		reviewExec(t, store.DB, `WITH s AS (UPDATE manager_sessions SET last_event_seq=last_event_seq+1 WHERE id=$1 RETURNING *)
+	peer, err := store.ResolveTaskDetailGrant(ctx, peerToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := store.DB
+	var sourceTurn, sourceInput string
+	if err = db.QueryRowContext(ctx, `SELECT source_turn_id,source_input_id FROM manager_trigger_notifications WHERE id=$1`, d.ID).Scan(&sourceTurn, &sourceInput); err != nil {
+		t.Fatal(err)
+	}
+	reviewExec(t, db, `UPDATE manager_turns SET turn_no=2 WHERE id=$1`, sourceTurn)
+	reviewExec(t, db, `UPDATE manager_inputs SET seq=2 WHERE id=$1`, sourceInput)
+	reviewExec(t, db, `UPDATE manager_sessions SET last_input_seq=2,last_turn_no=2 WHERE id=$1`, g.SessionID)
+	earlier, later := manager.NewID(), manager.NewID()
+	for idx, turn := range []string{earlier, later} {
+		seq, input := idx*2+1, manager.NewID()
+		reviewExec(t, db, `INSERT INTO manager_inputs(id,workspace_id,session_id,seq,text,status,submitted_by,admission_epoch)
+ VALUES($1,$2,$3,$4,'synthetic continuation','processed',$5,1)`, input, g.WorkspaceID, g.SessionID, seq, actor)
+		reviewExec(t, db, `INSERT INTO manager_turns(id,workspace_id,session_id,input_id,turn_no,assignment_id,generation,status,finished_at)
+ VALUES($1,$2,$3,$4,$5,$6,1,'completed',now())`, turn, g.WorkspaceID, g.SessionID, input, seq, manager.NewID())
+		reviewExec(t, db, `UPDATE manager_inputs SET turn_id=$2 WHERE id=$1`, input, turn)
+	}
+	reviewExec(t, db, `UPDATE manager_sessions SET last_input_seq=3,last_turn_no=3 WHERE id=$1`, g.SessionID)
+	// A second run of the same trigger in the same task space must stay private.
+	otherTask, other := manager.NewID(), manager.NewID()
+	reviewExec(t, db, `INSERT INTO manager_tasks(id,workspace_id,agent_id,task_space_id,trigger_id,trigger_version)
+ SELECT $1,workspace_id,agent_id,task_space_id,trigger_id,trigger_version FROM manager_tasks WHERE id=$2`, otherTask, g.TaskID)
+	reviewExec(t, db, `INSERT INTO manager_sessions(id,workspace_id,agent_id,task_space_id,task_id,trigger_id,trigger_version,mode,configuration,last_input_seq,last_turn_no)
+ SELECT $1,workspace_id,agent_id,task_space_id,id,trigger_id,trigger_version,'task','{}',1,1 FROM manager_tasks WHERE id=$2`, other, otherTask)
+	appendEvent := func(session, turn, kind, status, tag string) {
+		t.Helper()
+		reviewExec(t, db, `WITH s AS (UPDATE manager_sessions SET last_event_seq=last_event_seq+1 WHERE id=$1 RETURNING *)
  INSERT INTO manager_session_events(workspace_id,session_id,seq,event)
- SELECT workspace_id,id,last_event_seq,jsonb_build_object('session_id',id,'seq',last_event_seq::text,'type','agent.tool_result','turn_id',NULLIF($2::text,''),'output',$3::text) FROM s`, result.SessionID, sample.turn, sample.value)
+ SELECT workspace_id,id,last_event_seq,jsonb_build_object('session_id',id,'seq',last_event_seq::text,'type',$3::text,'status',$4::text,'turn_id',NULLIF($2::text,''),'output',$5::text) FROM s`, session, turn, kind, status, tag)
 	}
-	svc := &manager.Service{Store: store, CursorSecret: []byte(strings.Repeat("s", 32))}
-	history, err := svc.PublicTaskEventHistory(t.Context(), token, "")
-	blob, marshalErr := json.Marshal(history.Items)
-	if err != nil || marshalErr != nil || !strings.Contains(string(blob), "AUTHORIZED_NOTICE_TURN") ||
-		strings.Contains(string(blob), "OTHER_TURN") || strings.Contains(string(blob), "SESSION_ONLY") {
-		t.Fatalf("trigger grant did not pin its execution history to the source turn: %s %v %v", blob, err, marshalErr)
-	}
+	appendEvent(g.SessionID, earlier, "agent.tool_result", "completed", "EARLIER_TURN")
+	appendEvent(g.SessionID, sourceTurn, "agent.tool_result", "completed", "NOTICE_TURN")
+	appendEvent(g.SessionID, "", "turn.updated", "completed", "SESSION_EVENT")
+	appendEvent(other, "", "agent.tool_result", "completed", "OTHER_SESSION")
 
+	svc := &manager.Service{Store: store, CursorSecret: []byte(strings.Repeat("s", 32))}
+	mux := http.NewServeMux()
+	(&managercontroller.Server{Service: svc}).Routes(mux)
+	client := taskDetailPageClient{mux, token}
+	var history manager.EventPage
+	raw := client.request(t, "GET", "/execution", "", "", "", 200).Body.Bytes()
+	if err = json.Unmarshal(raw, &history); err != nil || history.ResumeCursor == nil {
+		t.Fatalf("invalid execution history: %v", err)
+	}
+	if bytes.Contains(raw, []byte("OTHER_SESSION")) {
+		t.Fatal("trigger grant exposed a different Session")
+	}
+	for _, tag := range []string{"EARLIER_TURN", "NOTICE_TURN", "SESSION_EVENT"} {
+		if !bytes.Contains(raw, []byte(tag)) {
+			t.Fatalf("trigger history missed %s", tag)
+		}
+	}
+	api := httptest.NewServer(mux)
+	defer api.Close()
+	req, err := http.NewRequestWithContext(ctx, "GET", api.URL+taskDetailPagePath+"/execution/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Last-Event-ID", *history.ResumeCursor)
+	resp, err := api.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("stream handshake: %d", resp.StatusCode)
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	waitEvent := func(tag string) {
+		t.Helper()
+		for scanner.Scan() {
+			if strings.HasPrefix(scanner.Text(), "data: ") && strings.Contains(scanner.Text(), tag) {
+				return
+			}
+		}
+		t.Fatalf("stream did not deliver %s: %v", tag, scanner.Err())
+	}
+	appendEvent(g.SessionID, later, "agent.tool_result", "completed", "LATER_TURN")
+	waitEvent("LATER_TURN")
+
+	assets, err := skillasset.NewStore(ctx, skillasset.Config{LocalRoot: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.WorkAssets = assets
+	content := []byte("synthetic task artifact")
+	version, err := assets.PutWorkFile(ctx, g.WorkspaceID, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := func(turn string) string {
+		t.Helper()
+		id := manager.NewID()
+		reviewExec(t, db, `INSERT INTO manager_task_artifacts(id,turn_id,path,name,media_type,version,size_bytes)
+ VALUES($1,$2,'result.txt','result.txt','text/plain',$3,$4)`, id, turn, version, len(content))
+		return id
+	}
+	earlierArtifact, laterArtifact := file(earlier), file(later)
+	otherInput, otherTurn := manager.NewID(), manager.NewID()
+	reviewExec(t, db, `INSERT INTO manager_inputs(id,workspace_id,session_id,seq,text,status,submitted_by,admission_epoch) VALUES($1,$2,$3,1,'other Session','processed',$4,1)`, otherInput, g.WorkspaceID, other, actor)
+	reviewExec(t, db, `INSERT INTO manager_turns(id,workspace_id,session_id,input_id,turn_no,assignment_id,generation,status,finished_at)
+ VALUES($1,$2,$3,$4,1,$5,1,'completed',now())`, otherTurn, g.WorkspaceID, other, otherInput, manager.NewID())
+	client.request(t, "GET", "/artifacts/"+file(otherTurn), "", "", "", 404)
+	for _, id := range []string{earlierArtifact, laterArtifact} {
+		if !bytes.Equal(client.request(t, "GET", "/artifacts/"+id, "", "", "", 200).Body.Bytes(), content) {
+			t.Fatal("trigger read-only grant must be able to download artifacts across the Session")
+		}
+	}
+	view := detailResponse(t, client.request(t, "GET", "", "", "", "", 200))
+	if view.Permission != "read" || view.CanAppend || view.CanStop || view.CanContinue || len(view.Artifacts) != 2 || view.Progress == nil || view.Progress.Phase != "completed" {
+		t.Fatalf("unexpected trigger overview: %+v", view)
+	}
+	reviewExec(t, db, `UPDATE manager_turns SET status='running',finished_at=NULL WHERE id=$1`, later)
+	reviewExec(t, db, `UPDATE manager_sessions SET active_turn_id=$2 WHERE id=$1`, g.SessionID, later)
+	view = detailResponse(t, client.request(t, "GET", "", "", "", "", 200))
+	if view.Status != "running" || view.Progress == nil || view.Progress.Phase != "running" {
+		t.Fatalf("overview stayed on the old notification status: %s %+v", view.Status, view.Progress)
+	}
+	if err = store.RevokeTaskDetailGrant(ctx, g.WorkspaceID, g.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent("task_detail_link_unavailable")
+	client.request(t, "GET", "/execution", "", "", "", 404)
+	client.request(t, "GET", "/artifacts/"+earlierArtifact, "", "", "", 404)
+	reviewExec(t, db, `UPDATE manager_task_detail_grants SET issued_at=now()-interval '4 days',expires_at=now()-interval '1 day' WHERE id=$1`, peer.ID)
+	expired := taskDetailPageClient{mux, peerToken}
+	expired.request(t, "GET", "/execution/stream", "", "", "", 404)
+	expired.request(t, "GET", "/artifacts/"+earlierArtifact, "", "", "", 404)
 }
 
 func verifyTriggerDetailContexts(t *testing.T, store *managerrepo.Store) {

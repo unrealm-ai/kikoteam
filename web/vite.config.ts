@@ -16,8 +16,12 @@ async function loadWebLicensesPlugin(): Promise<PluginOption[]> {
     : [];
 }
 
-export default defineConfig(async () => ({
-  define: { 'import.meta.env.VITE_PLATFORM_REAL': JSON.stringify(useRealBackend || process.env['NODE_ENV'] === 'production') },
+export default defineConfig(async ({ command, mode }) => ({
+  define: {
+    'import.meta.env.VITE_PLATFORM_REAL': JSON.stringify(
+      useRealBackend || command === 'build' || mode === 'production' || process.env['NODE_ENV'] === 'production'
+    ),
+  },
   plugins: [
     vue(),
     ...(await loadWebLicensesPlugin()),

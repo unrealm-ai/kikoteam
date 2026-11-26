@@ -342,6 +342,7 @@ const d2ViewTitleMap: Record<string, string> = {
   market: 'AI 员工市场',
   tasks: '任务',
   resources: '资源库',
+  credits: '我的积分',
   settings: '设置'
 };
 
@@ -369,7 +370,7 @@ async function refreshHumanCount() {
   try {
     const result = await humanRequestsApi.summary(workspace);
     if (request === humanCountRequest && workspace === activeWorkspaceId.value && shellStatus.value === 'ready') {
-      pendingApprovalsCount.value = result.pending;
+      pendingApprovalsCount.value = typeof result?.pending === 'number' && Number.isFinite(result.pending) ? result.pending : 0;
     }
   } catch {
     // The inbox owns load errors. Keep the last successful count.

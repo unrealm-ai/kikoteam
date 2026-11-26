@@ -597,7 +597,7 @@ onUnmounted(() => {
   border-left: 3px solid var(--id-status-danger-dot);
 }
 .approval-card.highlighted {
-  border-color: var(--id-accent);
+  border-color: var(--id-accent-primary);
   box-shadow: var(--id-focus-ring);
 }
 .blocked-alert-box {

@@ -149,7 +149,7 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
       <div class="members-table-card">
         <div class="accounts-toolbar">
           <div class="search">
-            <NInput v-model:value="q" size="small" clearable placeholder="搜索名称或邮箱" @keyup.enter="page=1;load()"/>
+            <NInput v-model:value="q" size="small" clearable placeholder="搜索名称或邮箱" @keyup.enter="page=1;load()" @clear="q='';page=1;load()"/>
             <NButton size="small" secondary @click="page=1;load()">搜索</NButton>
           </div>
           <span class="neutral-pill tabular-num">共 {{ total }} 位用户</span>

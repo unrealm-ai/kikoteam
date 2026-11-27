@@ -124,11 +124,10 @@ func (s *HostedAssistantStore) provision(ctx context.Context, tx *sql.Tx, w stri
 	if err = at.EnsureModelKey(ctx, a.ID); err != nil {
 		return "", err
 	}
-	for _, key := range []string{"platform", "demo"} {
-		if err = (&packageTx{model: m}).Save(ctx, service.NewAssistantPackage(a.ID, owner, key), true); err != nil {
-			return "", err
-		}
+	if err = (&packageTx{model: m}).Save(ctx, service.NewAssistantDemoPackage(a.ID), true); err != nil {
+		return "", err
 	}
+
 	_, err = tx.ExecContext(ctx, "UPDATE platform_workspaces SET assistant_agent_id=$2 WHERE id=$1", w, a.ID)
 	return "provisioned", err
 }

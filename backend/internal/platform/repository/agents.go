@@ -24,6 +24,15 @@ type agentTx struct {
 }
 
 func (t *agentTx) Member(ctx context.Context, a string) (service.Member, error) {
+	if caller, ok := service.EmployeeManagementFrom(ctx); ok {
+		isAssistant, err := liveManagementCaller(ctx, t.model, caller)
+		if err != nil {
+			return service.Member{}, err
+		}
+		if !isAssistant || caller.Channel || caller.Actor != a {
+			return service.Member{}, managementDenied()
+		}
+	}
 	return t.model.Member(ctx, a)
 }
 func (t *agentTx) Model(ctx context.Context, id string) (service.ModelProfile, error) {

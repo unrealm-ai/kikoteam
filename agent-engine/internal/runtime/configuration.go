@@ -64,8 +64,17 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 		cfg.HumanMCPToken = ""
 		cfg.HumanToolsToken = ""
 	}
-	if cfg.AssistantMCPToken != "" && !cfg.ReportOnly &&
-		(current.Mode == "chat" && cfg.AssistantToolSet == "platform" || current.Mode == "task" && cfg.AssistantToolSet == "demo") {
+	if current.Mode == "task" && cfg.EmployeeManagementToken != "" && !cfg.ReportOnly {
+		out.MCP["employee_management"] = map[string]any{
+			"url": w.Backend.URL + "/mcp/assistant/platform",
+			"headers": map[string]string{
+				"Authorization":          "Bearer " + cfg.EmployeeManagementToken,
+				"X-Kiko-Assistant-Input": turn.Input.ID,
+			},
+			"exposure": "direct",
+		}
+	}
+	if cfg.AssistantMCPToken != "" && !cfg.ReportOnly && current.Mode == "task" && cfg.AssistantToolSet == "demo" {
 		out.MCP["assistant_"+cfg.AssistantToolSet] = map[string]any{
 			"url": w.Backend.URL + "/mcp/assistant/" + cfg.AssistantToolSet,
 			"headers": map[string]string{

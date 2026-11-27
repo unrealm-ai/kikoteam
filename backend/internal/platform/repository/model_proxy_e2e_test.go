@@ -37,15 +37,16 @@ import (
 )
 
 type proxyFixture struct {
-	db          *sql.DB
-	store       pr.Store
-	secrets     ps.Secrets
-	assistant   *HostedAssistantStore
-	server      *httptest.Server
-	provider    *httptest.Server
-	engineToken string
-	entered     chan struct{}
-	release     chan struct{}
+	db           *sql.DB
+	store        pr.Store
+	secrets      ps.Secrets
+	assistant    *HostedAssistantStore
+	server       *httptest.Server
+	provider     *httptest.Server
+	engineToken  string
+	fixtureModel func(http.ResponseWriter, map[string]any) bool
+	entered      chan struct{}
+	release      chan struct{}
 }
 
 func modelProxyFixture(t *testing.T) *proxyFixture {
@@ -91,7 +92,8 @@ func modelProxyFixtureOnDB(t *testing.T, db *sql.DB) *proxyFixture {
 		t.Fatal(e)
 	}
 	mux.Handle("/mcp/task-delegation", delegate)
-	assistantmcp.Mount(mux, managerStore, f.assistant.ToolAllowed, f.engineToken, "platform", "chat", platformmcp.MockServer())
+	management := platformmcp.Tools{Directory: &EmployeeManagementStore{DB: db}, Agents: &service.AgentService{Store: &AgentStore{DB: db, EnsureKey: f.secrets.EnsureKey}}, Packages: &service.PackageService{Store: NewPackageStore(db)}}
+	assistantmcp.MountPlatform(mux, managerStore, f.engineToken, management.Server(true), management.Server(false))
 	assistantmcp.Mount(mux, managerStore, f.assistant.ToolAllowed, f.engineToken, "demo", "task", demo.Server(f.engineToken))
 	if err := humanconfirmation.Register(mux, managerStore, f.engineToken); err != nil {
 		t.Fatal(err)
@@ -132,6 +134,9 @@ func serveProxyFixture(t *testing.T, f *proxyFixture, w http.ResponseWriter, r *
 		case <-r.Context().Done():
 			return
 		}
+	}
+	if f.fixtureModel != nil && f.fixtureModel(w, body) {
+		return
 	}
 	w.Header().Set("X-Request-ID", "test-provider")
 	w.Header().Set("Content-Type", "text/event-stream")

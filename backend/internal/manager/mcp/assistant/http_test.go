@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/assistant"
-	"github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/platform"
 	ms "github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 	ps "github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
@@ -27,6 +27,10 @@ func TestAssistantMCPChecksInputAndLiveGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	server := sdk.NewServer(&sdk.Implementation{Name: "test", Version: "1"}, nil)
+	sdk.AddTool(server, &sdk.Tool{Name: "check"}, func(context.Context, *sdk.CallToolRequest, struct{}) (*sdk.CallToolResult, map[string]bool, error) {
+		return nil, map[string]bool{"verified": true}, nil
+	})
 	mux := http.NewServeMux()
 	allowed := true
 	assistant.Mount(mux, engineFixture{}, func(_ context.Context, w, actor, a, key string, _ *ps.ExecutionCapabilities) (bool, error) {
@@ -34,9 +38,9 @@ func TestAssistantMCPChecksInputAndLiveGrant(t *testing.T) {
 			t.Fatal("request fields replaced verified runtime identity")
 		}
 		return allowed, nil
-	}, secret, "platform", "chat", platform.MockServer())
+	}, secret, "platform", "chat", server)
 	call := func(inputID string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest("POST", "/mcp/assistant/platform", strings.NewReader(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"employee_management_status","arguments":{}}}`))
+		r := httptest.NewRequest("POST", "/mcp/assistant/platform", strings.NewReader(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"check","arguments":{}}}`))
 		r.Header.Set("Authorization", "Bearer "+token)
 		r.Header.Set("X-Kiko-Assistant-Input", inputID)
 		r.Header.Set("Content-Type", "application/json")
@@ -45,7 +49,7 @@ func TestAssistantMCPChecksInputAndLiveGrant(t *testing.T) {
 		mux.ServeHTTP(w, r)
 		return w
 	}
-	if w := call(input); w.Code != 200 || !strings.Contains(w.Body.String(), "writes_enabled") {
+	if w := call(input); w.Code != 200 || !strings.Contains(w.Body.String(), "verified") {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	if w := call(ms.NewID()); w.Code != 401 {

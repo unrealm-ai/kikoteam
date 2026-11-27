@@ -76,7 +76,7 @@ func TestHostedAssistantProvisioningBothWorkspacePaths(t *testing.T) {
 			t.Fatal(creator, payer, err)
 		}
 		out, err := (&service.PackageService{Store: NewPackageStore(db)}).List(ctx, w, user, entry.AgentID, 1, 20)
-		if err != nil || len(out.Items) != 2 {
+		if err != nil || len(out.Items) != 1 || out.Items[0].AssistantToolSet != "demo" {
 			t.Fatal(out, err)
 		}
 		for _, p := range out.Items {
@@ -93,9 +93,6 @@ func TestHostedAssistantProvisioningBothWorkspacePaths(t *testing.T) {
 	entry, err := store.Entry(ctx, manual.ID, member)
 	if err != nil || entry.AgentID == "" || len(entry.Cards) != 3 {
 		t.Fatal(entry, err)
-	}
-	if allow, err := store.ToolAllowed(ctx, manual.ID, member, entry.AgentID, "platform", nil); err != nil || allow {
-		t.Fatal("ordinary member can use default management mock", allow, err)
 	}
 	if _, err = db.Exec(`UPDATE platform_capability_packages SET conversation_scope=jsonb_set(jsonb_set(conversation_scope,'{private,enabled}','false'),'{group,enabled}','true')
  WHERE agent_id=$1 AND assistant_tool_set='demo'`, entry.AgentID); err != nil {

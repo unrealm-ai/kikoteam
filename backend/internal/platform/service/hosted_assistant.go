@@ -11,19 +11,13 @@ type AssistantSettingsPatch struct {
 	Enabled         *bool `json:"enabled"`
 }
 
-func NewAssistantPackage(agent, creator, key string) CapabilityPackage {
+func NewAssistantDemoPackage(agent string) CapabilityPackage {
 	rule := PackageConversationRule{Enabled: true, Mode: "inherit_with_blacklist", Allow: []UsageSelector{}, Deny: []UsageSelector{}}
-	name, description := "体验能力", "使用固定样例体验任务处理，不访问真实业务系统。"
-	if key == "platform" {
-		name, description = "AI 员工管理", "验证员工管理工具的授权，不修改员工。"
-		rule.Mode = "allowlist"
-		rule.Allow = []UsageSelector{{Channel: "web", Kind: "user", ID: creator}}
-	}
 	trigger := DefaultPackageTriggerScope()
 	disable := false
 	trigger.Enabled = &disable
 	return CapabilityPackage{
-		ID: NewID(), AgentID: agent, Name: name, Description: description, Enabled: true, Version: 1, AssistantToolSet: key,
+		ID: NewID(), AgentID: agent, Name: "体验能力", Description: "使用固定样例体验任务处理，不访问真实业务系统。", Enabled: true, Version: 1, AssistantToolSet: "demo",
 		Scope: PackageScope{Mode: "inherit_with_blacklist", AllowMemberIDs: []string{}, DenyMemberIDs: []string{}},
 		ConversationScope: &PackageConversationScope{
 			Private: rule, Group: PackageConversationRule{Enabled: false, Mode: "inherit_with_blacklist", Allow: []UsageSelector{}, Deny: []UsageSelector{}},

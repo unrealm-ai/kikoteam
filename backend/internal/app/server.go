@@ -159,7 +159,8 @@ func Run(stderr io.Writer, version string) int {
 	wecomGroupStore := &repository.WecomGroupRefreshStore{DB: db}
 	taskLinks := &service.TaskLinkSettingsService{Store: &repository.TaskLinkSettingsStore{DB: db}}
 	assistantStore := &repository.HostedAssistantStore{DB: db, EnsureKey: proxySecrets.EnsureKey, Available: cfg.HostedAssistantAvailable}
-	api := (&controller.Server{Assistants: assistantStore, AssistantToolDescriptions: assistantToolDescriptions, TaskLinks: taskLinks, Referrals: &repository.ReferralStore{DB: db}, Catalog: &repository.ResourceCatalog{DB: db, Assets: assets, Plugins: plugins}, SharingPolicies: &service.GroupSharingService{Store: &repository.GroupSharingStore{DB: db}}, PeopleSelectors: &service.PeopleSelectorService{Secret: []byte(secret), Channels: channels, Wecom: wecomContacts, Store: repository.NewPeopleSelectorStore(db, []byte(secret))}, GroupSelectors: &service.GroupSelectorService{Store: repository.NewGroupSelectorStore(db), Secret: []byte(secret)}, WecomGroups: &service.WecomGroupRefresh{Channels: channels, Store: wecomGroupStore}, ChannelGroups: &service.ChannelGroupDiscovery{Channels: channels, Store: &repository.ChannelGroupCache{DB: db}, Provider: &feishugroups.Client{}, Secret: []byte(secret)}, AgentUsage: &service.AgentUsageService{Store: &repository.AgentUsageStore{DB: db}}, WebGroups: &service.WebGroupService{Store: &repository.WebGroupStore{DB: db}}, WecomContacts: wecomContacts, Official: official, Templates: templates, Admin: admins, Channels: channels, FeishuSetup: feishuSetup, DingTalkSetup: dingtalkSetup, Skills: skills, Plugins: plugins, Packages: packages, Agents: &service.AgentService{Store: &repository.AgentStore{DB: db, EnsureKey: proxySecrets.EnsureKey}}, Models: models, Auth: auth, Workspaces: ws, Origin: origin, SecureCookies: u.Scheme == "https", Logger: log, TrustedProxies: proxies, MailSettings: mailSettings, OAuthApps: oauthApps, ChannelDownloads: &service.ChannelDownloadSettingsService{Store: &repository.ChannelDownloadSettingsStore{DB: db}}}).Handler()
+	agents := &service.AgentService{Store: &repository.AgentStore{DB: db, EnsureKey: proxySecrets.EnsureKey}}
+	api := (&controller.Server{Assistants: assistantStore, AssistantToolDescriptions: assistantToolDescriptions, TaskLinks: taskLinks, Referrals: &repository.ReferralStore{DB: db}, Catalog: &repository.ResourceCatalog{DB: db, Assets: assets, Plugins: plugins}, SharingPolicies: &service.GroupSharingService{Store: &repository.GroupSharingStore{DB: db}}, PeopleSelectors: &service.PeopleSelectorService{Secret: []byte(secret), Channels: channels, Wecom: wecomContacts, Store: repository.NewPeopleSelectorStore(db, []byte(secret))}, GroupSelectors: &service.GroupSelectorService{Store: repository.NewGroupSelectorStore(db), Secret: []byte(secret)}, WecomGroups: &service.WecomGroupRefresh{Channels: channels, Store: wecomGroupStore}, ChannelGroups: &service.ChannelGroupDiscovery{Channels: channels, Store: &repository.ChannelGroupCache{DB: db}, Provider: &feishugroups.Client{}, Secret: []byte(secret)}, AgentUsage: &service.AgentUsageService{Store: &repository.AgentUsageStore{DB: db}}, WebGroups: &service.WebGroupService{Store: &repository.WebGroupStore{DB: db}}, WecomContacts: wecomContacts, Official: official, Templates: templates, Admin: admins, Channels: channels, FeishuSetup: feishuSetup, DingTalkSetup: dingtalkSetup, Skills: skills, Plugins: plugins, Packages: packages, Agents: agents, Models: models, Auth: auth, Workspaces: ws, Origin: origin, SecureCookies: u.Scheme == "https", Logger: log, TrustedProxies: proxies, MailSettings: mailSettings, OAuthApps: oauthApps, ChannelDownloads: &service.ChannelDownloadSettingsService{Store: &repository.ChannelDownloadSettingsStore{DB: db}}}).Handler()
 	mux := http.NewServeMux()
 	controller.ChannelInternalRoutes(mux, channels, hubToken)
 	controller.WecomGroupRefreshInternalRoutes(mux, wecomGroupStore, hubToken)
@@ -174,10 +175,12 @@ func Run(stderr io.Writer, version string) int {
 		log.Error("KIKO_ENGINE_TOKEN must have at least 32 bytes", "event", "startup.invalid_config")
 		return 1
 	}
+	managementTools := platformmcp.Tools{Directory: &repository.EmployeeManagementStore{DB: db}, Agents: agents, Packages: packages}
+	assistantmcp.MountPlatform(mux, managerStore, engineToken, managementTools.Server(true), managementTools.Server(false))
+
 	var assistantAllow assistantmcp.Allow
 	if cfg.HostedAssistantAvailable {
 		assistantAllow = assistantStore.ToolAllowed
-		assistantmcp.Mount(mux, managerStore, assistantAllow, engineToken, "platform", "chat", platformmcp.MockServer())
 		assistantmcp.Mount(mux, managerStore, assistantAllow, engineToken, "demo", "task", demomcp.Server(engineToken))
 	}
 	(&managercontroller.Server{AssistantToolAllowed: assistantAllow, TrustedProxies: proxies, Runtime: &service.RuntimeService{Packages: packages, Skills: skills, Plugins: plugins}, Service: managerService, Engines: managerStore, EngineToken: engineToken, ResolveModelKey: func(ctx context.Context, w, actor string, c manager.Configuration) (string, error) {
@@ -377,8 +380,6 @@ func noReferrer(next http.Handler) http.Handler {
 
 func assistantToolDescriptions(key string) []service.AssistantToolDescription {
 	switch key {
-	case "platform":
-		return []service.AssistantToolDescription{{Name: platformmcp.MockName, Description: platformmcp.MockDescription}}
 	case "demo":
 		out := make([]service.AssistantToolDescription, 0, len(demomcp.Specs))
 		for _, spec := range demomcp.Specs {

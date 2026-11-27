@@ -175,6 +175,12 @@ func (s *Store) HarnessConfig(ctx context.Context, engine, session, assignment s
 	var actor string
 	cfg.InputID = input
 	err := s.DB.QueryRowContext(ctx, `SELECT s.id,s.workspace_id,s.agent_id,COALESCE(s.conversation_id::text,''),COALESCE(s.task_space_id::text,''),COALESCE(s.task_id::text,''),s.mode,s.configuration,COALESCE(i.submitted_by::text,i.channel_principal_id::text,''),COALESCE(s.trigger_id::text,''),COALESCE(s.trigger_version,0),COALESCE(i.trigger_event_id::text,''),i.channel_principal_id,COALESCE(i.channel_generation,0),c.web_group_id IS NOT NULL,i.source_kind='task_report',
+ COALESCE(s.mode='task' AND i.source_kind='user' AND i.trigger_agent_loop AND i.trigger_event_id IS NULL
+ AND i.work_assignment_id IS NULL AND i.confirmation_request_id IS NULL AND s.trigger_id IS NULL
+ AND (c.web_user_id=i.submitted_by OR (c.channel_chat_type='direct' AND i.channel_principal_id IS NOT NULL))
+ AND NOT EXISTS(SELECT FROM manager_tasks k JOIN manager_inputs orig ON orig.id=k.source_chat_input_id
+   WHERE k.id=s.task_id AND orig.source_kind<>'user' AND i.seq=1),false),
+ EXISTS(SELECT FROM platform_workspaces w WHERE w.id=s.workspace_id AND w.assistant_agent_id=s.agent_id),
  s.mode='chat' AND c.channel_binding_id IS NOT NULL,
  s.mode='chat' AND COALESCE(c.web_user_id IS NOT NULL OR (c.channel_chat_type='direct' AND c.channel_thread_id='' AND c.channel_created_by IS NOT NULL),false),
  s.mode='chat' AND `+chatIsGroup+`,
@@ -194,7 +200,7 @@ func (s *Store) HarnessConfig(ctx context.Context, engine, session, assignment s
  LEFT JOIN manager_webhook_payloads wf ON wf.event_id=we.id AND wf.as_file
  LEFT JOIN platform_agent_versions av ON s.mode='task' AND av.workspace_id=s.workspace_id AND av.agent_id=s.agent_id AND av.version=(s.configuration->>'agent_version')::bigint
  WHERE (manager_input_actor_allowed(i.id) OR manager_human_chat_input_allowed(i.id)) AND s.engine_id=$1 AND s.id=$2 AND s.assignment_id=$3 AND s.generation=$4 AND i.id=$5 AND i.status='started' AND i.turn_id=s.active_turn_id AND s.stop_revision=s.applied_stop_revision AND COALESCE(c.lifecycle,p.lifecycle)='active' AND s.lifecycle='active' AND a.enabled AND i.admission_epoch=a.admission_epoch`, engine, session, assignment, generation, input).
-		Scan(&cfg.SessionID, &cfg.WorkspaceID, &cfg.AgentID, &cfg.ConversationID, &cfg.TaskSpaceID, &cfg.TaskID, &cfg.Mode, &data, &actor, &cfg.TriggerID, &cfg.TriggerVersion, &cfg.TriggerEventID, &cfg.ChannelPrincipalID, &cfg.ChannelGeneration, &cfg.WebGroup, &cfg.ReportOnly, &cfg.ChatCatalogChannel, &cfg.ChatCatalogPrivate, &cfg.ChatCatalogGroup, &cfg.HumanTools, &cfg.ConfirmationOnly, &cfg.Employee.Name, &cfg.Employee.Role, &cfg.Employee.Instruction, &cfg.TodoStarted, &file.EventID, &file.SHA256, &file.Body)
+		Scan(&cfg.SessionID, &cfg.WorkspaceID, &cfg.AgentID, &cfg.ConversationID, &cfg.TaskSpaceID, &cfg.TaskID, &cfg.Mode, &data, &actor, &cfg.TriggerID, &cfg.TriggerVersion, &cfg.TriggerEventID, &cfg.ChannelPrincipalID, &cfg.ChannelGeneration, &cfg.WebGroup, &cfg.ReportOnly, &cfg.EmployeeManagementEligible, &cfg.KikoAssistant, &cfg.ChatCatalogChannel, &cfg.ChatCatalogPrivate, &cfg.ChatCatalogGroup, &cfg.HumanTools, &cfg.ConfirmationOnly, &cfg.Employee.Name, &cfg.Employee.Role, &cfg.Employee.Instruction, &cfg.TodoStarted, &file.EventID, &file.SHA256, &file.Body)
 	if err != nil {
 		return cfg, "", visibleError(err)
 	}

@@ -34,7 +34,32 @@ func Config(ctx context.Context) ms.HarnessConfig {
 }
 
 func Mount(mux *http.ServeMux, engine Engine, allow Allow, secret, family, mode string, server *sdk.Server) {
-	transport := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	mount(mux, engine, secret, family, mode, func(ctx context.Context, cfg ms.HarnessConfig, actor string) (context.Context, bool) {
+		if mode == "task" && cfg.Configuration.Capabilities == nil {
+			return ctx, false
+		}
+		ok, err := allow(cfg.ExecutionContext(ctx), cfg.WorkspaceID, actor, cfg.AgentID, family, cfg.Configuration.Capabilities)
+		return ctx, err == nil && ok
+	}, func(*http.Request) *sdk.Server { return server })
+}
+
+func MountPlatform(mux *http.ServeMux, engine Engine, secret string, assistant, ordinary *sdk.Server) {
+	mount(mux, engine, secret, "platform", "task", func(ctx context.Context, cfg ms.HarnessConfig, actor string) (context.Context, bool) {
+		caller := ps.EmployeeManagementCaller{Workspace: cfg.WorkspaceID, Actor: actor, Employee: cfg.AgentID, Input: cfg.InputID, Channel: cfg.ChannelPrincipalID != nil}
+		return ps.WithEmployeeManagement(ctx, caller), cfg.EmployeeManagementEligible && actor != ""
+	}, func(r *http.Request) *sdk.Server {
+		cfg := Config(r.Context())
+		if cfg.KikoAssistant && cfg.ChannelPrincipalID == nil {
+			return assistant
+		}
+		return ordinary
+	})
+}
+
+type authorize func(context.Context, ms.HarnessConfig, string) (context.Context, bool)
+
+func mount(mux *http.ServeMux, engine Engine, secret, family, mode string, auth authorize, selectServer func(*http.Request) *sdk.Server) {
+	transport := sdk.NewStreamableHTTPHandler(selectServer, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	mux.HandleFunc("/mcp/assistant/"+family, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		input := r.Header.Get("X-Kiko-Assistant-Input")
@@ -51,12 +76,12 @@ func Mount(mux *http.ServeMux, engine Engine, allow Allow, secret, family, mode 
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 		cfg, actor, err := engine.HarnessConfig(ctx, id.EngineID, id.SessionID, id.AssignmentID, id.Generation, input)
-		if err != nil || cfg.Mode != mode || cfg.ReportOnly || cfg.ConfirmationOnly || mode == "task" && cfg.Configuration.Capabilities == nil {
+		if err != nil || cfg.Mode != mode || cfg.ReportOnly || cfg.ConfirmationOnly {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		ok, err := allow(cfg.ExecutionContext(ctx), cfg.WorkspaceID, actor, cfg.AgentID, family, cfg.Configuration.Capabilities)
-		if err != nil || !ok {
+		ctx, ok := auth(ctx, cfg, actor)
+		if !ok {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}

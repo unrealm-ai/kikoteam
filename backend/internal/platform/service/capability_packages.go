@@ -442,7 +442,11 @@ func validatePackageReferences(ctx context.Context, t PackageTx, v CapabilityPac
 	if e := validatePackageMembers(ctx, t, v.Scope); e != nil {
 		return e
 	}
+	_, management := EmployeeManagementFrom(ctx)
 	for i, r := range v.Skills {
+		if management && slices.Contains(previous.Skills, r) {
+			continue
+		}
 		state, e := t.ValidateSkill(ctx, r)
 		if e != nil {
 			return e
@@ -450,15 +454,24 @@ func validatePackageReferences(ctx context.Context, t PackageTx, v CapabilityPac
 		if !state.Enabled || state.Unlisted && !slices.ContainsFunc(previous.Skills, func(old PackageSkill) bool { return old.SkillID == r.SkillID }) {
 			return Fail("skill_unavailable", 409, "技能已停用或下架")
 		}
+		if management && r.VersionID != state.CurrentVersionID {
+			return Fail("resource_version_conflict", 409, "技能版本已更新，请重新查询可用资源")
+		}
 		v.Skills[i].VersionID = state.CurrentVersionID
 	}
 	for i, r := range v.Plugins {
+		if management && slices.Contains(previous.Plugins, r) {
+			continue
+		}
 		state, e := t.ValidatePlugin(ctx, r)
 		if e != nil {
 			return e
 		}
 		if !state.Enabled || state.Unlisted && !slices.ContainsFunc(previous.Plugins, func(old PackagePlugin) bool { return old.PluginID == r.PluginID }) {
 			return Fail("plugin_unavailable", 409, "插件已停用或下架")
+		}
+		if management && r.VersionID != state.CurrentVersionID {
+			return Fail("resource_version_conflict", 409, "MCP 版本已更新，请重新查询可用资源")
 		}
 		v.Plugins[i].VersionID = state.CurrentVersionID
 	}

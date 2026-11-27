@@ -64,8 +64,8 @@ var fixtures = map[string]map[string]string{
 	"get_meeting_notes":   {"MEET-301": "周三新人引导改版会：阿岚周四 12:00 前交定稿，小程周四 18:00 前交预览，晓宁周五 12:00 前做双端验收。周五 15:00 视验收结果判断是否放行。更新欢迎邮件留到下一期；发布后漏斗监控仍无人认领。"},
 	"get_release_plan":    {"MEET-301": "周五 17:00 小流量上线是目标，不是批准。前置为定稿文案、正式预览和双端通过；安卓联调环境是前置，环境与各项交付的最新状态以会后项目群为准；15:00 按真实验收结论放行。"},
 	"list_project_chat":   {"MEET-301": "14:18 小程已用占位文案搭骨架；14:22 晓宁先准备 iOS 用例，安卓环境在修；14:28 数据同学可答漏斗口径但未认领值守；14:35 晓宁更新：安卓联调环境已恢复并自检通过，双端验收按原定时间推进。阿岚、前端和测试均确认原交付时间不变。"},
-	"get_release_changes": {"INC-207": "Android 签名 v3 灰度 02:02 开始，Android 支付成功率同时下跌；iOS、网关、支付供应商无异常。"},
-	"get_oncall_runbook":  {"INC-207": "如果 Android 支付成功率在签名 v3 灰度后低于 95%，其他端正常，允许撤回这一灰度，无需另行确认。回滚后复查连续两个五分钟窗口，均高于 99% 才算恢复。"},
+	"get_release_changes": {"INC-207": "北京时间 02:06 发布 Android 支付签名 v3，灰度发布 ID：android-signature-v3。02:08 起灰度流量错误率上升；同时间段无其他支付相关发布，iOS、网关、支付供应商无异常。"},
+	"get_oncall_runbook":  {"INC-207": "P1 夜间支付告警：若签名 v3 灰度后 Android 支付成功率低于 95%，日志证明签名异常且其他端正常，值班策略允许直接撤回本次灰度，无需叫醒值班人或另行确认。回滚后用回执复查连续两个 5 分钟窗口；每个窗口整体和 Android 支付成功率均高于 99% 才能报告恢复。回告需说明原因、回滚范围和监控验证结果。"},
 }
 
 func receipt(secret, task string) string {
@@ -87,14 +87,14 @@ func Run(secret, task, tool string, args Args) (map[string]any, error) {
 		if args.TraceID != "tr-pay-207-a81f" {
 			return nil, fmt.Errorf("没有这个 trace 的样例日志")
 		}
-		out["result"] = "02:03:11 /pay/confirm: Android signer v3 校验失败，错误 SIGNATURE_MISMATCH；命中 release=android-signature-v3 灰度。"
+		out["result"] = "02:10:41（北京时间）/pay/confirm：Android signer v3 校验失败，错误 SIGNATURE_MISMATCH；仅命中 release=android-signature-v3 灰度，稳定版本无同类报错。"
 
 	case "rollback_release":
-		out["result"] = "已在样例中撤回 Android 签名 v3 灰度，未修改真实系统。"
+		out["result"] = "02:15（北京时间）已在样例中撤回 android-signature-v3 灰度，流量切回上一稳定版本，未修改真实系统。"
 		out["rollback_receipt"] = receipt(secret, task)
 	case "get_incident_metrics":
 		if args.Receipt == "" {
-			out["result"] = "基线 02:05–02:10：Android 支付成功率 91.6%，iOS 99.7%，仅灰度 Android 异常。"
+			out["result"] = "告警窗口 02:08–02:13（北京时间）：整体支付成功率从常态 99.7% 降到 93.2%，低于 95% 阈值；Android 91.6%，iOS 99.7%。仅 Android 签名 v3 灰度异常。"
 			break
 		}
 		if !hmac.Equal([]byte(args.Receipt), []byte(receipt(secret, task))) {
@@ -102,9 +102,9 @@ func Run(secret, task, tool string, args Args) (map[string]any, error) {
 		}
 		switch args.Window {
 		case "1":
-			out["result"] = "窗口一 02:12–02:17：Android 支付成功率 99.4%，高于 99%。"
+			out["result"] = "窗口一 02:15–02:20（北京时间）：整体支付成功率 99.5%，Android 99.4%，均高于 99%。"
 		case "2":
-			out["result"] = "窗口二 02:17–02:22：Android 支付成功率 99.6%，高于 99%。"
+			out["result"] = "窗口二 02:20–02:25（北京时间）：整体支付成功率 99.7%，Android 99.6%，均高于 99%。"
 		default:
 			return nil, fmt.Errorf("请分别查询窗口 1 或 2")
 		}

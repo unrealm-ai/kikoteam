@@ -194,11 +194,20 @@ func assertAssistantToolTrace(t *testing.T, f *proxyFixture, source, scenario st
 	required := map[string][]string{
 		"complaints": {"get_order", "get_logistics", "get_support_history", "ORD-1042", "ORD-1087"},
 		"meeting":    {"get_meeting_notes", "get_release_plan", "list_project_chat", "林静"},
-		"incident":   {"get_incident_logs", "get_release_changes", "get_oncall_runbook", "rollback_release", "99.4%", "99.6%"},
+		"incident":   {"get_incident_logs", "get_release_changes", "get_oncall_runbook", "rollback_release", "93.2%", "02:15–02:20", "02:20–02:25", "99.4%", "99.6%"},
 	}
 	for _, term := range required[scenario] {
 		if !strings.Contains(trace, term) {
 			t.Errorf("%s missing evidence: %s", scenario, term)
+		}
+	}
+	if scenario == "incident" {
+		var confirmations int
+		err := f.db.QueryRow(`SELECT count(*) FROM manager_human_requests h
+ JOIN manager_sessions s ON s.id=h.session_id JOIN manager_tasks k ON k.id=s.task_id
+ WHERE k.source_chat_input_id=$1`, source).Scan(&confirmations)
+		if err != nil || confirmations != 0 {
+			t.Errorf("incident must not need human confirmation: count=%d err=%v", confirmations, err)
 		}
 	}
 	if scenario == "complaints" {

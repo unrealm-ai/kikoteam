@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/cookiejar"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,11 +23,7 @@ func TestEmployeeManagementEngineWebSkillPermission(t *testing.T) {
 		t.Skip("enable real Engine/Pi runtime")
 	}
 	f := modelProxyFixture(t)
-	makeClient := func() *http.Client {
-		j, _ := cookiejar.New(nil)
-		return &http.Client{Jar: j, Timeout: 10 * time.Second}
-	}
-	ownerClient, memberClient := makeClient(), makeClient()
+	ownerClient, memberClient := proxyBrowserClient(t), proxyBrowserClient(t)
 	owner, w := f.register(t, ownerClient, "management-owner@example.test")
 	member, _ := f.register(t, memberClient, "management-user@example.test")
 	reviewExec(t, f.db, `INSERT INTO platform_members(workspace_id,user_id,role) VALUES($1,$2,'member')`, w, member)
@@ -76,7 +71,11 @@ func TestEmployeeManagementEngineWebSkillPermission(t *testing.T) {
 
 func employeeManagementFixtureReply(t *testing.T, out http.ResponseWriter, body map[string]any) bool {
 	t.Helper()
-	b, _ := json.Marshal(body)
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Error(err)
+		return false
+	}
 	var r runtimeRequest
 	if json.Unmarshal(b, &r) != nil || !strings.Contains(string(b), installFixturePrompt) {
 		return false

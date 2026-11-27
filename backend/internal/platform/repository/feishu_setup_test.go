@@ -407,8 +407,8 @@ func TestFeishuSetupBackgroundUnknownPollNeverReplayedAfterRestart(t *testing.T)
 }
 
 func TestFeishuSetupBackgroundRevocationDoesNotPoll(t *testing.T) {
-	db, _, _, w, actor, agent, _ := managerFixture(t)
-	actor = setupAdminWithoutCreatorRights(t, db, w)
+	db, _, _, w, _, agent, _ := managerFixture(t)
+	actor := setupAdminWithoutCreatorRights(t, db, w)
 	now := time.Now().UTC()
 	provider := &setupProvider{ready: true, result: service.FeishuPoll{State: "credentials_saved", AppID: "cli_revoked", Secret: "test-secret"}}
 	setup := &service.FeishuSetupService{Store: &FeishuSetupStore{DB: db}, Channels: &service.ChannelService{Store: &ChannelStore{DB: db}, Secret: []byte(strings.Repeat("s", 32))}, Provider: provider, Now: func() time.Time { return now }}

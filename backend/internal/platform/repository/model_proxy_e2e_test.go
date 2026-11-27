@@ -670,7 +670,9 @@ VALUES($1,$2,'Migrated',$3,1,1,1)`, id, w, model)
 		t.Fatal(err)
 	}
 	if err = f.secrets.EnsureKey(ctx, tx, w, id); err != nil {
-		_ = tx.Rollback()
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			t.Error(rollbackErr)
+		}
 		t.Fatal(err)
 	}
 	if err = tx.Commit(); err != nil {

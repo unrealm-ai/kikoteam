@@ -84,7 +84,8 @@ func resolveNewMaintainer(ctx context.Context, tx *sql.Tx, w, employee string, r
 		return v, bad
 	}
 	err := (&PeopleSelectorStore{}).resolveChannelPerson(ctx, tx, w, employee, r, &v)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && v.Status != "active" && !(r.Provider == "wecom" && v.VerificationStatus == "verified") {
+	verifiedWecom := r.Provider == "wecom" && v.VerificationStatus == "verified"
+	if errors.Is(err, sql.ErrNoRows) || err == nil && v.Status != "active" && !verifiedWecom {
 		return v, bad
 	}
 	return v, err

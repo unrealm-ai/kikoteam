@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
-	"net/http/cookiejar"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,8 +25,8 @@ func TestHostedAssistantLive(t *testing.T) {
 		t.Skip("provide an isolated local model fixture to run live all-scenario acceptance")
 	}
 	f := modelProxyFixture(t)
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar, Timeout: 12 * time.Second}
+	client := proxyBrowserClient(t)
+	client.Timeout = 12 * time.Second
 	owner, _ := f.register(t, client, "live-assistant@example.test")
 	installAssistantTestModel(t, f, owner, dir)
 	on := true
@@ -96,8 +95,14 @@ func installAssistantTestModel(t *testing.T, f *proxyFixture, owner, dir string)
 		t.Fatal("missing fixture encryption key")
 	}
 	key := sha256.Sum256(append([]byte("kiko:model-credential:v1:"), root...))
-	block, _ := aes.NewCipher(key[:])
-	aead, _ := cipher.NewGCM(block)
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
 	encrypted, err := hex.DecodeString(src.Ciphertext)
 	if err != nil || len(encrypted) < aead.NonceSize() {
 		t.Fatal("invalid model fixture")
@@ -177,8 +182,10 @@ func waitAssistantCase(t *testing.T, ctx context.Context, f *proxyFixture, clien
 		time.Sleep(2 * time.Second)
 	}
 	var status, code string
-	_ = f.db.QueryRow(`SELECT COALESCE(t.status,''),COALESCE(t.error->>'code','') FROM manager_inputs i
- LEFT JOIN manager_turns t ON t.id=i.turn_id WHERE i.id=$1`, source).Scan(&status, &code)
+	if err := f.db.QueryRow(`SELECT COALESCE(t.status,''),COALESCE(t.error->>'code','') FROM manager_inputs i
+ LEFT JOIN manager_turns t ON t.id=i.turn_id WHERE i.id=$1`, source).Scan(&status, &code); err != nil {
+		t.Fatalf("%s timed out, reading source state: %v", scenario, err)
+	}
 	t.Fatalf("%s timed out, source state=%s code=%s confirmation answered=%t", scenario, status, code, answered)
 }
 

@@ -128,6 +128,7 @@ func (s *Server) harnessConfig(r *http.Request) (any, int, error) {
 		return nil, 503, service.Fail("configuration_unusable", 503, "模型配置未接入")
 	}
 	ctx := v.ExecutionContext(r.Context())
+	id := service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation}
 	if v.Configuration.PlatformModelID != "" {
 		if s.ResolveOfficialModel == nil {
 			return nil, 503, service.Fail("configuration_unusable", 503, "官方模型未接入")
@@ -139,23 +140,14 @@ func (s *Server) harnessConfig(r *http.Request) (any, int, error) {
 	if err == nil && v.Mode == "task" && s.Runtime != nil {
 		v.Resources, err = s.Runtime.Resolve(ctx, v.WorkspaceID, actor, v.AgentID, v.Configuration.Capabilities, v.SessionID, true)
 		if err == nil {
-			for i := range v.Resources.Plugins {
-				p := &v.Resources.Plugins[i]
-				if len(p.Headers) == 0 {
-					continue
-				}
-				token, e := signRelay(s.EngineToken, p.AccountID, v.InputID, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
-				if e != nil {
-					return nil, 0, e
-				}
-				p.Endpoint = "/mcp/plugin-connections/" + p.AccountID
-				p.Headers = map[string]string{"Authorization": "Bearer " + token}
+			err = s.signTaskResourceCredentials(&v, id)
+			if err != nil {
+				return nil, 0, err
 			}
-			v.CapabilityToken, err = service.SignCapability(s.EngineToken, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
 		}
 	}
 	if err == nil && v.Mode == "task" {
-		err = s.signTaskContextCredentials(&v, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
+		err = s.signTaskContextCredentials(&v, id)
 	}
 	if err == nil && v.Mode == "chat" {
 		if v.ChatCatalogChannel && !v.ConfirmationOnly {
@@ -166,16 +158,15 @@ func (s *Server) harnessConfig(r *http.Request) (any, int, error) {
 				v.TaskDetailCardEnabled = settingsErr == nil && enabled
 			}
 		}
-		err = s.signChatCredentials(&v, q.Get("input_id"), service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
+		err = s.signChatCredentials(&v, q.Get("input_id"), id)
 	}
 	if err == nil && v.HumanTools {
-		err = s.signHumanToolCredentials(&v, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
+		err = s.signHumanToolCredentials(&v, id)
 	}
 	if err == nil && v.WorkRole != "" {
-		err = s.signWorkCredentials(&v, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
+		err = s.signWorkCredentials(&v, id)
 	}
 	if err == nil && !v.ReportOnly && !v.ConfirmationOnly {
-		id := service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation}
 		if v.EmployeeManagementEligible {
 			v.EmployeeManagementToken, err = assistant.Token(s.EngineToken, v.InputID, "platform", id)
 		}
@@ -187,6 +178,24 @@ func (s *Server) harnessConfig(r *http.Request) (any, int, error) {
 		service.ApplyHarnessPrompt(&v)
 	}
 	return v, 200, err
+}
+
+func (s *Server) signTaskResourceCredentials(v *service.HarnessConfig, id service.DelegationIdentity) error {
+	for i := range v.Resources.Plugins {
+		p := &v.Resources.Plugins[i]
+		if len(p.Headers) == 0 {
+			continue
+		}
+		token, err := signRelay(s.EngineToken, p.AccountID, v.InputID, id)
+		if err != nil {
+			return err
+		}
+		p.Endpoint = "/mcp/plugin-connections/" + p.AccountID
+		p.Headers = map[string]string{"Authorization": "Bearer " + token}
+	}
+	var err error
+	v.CapabilityToken, err = service.SignCapability(s.EngineToken, id)
+	return err
 }
 
 func (s *Server) signChatCredentials(v *service.HarnessConfig, input string, id service.DelegationIdentity) error {

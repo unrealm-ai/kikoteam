@@ -50,6 +50,54 @@ test("work MCP refresh does not admit a role mismatch or falsely accept unexpect
   assert.deepEqual(unexpected.calls.map((c) => c.operation), ["unregister", "register"]);
 });
 
+test("one task Pi rotates recipient, TaskSpace and plugin relay credentials", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "kiko-task-credentials-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, "config.json");
+  const prior = process.env.KIKO_HUMAN_TOOLS_CONFIG;
+  process.env.KIKO_HUMAN_TOOLS_CONFIG = path;
+  t.after(() => {
+    if (prior === undefined) delete process.env.KIKO_HUMAN_TOOLS_CONFIG;
+    else process.env.KIKO_HUMAN_TOOLS_CONFIG = prior;
+  });
+  const names = {
+    human_confirmation: ["list_human_confirmation_scopes"],
+    task_space_history: ["task_space_history_list_tasks", "task_space_history_get_task", "task_space_history_save_summary"],
+    plugin_test: ["lookup"],
+  };
+  const hooks = new Map(), registrations = new Map();
+  const active = () => [...registrations.keys()].flatMap((server) => names[server].map((tool) => "mcp__" + server + "__" + tool));
+  const pi = {
+    on: (name, handler) => hooks.set(name, handler), registerTool() {},
+    unregisterMcpServer: (name) => registrations.delete(name),
+    registerMcpServer: (name, config) => registrations.set(name, config),
+    getActiveTools: active, getAllTools: () => active().map((name) => ({ name, exposure: "direct" })),
+  };
+  const write = (input, token) => writeFileSync(path, JSON.stringify({
+    mode: "task", input, recipients_mcp: true, recipients_mcp_url: "https://manager.test/human",
+    recipients_mcp_token: token, task_space_history_url: "https://manager.test/history", task_space_history_token: "history-" + input,
+    relay_servers: { plugin_test: { url: "https://manager.test/relay", toolExposure: { lookup: "direct" } } },
+    relay_headers: { plugin_test: { Authorization: "Bearer relay-" + input } },
+  }), { mode: 0o600 });
+  write("one", "human-one");
+  registerHumanTools(pi);
+  const start = hooks.get("before_agent_start");
+  for (const input of ["one", "two"]) {
+    write(input, "human-" + input);
+    await start({}, { abort() { assert.fail("fresh credentials should be accepted"); } });
+    assert.deepEqual(registrations.get("human_confirmation").headers, { Authorization: "Bearer human-" + input, "X-Kiko-Human-Input": input });
+    assert.deepEqual(registrations.get("task_space_history").headers, { Authorization: "Bearer history-" + input, "X-Kiko-Task-Space-Input": input });
+    assert.deepEqual(registrations.get("plugin_test"), {
+      url: "https://manager.test/relay", headers: { Authorization: "Bearer relay-" + input }, exposure: "hidden", toolExposure: { lookup: "direct" },
+    });
+  }
+  write("three", "");
+  let aborted = false;
+  await assert.rejects(start({}, { abort() { aborted = true; } }), /kiko_human_mcp_unavailable/);
+  assert.ok(aborted);
+  assert.equal(registrations.size, 0);
+});
+
 test("current assignment and submission IDs are not model inputs; genuine choices and version remain", () => {
   const dir = mkdtempSync(join(tmpdir(), "kiko-human-tools-"));
   const path = join(dir, "config.json");

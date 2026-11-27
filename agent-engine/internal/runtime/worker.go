@@ -486,10 +486,11 @@ func (w *Worker) finishPrompt(ctx context.Context, writer *eventWriter, client *
 		err = errors.Join(err, steerErr)
 	}
 	status, code := "completed", ""
+	var setupFailure promptSetupError
 	if stopped {
 		status = "canceled"
-	} else if errors.Is(err, errWorkMCPUnavailable) || errors.Is(err, errAssistantMCPUnavailable) {
-		status, code = "failed", promptErrorKind(err)
+	} else if errors.As(err, &setupFailure) {
+		status, code = "failed", string(setupFailure)
 	} else if err != nil || writer.err != nil {
 		status = "failed"
 		code = "execution_failed"
@@ -507,14 +508,15 @@ func (w *Worker) finishPrompt(ctx context.Context, writer *eventWriter, client *
 	return status, code, writer.answer
 }
 
-var errWorkMCPUnavailable = errors.New("[kiko_work_mcp_unavailable]")
-var errAssistantMCPUnavailable = errors.New("[kiko_assistant_mcp_unavailable]")
+type promptSetupError string
+
+func (e promptSetupError) Error() string { return "[kiko_" + string(e) + "]" }
 
 func promptSetupFailure(u pi.Update) error {
 	if u["type"] != "extension_error" || u["event"] != "before_agent_start" {
 		return nil
 	}
-	for _, err := range []error{errWorkMCPUnavailable, errAssistantMCPUnavailable} {
+	for _, err := range [...]promptSetupError{"work_mcp_unavailable", "assistant_mcp_unavailable", "human_mcp_unavailable", "task_space_history_mcp_unavailable"} {
 		if u["error"] == err.Error() {
 			return err
 		}

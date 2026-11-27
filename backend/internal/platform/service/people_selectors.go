@@ -115,6 +115,11 @@ func (s *PeopleSelectorService) Search(ctx context.Context, w, actor, a string, 
 	if q.Provider != "feishu" && q.Provider != "dingtalk" {
 		return empty, Fail("invalid_selector_provider", 400, "渠道无效")
 	}
+	return s.searchDirectory(ctx, w, actor, a, q)
+}
+
+func (s *PeopleSelectorService) searchDirectory(ctx context.Context, w, actor, a string, q PeopleQuery) (PeoplePage, error) {
+	empty := PeoplePage{Items: []PeopleCandidate{}}
 	b, e := s.Channels.directoryBinding(ctx, w, actor, a, q.Provider)
 	if e != nil {
 		return empty, e

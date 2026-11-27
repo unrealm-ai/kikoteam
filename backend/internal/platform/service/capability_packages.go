@@ -185,7 +185,7 @@ func (s *PackageService) Update(ctx context.Context, w, actor, employee, id stri
 	if r.Version < 1 {
 		return v, Fail("version_required", 400, "请提供当前能力包版本")
 	}
-	if r.WorkScope == nil && r.ConversationScope == nil && r.Name == nil && r.Description == nil && r.Enabled == nil && r.Scope == nil && r.TriggerScope == nil && r.Skills == nil && r.Plugins == nil {
+	if r == (PackagePatch{Version: r.Version}) {
 		return v, Fail("invalid_package_patch", 400, "没有需要修改的能力包字段")
 	}
 	e := s.Store.WithWorkspace(ctx, w, func(t PackageTx) error {

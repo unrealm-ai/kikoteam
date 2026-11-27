@@ -25,11 +25,10 @@ func promptFailure(stage string, err error) error {
 }
 
 func promptErrorKind(err error) string {
+	var setupFailure promptSetupError
 	switch {
-	case errors.Is(err, errWorkMCPUnavailable):
-		return "work_mcp_unavailable"
-	case errors.Is(err, errAssistantMCPUnavailable):
-		return "assistant_mcp_unavailable"
+	case errors.As(err, &setupFailure):
+		return string(setupFailure)
 	case errors.Is(err, pi.ErrPromptAborted):
 		return "pi_aborted"
 	case errors.Is(err, pi.ErrPromptModel):

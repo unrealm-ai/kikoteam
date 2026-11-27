@@ -35,19 +35,28 @@ type Config struct {
 	Skills              []string
 	PolicyExtension     string
 	Policy              any
-	Environment         map[string]string `json:"-"`
+	Environment         map[string]string            `json:"-"`
+	RelayServers        map[string]RelayServer       `json:",omitempty"`
+	RelayHeaders        map[string]map[string]string `json:"-"`
+}
+
+type RelayServer struct {
+	URL          string            `json:"url"`
+	ToolExposure map[string]string `json:"toolExposure"`
 }
 
 func (c Config) systemPromptPath() string {
 	return filepath.Join(c.RuntimeDirectory, "agent", "system-prompt.md")
 }
 
+func (c Config) validPlanTools() bool {
+	return len(c.MCP) == 0 && len(c.RelayServers) == 0 && len(c.RelayHeaders) == 0 && len(c.Skills) == 0 &&
+		len(c.Environment) == 0 && c.PolicyExtension == "" && c.WorkMCPRole == "" && c.HumanTools.validForPlan(c.HumanToolsExtension != "")
+}
+
 func (c Config) prepare() ([]string, error) {
-	if c.PlanOnly {
-		if len(c.MCP) > 0 || len(c.Skills) > 0 || len(c.Environment) > 0 || c.PolicyExtension != "" ||
-			c.WorkMCPRole != "" || !c.HumanTools.validForPlan(c.HumanToolsExtension != "") {
-			return nil, errors.New("plan-only Pi configuration can only expose local human confirmation tools")
-		}
+	if c.PlanOnly && !c.validPlanTools() {
+		return nil, errors.New("plan-only Pi configuration can only expose local human confirmation tools")
 	}
 	if !filepath.IsAbs(c.Directory) || !filepath.IsAbs(c.RuntimeDirectory) {
 		return nil, errors.New("pi state and work directory must be absolute")

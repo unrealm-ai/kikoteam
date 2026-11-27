@@ -129,7 +129,10 @@ func TestMCPManagementContract(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			b, _ := json.Marshal(r.StructuredContent)
+			b, e := json.Marshal(r.StructuredContent)
+			if e != nil {
+				t.Fatal(e)
+			}
 			var v map[string]any
 			if e = json.Unmarshal(b, &v); e != nil || v == nil {
 				t.Fatalf("bad response %s %#v %v", b, r.Content, e)

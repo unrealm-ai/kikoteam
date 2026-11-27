@@ -20,8 +20,10 @@ import (
 	"time"
 
 	managercontroller "github.com/unrealm-ai/kikoteam/backend/internal/manager/controller"
+	assistantmcp "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/assistant"
 	humanconfirmation "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/humanconfirmation"
 	"github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/inputattachments"
+	platformmcp "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/platform"
 	delegation "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/taskdelegation"
 	taskspacehistory "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/taskspacehistory"
 	workitems "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/workitems"
@@ -340,6 +342,8 @@ func testManagerRuntime(t *testing.T, mode string) {
 	}
 	mux.Handle("/mcp/task-delegation", delegationHandler)
 	inputattachments.Register(mux, store, svc, engineToken)
+	management := platformmcp.Tools{Directory: &EmployeeManagementStore{DB: db}, Agents: agents, Packages: capabilities.Packages}
+	assistantmcp.MountPlatform(mux, store, engineToken, management.Server(true), management.Server(false))
 	if err := humanconfirmation.Register(mux, store, engineToken); err != nil {
 		t.Fatal(err)
 	}

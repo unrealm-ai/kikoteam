@@ -9,7 +9,7 @@ import (
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
 )
 
-func TestWorkMCPInputCredentialsDoNotReplacePi(t *testing.T) {
+func TestTaskMCPInputCredentialsDoNotReplacePi(t *testing.T) {
 	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
 	w := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
 	current := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "workspace", AgentID: "employee", Mode: "task", TaskID: "task", ConversationID: "conversation"}
@@ -18,7 +18,10 @@ func TestWorkMCPInputCredentialsDoNotReplacePi(t *testing.T) {
 		AgentID: current.AgentID, Mode: current.Mode,
 		TaskID: current.TaskID, ConversationID: current.ConversationID,
 		WorkRole: "ordinary", WorkMCPToken: "test-first", WorkLocalToken: "test-first-local",
+		HumanMCPToken: "human-first", HumanToolsToken: "ask-first",
 	}
+	cfg.Resources.Plugins = []integration.Plugin{{PluginID: "test", AccountID: "account", Endpoint: "/mcp/plugin-connections/account",
+		Headers: map[string]string{"Authorization": "Bearer relay-first"}, Tools: []integration.PluginTool{{Name: "lookup"}}}}
 	turn := repository.Turn{Input: repository.Input{ID: "first"}}
 	first, firstSignature, err := w.prepareConfiguration(t.Context(), current, turn, cfg, integration.Endpoint{})
 	if err != nil {
@@ -26,12 +29,22 @@ func TestWorkMCPInputCredentialsDoNotReplacePi(t *testing.T) {
 	}
 	turn.Input.ID = "second"
 	cfg.WorkMCPToken, cfg.WorkLocalToken = "test-second", "test-second-local"
+	cfg.HumanMCPToken, cfg.HumanToolsToken = "human-second", "ask-second"
+	cfg.Resources.Plugins[0].Headers = map[string]string{"Authorization": "Bearer relay-second"}
 	second, secondSignature, err := w.prepareConfiguration(t.Context(), current, turn, cfg, integration.Endpoint{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := second.MCP[workMCPServer]; ok || firstSignature != secondSignature {
-		t.Fatal("rotating Work MCP credentials changed static Pi configuration")
+		t.Fatal("rotating task credentials changed static Pi configuration")
+	}
+	if _, ok := second.MCP[humanMCPServer]; ok || second.HumanTools.RecipientsMCPToken != "human-second" ||
+		second.HumanTools.RecipientsMCPURL != "http://manager.invalid/mcp/human-confirmations/task" || !second.HumanTools.RecipientsMCP {
+		t.Fatal("task recipient lookup must use this input's native MCP registration")
+	}
+	if _, ok := second.MCP["plugin_test"]; ok || second.RelayHeaders["plugin_test"]["Authorization"] != "Bearer relay-second" ||
+		second.RelayServers["plugin_test"].ToolExposure["lookup"] != "direct" {
+		t.Fatal("signed plugin relay must use the current grant and retain its tool allowlist")
 	}
 	if first.HumanTools.Input == second.HumanTools.Input || second.HumanTools.WorkMCPToken != "test-second" ||
 		second.HumanTools.WorkMCPURL != "http://manager.invalid/mcp/work-items/ordinary" {
@@ -279,7 +292,7 @@ func TestAssistantTurnCredentialsNotExposedToChatOrCorrection(t *testing.T) {
 
 func TestAssistantTurnSetupErrorIsNotSuccessfulModelTurn(t *testing.T) {
 	e := promptSetupFailure(map[string]any{"type": "extension_error", "event": "before_agent_start", "error": "[kiko_assistant_mcp_unavailable]"})
-	if !errors.Is(e, errAssistantMCPUnavailable) || promptErrorKind(e) != "assistant_mcp_unavailable" {
+	if !errors.Is(e, promptSetupError("assistant_mcp_unavailable")) || promptErrorKind(e) != "assistant_mcp_unavailable" {
 		t.Fatalf("wrong Assistant startup outcome: %v", e)
 	}
 	if e := promptSetupFailure(map[string]any{"type": "message_update", "event": "before_agent_start", "error": "[kiko_assistant_mcp_unavailable]"}); e != nil {

@@ -72,23 +72,15 @@ func lockManagementSource(ctx context.Context, t *modelTx, v service.EmployeeMan
 	}
 	// Match admission: workspace, employees, conversation, channel, session.
 	// No-key update also permits the normal FK reads on employees.
-	rows, err := t.tx.QueryContext(ctx, `SELECT id FROM platform_agents WHERE workspace_id=$1
- AND id IN ($2,$3) ORDER BY id FOR NO KEY UPDATE`, t.workspace, v.Employee, target)
+	var count int
+	err := t.tx.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT id FROM platform_agents WHERE workspace_id=$1
+ AND id IN ($2,$3) ORDER BY id FOR NO KEY UPDATE) AS locked`, t.workspace, v.Employee, target).Scan(&count)
 	if err != nil {
 		return err
 	}
-	count, expected := 0, 1
+	expected := 1
 	if v.Employee != target {
 		expected++
-	}
-	for rows.Next() {
-		count++
-	}
-	if err = rows.Close(); err != nil {
-		return err
-	}
-	if err = rows.Err(); err != nil {
-		return err
 	}
 	if count != expected {
 		return managementDenied()

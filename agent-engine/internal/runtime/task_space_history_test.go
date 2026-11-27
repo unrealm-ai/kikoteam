@@ -26,18 +26,21 @@ func TestTaskSpaceHistoryMCPOnlyTaskSpaceExecution(t *testing.T) {
 			}
 			cfg := integration.HarnessConfig{WorkspaceID: w.WorkspaceID, AgentID: w.AgentID, TaskID: w.TaskID, SessionID: w.SessionID, Mode: tc.mode, TaskSpaceID: tc.space, ConversationID: tc.conversation, TaskSpaceHistoryToken: tc.token}
 			input := NewID()
-			out, _, err := worker.prepareConfiguration(t.Context(), w, repository.Turn{Input: repository.Input{ID: input}}, cfg, integration.Endpoint{})
+			out, signature, err := worker.prepareConfiguration(t.Context(), w, repository.Turn{Input: repository.Input{ID: input}}, cfg, integration.Endpoint{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			entry, ok := out.MCP["task_space_history"].(map[string]any)
-			if ok != tc.want {
-				t.Fatalf("TaskSpace tools present = %v, want %v", ok, tc.want)
+			if _, static := out.MCP["task_space_history"]; static || (out.HumanTools.TaskSpaceHistoryURL != "") != tc.want {
+				t.Fatal("unexpected TaskSpace history registration")
 			}
-			if ok {
-				headers := entry["headers"].(map[string]string)
-				if entry["url"] != "http://localhost:8080/mcp/task-space-history" || entry["exposure"] != "direct" || headers["X-Kiko-Task-Space-Input"] != input || headers["Authorization"] != "Bearer "+tc.token {
-					t.Fatalf("unexpected MCP configuration: %+v", entry)
+			if tc.want {
+				if out.HumanTools.TaskSpaceHistoryURL != "http://localhost:8080/mcp/task-space-history" || out.HumanTools.Input != input || out.HumanTools.TaskSpaceHistoryToken != tc.token {
+					t.Fatal("incorrect task history endpoint or credentials")
+				}
+				cfg.TaskSpaceHistoryToken = "next-token"
+				next, nextSignature, err := worker.prepareConfiguration(t.Context(), w, repository.Turn{Input: repository.Input{ID: NewID()}}, cfg, integration.Endpoint{})
+				if err != nil || nextSignature != signature || next.HumanTools.TaskSpaceHistoryToken != cfg.TaskSpaceHistoryToken {
+					t.Fatal("rotating the task history token must preserve Pi")
 				}
 			}
 		})

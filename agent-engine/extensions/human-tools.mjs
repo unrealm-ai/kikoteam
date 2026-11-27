@@ -1,6 +1,7 @@
 // Platform tools registered through the public Pi extension API.
 import { readFileSync } from "node:fs";
 import { setTimeout } from "node:timers/promises";
+import { createMcpToolName, mcpNamespace } from "@earendil-works/pi-mcp";
 
 const schema = (properties = {}, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 const string = { type: "string" };
@@ -15,6 +16,15 @@ function askQuestionModeError({ type, questions }, reapprovalOnly) {
 }
 const workServer = "work_items";
 const workUnavailable = "[kiko_work_mcp_unavailable]";
+const recipientsServer = "human_confirmation";
+const recipientsUnavailable = "[kiko_human_mcp_unavailable]";
+const historyUnavailable = "[kiko_task_space_history_mcp_unavailable]";
+const taskServers = [
+  { name: recipientsServer, url: "recipients_mcp_url", token: "recipients_mcp_token", header: "X-Kiko-Human-Input",
+    tools: ["list_human_confirmation_scopes"], error: recipientsUnavailable },
+  { name: "task_space_history", url: "task_space_history_url", token: "task_space_history_token", header: "X-Kiko-Task-Space-Input",
+    tools: ["task_space_history_list_tasks", "task_space_history_get_task", "task_space_history_save_summary"], error: historyUnavailable },
+];
 const assistantUnavailable = "[kiko_assistant_mcp_unavailable]";
 const assistantFamilies = [
   {
@@ -39,7 +49,7 @@ const roleTools = {
 
 // Pi does not remove definitions from getAllTools: hiding makes them
 // unreachable and removes them from getActiveTools. Check both surfaces.
-const toolPrefix = (server) => "mcp__" + server + "__";
+const toolPrefix = (server) => mcpNamespace(server) + "__";
 const visibleMCP = (pi, server) => new Set([
   ...pi.getActiveTools().filter((name) => name.startsWith(toolPrefix(server))),
   ...pi.getAllTools().filter((tool) => tool.name.startsWith(toolPrefix(server)) && tool.exposure !== "hidden").map((tool) => tool.name),
@@ -58,8 +68,8 @@ function catalogueReady(pi, name, expected) {
   const active = new Set(pi.getActiveTools());
   const visible = visibleMCP(pi, name);
   return visible.size === expected.length && expected.every((tool) => {
-    const nativeName = toolPrefix(name) + tool;
-    return active.has(nativeName) && visible.has(nativeName);
+    return [createMcpToolName(name, tool), createMcpToolName(name, tool, () => true)]
+      .some((nativeName) => active.has(nativeName) && visible.has(nativeName));
   });
 }
 
@@ -68,16 +78,18 @@ export async function refreshWorkMCP(pi, credentials, role, signal) {
   if (!url || !token || !input || credentials.work_role !== role || !Object.hasOwn(roleTools, role)) {
     throw new Error(workUnavailable);
   }
-  const expected = ["artifact_publish", ...roleTools[role]];
+  await refreshTurnMCP(pi, workServer, url, { Authorization: "Bearer " + token, "X-Kiko-Work-Input": input },
+    ["artifact_publish", ...roleTools[role]], signal, workUnavailable);
+}
+
+async function refreshTurnMCP(pi, server, url, headers, expected, signal, unavailable, toolExposure) {
   // The built-in MCP extension handles this asynchronously. Remove the
   // old registration and observe tools hidden before testing freshness of
   // the new same-name tools. Old in-flight HTTP requests keep old headers.
-  pi.unregisterMcpServer(workServer);
-  await waitForMCP(() => visibleMCP(pi, workServer).size === 0, signal, workUnavailable);
-  pi.registerMcpServer(workServer, {
-    url, headers: { Authorization: "Bearer " + token, "X-Kiko-Work-Input": input }, exposure: "direct",
-  });
-  await waitForMCP(() => catalogueReady(pi, workServer, expected), signal, workUnavailable);
+  pi.unregisterMcpServer(server);
+  await waitForMCP(() => visibleMCP(pi, server).size === 0, signal, unavailable);
+  pi.registerMcpServer(server, toolExposure ? { url, headers, exposure: "hidden", toolExposure } : { url, headers, exposure: "direct" });
+  await waitForMCP(() => catalogueReady(pi, server, expected), signal, unavailable);
 }
 
 function removeAssistantMCP(pi) {
@@ -111,7 +123,10 @@ async function refreshAssistantMCP(pi, credentials, signal) {
 
 export default function humanTools(pi) {
   const config = () => JSON.parse(readFileSync(process.env.KIKO_HUMAN_TOOLS_CONFIG, "utf8"));
-  const { mode, recipients_mcp, reapproval_only, token, work_role } = config();
+  const initial = config();
+  const { mode, recipients_mcp, reapproval_only, token, work_role } = initial;
+  const scopedServers = taskServers.filter((server) => initial[server.url]).map((server) => ({ ...server, endpoint: initial[server.url] }));
+  const relays = Object.entries(initial.relay_servers ?? {});
   async function call(credentials, operation, params, signal, work = false) {
     const timeout = AbortSignal.timeout(5000);
     const response = await fetch(work ? credentials.work_url : credentials.url, {
@@ -173,15 +188,34 @@ export default function humanTools(pi) {
     try {
       const current = config();
       if (work_role) await refreshWorkMCP(pi, current, work_role, ctx.signal);
+      for (const server of scopedServers) {
+        failure = server.error;
+        if (!current.input || !current[server.token] || current[server.url] !== server.endpoint) throw new Error(failure);
+        await refreshTurnMCP(pi, server.name, server.endpoint, {
+          Authorization: "Bearer " + current[server.token], [server.header]: current.input,
+        }, server.tools, ctx.signal, failure);
+      }
       if (assistant) {
         failure = assistantUnavailable;
         await refreshAssistantMCP(pi, current, ctx.signal);
       }
+      await Promise.all(relays.map(async ([name, { url, toolExposure }]) => {
+        // A disconnected optional plugin should not block an unrelated task.
+        try {
+          const headers = current.relay_headers?.[name];
+          if (!headers?.Authorization) throw new Error("Missing relay credentials");
+          await refreshTurnMCP(pi, name, url, headers, Object.keys(toolExposure), ctx.signal, "Relay unavailable", toolExposure);
+        } catch {
+          pi.unregisterMcpServer(name);
+        }
+      }));
       roundConfig = Object.freeze(current);
     } catch {
       gate = true;
       try {
         if (work_role) pi.unregisterMcpServer(workServer);
+        for (const server of scopedServers) pi.unregisterMcpServer(server.name);
+        for (const [name] of relays) pi.unregisterMcpServer(name);
         if (assistant) removeAssistantMCP(pi);
       } finally {
         await ctx.abort();

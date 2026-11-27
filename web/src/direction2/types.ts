@@ -283,6 +283,7 @@ export interface HumanConfirmationRule {
 
 export interface DigitalEmployee {
   canManage?: boolean | undefined;
+  canChat?: boolean | undefined;
   cardResources?: { channels: PlatformType[]; packageCount: number; triggerCount: number };
   configVersion?: number;
   modelAvailable?: boolean;

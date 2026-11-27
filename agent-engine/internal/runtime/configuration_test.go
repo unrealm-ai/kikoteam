@@ -212,3 +212,32 @@ func assertCatalogHeaders(t *testing.T, m map[string]any, token, input string) {
 		t.Fatal("existing authorization was not kept separate from catalog")
 	}
 }
+
+func TestEmployeeManagementOnlyExecutionWithTrustedInputCredential(t *testing.T) {
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
+	worker := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
+	for _, s := range []struct {
+		mode, token      string
+		correction, want bool
+	}{
+		{"task", "input-grant", false, true},
+		{"task", "", false, false},
+		{"task", "input-grant", true, false},
+		{"chat", "input-grant", false, false},
+	} {
+		current := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "workspace", AgentID: "employee", Mode: s.mode, ConversationID: "conversation"}
+		cfg := integration.HarnessConfig{SessionID: current.SessionID, WorkspaceID: current.WorkspaceID, AgentID: current.AgentID, Mode: current.Mode, ConversationID: current.ConversationID, EmployeeManagementToken: s.token}
+		turn := repository.Turn{Input: repository.Input{ID: "bound-input", CorrectionOnly: s.correction}}
+		out, _, err := worker.prepareConfiguration(t.Context(), current, turn, cfg, integration.Endpoint{})
+		entry, ok := out.MCP["employee_management"].(map[string]any)
+		if err != nil || ok != s.want {
+			t.Fatal(s, ok, err)
+		}
+		if ok {
+			headers := entry["headers"].(map[string]string)
+			if entry["url"] != "http://manager.invalid/mcp/assistant/platform" || headers["Authorization"] != "Bearer input-grant" || headers["X-Kiko-Assistant-Input"] != "bound-input" {
+				t.Fatal(entry)
+			}
+		}
+	}
+}

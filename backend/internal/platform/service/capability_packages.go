@@ -26,6 +26,7 @@ type PackagePlugin struct {
 	VersionID string `json:"version_id"`
 }
 type CapabilityPackage struct {
+	AssistantToolSet  string                    `json:"assistant_tool_set,omitempty"`
 	WorkScope         *WorkScope                `json:"work_scope,omitempty"`
 	ConversationScope *PackageConversationScope `json:"conversation_scope"`
 	TriggerScope      PackageTriggerScope       `json:"trigger_scope"`
@@ -104,13 +105,20 @@ func packageAuthorize(ctx context.Context, t PackageTx, actor string, write bool
 	}
 	return e
 }
+func authorizePackageRead(ctx context.Context, t PackageTx, actor, employee string) error {
+	if employee != "" {
+		return AuthorizeEmployee(ctx, t, actor, employee)
+	}
+	return packageAuthorize(ctx, t, actor, false)
+}
+
 func (s *PackageService) List(ctx context.Context, w, actor, employee string, p, n int) (PackagePage, error) {
 	out := PackagePage{Items: []CapabilityPackage{}, Page: p, PageSize: n}
 	if e := pageValid(p, n); e != nil {
 		return out, e
 	}
 	e := s.Store.WithWorkspace(ctx, w, func(t PackageTx) error {
-		if e := packageAuthorize(ctx, t, actor, false); e != nil {
+		if e := authorizePackageRead(ctx, t, actor, employee); e != nil {
 			return e
 		}
 		if employee != "" {
@@ -127,7 +135,7 @@ func (s *PackageService) List(ctx context.Context, w, actor, employee string, p,
 func (s *PackageService) Get(ctx context.Context, w, actor, employee, id string) (CapabilityPackage, error) {
 	var out CapabilityPackage
 	e := s.Store.WithWorkspace(ctx, w, func(t PackageTx) error {
-		if e := packageAuthorize(ctx, t, actor, false); e != nil {
+		if e := authorizePackageRead(ctx, t, actor, employee); e != nil {
 			return e
 		}
 		var e error
@@ -188,6 +196,9 @@ func (s *PackageService) Update(ctx context.Context, w, actor, employee, id stri
 		v, e = t.Get(ctx, employee, id)
 		if e != nil {
 			return e
+		}
+		if v.AssistantToolSet != "" && (r.Name != nil || r.Description != nil || r.Skills != nil || r.Plugins != nil) {
+			return Fail("builtin_package_read_only", 409, "内置包只能修改启停和使用范围")
 		}
 		if v.Version != r.Version {
 			return Fail("package_version_conflict", 409, "能力包已更新，请刷新后重试")
@@ -431,7 +442,11 @@ func validatePackageReferences(ctx context.Context, t PackageTx, v CapabilityPac
 	if e := validatePackageMembers(ctx, t, v.Scope); e != nil {
 		return e
 	}
+	_, management := EmployeeManagementFrom(ctx)
 	for i, r := range v.Skills {
+		if management && slices.Contains(previous.Skills, r) {
+			continue
+		}
 		state, e := t.ValidateSkill(ctx, r)
 		if e != nil {
 			return e
@@ -439,15 +454,24 @@ func validatePackageReferences(ctx context.Context, t PackageTx, v CapabilityPac
 		if !state.Enabled || state.Unlisted && !slices.ContainsFunc(previous.Skills, func(old PackageSkill) bool { return old.SkillID == r.SkillID }) {
 			return Fail("skill_unavailable", 409, "技能已停用或下架")
 		}
+		if management && r.VersionID != state.CurrentVersionID {
+			return Fail("resource_version_conflict", 409, "技能版本已更新，请重新查询可用资源")
+		}
 		v.Skills[i].VersionID = state.CurrentVersionID
 	}
 	for i, r := range v.Plugins {
+		if management && slices.Contains(previous.Plugins, r) {
+			continue
+		}
 		state, e := t.ValidatePlugin(ctx, r)
 		if e != nil {
 			return e
 		}
 		if !state.Enabled || state.Unlisted && !slices.ContainsFunc(previous.Plugins, func(old PackagePlugin) bool { return old.PluginID == r.PluginID }) {
 			return Fail("plugin_unavailable", 409, "插件已停用或下架")
+		}
+		if management && r.VersionID != state.CurrentVersionID {
+			return Fail("resource_version_conflict", 409, "MCP 版本已更新，请重新查询可用资源")
 		}
 		v.Plugins[i].VersionID = state.CurrentVersionID
 	}

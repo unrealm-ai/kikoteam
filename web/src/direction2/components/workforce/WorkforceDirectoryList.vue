@@ -392,7 +392,7 @@ defineExpose({ openCreateModal });
               'is-attention': emp.status === 'pending_setup',
               'is-warning': emp.status === 'warning',
             }"
-            :title="emp.modelAvailable === false ? '模型当前不可用' : emp.status === 'pending_setup' ? '待接入飞书 / 钉钉 / 企微渠道' : `${getExecutionEngineMeta(emp.executionEngine).shortLabel} · ${emp.modelName}`"
+            :title="emp.canManage === false ? undefined : emp.modelAvailable === false ? '模型当前不可用' : emp.status === 'pending_setup' ? '待接入飞书 / 钉钉 / 企微渠道' : `${getExecutionEngineMeta(emp.executionEngine).shortLabel} · ${emp.modelName}`"
           >
             <span
               class="ec-context-dot"
@@ -404,7 +404,7 @@ defineExpose({ openCreateModal });
               aria-hidden="true"
             />
             {{
-              emp.modelAvailable === false ? '模型当前不可用' : emp.status === 'disabled'
+              emp.canManage === false ? (emp.status === 'disabled' ? '已停用 · 仅查看历史' : 'AI 员工') : emp.modelAvailable === false ? '模型当前不可用' : emp.status === 'disabled'
                 ? '已停用 · 仅查看历史'
                 : emp.status === 'warning'
                   ? '渠道连接异常 · 请检查'
@@ -416,13 +416,14 @@ defineExpose({ openCreateModal });
           <div class="ec-footer-actions">
             <NButton
               size="small"
+              v-if="emp.status === 'disabled' || emp.canChat !== false"
               v-bind="emp.status === 'disabled' ? {} : { color: '#18181B' }"
               @click.stop="emit('start-chat', emp)"
             >
               {{ emp.status === 'disabled' ? '查看历史对话' : '开始对话' }}
             </NButton>
             <NButton size="small" secondary @click.stop="emit('open-detail', emp, 'overview')">
-              管理配置
+              {{ emp.canManage === false ? '查看概览' : '管理配置' }}
             </NButton>
           </div>
         </div>

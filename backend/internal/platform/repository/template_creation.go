@@ -239,6 +239,9 @@ func (s *TemplateStore) FromAgent(ctx context.Context, w, a, id string, av, cv i
 			return key
 		}
 		for i, p := range packages {
+			if p.AssistantToolSet != "" {
+				continue
+			}
 			tp := service.TemplatePackage{Key: fmt.Sprintf("package_%d", i+1), Name: p.Name, Description: p.Description, Onboarding: "required", Skills: []service.TemplatePin{}, Plugins: []service.TemplatePluginPin{}}
 			for _, r := range p.Skills {
 				tp.Skills = append(tp.Skills, service.TemplatePin{ResourceKey: add("skill", r.SkillID, r.VersionID)})

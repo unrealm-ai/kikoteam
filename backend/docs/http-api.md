@@ -171,7 +171,7 @@ external 表示对外契约，包含逐操作声明的匿名例外。契约源�
 
 [AI 员工市场技术设计](agent-template-market.md)中的 `POST /workspaces/{workspace_id}/agents/from-template` 同样遵循普通创建约定，不要求请求去重键。客户端不自动重试；结果未知时先核对员工列表，显式再次提交可能创建另一位员工。
 
-员工列表和详情返回该调用人的 `can_manage`。普通有效工作区成员可创建员工，员工资源写入按目标员工校验，不沿用工作区资源发布权限。维护名单使用 `GET /workspaces/{workspace_id}/agents/{agent_id}/maintainers` 和 `PUT` 同路径；读取返回 `{version, people}`，其中 `people` 为统一选人的已保存候选项。更新提交当前 `version` 和 `people`（统一选人的个人引用，最多 100 项，清空用 `[]`），不接受模式、继承、黑名单或部门。名单版本冲突返回 `409 maintainers_version_conflict`。读取和写入均需要目标员工管理权限。升级时先暂停旧 backend 的员工创建，再应用 Event Hub 迁移 105，旧员工创建人一次性回填为工作区 owner；有员工但没有 owner 的工作区须先修复，避免迁移猜测归属。
+员工列表和详情返回该调用人的 `can_manage` 与 Web 私聊使用权 `can_chat`。没有目标员工管理权限时仅公开概览所需信息，不返回岗位行为规范、模型配置标识、模板参数和付款人；员工能力包列表和详情按目标员工管理权限校验，工作区模板目录不受影响。普通有效工作区成员可创建员工，员工资源写入按目标员工校验，不沿用工作区资源发布权限。维护名单使用 `GET /workspaces/{workspace_id}/agents/{agent_id}/maintainers` 和 `PUT` 同路径；读取返回 `{version, people}`，其中 `people` 为统一选人的已保存候选项。更新提交当前 `version` 和 `people`（统一选人的个人引用，最多 100 项，清空用 `[]`），不接受模式、继承、黑名单或部门。名单版本冲突返回 `409 maintainers_version_conflict`。读取和写入均需要目标员工管理权限。升级时先暂停旧 backend 的员工创建，再应用 Event Hub 迁移 105，旧员工创建人一次性回填为工作区 owner；有员工但没有 owner 的工作区须先修复，避免迁移猜测归属。
 
 多 Backend 实例的输入排序、撤回 / 领取、停止 / 新输入和归档 / 新输入竞争，由数据库中的短事务与条件更新裁决；配置编辑另用预期版本。不同 Session 并行，同一 Session 最多一个活动 Turn，Engine 提交还需校验当前执行代次；具体锁顺序与恢复边界见[并发裁决设计](../../docs/architecture/session-data-model.md#7-事务与并发裁决)。
 
@@ -204,3 +204,10 @@ external 表示对外契约，包含逐操作声明的匿名例外。契约源�
 - PluginAuth 授权发起、回调、续期、撤销及非敏感接入设置与凭据引用的装配关系。
 - 将[内部注册与分配设计](engine-dispatch.md)转写契约，并联调 Engine / Runner 的默认环境生命周期与失败恢复；builtin MCP 按[工具专项设计](../../sandbox-runner/docs/builtin-mcp.md)移植并验证 HTTP 接入。
 - 配额、并发限制、超时及分页上限；本期不提前设计文件大小或文件保留策略。
+
+### 托管助手发放与入口
+
+- 先应用 Event Hub 迁移 106。托管部署才设置 KIKO_HOSTED_ASSISTANT_AVAILABLE=true；平台发放开关另由管理员通过 GET/PATCH /api/v1/platform/assistant-settings 查看和保存。更新携带 expected_version 与 enabled。
+- 开关启用后，注册自动建区和手动建区都通过同一个数据库事务留下发放记录。Backend 按工作区异步领取并重验开关与已验证的平台默认模型；不补发存量工作区。创建员工、默认确认人、模型扣费绑定、内置能力包、助手关联和发放成功一起提交。
+- GET /api/v1/workspaces/{workspace_id}/assistant 仅为有权使用该 Web 私聊的成员返回 agent_id，满足体验包 Web 私聊权限才返回体验卡。卡片只发送一条普通聊天输入。工作区发放中返回 pending，不暴露后台错误详情。
+- 管理包默认工作区创建人的 Web 私聊可用；体验包继承员工私聊范围；群聊与触发器默认关闭。运行时凭证绑定本轮输入和执行分配，每次工具调用重验场景及权限。管理工具目前只返回接入状态，不读写业务配置，体验工具只用样例。

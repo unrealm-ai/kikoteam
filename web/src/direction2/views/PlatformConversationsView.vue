@@ -5,6 +5,8 @@ import ProjectFileTree from '../components/ProjectFileTree.vue';
 import ProjectDraftFiles from '../components/ProjectDraftFiles.vue';
 import {useProjectDraft} from '../composables/useProjectDraft';
 import D2EmployeeAvatar from '../components/D2EmployeeAvatar.vue';
+import AssistantDemoCards from '../components/AssistantDemoCards.vue';
+import { assistantApi, type AssistantCard, type AssistantEntry } from '../api/assistant';
 import ManagerSessionPanel from '../components/ManagerSessionPanel.vue';
 import TaskDetailPanel from '../components/TaskDetailPanel.vue';
 import { activeWorkspaceId, D2ApiError } from '../api/client';
@@ -12,7 +14,11 @@ import { agentsApi, type Agent } from '../api/agents';
 import { managerApi, type Conversation, type ManagerSession } from '../api/manager';
 import { taskApi } from '../api/tasks';
 import { sessionStatus, workItemProgress, type TaskNavigationTarget } from '../utils/session-presentation';
-const props = defineProps<{ accountId?: string | undefined; selectedEmployeeId?: string | undefined; selectedConversationId?: string | undefined }>();
+const props = defineProps<{ accountId?: string | undefined; selectedEmployeeId?: string | undefined; selectedConversationId?: string | undefined; assistantEntry?: AssistantEntry | undefined;
+ assistantDemo?: {card: AssistantCard; workspace: string; agent: string; key: string} | undefined }>();
+const emit = defineEmits<{demoConsumed: [key: string]}>();
+const demoOpen = ref(false);
+const demoCards = computed(() => props.assistantEntry?.agent_id === selected.value && !props.selectedConversationId ? props.assistantEntry?.cards || [] : []);
 const agents = ref<Agent[]>([]), startedIds = ref<string[]>([]), selected = ref(''), search = ref(''), listError = ref(''), loading = ref(false);
 const newChatOpen = ref(false), modalSearch = ref('');
 const conversation = ref<Conversation | null>(null), chatID = ref(''), taskID = ref(''), tasks = ref<ManagerSession[]>([]), taskCursor = ref<string | null>(null);
@@ -122,7 +128,7 @@ async function refreshTasks(more = false) {
   finally { if (g === generation) taskBusy = false; }
 }
 async function open() {
-  draft.reset();showFiles.value=false;treeMounted.value=false;dragDepth.value=0;chatSending.value=false;
+  demoOpen.value=false;draft.reset();showFiles.value=false;treeMounted.value=false;dragDepth.value=0;chatSending.value=false;
   const g = ++generation; controller.abort(); controller = new AbortController();
   conversation.value = null; chatID.value = ''; taskID.value = ''; taskFullscreen.value = false; tasks.value = []; taskCursor.value = null; taskBusy = false; lastTaskRefresh = 0; tasksLoaded = false;
   opening.value = false; firstText.value = ''; firstRequest = null; error.value = ''; tasksError.value = ''; sending.value = false;
@@ -155,6 +161,45 @@ async function firstSend() {
   } catch (e) { if (g === generation) error.value = e instanceof Error ? e.message : '发送结果未知，请原样重试'; }
   finally { if (g === generation) sending.value = false; }
 }
+async function sendDemo(card: AssistantCard, key: string = crypto.randomUUID()) {
+  if (!demoCards.value.some(item => item.key === card.key && item.input === card.input) || !conversation.value || locked.value) return;
+  const g = generation, w = activeWorkspaceId.value, cid = conversation.value.id, signal = controller.signal;
+  sending.value = true;
+  error.value = '';
+  demoOpen.value = false;
+  try {
+    const live = await assistantApi.entry(w, signal);
+    if (g !== generation) return;
+    if (live.agent_id !== selected.value || !live.cards.some(item => item.key === card.key && item.input === card.input)) {
+      throw new Error('体验权限或样例已更新，请重新打开体验入口。');
+    }
+    if (chatID.value) {
+      await managerApi.input(w, chatID.value, card.input, key, signal, 'queue');
+      return;
+    }
+    let session: ManagerSession;
+    try { session = await managerApi.createChat(w, cid, card.input, key, signal); }
+    catch (e) {
+      if (g !== generation) return;
+      if (!(e instanceof D2ApiError) || e.code !== 'chat_session_exists') throw e;
+      const c = await managerApi.conversation(w, cid, signal);
+      if (!c.chat_session_id || g !== generation) return;
+      await managerApi.input(w, c.chat_session_id, card.input, key, signal, 'queue');
+      session = await managerApi.session(w, c.chat_session_id, signal);
+    }
+    if (g === generation) { chatID.value = session.id; markStarted(selected.value); }
+  } catch (e) {
+    if (g === generation) error.value = e instanceof Error ? e.message : '体验消息未确认发送，请检查对话后重试';
+  } finally {
+    if (g === generation) sending.value = false;
+  }
+}
+watch([() => props.assistantDemo, conversation, selected, demoCards, locked], ([req, conv]) => {
+  if (!req || !conv || locked.value || conv.agent_id !== req.agent || selected.value !== req.agent || activeWorkspaceId.value !== req.workspace || !demoCards.value.length) return;
+  emit('demoConsumed', req.key);
+  void sendDemo(req.card, req.key);
+});
+
 function visibility() { if (!document.hidden) void refreshTasks(); }
 async function locateTask(target: TaskNavigationTarget, w: string, signal: AbortSignal) {
   const known = tasks.value.find(task => (target.kind === 'task' ? task.task_id : task.id) === target.id);
@@ -225,10 +270,12 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
           <span class="muted">{{ employee?.role || '对话协作 · 任务持续跟进' }}</span>
         </div>
         <div class="fallback-actions">
+          <NButton v-if="demoCards.length && conversation?.lifecycle === 'active'" size="small" secondary @click="demoOpen = !demoOpen">体验场景</NButton>
           <NButton v-if="conversation" size="small" :type="showTasks ? 'primary' : 'default'" secondary @click="showFiles=false; showTasks = !showTasks; if (!showTasks) { taskFullscreen = false; taskID = ''; }">{{ showTasks ? '收起任务栏' : `会话任务 (${tasks.length})` }}</NButton>
           <NButton v-if="filesAvailable" size="small" :type="showFiles ? 'primary' : 'default'" secondary :aria-expanded="showFiles" @click="toggleFiles">项目文件</NButton>
         </div>
       </header>
+      <AssistantDemoCards v-if="demoOpen && demoCards.length" :cards="demoCards" :disabled="locked" @choose="card => sendDemo(card)" />
       <p v-if="conversation && conversation.lifecycle !== 'active'" class="muted archived-banner" role="status">此主对话已归档，不能继续发送；历史消息仍保留，不会自动新建替代对话。</p>
       <p v-if="error" class="error" role="alert">{{ error }} <NButton v-if="!conversation" @click="open">重新加载</NButton></p>
       <NSkeleton v-if="opening" text :repeat="4" />
@@ -273,7 +320,8 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
                 <D2EmployeeAvatar v-if="employee" :name="employee.name" :preset="employee.avatar" :identity-key="employee.id" size="lg" />
                 <h3>与「{{ employee?.name }}」开始协作</h3>
                 <p class="muted">{{ employee?.role ? `${employee.role}。` : '' }}暂无历史消息，请向「{{ employee?.name }}」发送工作需求。</p>
-                <div class="quick-prompts">
+                <AssistantDemoCards v-if="demoCards.length && !assistantEntry?.experienced && !demoOpen" :cards="demoCards" :disabled="locked" @choose="card => sendDemo(card)" />
+                <div v-else class="quick-prompts">
                   <button type="button" class="prompt-chip" @click="firstText = '帮我梳理当前工作的核心进度与待办事项'">梳理核心进度与待办 ↗</button>
                   <button type="button" class="prompt-chip" @click="firstText = '请先查看项目目录文件并汇报关键发现'">查看项目目录并汇报 ↗</button>
                 </div>

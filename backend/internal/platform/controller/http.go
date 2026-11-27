@@ -20,38 +20,40 @@ import (
 )
 
 type Server struct {
-	Referrals        ReferralRepository
-	Catalog          service.ResourceCatalog
-	SharingPolicies  *service.GroupSharingService
-	PeopleSelectors  *service.PeopleSelectorService
-	GroupSelectors   *service.GroupSelectorService
-	WecomGroups      *service.WecomGroupRefresh
-	ChannelGroups    *service.ChannelGroupDiscovery
-	AgentUsage       *service.AgentUsageService
-	WebGroups        *service.WebGroupService
-	WecomContacts    *service.WecomContactsService
-	FeishuSetup      *service.FeishuSetupService
-	DingTalkSetup    *service.DingTalkSetupService
-	Official         *mp.Models
-	Templates        *service.TemplateService
-	Admin            *service.AdminService
-	MailSettings     *service.MailSettingsService
-	OAuthApps        *service.OAuthAppService
-	ChannelDownloads *service.ChannelDownloadSettingsService
-	TaskLinks        *service.TaskLinkSettingsService
-	Channels         *service.ChannelService
-	Skills           *service.SkillService
-	Plugins          *service.PluginService
-	Packages         *service.PackageService
-	Models           *service.ModelService
-	Agents           *service.AgentService
-	Auth             *service.AuthService
-	Workspaces       *service.WorkspaceService
-	Origin           string
-	SecureCookies    bool
-	Logger           *slog.Logger
-	TrustedProxies   []netip.Prefix
-	CodeLoginEnabled bool
+	Referrals                 ReferralRepository
+	Catalog                   service.ResourceCatalog
+	SharingPolicies           *service.GroupSharingService
+	PeopleSelectors           *service.PeopleSelectorService
+	GroupSelectors            *service.GroupSelectorService
+	WecomGroups               *service.WecomGroupRefresh
+	ChannelGroups             *service.ChannelGroupDiscovery
+	AgentUsage                *service.AgentUsageService
+	WebGroups                 *service.WebGroupService
+	WecomContacts             *service.WecomContactsService
+	FeishuSetup               *service.FeishuSetupService
+	DingTalkSetup             *service.DingTalkSetupService
+	Official                  *mp.Models
+	Templates                 *service.TemplateService
+	Admin                     *service.AdminService
+	MailSettings              *service.MailSettingsService
+	OAuthApps                 *service.OAuthAppService
+	ChannelDownloads          *service.ChannelDownloadSettingsService
+	Assistants                hostedAssistantSettings
+	AssistantToolDescriptions func(string) []service.AssistantToolDescription
+	TaskLinks                 *service.TaskLinkSettingsService
+	Channels                  *service.ChannelService
+	Skills                    *service.SkillService
+	Plugins                   *service.PluginService
+	Packages                  *service.PackageService
+	Models                    *service.ModelService
+	Agents                    *service.AgentService
+	Auth                      *service.AuthService
+	Workspaces                *service.WorkspaceService
+	Origin                    string
+	SecureCookies             bool
+	Logger                    *slog.Logger
+	TrustedProxies            []netip.Prefix
+	CodeLoginEnabled          bool
 }
 type operation func(http.ResponseWriter, *http.Request) (any, int, error)
 
@@ -67,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	s.oauthAppRoutes(m)
 	s.channelDownloadSettingsRoutes(m)
 	s.taskLinkSettingsRoutes(m)
+	s.hostedAssistantRoutes(m)
 	s.referralRoutes(m)
 	s.channelRoutes(m)
 	s.wecomContactRoutes(m)

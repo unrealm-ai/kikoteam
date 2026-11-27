@@ -20,29 +20,32 @@ type Backend struct {
 	HTTP                 *http.Client
 }
 type HarnessConfig struct {
-	TaskDetailCardEnabled bool         `json:"task_detail_card_enabled,omitempty"`
-	ReportOnly            bool         `json:"report_only,omitempty"`
-	WorkRole              string       `json:"work_role"`
-	WorkLocalToken        string       `json:"work_local_token"`
-	WorkMCPToken          string       `json:"work_mcp_token"`
-	HumanToolsToken       string       `json:"human_tools_token"`
-	HumanMCPToken         string       `json:"human_mcp_token"`
-	GroupHistoryToken     string       `json:"group_history_token"`
-	TaskSpaceHistoryToken string       `json:"task_space_history_token"`
-	AttachmentToken       string       `json:"attachment_token"`
-	CapabilityToken       string       `json:"capability_token"`
-	Resources             Resources    `json:"resources"`
-	DelegationToken       string       `json:"delegation_token"`
-	SessionID             string       `json:"session_id"`
-	WorkspaceID           string       `json:"workspace_id"`
-	AgentID               string       `json:"agent_id"`
-	TaskSpaceID           string       `json:"task_space_id,omitempty"`
-	TaskID                string       `json:"task_id,omitempty"`
-	ConversationID        string       `json:"conversation_id"`
-	Mode                  string       `json:"mode"`
-	APIKey                string       `json:"api_key"`
-	WebhookFile           *WebhookFile `json:"webhook_file,omitempty"`
-	Configuration         struct {
+	EmployeeManagementToken string       `json:"employee_management_token"`
+	AssistantToolSet        string       `json:"assistant_tool_set"`
+	AssistantMCPToken       string       `json:"assistant_mcp_token"`
+	TaskDetailCardEnabled   bool         `json:"task_detail_card_enabled,omitempty"`
+	ReportOnly              bool         `json:"report_only,omitempty"`
+	WorkRole                string       `json:"work_role"`
+	WorkLocalToken          string       `json:"work_local_token"`
+	WorkMCPToken            string       `json:"work_mcp_token"`
+	HumanToolsToken         string       `json:"human_tools_token"`
+	HumanMCPToken           string       `json:"human_mcp_token"`
+	GroupHistoryToken       string       `json:"group_history_token"`
+	TaskSpaceHistoryToken   string       `json:"task_space_history_token"`
+	AttachmentToken         string       `json:"attachment_token"`
+	CapabilityToken         string       `json:"capability_token"`
+	Resources               Resources    `json:"resources"`
+	DelegationToken         string       `json:"delegation_token"`
+	SessionID               string       `json:"session_id"`
+	WorkspaceID             string       `json:"workspace_id"`
+	AgentID                 string       `json:"agent_id"`
+	TaskSpaceID             string       `json:"task_space_id,omitempty"`
+	TaskID                  string       `json:"task_id,omitempty"`
+	ConversationID          string       `json:"conversation_id"`
+	Mode                    string       `json:"mode"`
+	APIKey                  string       `json:"api_key"`
+	WebhookFile             *WebhookFile `json:"webhook_file,omitempty"`
+	Configuration           struct {
 		Vision      bool   `json:"supports_images"`
 		Protocol    string `json:"protocol"`
 		BaseURL     string `json:"base_url"`

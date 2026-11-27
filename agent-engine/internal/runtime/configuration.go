@@ -64,6 +64,26 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 		cfg.HumanMCPToken = ""
 		cfg.HumanToolsToken = ""
 	}
+	if current.Mode == "task" && cfg.EmployeeManagementToken != "" && !cfg.ReportOnly {
+		out.MCP["employee_management"] = map[string]any{
+			"url": w.Backend.URL + "/mcp/assistant/platform",
+			"headers": map[string]string{
+				"Authorization":          "Bearer " + cfg.EmployeeManagementToken,
+				"X-Kiko-Assistant-Input": turn.Input.ID,
+			},
+			"exposure": "direct",
+		}
+	}
+	if cfg.AssistantMCPToken != "" && !cfg.ReportOnly && current.Mode == "task" && cfg.AssistantToolSet == "demo" {
+		out.MCP["assistant_"+cfg.AssistantToolSet] = map[string]any{
+			"url": w.Backend.URL + "/mcp/assistant/" + cfg.AssistantToolSet,
+			"headers": map[string]string{
+				"Authorization":          "Bearer " + cfg.AssistantMCPToken,
+				"X-Kiko-Assistant-Input": turn.Input.ID,
+			},
+			"exposure": "direct",
+		}
+	}
 	w.configureHumanMCP(&out, current.Mode, turn.Input.ID, cfg)
 	if cfg.HumanToolsToken != "" && (current.Mode == "task" || cfg.HumanMCPToken == "") {
 		w.configureHumanTools(&out, turn, cfg, cfg.HumanMCPToken != "")

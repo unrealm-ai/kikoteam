@@ -15,6 +15,7 @@ type AgentCardResources struct {
 	TriggerCount int      `json:"trigger_count"`
 }
 type Agent struct {
+	CanChat         bool                `json:"can_chat"`
 	CanManage       bool                `json:"can_manage"`
 	CardResources   *AgentCardResources `json:"card_resources,omitempty"`
 	WebAccess       WebAccess           `json:"web_access"`
@@ -117,6 +118,12 @@ func AuthorizeEmployee(ctx context.Context, t interface {
 	return err
 }
 
+func publicAgentConfiguration(v *Agent) {
+	v.Instruction, v.ModelProfileID, v.PlatformModelID, v.ModelName = "", "", "", ""
+	v.TemplateOrigin, v.Payer = nil, nil
+	v.ConfigVersion, v.AdmissionEpoch = 0, 0
+}
+
 func agentManagementFlag(ctx context.Context, t AgentTx, actor string, m Member, v *Agent) error {
 	if m.Role == "owner" || m.Role == "admin" {
 		v.CanManage = true
@@ -154,8 +161,7 @@ func (s *AgentService) List(ctx context.Context, w, a string, q AgentListQuery) 
 		for i := range out.Items {
 			out.Items[i].CanManage = out.Items[i].CanManage || m.Role == "owner" || m.Role == "admin"
 			if !out.Items[i].CanManage {
-				out.Items[i].TemplateOrigin = nil
-				out.Items[i].Payer = nil
+				publicAgentConfiguration(&out.Items[i])
 			}
 		}
 		return err
@@ -176,9 +182,16 @@ func (s *AgentService) Get(ctx context.Context, w, a, id string) (Agent, error) 
 		if e = agentManagementFlag(ctx, t, a, m, &out); e != nil {
 			return e
 		}
+		if store, ok := t.(interface {
+			CanChatEmployee(context.Context, string, string) (bool, error)
+		}); ok {
+			out.CanChat, e = store.CanChatEmployee(ctx, id, a)
+			if e != nil {
+				return e
+			}
+		}
 		if !out.CanManage {
-			out.TemplateOrigin = nil
-			out.Payer = nil
+			publicAgentConfiguration(&out)
 		}
 		return e
 	})
@@ -258,7 +271,7 @@ func (s *AgentService) Create(ctx context.Context, w, a string, r AgentCreate) (
 		}
 		var e error
 		v, e = t.Get(ctx, v.ID)
-		v.CanManage = e == nil
+		v.CanManage, v.CanChat = e == nil, e == nil
 		return e
 	})
 	return v, e
@@ -324,6 +337,13 @@ func (s *AgentService) Update(ctx context.Context, w, a, id string, r AgentPatch
 		}
 		v, e = t.Get(ctx, id)
 		v.CanManage = e == nil
+		if e == nil {
+			if store, ok := t.(interface {
+				CanChatEmployee(context.Context, string, string) (bool, error)
+			}); ok {
+				v.CanChat, e = store.CanChatEmployee(ctx, id, a)
+			}
+		}
 		return e
 	})
 	return v, e

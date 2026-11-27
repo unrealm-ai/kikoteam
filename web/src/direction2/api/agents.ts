@@ -7,6 +7,7 @@ export interface AgentConfiguration {
 export interface Agent extends AgentConfiguration {
   model_profile_id: string;
   can_manage?: boolean;
+  can_chat?: boolean;
   payer?: {id: string; name: string};
   web_access?:{mode:'workspace'|'allowlist';allow_member_ids:string[];deny_member_ids:string[]};
   template_origin?:{template_id:string;template_version_id:string;parameters:Record<string,unknown>};

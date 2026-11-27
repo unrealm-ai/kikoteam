@@ -19,6 +19,10 @@ import (
 	"time"
 
 	mc "github.com/unrealm-ai/kikoteam/backend/internal/manager/controller"
+	assistantmcp "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/assistant"
+	"github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/demo"
+	"github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/humanconfirmation"
+	platformmcp "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/platform"
 	delegation "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/taskdelegation"
 	workitems "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/workitems"
 	mr "github.com/unrealm-ai/kikoteam/backend/internal/manager/repository"
@@ -33,14 +37,16 @@ import (
 )
 
 type proxyFixture struct {
-	db          *sql.DB
-	store       pr.Store
-	secrets     ps.Secrets
-	server      *httptest.Server
-	provider    *httptest.Server
-	engineToken string
-	entered     chan struct{}
-	release     chan struct{}
+	db           *sql.DB
+	store        pr.Store
+	secrets      ps.Secrets
+	assistant    *HostedAssistantStore
+	server       *httptest.Server
+	provider     *httptest.Server
+	engineToken  string
+	fixtureModel func(http.ResponseWriter, map[string]any) bool
+	entered      chan struct{}
+	release      chan struct{}
 }
 
 func modelProxyFixture(t *testing.T) *proxyFixture {
@@ -53,6 +59,7 @@ func modelProxyFixtureOnDB(t *testing.T, db *sql.DB) *proxyFixture {
 	f := &proxyFixture{db: db, secrets: ps.Secrets{Root: []byte(strings.Repeat("m", 40))},
 		engineToken: strings.Repeat("e", 40), entered: make(chan struct{}, 2), release: make(chan struct{})}
 	f.store = pr.Store{DB: f.db}
+	f.assistant = &HostedAssistantStore{DB: db, EnsureKey: f.secrets.EnsureKey, Available: true}
 	f.provider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		serveProxyFixture(t, f, w, r)
 	}))
@@ -65,7 +72,7 @@ func modelProxyFixtureOnDB(t *testing.T, db *sql.DB) *proxyFixture {
 	managerService := &manager.Service{Store: managerStore, CursorSecret: f.secrets.Root}
 	f.server = httptest.NewUnstartedServer(mux)
 	origin := "http://" + f.server.Listener.Addr().String()
-	(&mc.Server{Origin: origin, EngineToken: f.engineToken, Engines: managerStore, Service: managerService, Runtime: runtimeCapabilityServices(t, f.db),
+	(&mc.Server{AssistantToolAllowed: f.assistant.ToolAllowed, Origin: origin, EngineToken: f.engineToken, Engines: managerStore, Service: managerService, Runtime: runtimeCapabilityServices(t, f.db),
 		Authenticate: func(ctx context.Context, token string) (string, error) { a, e := auth.Me(ctx, token); return a.ID, e },
 		ResolveModelKey: func(ctx context.Context, w, actor string, c manager.Configuration) (string, error) {
 			return models.RuntimeModelKey(ctx, w, actor, c.ModelProfileID, c.Protocol, c.BaseURL, c.ModelID)
@@ -85,11 +92,17 @@ func modelProxyFixtureOnDB(t *testing.T, db *sql.DB) *proxyFixture {
 		t.Fatal(e)
 	}
 	mux.Handle("/mcp/task-delegation", delegate)
+	management := platformmcp.Tools{Directory: &EmployeeManagementStore{DB: db}, Agents: &service.AgentService{Store: &AgentStore{DB: db, EnsureKey: f.secrets.EnsureKey}}, Packages: &service.PackageService{Store: NewPackageStore(db)}}
+	assistantmcp.MountPlatform(mux, managerStore, f.engineToken, management.Server(true), management.Server(false))
+	assistantmcp.Mount(mux, managerStore, f.assistant.ToolAllowed, f.engineToken, "demo", "task", demo.Server(f.engineToken))
+	if err := humanconfirmation.Register(mux, managerStore, f.engineToken); err != nil {
+		t.Fatal(err)
+	}
 	if err := workitems.Register(mux, managerStore, f.engineToken); err != nil {
 		t.Fatal(err)
 	}
 	(pc.Proxy{Calls: f.store, Secrets: f.secrets, Upstream: upstream}).Routes(mux, strings.Repeat("h", 40))
-	mux.Handle("/api/", (&controller.Server{Origin: origin, Auth: auth, Official: &ps.Models{Store: f.store, Secrets: f.secrets, Upstream: upstream, AllowLoopbackHTTP: true},
+	mux.Handle("/api/", (&controller.Server{Assistants: f.assistant, Origin: origin, Auth: auth, Official: &ps.Models{Store: f.store, Secrets: f.secrets, Upstream: upstream, AllowLoopbackHTTP: true},
 		Models: models, Agents: &service.AgentService{Store: &AgentStore{DB: f.db, EnsureKey: f.secrets.EnsureKey}},
 		Workspaces: &service.WorkspaceService{Store: NewWorkspaceStore(f.db)},
 		Templates:  &service.TemplateService{Store: &TemplateStore{DB: f.db, EnsureKey: f.secrets.EnsureKey}},
@@ -121,6 +134,9 @@ func serveProxyFixture(t *testing.T, f *proxyFixture, w http.ResponseWriter, r *
 		case <-r.Context().Done():
 			return
 		}
+	}
+	if f.fixtureModel != nil && f.fixtureModel(w, body) {
+		return
 	}
 	w.Header().Set("X-Request-ID", "test-provider")
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -633,7 +649,16 @@ func (f *proxyFixture) startEngine(t *testing.T, ctx context.Context, root strin
 
 func TestOfficialModelWorkspaceOwnerPayerUpgrade(t *testing.T) {
 	ctx := t.Context()
-	f := modelProxyFixtureOnDB(t, workspaceTestDBThrough(t, "000103_conversation_last_message.sql"))
+	db := workspaceTestDBThrough(t, "000103_conversation_last_message.sql")
+	// The current employee API needs the creator schema; leave migration 104
+	// unapplied until after seeding the previous billing rows under test.
+	creatorSchema, err := os.ReadFile("../../../../event-hub/database/postgres/migrations/000105_employee_maintainers.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	up, _, _ := strings.Cut(string(creatorSchema), "-- +goose Down")
+	reviewExec(t, db, up)
+	f := modelProxyFixtureOnDB(t, db)
 	admin, user := proxyBrowserClient(t), proxyBrowserClient(t)
 	creator, _ := f.register(t, admin, "creator@payer-upgrade.test")
 	owner, w := f.register(t, user, "owner@payer-upgrade.test")

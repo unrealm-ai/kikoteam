@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/assistant"
 	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 	platform "github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
@@ -173,6 +174,15 @@ func (s *Server) harnessConfig(r *http.Request) (any, int, error) {
 	if err == nil && v.WorkRole != "" {
 		err = s.signWorkCredentials(&v, service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation})
 	}
+	if err == nil && !v.ReportOnly && !v.ConfirmationOnly {
+		id := service.DelegationIdentity{SessionID: v.SessionID, EngineID: q.Get("engine_id"), AssignmentID: q.Get("assignment_id"), Generation: generation}
+		if v.EmployeeManagementEligible {
+			v.EmployeeManagementToken, err = assistant.Token(s.EngineToken, v.InputID, "platform", id)
+		}
+		if err == nil && s.AssistantToolAllowed != nil {
+			err = s.assistantCredential(ctx, &v, actor, id)
+		}
+	}
 	if err == nil {
 		service.ApplyHarnessPrompt(&v)
 	}
@@ -243,4 +253,18 @@ func (s *Server) releaseAssignment(r *http.Request) (any, int, error) {
 	}
 	err := s.Engines.Release(r.Context(), req.EngineID, r.PathValue("session_id"), r.PathValue("assignment_id"), req.Generation)
 	return map[string]bool{"released": err == nil}, 200, err
+}
+
+func (s *Server) assistantCredential(ctx context.Context, v *service.HarnessConfig, actor string, id service.DelegationIdentity) error {
+	if v.Mode != "task" || v.Configuration.Capabilities == nil {
+		return nil
+	}
+	const key = "demo"
+	ok, err := s.AssistantToolAllowed(ctx, v.WorkspaceID, actor, v.AgentID, key, v.Configuration.Capabilities)
+	if err != nil || !ok {
+		return err
+	}
+	v.AssistantToolSet = key
+	v.AssistantMCPToken, err = assistant.Token(s.EngineToken, v.InputID, key, id)
+	return err
 }

@@ -35,10 +35,22 @@ func (t *channelTx) AuthorizeEmployee(ctx context.Context, employee, actor strin
 }
 
 func (t *packageTx) AuthorizeEmployee(ctx context.Context, employee, actor string) error {
+	if caller, ok := service.EmployeeManagementFrom(ctx); ok {
+		if actor != caller.Actor {
+			return managementDenied()
+		}
+		return authorizeManagementWrite(ctx, t.model, caller, employee)
+	}
 	return AuthorizeEmployeeManagement(ctx, t.model.tx, t.model.workspace, employee, actor)
 }
 
 func (t *agentTx) AuthorizeEmployee(ctx context.Context, employee, actor string) error {
+	if caller, ok := service.EmployeeManagementFrom(ctx); ok {
+		if actor != caller.Actor {
+			return managementDenied()
+		}
+		return authorizeManagementWrite(ctx, t.model, caller, employee)
+	}
 	return AuthorizeEmployeeManagement(ctx, t.model.tx, t.model.workspace, employee, actor)
 }
 

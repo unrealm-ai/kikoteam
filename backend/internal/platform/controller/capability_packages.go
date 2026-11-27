@@ -24,6 +24,20 @@ func (s *Server) packageRoutes(m *http.ServeMux) {
 		m.HandleFunc(pattern, s.wrap(pattern, op))
 	}
 }
+
+type packagePresentation struct {
+	service.CapabilityPackage
+	AssistantTools []service.AssistantToolDescription `json:"assistant_tools,omitempty"`
+}
+
+func (s *Server) presentPackage(p service.CapabilityPackage) packagePresentation {
+	out := packagePresentation{CapabilityPackage: p}
+	if p.AssistantToolSet != "" && s.AssistantToolDescriptions != nil {
+		out.AssistantTools = s.AssistantToolDescriptions(p.AssistantToolSet)
+	}
+	return out
+}
+
 func (s *Server) packageList(_ http.ResponseWriter, r *http.Request) (any, int, error) {
 	a, e := s.actor(r)
 	if e != nil {
@@ -34,7 +48,14 @@ func (s *Server) packageList(_ http.ResponseWriter, r *http.Request) (any, int, 
 		return nil, 0, e
 	}
 	v, e := s.Packages.List(r.Context(), r.PathValue("workspace_id"), a.ID, r.PathValue("agent_id"), p, n)
-	return v, 200, e
+	items := make([]packagePresentation, 0, len(v.Items))
+	for _, p := range v.Items {
+		items = append(items, s.presentPackage(p))
+	}
+	return struct {
+		service.PackagePage
+		Items []packagePresentation `json:"items"`
+	}{v, items}, 200, e
 }
 func (s *Server) packageGet(_ http.ResponseWriter, r *http.Request) (any, int, error) {
 	a, e := s.actor(r)
@@ -42,7 +63,7 @@ func (s *Server) packageGet(_ http.ResponseWriter, r *http.Request) (any, int, e
 		return nil, 0, e
 	}
 	v, e := s.Packages.Get(r.Context(), r.PathValue("workspace_id"), a.ID, r.PathValue("agent_id"), r.PathValue("package_id"))
-	return v, 200, e
+	return s.presentPackage(v), 200, e
 }
 func (s *Server) packageCreate(w http.ResponseWriter, r *http.Request) (any, int, error) {
 	a, e := s.actor(r)
@@ -72,7 +93,7 @@ func (s *Server) packageUpdate(w http.ResponseWriter, r *http.Request) (any, int
 	if e == nil {
 		s.packageSaved(w, r, a.ID, "capability_package.updated", v)
 	}
-	return v, 200, e
+	return s.presentPackage(v), 200, e
 }
 func (s *Server) packageCopy(w http.ResponseWriter, r *http.Request) (any, int, error) {
 	a, e := s.actor(r)

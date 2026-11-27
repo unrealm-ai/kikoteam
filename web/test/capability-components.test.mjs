@@ -575,19 +575,26 @@ test('Drawer backdrop closes a clean editor, but preserves dirty data until disc
  const m = await mount(PlatformPluginsPanel, {
   handle: (url, init, body) => init.method === 'POST' && url.endsWith('/plugins') ? Response.json({...plugin, ...body}) : undefined,
  });
+ const waitFor = async (check, message) => {
+  const deadline = Date.now() + 3000;
+  while (!check() && Date.now() < deadline) await pause(20);
+  assert.ok(check(), message);
+ };
+ const open = async () => {
+  button('+ 新增插件').click();
+  await waitFor(() => document.querySelector('.n-drawer-mask') && button('关闭'), 'drawer should be open');
+ };
+ const closed = () => waitFor(() => !button('关闭'), 'drawer should be closed');
  try {
   const backdrop = () => {
    const mask = document.querySelector('.n-drawer-mask');
    assert.ok(mask);
    mask.click();
   };
-  button('+ 新增插件').click();
-  await pause();
+  await open();
   backdrop();
-  await pause(320);
-  assert.equal(Boolean(button('关闭')), false, 'drawer should be closed');
-  button('+ 新增插件').click();
-  await pause();
+  await closed();
+  await open();
   const fields = [...document.querySelectorAll('.n-drawer input')];
   const name = fields[0];
   const endpoint = fields.find(field => field.placeholder.startsWith('https://'));
@@ -603,25 +610,22 @@ test('Drawer backdrop closes a clean editor, but preserves dirty data until disc
   assert.ok(button('放弃修改'));
   assert.ok(button('保存并关闭'));
   button('继续编辑').click();
-  await pause(320);
+  await waitFor(() => !button('继续编辑'), 'cancel dialog should close');
   assert.equal(name.value, 'Backdrop draft');
   assert.equal(m.calls.some(c => c.init.method === 'POST'), false);
   backdrop();
   await pause();
   button('保存并关闭').click();
-  await pause(320);
+  await closed();
   assert.equal(m.calls.find(c => c.init.method === 'POST')?.body.name, 'Backdrop draft');
-  assert.equal(Boolean(button('关闭')), false, 'drawer should be closed');
-  button('+ 新增插件').click();
-  await pause();
+  await open();
   const next = document.querySelector('.n-drawer input');
   next.value = 'Discarded draft';
   next.dispatchEvent(new window.Event('input', {bubbles: true}));
   backdrop();
   await pause();
   button('放弃修改').click();
-  await pause(320);
-  assert.equal(Boolean(button('关闭')), false, 'drawer should be closed');
+  await closed();
   assert.equal(m.calls.filter(c => c.init.method === 'POST').length, 1);
  } finally {
   await m.cleanup();

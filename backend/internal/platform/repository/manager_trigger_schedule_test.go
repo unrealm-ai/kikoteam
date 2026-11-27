@@ -23,7 +23,11 @@ func TestTriggerScheduleAtomicOccurrenceAndRecovery(t *testing.T) {
 	if err != nil || len(poll.Items) != 1 || poll.Items[0].NextDue.IsZero() {
 		t.Fatal(poll, err)
 	}
-	due := time.Now().UTC().Truncate(time.Minute).Add(-time.Minute)
+	var tickStart time.Time
+	if err = db.QueryRow(`SELECT clock_timestamp()`).Scan(&tickStart); err != nil {
+		t.Fatal(err)
+	}
+	due := tickStart.UTC().Truncate(time.Minute).Add(-time.Minute)
 	if _, err = db.Exec(`UPDATE manager_triggers SET next_due=$2 WHERE id=$1`, b.ID, due); err != nil {
 		t.Fatal(err)
 	}
@@ -45,14 +49,19 @@ func TestTriggerScheduleAtomicOccurrenceAndRecovery(t *testing.T) {
 	if err = db.QueryRow(`SELECT (SELECT count(*) FROM manager_trigger_events),(SELECT count(*) FROM manager_tasks),(SELECT count(*) FROM manager_task_spaces)`).Scan(&events, &tasks, &spaces); err != nil || events != 1 || tasks != 1 || spaces != 1 {
 		t.Fatal(events, tasks, spaces, err)
 	}
-	var next time.Time
-	if err = db.QueryRow(`SELECT next_due FROM manager_triggers WHERE id=$1`, b.ID).Scan(&next); err != nil || !next.After(time.Now()) {
-		t.Fatal(next, err)
+	var next, tickEnd time.Time
+	if err = db.QueryRow(`SELECT next_due,clock_timestamp() FROM manager_triggers WHERE id=$1`, b.ID).Scan(&next, &tickEnd); err != nil {
+		t.Fatal(err)
+	}
+	// The winning tick schedules the first whole minute after its database
+	// clock sample. The remaining contenders may finish in the next minute.
+	if !next.Equal(next.Truncate(time.Minute)) || !next.After(tickStart) || next.After(tickEnd.Truncate(time.Minute).Add(time.Minute)) {
+		t.Fatalf("next due %v outside the tick interval %v..%v", next, tickStart, tickEnd)
 	}
 	if _, err = db.Exec(`UPDATE manager_triggers SET next_due=$2 WHERE id=$1`, b.ID, due); err != nil {
 		t.Fatal(err)
 	}
-	q.RecoveryStartedAt = time.Now().UTC()
+	q.RecoveryStartedAt = tickEnd
 	result, err := s.TickTriggerSchedule(ctx, b.ID, q)
 	if err != nil || result.Receipt == nil || !result.Receipt.Duplicate {
 		t.Fatal("registered occurrence failed recovery", result, err)

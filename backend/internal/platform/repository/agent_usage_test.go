@@ -125,6 +125,8 @@ func TestAgentUsageExternalSelectorsPinnedAndStaleRetained(t *testing.T) {
 
 func TestAgentUsageAdminRevocationSerializesWithWrite(t *testing.T) {
 	db, _, _, w, owner, agent, _ := channelManagerFixture(t)
+	// This sender's role is the only grant; the creator has an independent grant.
+	assignDifferentTestCreator(t, db, w, agent)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	store := &AgentUsageStore{DB: db}
@@ -173,7 +175,7 @@ func TestAgentUsageAdminRevocationSerializesWithWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = authorized.Rollback() }() //nolint:errcheck // Read-only test transaction.
-	if err = usageAdmin(ctx, authorized, w, owner); err != nil {
+	if err = LockEmployeeManagement(ctx, authorized, w, agent, owner); err != nil {
 		t.Fatal(err)
 	}
 	competing, err := db.BeginTx(ctx, nil)

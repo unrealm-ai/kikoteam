@@ -53,15 +53,7 @@ var groupSelectionSourcesSQL = groupSelectionSources()
 var groupSelectionSearchSQL = `WITH available AS (` + groupSelectionSourcesSQL + `), canonical AS (SELECT DISTINCT ON(provider,binding,tenant,external_id) * FROM available ORDER BY provider,binding,tenant,external_id,CASE WHEN evidence='observed' THEN 0 ELSE 1 END,id) SELECT * FROM canonical WHERE ($3='' OR provider=$3) AND ($3<>'feishu' OR evidence='observed') AND ($4='' OR strpos(lower(name),lower($4))>0 OR strpos(lower(external_id),lower($4))>0) AND ($6='' OR (provider,id)>($5,NULLIF($6,'')::uuid)) ORDER BY provider,id LIMIT $7`
 
 func selectionAdmin(ctx context.Context, tx *sql.Tx, w, actor, agent string) error {
-	var exists bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM platform_members m JOIN platform_agents a ON a.workspace_id=m.workspace_id WHERE m.workspace_id=$1 AND m.user_id=$2 AND m.status='active' AND m.role IN ('owner','admin') AND a.id=$3)`, w, actor, agent).Scan(&exists)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return service.Fail("workspace_forbidden", 403, "没有员工配置权限")
-	}
-	return nil
+	return AuthorizeEmployeeManagement(ctx, tx, w, agent, actor)
 }
 func scanGroupSelection(row scanner, w, agent string) (service.GroupSelection, error) {
 	var g service.GroupSelection

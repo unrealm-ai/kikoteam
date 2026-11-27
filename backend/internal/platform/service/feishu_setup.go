@@ -21,7 +21,7 @@ func (s *FeishuSetupService) with(ctx context.Context, w, a, agent string, fn fu
 		return Fail("invalid_channel", 400, "员工或工作区标识无效")
 	}
 	return s.Store.WithSetup(ctx, w, func(t FeishuSetupTx) error {
-		if e := channelAuthorize(ctx, t, a); e != nil {
+		if e := AuthorizeEmployee(ctx, t, a, agent); e != nil {
 			return e
 		}
 		if e := t.AgentExists(ctx, agent); e != nil {

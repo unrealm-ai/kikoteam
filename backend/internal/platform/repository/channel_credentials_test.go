@@ -106,6 +106,7 @@ func TestManualChannelCredentialsHTTPAndConcurrentSave(t *testing.T) {
 			if o = call("PUT", path, body, true, true); o.Code != 200 {
 				t.Fatal("rebind", o.Code, o.Body.String())
 			}
+			assignDifferentTestCreator(t, db, w, agent)
 			if _, e = db.Exec(`UPDATE platform_members SET role='member' WHERE workspace_id=$1 AND user_id=$2`, w, actor); e != nil {
 				t.Fatal(e)
 			}

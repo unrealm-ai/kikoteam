@@ -21,7 +21,7 @@ func (s *FeishuSetupStore) DueFeishuRegistrations(ctx context.Context) ([]servic
 		AND record#>>'{contact_range,status}' IN ('waiting_permission','applying','failed')))
 		AND COALESCE((record->>'next_check_at')::timestamptz,'-infinity')<=now()
 		AND EXISTS (SELECT 1 FROM platform_members m WHERE m.workspace_id=r.workspace_id AND m.user_id=r.actor_id
-		AND m.status='active' AND m.role IN ('owner','admin'))
+		AND m.status='active' AND platform_can_manage_agent(r.workspace_id,r.agent_id,m.user_id))
 		ORDER BY COALESCE((record->>'next_check_at')::timestamptz,updated_at),id LIMIT 4`)
 	if err != nil {
 		return nil, err

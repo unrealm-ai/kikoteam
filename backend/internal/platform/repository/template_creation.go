@@ -12,7 +12,7 @@ import (
 
 func (s *TemplateStore) LoadCreation(ctx context.Context, w, a string, r service.TemplateCreation) (v service.TemplateVersion, assets []service.TemplateAsset, e error) {
 	assets = []service.TemplateAsset{}
-	e = s.With(ctx, w, a, true, func(raw service.TemplateTx) error {
+	e = s.With(ctx, w, a, false, func(raw service.TemplateTx) error {
 		t := raw.(*templateTx)
 		var scope string
 		var owner sql.NullString
@@ -93,7 +93,7 @@ func findTemplateImport(ctx context.Context, m *modelTx, version string, x servi
 	return x, nil
 }
 func (s *TemplateStore) Ready(ctx context.Context, w, a string, assets []service.TemplateAsset) error {
-	return s.With(ctx, w, a, true, func(raw service.TemplateTx) error {
+	return s.With(ctx, w, a, false, func(raw service.TemplateTx) error {
 		m := raw.(*templateTx).model
 		for _, x := range assets {
 			if !x.Imported && x.ImportID != "" {
@@ -106,7 +106,7 @@ func (s *TemplateStore) Ready(ctx context.Context, w, a string, assets []service
 	})
 }
 func (s *TemplateStore) Stage(ctx context.Context, w, a string, assets []service.TemplateAsset) error {
-	return s.With(ctx, w, a, true, func(t service.TemplateTx) error {
+	return s.With(ctx, w, a, false, func(t service.TemplateTx) error {
 		m := t.(*templateTx).model
 		for _, x := range assets {
 			if x.Imported || x.ImportID == "" {
@@ -128,7 +128,7 @@ func (s *TemplateStore) Stage(ctx context.Context, w, a string, assets []service
 	})
 }
 func (s *TemplateStore) CommitCreation(ctx context.Context, w, a string, r service.TemplateCreation, v service.TemplateVersion, assets []service.TemplateAsset, instruction string, params map[string]any) (out service.Agent, e error) {
-	e = s.With(ctx, w, a, true, func(raw service.TemplateTx) error {
+	e = s.With(ctx, w, a, false, func(raw service.TemplateTx) error {
 		t := raw.(*templateTx)
 		m := t.model
 		var scope string
@@ -253,8 +253,11 @@ func (s *TemplateStore) FromAgent(ctx context.Context, w, a, id string, av, cv i
 	return
 }
 func (s *TemplateStore) Setup(ctx context.Context, w, a, id string) (out map[string]any, e error) {
-	e = s.With(ctx, w, a, true, func(raw service.TemplateTx) error {
+	e = s.With(ctx, w, a, false, func(raw service.TemplateTx) error {
 		m := raw.(*templateTx).model
+		if err := AuthorizeEmployeeManagement(ctx, m.tx, w, id, a); err != nil {
+			return err
+		}
 		agent, err := (&agentTx{model: m}).Get(ctx, id)
 		if err != nil {
 			return err

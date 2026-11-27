@@ -23,7 +23,7 @@ const noticeTargetSQL = `SELECT jsonb_build_object('conversation_id',c.id,'works
  FROM manager_conversations c JOIN platform_agents a ON a.id=c.agent_id
  LEFT JOIN platform_channel_bindings b ON b.id=c.channel_binding_id
  WHERE c.id=$1 AND c.lifecycle='active' AND a.enabled
- AND EXISTS(SELECT 1 FROM platform_members m WHERE m.workspace_id=c.workspace_id AND m.user_id=$2::uuid AND m.status='active' AND m.role IN ('owner','admin'))
+ AND platform_can_manage_agent(c.workspace_id,c.agent_id,$2::uuid)
  AND ((c.web_group_id IS NOT NULL AND EXISTS(
  SELECT 1 FROM platform_web_groups g JOIN platform_web_group_agents ga ON ga.group_id=g.id WHERE g.id=c.web_group_id AND g.status='active' AND ga.agent_id=c.agent_id AND ga.status='active' AND g.admission_epoch=c.web_group_epoch AND ga.admission_epoch=c.web_group_agent_epoch))
  OR (c.channel_chat_type='group' AND b.enabled AND b.agent_id=c.agent_id AND b.identity_epoch=c.channel_identity_epoch AND b.external_tenant_id=c.channel_tenant_id

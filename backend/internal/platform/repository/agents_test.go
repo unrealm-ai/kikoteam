@@ -132,8 +132,8 @@ func TestAgentDirectoryFiltersAndResourceVisibility(t *testing.T) {
 	reviewExec(t, db, `INSERT INTO platform_capability_packages (id,workspace_id,agent_id,name,version,scope)
         VALUES ($1,$2,$3,'employee package',1,'{}'),($4,$2,NULL,'workspace template',1,'{}')`, service.NewID(), workspace, agent, service.NewID())
 	reviewExec(t, db, `INSERT INTO manager_triggers(id,workspace_id,agent_id,kind,config,allowed_actions,created_by) VALUES($1,$2,$3,'schedule','{}','[]',$4)`, service.NewID(), workspace, agent, owner)
-	reviewExec(t, db, `INSERT INTO platform_agents(id,workspace_id,name,role,model_profile_id,version,config_version,admission_epoch,enabled,created_at)
-        SELECT gen_random_uuid(),a.workspace_id,'Employee '||i,'reports',a.model_profile_id,1,1,1,true,a.created_at
+	reviewExec(t, db, `INSERT INTO platform_agents(id,workspace_id,name,role,model_profile_id,version,config_version,admission_epoch,enabled,created_at,creator_account_id)
+        SELECT gen_random_uuid(),a.workspace_id,'Employee '||i,'reports',a.model_profile_id,1,1,1,true,a.created_at,a.creator_account_id
         FROM platform_agents a CROSS JOIN generate_series(1,20) i WHERE a.id=$1`, agent)
 	q := service.AgentListQuery{Search: " REPorTS ", Page: 1, PageSize: 20}
 	first, err := svc.List(ctx, workspace, owner, q)

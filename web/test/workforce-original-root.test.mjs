@@ -26,7 +26,7 @@ const child=(m,name)=>components(m.app._instance.subTree).find(c=>(c.type.__name
 const inputName=value=>{const n=document.querySelector('.emp-name-input input');assert.ok(n);n.value=value;n.dispatchEvent(new window.Event('input',{bubbles:true}))};
 async function mount({props={},overrides={},total,fetchExtra,realChannelApi=false}={}){
  const calls=[],errors=[],requests=[],guards=[];let saved=employee();activeWorkspaceId.value='workspace-1';
- globalThis.fetch=async(url,init={})=>{requests.push({url,init});if(fetchExtra){const result=await fetchExtra(url,init);if(result)return result;}if(/\/agents\?/.test(String(url))){const page=Number(new URL(String(url),'http://localhost').searchParams.get('page'));const rows=await tracked.listEmployees(page);return Response.json({items:rows.map(e=>({id:e.id,name:e.name,role:e.role,avatar:e.avatar,enabled:e.status==='active',harness:'pi',model_profile_id:'model-1',model_name:'测试模型',version:e.version,instruction:e.prompt})),total:total??rows.length,status_counts:{enabled:rows.filter(e=>e.status==='active').length,disabled:rows.filter(e=>e.status==='disabled').length},page,page_size:20});}if(/^\/api\/v1\/workspaces\?/.test(String(url)))return Response.json({items:[{id:'workspace-1',name:'工作区1',role:'owner'},{id:'workspace-2',name:'工作区2',role:'owner'}],total:2});if(/^\/api\/v1\/workspaces\/[^/?]+$/.test(String(url)))return Response.json({role:'owner'});if(String(url).includes('/triggers')||String(url).includes('/trigger-notification-targets')||String(url).includes('/selectors/people/sources'))return Response.json({items:[],truncated:false});if(String(url).endsWith('/handoff-scope'))return Response.json({version:'0',scope:{mode:'all',employee_ids:[]}});if(String(url).endsWith('/human-recipients'))return Response.json({version:'0',recipients:[]});if(String(url).includes('/sharing-policies?'))return Response.json({items:[],total:0});if(String(url).includes('/capability-packages'))return Response.json({items:[],total:0,page:1,page_size:20});if(String(url).includes('/model-profiles?include_platform=true'))return Response.json({items:[{id:'model-1',source:'workspace',name:'测试模型',protocol:'openai',model_id:'fixture-model',enabled:true,validated:true,is_default:true}],total:1,page:1,page_size:20});throw new Error(`Unexpected HTTP ${url}`)};
+ globalThis.fetch=async(url,init={})=>{requests.push({url,init});if(fetchExtra){const result=await fetchExtra(url,init);if(result)return result;}if(/\/agents\?/.test(String(url))){const page=Number(new URL(String(url),'http://localhost').searchParams.get('page'));const rows=await tracked.listEmployees(page);return Response.json({items:rows.map(e=>({id:e.id,name:e.name,role:e.role,avatar:e.avatar,enabled:e.status==='active',harness:'pi',model_profile_id:'model-1',model_name:'测试模型',version:e.version,instruction:e.prompt})),total:total??rows.length,status_counts:{enabled:rows.filter(e=>e.status==='active').length,disabled:rows.filter(e=>e.status==='disabled').length},page,page_size:20});}if(/^\/api\/v1\/workspaces\?/.test(String(url)))return Response.json({items:[{id:'workspace-1',name:'工作区1',role:'owner'},{id:'workspace-2',name:'工作区2',role:'owner'}],total:2});if(/^\/api\/v1\/workspaces\/[^/?]+$/.test(String(url)))return Response.json({role:'owner'});if(String(url).includes('/triggers')||String(url).includes('/trigger-notification-targets')||String(url).includes('/selectors/people/sources'))return Response.json({items:[],truncated:false});if(String(url).endsWith('/handoff-scope'))return Response.json({version:'0',scope:{mode:'all',employee_ids:[]}});if(String(url).endsWith('/human-recipients'))return Response.json({version:'0',recipients:[]});if(String(url).endsWith('/maintainers'))return Response.json({version:1,people:[]});if(String(url).includes('/sharing-policies?'))return Response.json({items:[],total:0});if(String(url).includes('/capability-packages'))return Response.json({items:[],total:0,page:1,page_size:20});if(String(url).includes('/model-profiles?include_platform=true'))return Response.json({items:[{id:'model-1',source:'workspace',name:'测试模型',protocol:'openai',model_id:'fixture-model',enabled:true,validated:true,is_default:true}],total:1,page:1,page_size:20});throw new Error(`Unexpected HTTP ${url}`)};
  const platformPorts=realChannelApi?createWorkforcePlatformPorts():undefined;
  const platformReads=platformPorts?.workforceApi;
  const api={listEmployees:async()=>[saved],getEmployee:async()=>saved,getEmployeeChannelStatuses:async()=>({status:'active',channels:[]}),updateEmployeeBasics:async(_id,payload,version)=>{saved={...saved,...payload,version:version+1};return structuredClone(saved)},getLatestChannelQrRegistration:async()=>({session:structuredClone(qr)}),pollChannelQrRegistration:async()=>structuredClone(qr),cancelChannelQrRegistration:async()=>({}),
@@ -147,6 +147,42 @@ test('The confirmation editor exposes four sources and saves a channel default w
       {ref: webRef, name: 'Web 同事', scope: '财务'},
       {ref, name: '兜底同事', scope: '', is_default: true}
     ]});
+    assert.deepEqual(m.errors, []);
+  } finally {
+    await m.cleanup();
+  }
+});
+
+test('An employee maintainer can configure a multi-person whitelist without department or inherited access', async () => {
+  const selected = ['first', 'second'].map(external_id => ({
+    ref: {kind: 'user', provider: 'web', workspace_id: 'workspace-1', agent_id: 'employee-1', external_id},
+    display_name: external_id, status: 'active', selectable: true
+  }));
+  const m = await mount({props: {selectedEmployeeId: 'employee-1', initialTab: 'rules'},
+    overrides: {getEmployee: async () => employee({canManage: true})},
+    fetchExtra: (url, init) => {
+      if (/^\/api\/v1\/workspaces\?/.test(url)) return Response.json({items: [{id: 'workspace-1', role: 'member'}], total: 1});
+      if (url.includes('/selectors/people/sources?purpose=maintenance')) return Response.json({items: ['web','feishu','dingtalk','wecom'].map(provider => ({provider, available: true, supports_department_tree: true}))});
+      if (url.includes('/selectors/people?') && url.includes('purpose=maintenance')) return Response.json({items: selected, next_cursor: null});
+      if (url.endsWith('/selectors/people/resolve') && JSON.parse(init.body).purpose === 'maintenance') return Response.json({items: selected.filter(c => c.ref.external_id === JSON.parse(init.body).refs[0].external_id)});
+      if (url.endsWith('/maintainers') && init.method === 'PUT') return Response.json({version: 2, people: selected});
+    }
+  });
+  try {
+    for (let n = 0; n < 2; n++) {
+      button('添加维护人').click();
+      await pause();
+      assert.doesNotMatch(document.querySelector('.n-modal').textContent, /选择部门|继承使用范围|黑名单/);
+      const picks = [...document.querySelectorAll('.n-modal button')].filter(b => b.textContent.trim() === '选择');
+      picks[n].click();
+      await pause();
+    }
+    const editor = document.querySelector('[aria-labelledby="workforce-maintainers-title"]');
+    assert.match(editor.textContent, /first.*second/s);
+    [...editor.querySelectorAll('button')].find(b => b.textContent.trim() === '保存').click();
+    await pause();
+    const request = m.requests.find(({url, init}) => url.endsWith('/maintainers') && init.method === 'PUT');
+    assert.deepEqual(JSON.parse(request.init.body), {version: 1, people: selected.map(p => p.ref)});
     assert.deepEqual(m.errors, []);
   } finally {
     await m.cleanup();
@@ -412,7 +448,7 @@ test('Deep link loads selected employee outside current directory page and late 
 });
 test('Directory renders when management lookup is unavailable and never enables writes',async()=>{
  const m=await mount({fetchExtra:async url=>/^\/api\/v1\/workspaces\?/.test(url)?Response.json({error:{code:'unavailable',message:'管理权限暂不可用'}},{status:503}):null});
- try{assert.ok(document.querySelector('article.emp-card'));button('+ 新建 AI 员工').click();await pause();assert.match(document.body.textContent,/创建员工需要工作区管理员权限/);assert.equal(document.querySelector('.n-modal'),null);assert.equal(m.requests.some(r=>r.url.includes('model-profiles')),false);assert.deepEqual(m.errors,[]);}finally{await m.cleanup()}
+ try{assert.ok(document.querySelector('article.emp-card'));button('+ 新建 AI 员工').click();await pause();assert.match(document.body.textContent,/创建员工需要有效工作区成员身份/);assert.equal(document.querySelector('.n-modal'),null);assert.equal(m.requests.some(r=>r.url.includes('model-profiles')),false);assert.deepEqual(m.errors,[]);}finally{await m.cleanup()}
 });
 
 test('Confirmed creation resets directory to page one; optional read failure cannot reclassify write',async()=>{

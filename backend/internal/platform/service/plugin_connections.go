@@ -74,7 +74,7 @@ func (s *PluginService) SharedAccounts(ctx context.Context, w, actor string) ([]
 func (s *PluginService) ConnectionSource(ctx context.Context, w, actor, agent, plugin, version, source string, revision *int64) (ConnectionSource, error) {
 	var out ConnectionSource
 	err := s.Store.WithWorkspace(ctx, w, func(t PluginTx) error {
-		if e := pluginAuthorize(ctx, t, actor, true); e != nil {
+		if e := AuthorizeEmployee(ctx, t, actor, agent); e != nil {
 			return e
 		}
 		if e := t.AgentExists(ctx, agent); e != nil {

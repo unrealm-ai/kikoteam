@@ -10,7 +10,7 @@ import (
 
 type WecomGroupRefreshStore struct{ DB *sql.DB }
 
-const wecomRefreshScope = `b.enabled AND b.provider='wecom' AND b.identity_verified_generation=b.connection_generation AND b.external_tenant_id<>'' AND b.connection_generation=j.connection_generation AND b.config_revision=j.config_revision AND b.identity_epoch=j.identity_epoch AND b.external_tenant_id=j.external_tenant_id AND (j.requested_by IS NULL OR EXISTS(SELECT 1 FROM platform_members m WHERE m.workspace_id=b.workspace_id AND m.user_id=j.requested_by AND m.status='active' AND m.role IN('owner','admin'))) AND EXISTS(SELECT 1 FROM platform_agents a WHERE a.id=b.agent_id AND a.enabled)`
+const wecomRefreshScope = `b.enabled AND b.provider='wecom' AND b.identity_verified_generation=b.connection_generation AND b.external_tenant_id<>'' AND b.connection_generation=j.connection_generation AND b.config_revision=j.config_revision AND b.identity_epoch=j.identity_epoch AND b.external_tenant_id=j.external_tenant_id AND (j.requested_by IS NULL OR EXISTS(SELECT 1 FROM platform_members m WHERE m.workspace_id=b.workspace_id AND m.user_id=j.requested_by AND m.status='active' AND platform_can_manage_agent(b.workspace_id,b.agent_id,m.user_id))) AND EXISTS(SELECT 1 FROM platform_agents a WHERE a.id=b.agent_id AND a.enabled)`
 
 func (s *WecomGroupRefreshStore) RequestWecomGroups(ctx context.Context, b service.ChannelBinding, actor string) (service.WecomGroupRefreshStatus, error) {
 	out := service.WecomGroupRefreshStatus{}
@@ -20,7 +20,7 @@ func (s *WecomGroupRefreshStore) RequestWecomGroups(ctx context.Context, b servi
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
 	var id string
-	e = tx.QueryRowContext(ctx, `SELECT b.id FROM platform_channel_bindings b JOIN platform_members m ON m.workspace_id=b.workspace_id AND m.user_id=$2 AND m.status='active' AND m.role IN('owner','admin') JOIN platform_agents a ON a.id=b.agent_id AND a.enabled WHERE b.id=$1 AND b.provider='wecom' AND b.enabled AND b.connection_generation=$3 AND b.config_revision=$4 AND b.identity_epoch=$5 AND b.external_tenant_id=$6 AND b.identity_verified_generation=b.connection_generation FOR UPDATE OF b`, b.ID, actor, b.Generation, b.Revision, b.IdentityEpoch, b.TenantID).Scan(&id)
+	e = tx.QueryRowContext(ctx, `SELECT b.id FROM platform_channel_bindings b JOIN platform_members m ON m.workspace_id=b.workspace_id AND m.user_id=$2 AND m.status='active' AND platform_can_manage_agent(b.workspace_id,b.agent_id,m.user_id) JOIN platform_agents a ON a.id=b.agent_id AND a.enabled WHERE b.id=$1 AND b.provider='wecom' AND b.enabled AND b.connection_generation=$3 AND b.config_revision=$4 AND b.identity_epoch=$5 AND b.external_tenant_id=$6 AND b.identity_verified_generation=b.connection_generation FOR UPDATE OF b`, b.ID, actor, b.Generation, b.Revision, b.IdentityEpoch, b.TenantID).Scan(&id)
 	if e != nil {
 		return out, service.Fail("channel_changed", 409, "连接或权限已变化")
 	}
@@ -169,7 +169,7 @@ func (s *WecomGroupRefreshStore) CompleteWecomGroups(ctx context.Context, id str
 	}
 	if actor.Valid {
 		if e = tx.QueryRowContext(ctx, `SELECT m.user_id FROM platform_channel_bindings b JOIN platform_members m ON m.workspace_id=b.workspace_id
- WHERE b.id=$1 AND m.user_id=$2 AND m.status='active' AND m.role IN('owner','admin') FOR SHARE OF m`, binding, actor.String).Scan(&actor); e != nil {
+ WHERE b.id=$1 AND m.user_id=$2 AND m.status='active' AND platform_can_manage_agent(b.workspace_id,b.agent_id,m.user_id) FOR SHARE OF m`, binding, actor.String).Scan(&actor); e != nil {
 			return service.Fail("refresh_changed", 409, "刷新权限已变化")
 		}
 	}

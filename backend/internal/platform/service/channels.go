@@ -11,16 +11,6 @@ import (
 	"strings"
 )
 
-func channelAuthorize(ctx context.Context, t ChannelTx, a string) error {
-	m, e := t.Member(ctx, a)
-	if e != nil {
-		return e
-	}
-	if m.Status != "active" || (m.Role != "owner" && m.Role != "admin") {
-		return Fail("workspace_forbidden", 403, "没有渠道管理权限")
-	}
-	return nil
-}
 func (s *ChannelService) GetProvider(ctx context.Context, w, a, employee, provider string) (ChannelBinding, error) {
 	return s.getProvider(ctx, w, a, employee, provider, false)
 }
@@ -44,7 +34,7 @@ func (s *ChannelService) getProvider(ctx context.Context, w, a, employee, provid
 		read = store.WithBindingRead
 	}
 	e := read(ctx, w, func(t ChannelTx) error {
-		if e := channelAuthorize(ctx, t, a); e != nil {
+		if e := AuthorizeEmployee(ctx, t, a, employee); e != nil {
 			return e
 		}
 		if e := t.AgentExists(ctx, employee); e != nil {
@@ -196,7 +186,7 @@ func (s *ChannelService) PutProvider(ctx context.Context, w, a, employee, provid
 		return out, e
 	}
 	e := s.Store.WithWorkspace(ctx, w, func(t ChannelTx) error {
-		if e := channelAuthorize(ctx, t, a); e != nil {
+		if e := AuthorizeEmployee(ctx, t, a, employee); e != nil {
 			return e
 		}
 		if e := t.AgentExists(ctx, employee); e != nil {

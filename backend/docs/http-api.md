@@ -171,6 +171,8 @@ external 表示对外契约，包含逐操作声明的匿名例外。契约源�
 
 [AI 员工市场技术设计](agent-template-market.md)中的 `POST /workspaces/{workspace_id}/agents/from-template` 同样遵循普通创建约定，不要求请求去重键。客户端不自动重试；结果未知时先核对员工列表，显式再次提交可能创建另一位员工。
 
+员工列表和详情返回该调用人的 `can_manage`。普通有效工作区成员可创建员工，员工资源写入按目标员工校验，不沿用工作区资源发布权限。维护名单使用 `GET /workspaces/{workspace_id}/agents/{agent_id}/maintainers` 和 `PUT` 同路径；读取返回 `{version, people}`，其中 `people` 为统一选人的已保存候选项。更新提交当前 `version` 和 `people`（统一选人的个人引用，最多 100 项，清空用 `[]`），不接受模式、继承、黑名单或部门。名单版本冲突返回 `409 maintainers_version_conflict`。读取和写入均需要目标员工管理权限。升级时先暂停旧 backend 的员工创建，再应用 Event Hub 迁移 105，旧员工创建人一次性回填为工作区 owner；有员工但没有 owner 的工作区须先修复，避免迁移猜测归属。
+
 多 Backend 实例的输入排序、撤回 / 领取、停止 / 新输入和归档 / 新输入竞争，由数据库中的短事务与条件更新裁决；配置编辑另用预期版本。不同 Session 并行，同一 Session 最多一个活动 Turn，Engine 提交还需校验当前执行代次；具体锁顺序与恢复边界见[并发裁决设计](../../docs/architecture/session-data-model.md#7-事务与并发裁决)。
 
 会话、输入、轮次和统一事件历史采用固定排序的游标分页，参数及候选上限见[会话接口详细设计](session-api.md)。配置资源列表按[分页规则](../../docs/rules/backend.md#排序筛选与分页)另行确定模式。

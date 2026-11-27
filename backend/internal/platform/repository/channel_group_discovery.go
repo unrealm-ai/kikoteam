@@ -40,7 +40,7 @@ func (s *ChannelGroupCache) PublishGroups(ctx context.Context, b service.Channel
 func lockFeishuGroupDiscovery(ctx context.Context, tx *sql.Tx, b service.ChannelBinding, actor string) error {
 	var e error
 	var id string
-	if e = tx.QueryRowContext(ctx, `SELECT user_id FROM platform_members WHERE workspace_id=$1 AND user_id=$2 AND status='active' AND role IN ('owner','admin') FOR SHARE`, b.WorkspaceID, actor).Scan(&id); e != nil {
+	if e = tx.QueryRowContext(ctx, `SELECT user_id FROM platform_members WHERE workspace_id=$1 AND user_id=$2 AND status='active' AND platform_can_manage_agent(workspace_id,$3,user_id) FOR SHARE`, b.WorkspaceID, actor, b.AgentID).Scan(&id); e != nil {
 		return service.Fail("workspace_forbidden", 403, "没有群发现权限")
 	}
 	if e = tx.QueryRowContext(ctx, `SELECT id FROM platform_channel_bindings WHERE id=$1 AND workspace_id=$2 AND agent_id=$3 AND provider='feishu' AND enabled AND identity_epoch=$4 AND connection_generation=$5 AND config_revision=$6 AND external_tenant_id=$7 AND app_id=$8 FOR SHARE`, b.ID, b.WorkspaceID, b.AgentID, b.IdentityEpoch, b.Generation, b.Revision, b.TenantID, b.AppID).Scan(&id); e != nil {

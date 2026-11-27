@@ -58,7 +58,7 @@ func (s *PluginService) encryptAccount(w string, p PluginAccount, secret string)
 func (s *PluginService) GetAccount(ctx context.Context, w, a, employee, plugin string, versions ...string) (PluginAccount, error) {
 	var out PluginAccount
 	e := s.Store.WithWorkspace(ctx, w, func(t PluginTx) error {
-		if e := pluginAuthorize(ctx, t, a, true); e != nil {
+		if e := AuthorizeEmployee(ctx, t, a, employee); e != nil {
 			return e
 		}
 		if e := connectionOwner(ctx, t, employee); e != nil {
@@ -137,7 +137,7 @@ func (s *PluginService) PutAccount(ctx context.Context, w, a, employee, plugin s
 	out.Tools = tools
 	out.ValidatedAt = time.Now().UTC()
 	e = s.Store.WithWorkspace(ctx, w, func(t PluginTx) error {
-		if e := pluginAuthorize(ctx, t, a, true); e != nil {
+		if e := AuthorizeEmployee(ctx, t, a, employee); e != nil {
 			return e
 		}
 		if e := connectionOwner(ctx, t, employee); e != nil {
@@ -180,7 +180,7 @@ func (s *PluginService) RevokeAccount(ctx context.Context, w, a, employee, plugi
 	var def Plugin
 	var key string
 	err := s.Store.WithWorkspace(ctx, w, func(t PluginTx) error {
-		if e := pluginAuthorize(ctx, t, a, true); e != nil {
+		if e := AuthorizeEmployee(ctx, t, a, employee); e != nil {
 			return e
 		}
 		p, e := t.Account(ctx, employee, plugin, firstVersion(versions))
@@ -252,7 +252,7 @@ type staticConnectionBaseline struct {
 }
 
 func (b *staticConnectionBaseline) read(ctx context.Context, t PluginTx, a, employee, plugin string, r PluginAccountPut) error {
-	if e := pluginAuthorize(ctx, t, a, true); e != nil {
+	if e := AuthorizeEmployee(ctx, t, a, employee); e != nil {
 		return e
 	}
 	if e := connectionOwner(ctx, t, employee); e != nil {

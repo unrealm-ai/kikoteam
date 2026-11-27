@@ -10,10 +10,12 @@ func (s *Server) agentRoutes(m *http.ServeMux) {
 		return
 	}
 	for pattern, op := range map[string]operation{
-		"GET /api/v1/workspaces/{workspace_id}/agents":              s.agentList,
-		"POST /api/v1/workspaces/{workspace_id}/agents":             s.agentCreate,
-		"GET /api/v1/workspaces/{workspace_id}/agents/{agent_id}":   s.agentGet,
-		"PATCH /api/v1/workspaces/{workspace_id}/agents/{agent_id}": s.agentUpdate,
+		"GET /api/v1/workspaces/{workspace_id}/agents":                        s.agentList,
+		"POST /api/v1/workspaces/{workspace_id}/agents":                       s.agentCreate,
+		"GET /api/v1/workspaces/{workspace_id}/agents/{agent_id}":             s.agentGet,
+		"PATCH /api/v1/workspaces/{workspace_id}/agents/{agent_id}":           s.agentUpdate,
+		"GET /api/v1/workspaces/{workspace_id}/agents/{agent_id}/maintainers": s.agentMaintainers,
+		"PUT /api/v1/workspaces/{workspace_id}/agents/{agent_id}/maintainers": s.agentSaveMaintainers,
 	} {
 		m.HandleFunc(pattern, s.wrap(pattern, op))
 	}
@@ -91,4 +93,30 @@ func (s *Server) agentSaved(w http.ResponseWriter, r *http.Request, actor, event
 	if s.Logger != nil {
 		s.Logger.InfoContext(r.Context(), "Employee configuration saved", "event", event, "trace_id", w.Header().Get("X-Request-ID"), "actor_id", actor, "workspace_id", r.PathValue("workspace_id"), "agent_id", v.ID, "version", v.Version, "config_version", v.ConfigVersion, "enabled", v.Enabled)
 	}
+}
+
+func (s *Server) agentMaintainers(_ http.ResponseWriter, r *http.Request) (any, int, error) {
+	a, err := s.actor(r)
+	if err != nil {
+		return nil, 0, err
+	}
+	v, err := s.Agents.Maintainers(r.Context(), r.PathValue("workspace_id"), a.ID, r.PathValue("agent_id"))
+	return v, 200, err
+}
+
+func (s *Server) agentSaveMaintainers(_ http.ResponseWriter, r *http.Request) (any, int, error) {
+	a, err := s.actor(r)
+	if err != nil {
+		return nil, 0, err
+	}
+	var req service.EmployeeMaintainersUpdate
+	if err = decode(r, &req); err != nil {
+		return nil, 0, err
+	}
+	w, id := r.PathValue("workspace_id"), r.PathValue("agent_id")
+	v, err := s.Agents.SaveMaintainers(r.Context(), w, a.ID, id, req)
+	if err == nil && s.Logger != nil {
+		s.Logger.InfoContext(r.Context(), "Employee maintainers saved", "event", "agent.maintainers.updated", "actor_id", a.ID, "workspace_id", w, "agent_id", id, "version", v.Version, "count", len(v.People))
+	}
+	return v, 200, err
 }

@@ -1,6 +1,6 @@
 import {platformRequest,post} from './platform';
 import type {UsageChannel,UsageSelector} from './agent-usage';
-export type SelectorPurpose='usage'|'capability'|'sharing'|'confirmation'|'notification';
+export type SelectorPurpose='usage'|'capability'|'sharing'|'confirmation'|'notification'|'maintenance';
 export interface SelectionRef {id?:string;kind:'user'|'department'|'group';provider:UsageChannel;workspace_id:string;agent_id:string;binding_id?:string;tenant_id?:string;identity_epoch?:number;connection_generation?:number;identity_namespace?:string;config_revision?:number;group_epoch?:number;agent_epoch?:number;external_id:string}
 export interface SelectionCandidate {ref:SelectionRef;display_name?:string;name?:string;provider?:UsageChannel;status:string;selectable:boolean;disabled_reason?:string;verification_status?:string;search_user_id?:string;verification_id?:string;department_paths?:string[];parent_id?:string;evidence?:string;coverage?:string;selection_token?:string}
 export interface SelectionPage {items:SelectionCandidate[];next_cursor:string|null;limited?:boolean;snapshot_version?:number}

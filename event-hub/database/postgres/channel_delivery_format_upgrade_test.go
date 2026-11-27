@@ -32,6 +32,8 @@ func TestChannelDeliveryFormatUpgradePreservesQueuedText(t *testing.T) {
 	}
 	_, err = c.ExecContext(ctx, `DO $$ DECLARE w uuid:=gen_random_uuid(); a uuid:=gen_random_uuid(); m uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); n uuid:=gen_random_uuid(); BEGIN
  INSERT INTO platform_workspaces(id,name) VALUES(w,'delivery-upgrade');
+ INSERT INTO platform_accounts(id,email,name)VALUES(w,'fixture-owner@example.test','Owner');
+ INSERT INTO platform_members(workspace_id,user_id,role)VALUES(w,w,'owner');
  INSERT INTO platform_model_profiles(id,workspace_id,name,protocol,base_url,model_id,version,has_key,validated,credential,credential_revision,vision_status,tested_at) VALUES(m,w,'test','openai_responses','https://example.invalid','test',1,false,true,''::bytea,1,'unknown',now());
  INSERT INTO platform_agents(id,workspace_id,name,model_profile_id,version,config_version,admission_epoch,usage_config) VALUES(a,w,'test',m,1,1,1,'{"access":{"mode":"all","allow":[],"deny":[]}}');
  INSERT INTO platform_channel_bindings(id,workspace_id,agent_id,provider,connection_generation,rules_version,config_revision,app_id,credential_ciphertext,trigger,history,access) VALUES(b,w,a,'feishu',1,1,1,'app',''::bytea,'{}','{}','{}');

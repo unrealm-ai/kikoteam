@@ -130,7 +130,7 @@ func (s *PluginService) oauthTransport() (OAuthTransport, error) {
 }
 func (s *PluginService) checkAttempt(ctx context.Context, t PluginTx, a *OAuthAttempt) (Plugin, PluginAccount, error) {
 	var out PluginAccount
-	if e := pluginAuthorize(ctx, t, a.Actor, true); e != nil {
+	if e := AuthorizeEmployee(ctx, t, a.Actor, a.Agent); e != nil {
 		return Plugin{}, out, e
 	}
 	if a.Agent != "" {

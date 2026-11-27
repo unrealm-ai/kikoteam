@@ -29,7 +29,7 @@ func humanRecoveryAdmin(ctx context.Context, tx *sql.Tx, w, actor, agent string)
 	}
 	var id string
 	return visibleError(tx.QueryRowContext(ctx, `SELECT a.id FROM platform_agents a JOIN platform_members m ON m.workspace_id=a.workspace_id
- WHERE a.id=$1 AND a.workspace_id=$2 AND m.user_id=$3 AND m.status='active' AND m.role IN ('owner','admin') FOR SHARE OF a,m`, agent, w, actor).Scan(&id))
+ WHERE a.id=$1 AND a.workspace_id=$2 AND m.user_id=$3 AND m.status='active' AND platform_can_manage_agent(a.workspace_id,a.id,m.user_id) FOR SHARE OF a,m`, agent, w, actor).Scan(&id))
 }
 
 func (s *Store) HumanRecoveryList(ctx context.Context, w, actor, agent string) (service.HumanRecoveryListing, error) {

@@ -24,15 +24,7 @@ func NewPeopleSelectorStore(db *sql.DB, secret []byte) *PeopleSelectorStore {
 	return &PeopleSelectorStore{DB: db, Secret: secret}
 }
 func peopleAuthorize(ctx context.Context, tx *sql.Tx, w, actor, a string) error {
-	var ok bool
-	e := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM platform_members m JOIN platform_agents a ON a.workspace_id=m.workspace_id WHERE m.workspace_id=$1 AND m.user_id=$2 AND m.status='active' AND m.role IN ('owner','admin') AND a.id=$3)`, w, actor, a).Scan(&ok)
-	if e != nil {
-		return e
-	}
-	if !ok {
-		return service.Fail("workspace_forbidden", 403, "没有员工配置权限")
-	}
-	return nil
+	return AuthorizeEmployeeManagement(ctx, tx, w, a, actor)
 }
 
 type peopleCursor struct {

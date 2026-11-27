@@ -16,7 +16,7 @@ func (s *DingTalkSetupStore) DueDingTalkRegistrations(ctx context.Context) ([]se
 		WHERE state IN ('awaiting_confirmation','ready') AND (record->>'expires_at')::timestamptz>now()
 		AND (state='ready' OR (record->>'next_poll_at')::timestamptz<=now())
 		AND EXISTS (SELECT 1 FROM platform_members m WHERE m.workspace_id=r.workspace_id AND m.user_id=r.actor_id
-		AND m.status='active' AND m.role IN ('owner','admin'))
+		AND m.status='active' AND platform_can_manage_agent(r.workspace_id,r.agent_id,m.user_id))
 		AND NOT EXISTS (SELECT 1 FROM platform_channel_bindings b WHERE b.agent_id=r.agent_id AND b.workspace_id=r.workspace_id AND b.provider='dingtalk')
 		ORDER BY updated_at,id LIMIT 4`)
 	if err != nil {

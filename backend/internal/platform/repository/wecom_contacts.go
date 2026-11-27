@@ -14,7 +14,7 @@ type WecomContactStore struct{ DB *sql.DB }
 
 func lockWecomContactSource(ctx context.Context, tx *sql.Tx, b service.ChannelBinding, actor string) error {
 	var ok bool
-	err := tx.QueryRowContext(ctx, `SELECT b.enabled AND b.provider='wecom' AND b.identity_epoch=$3 AND b.connection_generation=$4 AND b.identity_verified_generation=b.connection_generation AND b.external_tenant_id=$5 AND m.status='active' AND m.role IN ('owner','admin') FROM platform_channel_bindings b JOIN platform_members m ON m.workspace_id=b.workspace_id AND m.user_id=$6 WHERE b.id=$1 AND b.workspace_id=$2 FOR UPDATE OF b FOR SHARE OF m`, b.ID, b.WorkspaceID, b.IdentityEpoch, b.Generation, b.TenantID, actor).Scan(&ok)
+	err := tx.QueryRowContext(ctx, `SELECT b.enabled AND b.provider='wecom' AND b.identity_epoch=$3 AND b.connection_generation=$4 AND b.identity_verified_generation=b.connection_generation AND b.external_tenant_id=$5 AND m.status='active' AND platform_can_manage_agent(b.workspace_id,b.agent_id,m.user_id) FROM platform_channel_bindings b JOIN platform_members m ON m.workspace_id=b.workspace_id AND m.user_id=$6 WHERE b.id=$1 AND b.workspace_id=$2 FOR UPDATE OF b FOR SHARE OF m`, b.ID, b.WorkspaceID, b.IdentityEpoch, b.Generation, b.TenantID, actor).Scan(&ok)
 	if errors.Is(err, sql.ErrNoRows) || err == nil && !ok {
 		return service.Fail("wecom_contact_source_changed", 409, "渠道来源或管理权限已变化")
 	}

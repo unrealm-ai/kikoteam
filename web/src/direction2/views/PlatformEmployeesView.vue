@@ -463,6 +463,7 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller?.abort(); guard
             :key="selected.id"
             :agent="selected"
             :can-manage="canManage"
+            :can-manage-templates="canManage"
             @dirty="v => setupDirty = v"
             @busy="v => setupBusy = v"
             @updated="v => { selected = v; load(); }"

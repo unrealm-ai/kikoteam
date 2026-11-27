@@ -265,6 +265,7 @@ func TestChannelPublicConfigurationHTTP(t *testing.T) {
 	if out := call("PUT", body, true); out.Code != 409 {
 		t.Fatal("stale version", out.Code)
 	}
+	assignDifferentTestCreator(t, db, w, agent)
 	if _, e := db.ExecContext(context.Background(), `UPDATE platform_members SET role='member' WHERE workspace_id=$1 AND user_id=$2`, w, actor); e != nil {
 		t.Fatal(e)
 	}

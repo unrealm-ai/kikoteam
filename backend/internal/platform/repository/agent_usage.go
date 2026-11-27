@@ -11,14 +11,6 @@ import (
 
 type AgentUsageStore struct{ DB *sql.DB }
 
-func usageAdmin(ctx context.Context, tx *sql.Tx, w, actor string) error {
-	var allowed bool
-	err := tx.QueryRowContext(ctx, `SELECT true FROM platform_members WHERE workspace_id=$1 AND user_id=$2 AND status='active' AND role IN ('owner','admin') FOR SHARE`, w, actor).Scan(&allowed)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && !allowed {
-		return service.Fail("workspace_forbidden", 403, "没有员工管理权限")
-	}
-	return err
-}
 func loadAgentUsage(ctx context.Context, tx *sql.Tx, w, id string) (service.AgentUsageResource, error) {
 	var v service.AgentUsageResource
 	var raw []byte
@@ -38,7 +30,7 @@ func (s *AgentUsageStore) ReadUsage(ctx context.Context, w, actor, id string) (s
 		return out, err
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
-	if err = usageAdmin(ctx, tx, w, actor); err != nil {
+	if err = AuthorizeEmployeeManagement(ctx, tx, w, id, actor); err != nil {
 		return out, err
 	}
 	out, err = loadAgentUsage(ctx, tx, w, id)
@@ -61,7 +53,7 @@ func (s *AgentUsageStore) ReplaceUsage(ctx context.Context, w, actor, id string,
 	if _, err = tx.ExecContext(ctx, `SELECT id FROM platform_channel_config_clock WHERE id=true FOR UPDATE`); err != nil {
 		return out, err
 	}
-	if err = usageAdmin(ctx, tx, w, actor); err != nil {
+	if err = LockEmployeeManagement(ctx, tx, w, id, actor); err != nil {
 		return out, err
 	}
 	old, err := loadAgentUsage(ctx, tx, w, id)

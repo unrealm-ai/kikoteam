@@ -7,7 +7,7 @@ import { templatesApi, renderInstruction, type Setup, type Example } from '../ap
 import { pluginsApi, type Plugin } from '../api/capabilities';
 import PlatformPluginAccount from './PlatformPluginAccount.vue';
 
-const props = defineProps<{ agent: Agent; canManage: boolean }>();
+const props = defineProps<{ agent: Agent; canManage: boolean; canManageTemplates: boolean }>();
 const emit = defineEmits<{ updated: [value: Agent]; navigate: [target: string, param?: string, targetId?: string]; dirty: [value: boolean]; busy: [value: boolean] }>();
 const message = useMessage(), setup = ref<Setup>(), error = ref(''), busy = ref(false), definitions = ref<{ plugin: Plugin; version: string }[]>([]);
 let epoch = 0;
@@ -35,7 +35,7 @@ async function load() {
   } catch (e) { if (current === epoch) error.value = e instanceof Error ? e.message : '接入状态读取失败'; }
 }
 async function saveAs() {
-  if (busy.value || !props.canManage) return;
+  if (busy.value || !props.canManageTemplates) return;
   busy.value = true; const current = epoch;
   try {
     await templatesApi.fromAgent(activeWorkspaceId.value, props.agent);
@@ -142,7 +142,7 @@ onUnmounted(() => { ++epoch; emit('dirty', false); emit('busy', false); });
       </div>
     </template>
 
-    <div v-if="canManage" class="setup-reuse-box">
+    <div v-if="canManageTemplates" class="setup-reuse-box">
       <div class="setup-card-head">
         <div>
           <h3 class="setup-sub-heading" style="margin: 0 0 4px 0;">团队复用</h3>

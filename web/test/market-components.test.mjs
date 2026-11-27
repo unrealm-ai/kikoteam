@@ -44,7 +44,7 @@ test('market card and detail display the portrait saved in the template', async 
   await m.cleanup();
  }
 });
-test('market member can browse fixed template but cannot create or manage',async()=>{const m=await mount('member');try{assert.equal(button('管理模板'),undefined);button('查看详情').click();await pause();assert.equal(button('创建员工需要工作区管理权限').disabled,true);assert.equal(m.calls.some(c=>c.init.method),false)}finally{await m.cleanup()}});
+test('market member can create from a published template without gaining template management',async()=>{const m=await mount('member');try{assert.equal(button('管理模板'),undefined);button('查看详情').click();await pause();assert.equal(button('用此模板创建').disabled,false);assert.equal(button('复制为工作区模板'),undefined);assert.equal(m.calls.some(c=>c.init.method),false)}finally{await m.cleanup()}});
 test('workspace owner copies a built-in role as an independent workspace draft',async()=>{
  const m=await mount('owner',undefined,{...fixture,builtin_key:'business-analyst'});
  try{

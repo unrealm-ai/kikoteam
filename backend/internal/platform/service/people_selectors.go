@@ -51,14 +51,14 @@ type PeopleSelectorService struct {
 }
 
 func validPeoplePurpose(p string) bool {
-	return p == "usage" || p == "capability" || p == "sharing" || p == "confirmation"
+	return p == "usage" || p == "capability" || p == "sharing" || p == "confirmation" || p == "maintenance"
 }
 func (s *PeopleSelectorService) authorize(ctx context.Context, w, actor, a string) error {
 	if !agentUUID(w) || !agentUUID(a) {
 		return Fail("invalid_selector_scope", 400, "选择范围无效")
 	}
 	return s.Channels.Store.WithWorkspace(ctx, w, func(t ChannelTx) error {
-		if e := channelAuthorize(ctx, t, actor); e != nil {
+		if e := AuthorizeEmployee(ctx, t, actor, a); e != nil {
 			return e
 		}
 		return t.AgentExists(ctx, a)
@@ -73,7 +73,7 @@ func (s *PeopleSelectorService) Sources(ctx context.Context, w, actor, a, purpos
 	}
 	out := []PeopleSource{}
 	for _, p := range []string{"web", "feishu", "dingtalk", "wecom"} {
-		v := PeopleSource{Provider: p, SupportsSearch: true, SupportsBrowse: p != "wecom", SupportsDepartmentTree: p == "feishu" || p == "dingtalk", SupportsPagination: p != "wecom", RequiresIdentityMapping: p == "wecom", Available: true}
+		v := PeopleSource{Provider: p, SupportsSearch: true, SupportsBrowse: p != "wecom", SupportsDepartmentTree: (p == "feishu" || p == "dingtalk") && purpose != "maintenance", SupportsPagination: p != "wecom", RequiresIdentityMapping: p == "wecom", Available: true}
 		if p != "web" {
 			b, e := s.Channels.GetProvider(ctx, w, actor, a, p)
 			if e != nil {
@@ -92,6 +92,9 @@ func personRef(b ChannelBinding, kind, id string) SelectionRef {
 	return SelectionRef{Kind: kind, Provider: b.Provider, WorkspaceID: b.WorkspaceID, AgentID: b.AgentID, BindingID: b.ID, TenantID: b.TenantID, Namespace: PeopleIdentityNamespace(b, kind), IdentityEpoch: b.IdentityEpoch, Generation: b.Generation, ExternalID: id}
 }
 func (s *PeopleSelectorService) Search(ctx context.Context, w, actor, a string, q PeopleQuery) (PeoplePage, error) {
+	if q.Purpose == "maintenance" && (q.Kind != "user" || q.DepartmentID != "" || q.ParentID != "") {
+		return PeoplePage{}, Fail("invalid_people_query", 400, "维护人只能选择个人")
+	}
 	empty := PeoplePage{Items: []PeopleCandidate{}}
 	q.Q = strings.TrimSpace(q.Q)
 	if !validPeoplePurpose(q.Purpose) || (q.Kind != "user" && q.Kind != "department") || q.Limit < 1 || q.Limit > 100 || utf8.RuneCountInString(q.Q) > 100 || len(q.Cursor) > 4096 || strings.ContainsAny(q.Q+q.ParentID+q.DepartmentID, "\x00\r\n") {
@@ -133,7 +136,7 @@ func (s *PeopleSelectorService) Search(ctx context.Context, w, actor, a string, 
 	switch items := page.Items.(type) {
 	case []DirectoryUser:
 		for _, u := range items {
-			v := PeopleCandidate{Ref: personRef(b, "user", u.ID), DisplayName: u.DisplayName, Status: u.Status, Selectable: u.Status != "inactive"}
+			v := PeopleCandidate{Ref: personRef(b, "user", u.ID), DisplayName: u.DisplayName, Status: u.Status, Selectable: u.Status != "inactive" && (q.Purpose != "maintenance" || u.Status == "active")}
 			if !v.Selectable {
 				v.DisabledReason = "person_inactive"
 			}
@@ -185,6 +188,13 @@ func (s *PeopleSelectorService) searchWecom(ctx context.Context, w, actor, a str
 	return out, nil
 }
 func (s *PeopleSelectorService) Resolve(ctx context.Context, w, actor, a, purpose string, refs []SelectionRef) (PeoplePage, error) {
+	if purpose == "maintenance" {
+		for _, ref := range refs {
+			if ref.Kind != "user" {
+				return PeoplePage{}, Fail("invalid_people_refs", 400, "维护人只能选择个人")
+			}
+		}
+	}
 	out := PeoplePage{Items: []PeopleCandidate{}}
 	if !validPeoplePurpose(purpose) || refs == nil || len(refs) > 200 {
 		return out, Fail("invalid_people_refs", 400, "人员引用无效")
@@ -199,6 +209,10 @@ func (s *PeopleSelectorService) Resolve(ctx context.Context, w, actor, a, purpos
 		v, e := s.Store.ResolvePerson(ctx, w, actor, a, r)
 		if e != nil {
 			return out, e
+		}
+		if purpose == "maintenance" && v.Status != "active" && v.VerificationStatus != "verified" {
+			v.Selectable = false
+			v.DisabledReason = "person_unavailable"
 		}
 		out.Items = append(out.Items, v)
 	}

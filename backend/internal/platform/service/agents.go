@@ -15,6 +15,7 @@ type AgentCardResources struct {
 	TriggerCount int      `json:"trigger_count"`
 }
 type Agent struct {
+	CanManage       bool                `json:"can_manage"`
 	CardResources   *AgentCardResources `json:"card_resources,omitempty"`
 	WebAccess       WebAccess           `json:"web_access"`
 	Payer           *AgentPayer         `json:"payer,omitempty"`
@@ -61,6 +62,7 @@ type AgentPatch struct {
 	Enabled                *bool      `json:"enabled,omitempty"`
 }
 type AgentListQuery struct {
+	ViewerID       string
 	Search         string
 	Enabled        *bool
 	Page, PageSize int
@@ -91,13 +93,45 @@ type AgentStore interface {
 }
 type AgentService struct{ Store AgentStore }
 
-func agentAuthorize(ctx context.Context, t AgentTx, actor string, write bool) (Member, error) {
+func agentAuthorize(ctx context.Context, t AgentTx, actor string) (Member, error) {
 	m, e := t.Member(ctx, actor)
-	if errors.Is(e, ErrWorkspaceMissing) || e == nil && (m.Status != "active" || write && m.Role != "owner" && m.Role != "admin") {
+	if errors.Is(e, ErrWorkspaceMissing) || e == nil && m.Status != "active" {
 		return m, Fail("workspace_forbidden", 403, "没有员工管理权限")
 	}
 	return m, e
 }
+
+// AuthorizeEmployee uses target-scoped authorization for production stores.
+func AuthorizeEmployee(ctx context.Context, t interface {
+	Member(context.Context, string) (Member, error)
+}, actor, employee string) error {
+	if store, ok := t.(interface {
+		AuthorizeEmployee(context.Context, string, string) error
+	}); ok && employee != "" {
+		return store.AuthorizeEmployee(ctx, employee, actor)
+	}
+	m, err := t.Member(ctx, actor)
+	if errors.Is(err, ErrWorkspaceMissing) || err == nil && (m.Status != "active" || m.Role != "owner" && m.Role != "admin") {
+		return Fail("workspace_forbidden", 403, "没有此员工的管理权限")
+	}
+	return err
+}
+
+func agentManagementFlag(ctx context.Context, t AgentTx, actor string, m Member, v *Agent) error {
+	if m.Role == "owner" || m.Role == "admin" {
+		v.CanManage = true
+		return nil
+	}
+	if store, ok := t.(interface {
+		CanManageEmployee(context.Context, string, string) (bool, error)
+	}); ok {
+		var err error
+		v.CanManage, err = store.CanManageEmployee(ctx, v.ID, actor)
+		return err
+	}
+	return nil
+}
+
 func (s *AgentService) List(ctx context.Context, w, a string, q AgentListQuery) (AgentPage, error) {
 	var out AgentPage
 	if e := pageValid(q.Page, q.PageSize); e != nil {
@@ -108,13 +142,18 @@ func (s *AgentService) List(ctx context.Context, w, a string, q AgentListQuery) 
 		return out, Fail("invalid_query", 400, "员工搜索词无效")
 	}
 	e := s.Store.WithWorkspace(ctx, w, func(t AgentTx) error {
-		m, err := agentAuthorize(ctx, t, a, false)
+		m, err := agentAuthorize(ctx, t, a)
 		if err != nil {
 			return err
 		}
+		q.ViewerID = a
 		out, err = t.List(ctx, q)
-		if m.Role != "owner" && m.Role != "admin" {
-			for i := range out.Items {
+		if err != nil {
+			return err
+		}
+		for i := range out.Items {
+			out.Items[i].CanManage = out.Items[i].CanManage || m.Role == "owner" || m.Role == "admin"
+			if !out.Items[i].CanManage {
 				out.Items[i].TemplateOrigin = nil
 				out.Items[i].Payer = nil
 			}
@@ -126,12 +165,18 @@ func (s *AgentService) List(ctx context.Context, w, a string, q AgentListQuery) 
 func (s *AgentService) Get(ctx context.Context, w, a, id string) (Agent, error) {
 	var out Agent
 	e := s.Store.WithWorkspace(ctx, w, func(t AgentTx) error {
-		m, e := agentAuthorize(ctx, t, a, false)
+		m, e := agentAuthorize(ctx, t, a)
 		if e != nil {
 			return e
 		}
 		out, e = t.Get(ctx, id)
-		if m.Role != "owner" && m.Role != "admin" {
+		if e != nil {
+			return e
+		}
+		if e = agentManagementFlag(ctx, t, a, m, &out); e != nil {
+			return e
+		}
+		if !out.CanManage {
 			out.TemplateOrigin = nil
 			out.Payer = nil
 		}
@@ -154,6 +199,8 @@ func validateAgent(v *Agent) error {
 func ValidModelSelection(workspace, official string) bool {
 	return workspace == "" && agentUUID(official) || official == "" && agentUUID(workspace)
 }
+func ValidWorkspaceSubject(v string) bool { return agentUUID(v) }
+
 func agentUUID(v string) bool {
 	if len(v) != 36 {
 		return false
@@ -197,7 +244,7 @@ func (s *AgentService) Create(ctx context.Context, w, a string, r AgentCreate) (
 		return Agent{}, e
 	}
 	e := s.Store.WithWorkspace(ctx, w, func(t AgentTx) error {
-		if _, e := agentAuthorize(ctx, t, a, true); e != nil {
+		if _, e := agentAuthorize(ctx, t, a); e != nil {
 			return e
 		}
 		if e := ValidateAgentModel(ctx, t, &v); e != nil {
@@ -211,6 +258,7 @@ func (s *AgentService) Create(ctx context.Context, w, a string, r AgentCreate) (
 		}
 		var e error
 		v, e = t.Get(ctx, v.ID)
+		v.CanManage = e == nil
 		return e
 	})
 	return v, e
@@ -225,7 +273,7 @@ func (s *AgentService) Update(ctx context.Context, w, a, id string, r AgentPatch
 		return v, e
 	}
 	e = s.Store.WithWorkspace(ctx, w, func(t AgentTx) error {
-		if _, e := agentAuthorize(ctx, t, a, true); e != nil {
+		if e := AuthorizeEmployee(ctx, t, a, id); e != nil {
 			return e
 		}
 		var e error
@@ -236,6 +284,7 @@ func (s *AgentService) Update(ctx context.Context, w, a, id string, r AgentPatch
 		if v.Version != r.Version {
 			return Fail("agent_version_conflict", 409, "员工已更新，请刷新后重试")
 		}
+		v.CanManage = true
 		old := v
 		if r.WebAccess != nil {
 			if e := validateWebAccess(ctx, t, *r.WebAccess); e != nil {
@@ -274,6 +323,7 @@ func (s *AgentService) Update(ctx context.Context, w, a, id string, r AgentPatch
 			return e
 		}
 		v, e = t.Get(ctx, id)
+		v.CanManage = e == nil
 		return e
 	})
 	return v, e

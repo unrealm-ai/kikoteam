@@ -12,6 +12,7 @@ import WorkforcePackagesTab from '../components/workforce/WorkforcePackagesTab.v
 import WorkforceChannelsTab from '../components/workforce/WorkforceChannelsTab.vue';
 import WorkforceTriggersTab from '../components/workforce/WorkforceTriggersTab.vue';
 import WorkforceHumanRecovery from '../components/workforce/WorkforceHumanRecovery.vue';
+import WorkforceMaintainers from '../components/workforce/WorkforceMaintainers.vue';
 import WorkforceHumanRecipients from '../components/workforce/WorkforceHumanRecipients.vue';
 import WorkforceRulesTab from '../components/workforce/WorkforceRulesTab.vue';
 import { workforceAccessIsDirty } from '../api/workforce-usage';
@@ -99,7 +100,7 @@ function beforeDetailTabLeave(){
 function closeFromChild(){if(!discardingChildren)handleBackToList();}
 const isDevMode = import.meta.env.DEV;
 const currentRole=ref('');
-const canManage=computed(()=>!realPlatform || ['owner','admin'].includes(currentRole.value));
+const canCreate=computed(()=>!realPlatform || ['owner','admin','member'].includes(currentRole.value));
 
 // 远程目录与名录状态
 const employees = ref<DigitalEmployee[]>([]);
@@ -148,6 +149,7 @@ watch([() => searchQuery.value.trim(), selectedFilter], () => {
   }
 });
 const currentEditingEmp = ref<DigitalEmployee | null>(null);
+const canManage=computed(()=>!realPlatform || (currentEditingEmp.value?.canManage ?? ['owner','admin'].includes(currentRole.value)));
 const channelConfigurationChanged = computed(() => realPlatform
   && currentEditingEmp.value?.channels.some(channel => channel.configurationChanged));
 const showCreateModal = ref(false);
@@ -385,7 +387,7 @@ async function patchBasicsSection<K extends keyof DigitalEmployee>(
 }
 
 async function selectAvatar(av: string) {
-  if(!canManage.value){message.warning('修改需要工作区管理员权限');return;}
+  if(!canManage.value){message.warning('你没有此员工的管理权限');return;}
   const emp = currentEditingEmp.value;
   if (!emp) return;
   if (emp.avatar === av) {
@@ -516,7 +518,7 @@ function cancelPersonaSection(section: PersonaSectionKey) {
 }
 
 async function savePersonaSection(section: PersonaSectionKey) {
-  if(!canManage.value){message.warning('修改需要工作区管理员权限');return;}
+  if(!canManage.value){message.warning('你没有此员工的管理权限');return;}
   const draft = currentEditingEmp.value;
   if (!draft) return;
   if (section === 'basic') {
@@ -558,7 +560,7 @@ function handleAppendPersonaPreset(snippet: string) {
 
 async function activateEmployeeOnboarding() {
   if(currentEditingEmp.value?.modelAvailable===false){message.warning('模型当前不可用，无法启用员工');return;}
-  if(!canManage.value){message.warning('修改需要工作区管理员权限');return;}
+  if(!canManage.value){message.warning('你没有此员工的管理权限');return;}
   if (!currentEditingEmp.value) return;
   const ok = await syncModuleField('status', 'active');
   if (ok && currentEditingEmp.value) {
@@ -570,7 +572,7 @@ const showDisableEmpModal = ref(false);
 const isTogglingEmpStatus = ref(false);
 
 function handleToggleEmployeeStatusClick() {
-  if(!canManage.value){message.warning('修改需要工作区管理员权限');return;}
+  if(!canManage.value){message.warning('你没有此员工的管理权限');return;}
   if (!currentEditingEmp.value) return;
   if (currentEditingEmp.value.status === 'disabled') {
     void executeToggleEmployeeStatus('active');
@@ -891,7 +893,7 @@ async function saveAndClose() {
 }
 
 async function saveEmployeeChanges(): Promise<boolean> {
-  if(!canManage.value){message.warning('修改需要工作区管理员权限');return false;}
+  if(!canManage.value){message.warning('你没有此员工的管理权限');return false;}
   if (!currentEditingEmp.value) return false;
   const draft = JSON.parse(JSON.stringify(currentEditingEmp.value)) as DigitalEmployee;
   const validated = validatePersonaEngineAndModel(draft);
@@ -1121,7 +1123,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
       <p v-if="detailLoading" role="status">正在加载所选员工配置…</p>
       <!-- 1. 员工名录列表视图 -->
       <WorkforceDirectoryList
-        :can-manage="canManage"
+        :can-manage="canCreate"
         :page="employeePage" :total="employeeTotal" :status-counts="statusCounts" :loading="isLoading"
         @page="changeEmployeePage" @load-models="loadCreateModels" @from-template="emit('navigate','market')"
         v-if="!currentEditingEmp"
@@ -1232,7 +1234,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
         </div>
       </div>
 
-      <NAlert v-if="realPlatform && !canManage" type="info">当前仅可查看，修改需要工作区管理员权限。</NAlert>
+      <NAlert v-if="realPlatform && !canManage" type="info">当前仅可查看，你没有此员工的管理权限。</NAlert>
       <!-- 6 大深度配置 Tab -->
       <NTabs v-model:value="activeDetailTab" :on-before-leave="beforeDetailTabLeave" type="line" class="detail-tabs">
         <!-- Tab 1: 就绪检查概览 -->
@@ -1326,7 +1328,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
                 查看该员工的历史任务流水
               </NButton>
             </div>
-            <WorkforceEmployeeReuse v-if="realPlatform" :workspace="activeWorkspaceId" :employee-id="currentEditingEmp.id" :revision="currentEditingEmp.version" :can-manage="canManage" @navigate="(t,p,id)=>emit('navigate',t,p,id)" />
+            <WorkforceEmployeeReuse v-if="realPlatform" :workspace="activeWorkspaceId" :employee-id="currentEditingEmp.id" :revision="currentEditingEmp.version" :can-manage="canManage" :can-manage-templates="['owner','admin'].includes(currentRole)" @navigate="(t,p,id)=>emit('navigate',t,p,id)" />
           </div>
         </NTabPane>
 
@@ -1558,6 +1560,9 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
             @open-picker="openUnifiedPickerModal"
             @wecom-verified="handleWecomVerified"
           />
+          <WorkforceMaintainers v-if="realPlatform && canManage && activeDetailTab === 'rules'"
+            :workspace="activeWorkspaceId" :employee-id="currentEditingEmp.id"
+            @saved="reloadLatestEditingEmployee" />
         </NTabPane>
       </NTabs>
     </div>

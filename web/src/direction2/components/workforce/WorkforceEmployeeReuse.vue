@@ -3,7 +3,7 @@ import {inject,onUnmounted,ref,watch} from 'vue';
 import {NAlert,NButton} from 'naive-ui';
 import {agentsApi,type Agent} from '../../api/agents';
 import AgentSetupPanel from '../../views/AgentSetupPanel.vue';
-const props=defineProps<{workspace:string;employeeId:string;revision?:number;canManage:boolean}>();
+const props=defineProps<{workspace:string;employeeId:string;revision?:number;canManage:boolean;canManageTemplates:boolean}>();
 const emit=defineEmits<{navigate:[target:string,param?:string,targetId?:string];dirty:[value:boolean];busy:[value:boolean]}>();
 type Guard={hasUnsaved:()=>boolean;save:()=>Promise<boolean>;discard:()=>void;getLabel?:()=>string};
 const guard=inject<{register:(g:Guard)=>void;unregister:(g:Guard)=>void}>('d2DraftGuard');
@@ -18,7 +18,7 @@ onUnmounted(()=>{++generation;controller?.abort();guard?.unregister(draftGuard);
   <NAlert v-if="error" type="error">{{error}} <NButton size="small" @click="load">重新读取员工详情</NButton></NAlert>
   <template v-if="agent">
     <p v-if="agent.payer" class="reuse-payer-note">官方模型费用由 {{agent.payer.name}} 的积分账户支付。</p>
-    <AgentSetupPanel :key="workspace+':'+agent.id" :agent="agent" :can-manage="canManage" @navigate="(t,p,id)=>emit('navigate',t,p,id)" @dirty="v=>{dirty=v;emit('dirty',v)}" @busy="v=>{busy=v;emit('busy',v)}" />
+    <AgentSetupPanel :key="workspace+':'+agent.id" :agent="agent" :can-manage="canManage" :can-manage-templates="canManageTemplates" @navigate="(t,p,id)=>emit('navigate',t,p,id)" @dirty="v=>{dirty=v;emit('dirty',v)}" @busy="v=>{busy=v;emit('busy',v)}" />
   </template>
 </template>
 <style scoped>

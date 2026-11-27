@@ -199,7 +199,7 @@ watch(
 );
 
 function openCreateModal() {
-  if(!props.canManage){message.warning('创建员工需要工作区管理员权限');return;}
+  if(!props.canManage){message.warning('创建员工需要有效工作区成员身份');return;}
   resetCreateFormState();
   emit('update:showCreateModal', true);
 }
@@ -207,7 +207,7 @@ function openCreateModal() {
 async function handleCreateEmployee() {
   if(creating.value)return;
   const workspace=activeWorkspaceId.value;
-  if(props.canManage===false){message.warning('创建员工需要工作区管理员权限');return;}
+  if(props.canManage===false){message.warning('创建员工需要有效工作区成员身份');return;}
   if (!enabledModels.value.length) {
     message.warning('当前工作区暂无可用已启用模型，请先前往「资源中心 -> 模型管理」添加并启用模型');
     return;

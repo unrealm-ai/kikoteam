@@ -30,13 +30,13 @@ func (s *Store) HumanRecipients(ctx context.Context, workspace, actor, agent str
 	// saved recipient proofs under the binding lock. Lock before the agent.
 	if update != nil {
 		if _, err = tx.ExecContext(ctx, `SELECT b.id FROM platform_channel_bindings b JOIN platform_members m ON m.workspace_id=b.workspace_id
- WHERE b.workspace_id=$1 AND b.agent_id=$2 AND b.provider='wecom' AND m.user_id=$3 AND m.status='active' AND m.role IN ('owner','admin') FOR SHARE OF b`, workspace, agent, actor); err != nil {
+ WHERE b.workspace_id=$1 AND b.agent_id=$2 AND b.provider='wecom' AND m.user_id=$3 AND m.status='active' AND platform_can_manage_agent(b.workspace_id,b.agent_id,m.user_id) FOR SHARE OF b`, workspace, agent, actor); err != nil {
 			return out, err
 		}
 	}
 	var authorized string
 	err = tx.QueryRowContext(ctx, `SELECT a.id FROM platform_agents a JOIN platform_members m ON m.workspace_id=a.workspace_id
- WHERE a.workspace_id=$1 AND m.user_id=$2 AND a.id=$3 AND m.status='active' AND m.role IN ('owner','admin') FOR UPDATE OF a`, workspace, actor, agent).Scan(&authorized)
+ WHERE a.workspace_id=$1 AND m.user_id=$2 AND a.id=$3 AND m.status='active' AND platform_can_manage_agent(a.workspace_id,a.id,m.user_id) FOR UPDATE OF a`, workspace, actor, agent).Scan(&authorized)
 	if err != nil {
 		return out, visibleError(err)
 	}

@@ -29,7 +29,7 @@ func scanSharingPolicy(row scanner) (service.GroupSharingPolicy, error) {
 	return p, err
 }
 func sharingAdmin(ctx context.Context, tx *sql.Tx, w, actor, a string) error {
-	if err := usageAdmin(ctx, tx, w, actor); err != nil {
+	if err := AuthorizeEmployeeManagement(ctx, tx, w, a, actor); err != nil {
 		return err
 	}
 	var id string

@@ -157,7 +157,7 @@ func (s *PackageService) createPackage(ctx context.Context, w, actor string, v C
 		return CapabilityPackage{}, e
 	}
 	e := s.Store.WithWorkspace(ctx, w, func(t PackageTx) error {
-		if e := packageAuthorize(ctx, t, actor, true); e != nil {
+		if e := AuthorizeEmployee(ctx, t, actor, v.AgentID); e != nil {
 			return e
 		}
 		if e := validatePackageReferences(ctx, t, v); e != nil {
@@ -181,7 +181,7 @@ func (s *PackageService) Update(ctx context.Context, w, actor, employee, id stri
 		return v, Fail("invalid_package_patch", 400, "没有需要修改的能力包字段")
 	}
 	e := s.Store.WithWorkspace(ctx, w, func(t PackageTx) error {
-		if e := packageAuthorize(ctx, t, actor, true); e != nil {
+		if e := AuthorizeEmployee(ctx, t, actor, employee); e != nil {
 			return e
 		}
 		var e error
@@ -248,7 +248,7 @@ func (s *PackageService) CopyTemplate(ctx context.Context, w, actor, employee, t
 		return out, Fail("version_required", 400, "请提供模板版本")
 	}
 	e := s.Store.WithWorkspace(ctx, w, func(t PackageTx) error {
-		if e := packageAuthorize(ctx, t, actor, true); e != nil {
+		if e := AuthorizeEmployee(ctx, t, actor, employee); e != nil {
 			return e
 		}
 		v, e := t.Get(ctx, "", template)
@@ -501,7 +501,7 @@ func (s *PackageService) Upgrade(ctx context.Context, w, actor, employee string,
 		return Fail("invalid_resource_upgrade", 400, "资源或版本无效")
 	}
 	return s.Store.WithWorkspace(ctx, w, func(t PackageTx) error {
-		if err := packageAuthorize(ctx, t, actor, true); err != nil {
+		if err := AuthorizeEmployee(ctx, t, actor, employee); err != nil {
 			return err
 		}
 		return t.Upgrade(ctx, employee, r)

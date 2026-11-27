@@ -24,7 +24,7 @@ func scanTrigger(row scanner) (service.Trigger, error) {
 }
 func lockTriggerAdmin(ctx context.Context, tx *sql.Tx, w, actor, agent string) error {
 	var id string
-	if err := tx.QueryRowContext(ctx, `SELECT m.user_id FROM platform_members m JOIN platform_workspaces w ON w.id=m.workspace_id WHERE m.workspace_id=$1 AND m.user_id=$2 AND m.status='active' AND m.role IN ('owner','admin') FOR SHARE OF m,w`, w, actor).Scan(&id); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT m.user_id FROM platform_members m JOIN platform_workspaces w ON w.id=m.workspace_id WHERE m.workspace_id=$1 AND m.user_id=$2 AND m.status='active' AND platform_can_manage_agent(m.workspace_id,$3,m.user_id) FOR SHARE OF m,w`, w, actor, agent).Scan(&id); err != nil {
 		return visibleError(err)
 	}
 	return visibleError(tx.QueryRowContext(ctx, `SELECT id FROM platform_agents WHERE workspace_id=$1 AND id=$2 FOR SHARE`, w, agent).Scan(&id))

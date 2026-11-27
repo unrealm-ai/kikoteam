@@ -90,7 +90,7 @@ func (t *agentTx) List(ctx context.Context, q service.AgentListQuery) (service.A
 			page.Total = page.Counts.Disabled
 		}
 	}
-	const resources = `,
+	const resources = `, platform_can_manage_agent(a.workspace_id,a.id,NULLIF($6,'')::uuid),
         (SELECT coalesce(json_agg(b.provider ORDER BY b.provider),'[]')
             FROM platform_channel_bindings b WHERE b.workspace_id=a.workspace_id AND b.agent_id=a.id),
         (SELECT count(*) FROM platform_capability_packages c WHERE c.workspace_id=a.workspace_id AND c.agent_id=a.id),
@@ -99,7 +99,7 @@ func (t *agentTx) List(ctx context.Context, q service.AgentListQuery) (service.A
 	pageFrom := ` FROM (SELECT a.* FROM platform_agents a` + agentSearchScope +
 		` AND ($3::boolean IS NULL OR a.enabled=$3) ORDER BY a.created_at DESC,a.id DESC LIMIT $4 OFFSET $5) a`
 	rows, err := t.model.tx.QueryContext(ctx, `SELECT `+agentColumns+resources+pageFrom+agentModelJoins+
-		` ORDER BY a.created_at DESC,a.id DESC`, t.model.workspace, q.Search, q.Enabled, q.PageSize, (q.Page-1)*q.PageSize)
+		` ORDER BY a.created_at DESC,a.id DESC`, t.model.workspace, q.Search, q.Enabled, q.PageSize, (q.Page-1)*q.PageSize, q.ViewerID)
 	if err != nil {
 		return page, err
 	}
@@ -107,7 +107,8 @@ func (t *agentTx) List(ctx context.Context, q service.AgentListQuery) (service.A
 	for rows.Next() {
 		var resources service.AgentCardResources
 		var channels []byte
-		agent, err := scanAgent(rows, &channels, &resources.PackageCount, &resources.TriggerCount)
+		var canManage bool
+		agent, err := scanAgent(rows, &canManage, &channels, &resources.PackageCount, &resources.TriggerCount)
 		if err != nil {
 			return page, err
 		}
@@ -115,6 +116,7 @@ func (t *agentTx) List(ctx context.Context, q service.AgentListQuery) (service.A
 			return page, err
 		}
 		agent.CardResources = &resources
+		agent.CanManage = canManage
 		page.Items = append(page.Items, agent)
 	}
 	return page, rows.Err()
@@ -128,9 +130,9 @@ func (t *agentTx) Create(ctx context.Context, a service.Agent, creator string) e
 		return err
 	}
 	w := t.model.workspace
-	if _, err := t.model.tx.ExecContext(ctx, `INSERT INTO platform_agents(id,workspace_id,name,role,avatar,instruction,model_profile_id,enabled,version,config_version,admission_epoch,platform_model_id,usage_config)
- VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid,$8,$9,$10,$11,NULLIF($12,'')::uuid,$13)`,
-		a.ID, w, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.Enabled, a.Version, a.ConfigVersion, a.AdmissionEpoch, a.PlatformModelID, usage); err != nil {
+	if _, err := t.model.tx.ExecContext(ctx, `INSERT INTO platform_agents(id,workspace_id,name,role,avatar,instruction,model_profile_id,enabled,version,config_version,admission_epoch,platform_model_id,usage_config,creator_account_id)
+ VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid,$8,$9,$10,$11,NULLIF($12,'')::uuid,$13,$14)`,
+		a.ID, w, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.Enabled, a.Version, a.ConfigVersion, a.AdmissionEpoch, a.PlatformModelID, usage, creator); err != nil {
 		return err
 	}
 	if err := t.saveVersion(ctx, a); err != nil {

@@ -1028,6 +1028,25 @@ $_$;
 
 
 --
+-- Name: platform_can_manage_agent(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.platform_can_manage_agent(workspace uuid, employee uuid, actor uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT EXISTS (
+        SELECT FROM platform_agents a
+        JOIN platform_members m ON m.workspace_id=a.workspace_id
+        WHERE a.workspace_id=workspace AND a.id=employee AND m.user_id=actor AND m.status='active'
+        AND (m.role IN ('owner', 'admin') OR a.creator_account_id=m.user_id OR EXISTS (
+            SELECT FROM platform_agent_maintainers g
+            WHERE g.workspace_id=a.workspace_id AND g.agent_id=a.id AND g.user_id=m.user_id
+        ))
+    )
+$$;
+
+
+--
 -- Name: platform_channel_actor_access_allowed(uuid, jsonb, text, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1171,6 +1190,22 @@ END $$;
 CREATE FUNCTION public.platform_plugin_connection_owner(w uuid, a uuid, p uuid) RETURNS uuid
     LANGUAGE sql STABLE
     AS $$SELECT a FROM platform_agent_plugin_connection_settings WHERE workspace_id=w AND agent_id=a AND plugin_id=p AND source='agent'$$;
+
+
+--
+-- Name: platform_queue_new_assistant(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.platform_queue_new_assistant() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF (SELECT enabled FROM platform_assistant_settings WHERE singleton) THEN
+        INSERT INTO platform_assistant_provisioning(workspace_id) VALUES(NEW.id);
+    END IF;
+    RETURN NEW;
+END;
+$$;
 
 
 --
@@ -2824,6 +2859,26 @@ CREATE TABLE public.platform_admin_state (
 
 
 --
+-- Name: platform_agent_channel_maintainers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_agent_channel_maintainers (
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    binding_id uuid NOT NULL,
+    identity_epoch bigint NOT NULL,
+    external_id text NOT NULL,
+    ref jsonb NOT NULL,
+    display_name text NOT NULL,
+    granted_by uuid NOT NULL,
+    granted_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_agent_channel_maintainers_external_id_check CHECK (((length(external_id) >= 1) AND (length(external_id) <= 512))),
+    CONSTRAINT platform_agent_channel_maintainers_identity_epoch_check CHECK ((identity_epoch > 0)),
+    CONSTRAINT platform_agent_channel_maintainers_ref_check CHECK ((jsonb_typeof(ref) = 'object'::text))
+);
+
+
+--
 -- Name: platform_agent_human_recipients; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2833,6 +2888,37 @@ CREATE TABLE public.platform_agent_human_recipients (
     recipients jsonb NOT NULL,
     CONSTRAINT platform_agent_human_recipients_recipients_check CHECK ((jsonb_typeof(recipients) = 'array'::text)),
     CONSTRAINT platform_agent_human_recipients_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: platform_agent_maintainer_audit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_agent_maintainer_audit (
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    version bigint NOT NULL,
+    actor_account_id uuid NOT NULL,
+    added jsonb NOT NULL,
+    removed jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_agent_maintainer_audit_added_check CHECK ((jsonb_typeof(added) = 'array'::text)),
+    CONSTRAINT platform_agent_maintainer_audit_removed_check CHECK ((jsonb_typeof(removed) = 'array'::text)),
+    CONSTRAINT platform_agent_maintainer_audit_version_check CHECK ((version > 1))
+);
+
+
+--
+-- Name: platform_agent_maintainers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_agent_maintainers (
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    granted_by uuid NOT NULL,
+    granted_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -3001,12 +3087,15 @@ CREATE TABLE public.platform_agents (
     platform_model_id uuid,
     usage_config jsonb DEFAULT '{"access": {"deny": [], "mode": "allowlist", "allow": [], "group_members_enabled": true}, "history": {"limit": 20, "enabled": false, "channels": []}, "trigger": {"mention": true, "regexes": [], "keywords": []}}'::jsonb NOT NULL,
     usage_version bigint DEFAULT 1 NOT NULL,
+    creator_account_id uuid NOT NULL,
+    maintainers_version bigint DEFAULT 1 NOT NULL,
     CONSTRAINT platform_agents_admission_epoch_check CHECK ((admission_epoch > 0)),
     CONSTRAINT platform_agents_avatar_check CHECK ((length(avatar) <= 100)),
     CONSTRAINT platform_agents_check CHECK (((source_agent_template_version_id IS NOT NULL) OR (template_parameters = '{}'::jsonb))),
     CONSTRAINT platform_agents_check1 CHECK ((num_nonnulls(model_profile_id, platform_model_id) = 1)),
     CONSTRAINT platform_agents_config_version_check CHECK ((config_version > 0)),
     CONSTRAINT platform_agents_instruction_check CHECK ((length(instruction) <= 8000)),
+    CONSTRAINT platform_agents_maintainers_version_check CHECK ((maintainers_version > 0)),
     CONSTRAINT platform_agents_name_check CHECK (((length(name) >= 1) AND (length(name) <= 100))),
     CONSTRAINT platform_agents_role_check CHECK ((length(role) <= 2000)),
     CONSTRAINT platform_agents_template_parameters_check CHECK ((jsonb_typeof(template_parameters) = 'object'::text)),
@@ -3014,6 +3103,34 @@ CREATE TABLE public.platform_agents (
     CONSTRAINT platform_agents_usage_version_check CHECK ((usage_version > 0)),
     CONSTRAINT platform_agents_version_check CHECK ((version > 0)),
     CONSTRAINT platform_agents_web_access_check CHECK (COALESCE(((jsonb_typeof(web_access) = 'object'::text) AND ((web_access ->> 'mode'::text) = ANY (ARRAY['workspace'::text, 'allowlist'::text])) AND (jsonb_typeof((web_access -> 'allow_member_ids'::text)) = 'array'::text) AND (jsonb_typeof((web_access -> 'deny_member_ids'::text)) = 'array'::text)), false))
+);
+
+
+--
+-- Name: platform_assistant_provisioning; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_assistant_provisioning (
+    workspace_id uuid NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_assistant_provisioning_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'provisioned'::text, 'skipped'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: platform_assistant_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_assistant_settings (
+    singleton boolean DEFAULT true NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    version bigint DEFAULT 1 NOT NULL,
+    updated_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_assistant_settings_singleton_check CHECK (singleton),
+    CONSTRAINT platform_assistant_settings_version_check CHECK ((version > 0))
 );
 
 
@@ -3075,6 +3192,8 @@ CREATE TABLE public.platform_capability_packages (
     trigger_scope jsonb DEFAULT '{"mode": "all", "deny_trigger_ids": [], "allow_trigger_ids": []}'::jsonb NOT NULL,
     conversation_scope jsonb,
     work_scope jsonb,
+    assistant_tool_set text,
+    CONSTRAINT platform_capability_packages_check CHECK (((assistant_tool_set IS NULL) OR ((assistant_tool_set = ANY (ARRAY['platform'::text, 'demo'::text])) AND (agent_id IS NOT NULL)))),
     CONSTRAINT platform_capability_packages_conversation_scope_check CHECK (((conversation_scope IS NULL) OR (jsonb_typeof(conversation_scope) = 'object'::text))),
     CONSTRAINT platform_capability_packages_description_check CHECK ((length(description) <= 2000)),
     CONSTRAINT platform_capability_packages_name_check CHECK (((length(name) >= 1) AND (length(name) <= 100))),
@@ -4134,7 +4253,8 @@ CREATE TABLE public.platform_workspaces (
     version bigint DEFAULT 1 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     personal_owner_id uuid,
-    starter_pending boolean DEFAULT true NOT NULL,
+    starter_pending boolean DEFAULT false NOT NULL,
+    assistant_agent_id uuid,
     CONSTRAINT platform_workspaces_description_check CHECK ((length(description) <= 2000)),
     CONSTRAINT platform_workspaces_name_check CHECK (((length(name) >= 1) AND (length(name) <= 100))),
     CONSTRAINT platform_workspaces_version_check CHECK ((version > 0))
@@ -5238,11 +5358,35 @@ ALTER TABLE ONLY public.platform_admin_state
 
 
 --
+-- Name: platform_agent_channel_maintainers platform_agent_channel_maintainers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_channel_maintainers
+    ADD CONSTRAINT platform_agent_channel_maintainers_pkey PRIMARY KEY (agent_id, binding_id, identity_epoch, external_id);
+
+
+--
 -- Name: platform_agent_human_recipients platform_agent_human_recipients_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.platform_agent_human_recipients
     ADD CONSTRAINT platform_agent_human_recipients_pkey PRIMARY KEY (agent_id);
+
+
+--
+-- Name: platform_agent_maintainer_audit platform_agent_maintainer_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_maintainer_audit
+    ADD CONSTRAINT platform_agent_maintainer_audit_pkey PRIMARY KEY (agent_id, version);
+
+
+--
+-- Name: platform_agent_maintainers platform_agent_maintainers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_maintainers
+    ADD CONSTRAINT platform_agent_maintainers_pkey PRIMARY KEY (agent_id, user_id);
 
 
 --
@@ -5347,6 +5491,22 @@ ALTER TABLE ONLY public.platform_agents
 
 ALTER TABLE ONLY public.platform_agents
     ADD CONSTRAINT platform_agents_workspace_id_id_key UNIQUE (workspace_id, id);
+
+
+--
+-- Name: platform_assistant_provisioning platform_assistant_provisioning_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_assistant_provisioning
+    ADD CONSTRAINT platform_assistant_provisioning_pkey PRIMARY KEY (workspace_id);
+
+
+--
+-- Name: platform_assistant_settings platform_assistant_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_assistant_settings
+    ADD CONSTRAINT platform_assistant_settings_pkey PRIMARY KEY (singleton);
 
 
 --
@@ -6470,6 +6630,20 @@ CREATE INDEX platform_agents_workspace_idx ON public.platform_agents USING btree
 
 
 --
+-- Name: platform_assistant_package_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX platform_assistant_package_unique ON public.platform_capability_packages USING btree (agent_id, assistant_tool_set) WHERE (assistant_tool_set IS NOT NULL);
+
+
+--
+-- Name: platform_assistant_provisioning_due; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_assistant_provisioning_due ON public.platform_assistant_provisioning USING btree (next_attempt_at, workspace_id) WHERE (status = 'pending'::text);
+
+
+--
 -- Name: platform_capability_package_plugins_usage; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6908,6 +7082,13 @@ CREATE TRIGGER manager_work_cancel_event AFTER UPDATE OF status ON public.manage
 --
 
 CREATE TRIGGER manager_work_started AFTER INSERT ON public.manager_turns FOR EACH ROW EXECUTE FUNCTION public.manager_work_started();
+
+
+--
+-- Name: platform_workspaces platform_new_workspace_assistant; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER platform_new_workspace_assistant AFTER INSERT ON public.platform_workspaces FOR EACH ROW EXECUTE FUNCTION public.platform_queue_new_assistant();
 
 
 --
@@ -8558,11 +8739,75 @@ ALTER TABLE ONLY public.platform_admin_state
 
 
 --
+-- Name: platform_agent_channel_maintainers platform_agent_channel_maintainers_binding_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_channel_maintainers
+    ADD CONSTRAINT platform_agent_channel_maintainers_binding_id_fkey FOREIGN KEY (binding_id) REFERENCES public.platform_channel_bindings(id) ON DELETE CASCADE;
+
+
+--
+-- Name: platform_agent_channel_maintainers platform_agent_channel_maintainers_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_channel_maintainers
+    ADD CONSTRAINT platform_agent_channel_maintainers_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: platform_agent_channel_maintainers platform_agent_channel_maintainers_workspace_id_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_channel_maintainers
+    ADD CONSTRAINT platform_agent_channel_maintainers_workspace_id_agent_id_fkey FOREIGN KEY (workspace_id, agent_id) REFERENCES public.platform_agents(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: platform_agent_human_recipients platform_agent_human_recipients_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.platform_agent_human_recipients
     ADD CONSTRAINT platform_agent_human_recipients_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.platform_agents(id);
+
+
+--
+-- Name: platform_agent_maintainer_audit platform_agent_maintainer_audit_actor_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_maintainer_audit
+    ADD CONSTRAINT platform_agent_maintainer_audit_actor_account_id_fkey FOREIGN KEY (actor_account_id) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: platform_agent_maintainer_audit platform_agent_maintainer_audit_workspace_id_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_maintainer_audit
+    ADD CONSTRAINT platform_agent_maintainer_audit_workspace_id_agent_id_fkey FOREIGN KEY (workspace_id, agent_id) REFERENCES public.platform_agents(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: platform_agent_maintainers platform_agent_maintainers_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_maintainers
+    ADD CONSTRAINT platform_agent_maintainers_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: platform_agent_maintainers platform_agent_maintainers_workspace_id_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_maintainers
+    ADD CONSTRAINT platform_agent_maintainers_workspace_id_agent_id_fkey FOREIGN KEY (workspace_id, agent_id) REFERENCES public.platform_agents(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: platform_agent_maintainers platform_agent_maintainers_workspace_id_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agent_maintainers
+    ADD CONSTRAINT platform_agent_maintainers_workspace_id_user_id_fkey FOREIGN KEY (workspace_id, user_id) REFERENCES public.platform_members(workspace_id, user_id) ON DELETE CASCADE;
 
 
 --
@@ -8750,6 +8995,14 @@ ALTER TABLE ONLY public.platform_agent_versions
 
 
 --
+-- Name: platform_agents platform_agents_creator_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_agents
+    ADD CONSTRAINT platform_agents_creator_account_id_fkey FOREIGN KEY (creator_account_id) REFERENCES public.platform_accounts(id);
+
+
+--
 -- Name: platform_agents platform_agents_platform_model_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8779,6 +9032,22 @@ ALTER TABLE ONLY public.platform_agents
 
 ALTER TABLE ONLY public.platform_agents
     ADD CONSTRAINT platform_agents_workspace_id_model_profile_id_fkey FOREIGN KEY (workspace_id, model_profile_id) REFERENCES public.platform_model_profiles(workspace_id, id);
+
+
+--
+-- Name: platform_assistant_provisioning platform_assistant_provisioning_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_assistant_provisioning
+    ADD CONSTRAINT platform_assistant_provisioning_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.platform_workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: platform_assistant_settings platform_assistant_settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_assistant_settings
+    ADD CONSTRAINT platform_assistant_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.platform_accounts(id);
 
 
 --
@@ -9603,6 +9872,14 @@ ALTER TABLE ONLY public.platform_wecom_verifications
 
 ALTER TABLE ONLY public.platform_work_receivers
     ADD CONSTRAINT platform_work_receivers_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.platform_agents(id);
+
+
+--
+-- Name: platform_workspaces platform_workspaces_id_assistant_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_workspaces
+    ADD CONSTRAINT platform_workspaces_id_assistant_agent_id_fkey FOREIGN KEY (id, assistant_agent_id) REFERENCES public.platform_agents(workspace_id, id) ON DELETE SET NULL (assistant_agent_id);
 
 
 --

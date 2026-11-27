@@ -12,7 +12,7 @@ import (
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
 
-func starterBindings(t *testing.T, db *sql.DB, workspace string) string {
+func employeeBindings(t *testing.T, db *sql.DB, workspace string) string {
 	t.Helper()
 	var snapshot string
 	err := db.QueryRow(`SELECT jsonb_build_object(
@@ -37,12 +37,10 @@ func TestBuiltinResourceCardsHTTP(t *testing.T) {
 	if err = SyncCatalog(ctx, db, catalog, rt.Skills.Assets); err != nil {
 		t.Fatal(err)
 	}
-	saveTestModel(t, models, w, owner)
+	model := saveTestModel(t, models, w, owner)
 	templates := &service.TemplateService{Store: &TemplateStore{DB: db}, Assets: rt.Skills.Assets}
-	if err = ProvisionCatalogStarters(ctx, db, templates); err != nil {
-		t.Fatal(err)
-	}
-	before := starterBindings(t, db, w)
+	employee := createCatalogEmployee(t, ctx, templates, w, owner, model.ID, "行情简报员", true)
+	before := employeeBindings(t, db, w)
 	auth := &AuthStore{DB: db}
 	const session = "resource-card-test"
 	if err = auth.CreateSession(ctx, service.HashToken(session), owner, time.Now().Add(time.Hour)); err != nil {
@@ -99,11 +97,11 @@ func TestBuiltinResourceCardsHTTP(t *testing.T) {
 	}
 	items, total := read(base + "/skills?scope=all&q=market-close")
 	if total != 1 || len(items) != 1 || items[0].Count != 1 {
-		t.Fatal("missing pinned starter skill")
+		t.Fatal("missing pinned reporter skill")
 	}
 	items, total = read(base + "/plugins?scope=official&q=timestamps")
 	if total != 1 || len(items) != 1 || items[0].Count != 1 || items[0].SharedState != "" {
-		t.Fatal("unexpected anonymous starter plugin")
+		t.Fatal("unexpected anonymous reporter plugin")
 	}
 	_, total = read(base + "/plugins?scope=workspace&q=timestamps")
 	if total != 0 {
@@ -112,7 +110,7 @@ func TestBuiltinResourceCardsHTTP(t *testing.T) {
 	if err = SyncCatalog(ctx, db, catalog, rt.Skills.Assets); err != nil {
 		t.Fatal(err)
 	}
-	if starterBindings(t, db, w) != before {
+	if employeeBindings(t, db, w) != before {
 		t.Fatal("catalog reads or reinstallation changed existing employee bindings or tool grants")
 	}
 	// A private account should never make the catalog claim a shared connection is ready.
@@ -133,11 +131,7 @@ func TestBuiltinResourceCardsHTTP(t *testing.T) {
 			t.Fatalf("expected shared state %s", want)
 		}
 	}
-	var starter string
-	if err = db.QueryRow("SELECT id FROM platform_agents WHERE workspace_id=$1", w).Scan(&starter); err != nil {
-		t.Fatal(err)
-	}
-	createConnection(starter)
+	createConnection(employee.ID)
 	checkState("missing")
 	shared := createConnection(nil)
 	checkState("connected")

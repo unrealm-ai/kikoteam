@@ -319,6 +319,8 @@ Event Hub 完成迁移 79 后，Compose 使用 `backend sync-catalog` 发布目�
 
 目录修订 10 将「内容运营编辑」模板的首次试用样例更新为 AI 员工用语。升级只为有变化的官方模板发布新版本，不重写既有版本或工作区副本；重跑同一修订不重复增版。同步命令拒绝低于数据库目录修订号的旧二进制。
 
-新空间有可用模型后，Backend 自动创建一位行情简报员，绑定收盘简报 Skill 和免认证行情。优先使用工作区模型，工作区有多个模型时优先默认模型；也支持平台默认模型。旧空间可从行情简报员模板选择「一键体验免认证行情」。普通模板创建保留可延后接入的业务包，接口传 `required_packages_only: true` 可仅安装必需包。模板更新保留已有员工的历史来源、配置和连接。
+新工作区不会自动创建行情简报员，配置模型也不会触发创建。需要时，用户可在 AI 员工市场打开「行情简报员」，选择「用此模板创建」或「一键体验免认证行情」。普通模板创建保留可延后接入的业务包，接口传 `required_packages_only: true` 可仅安装必需包。此变更不影响 Kiko 助手的启用设置和创建流程。
+
+迁移 108 取消待创建标记，并让新工作区默认不再排队。滚动升级时先由 Event Hub 应用迁移，以停止旧 Backend 自动创建行情简报员；迁移前手动添加仍会清除待创建标记，避免旧实例随后重复创建。已创建的员工、能力包和连接不受影响。回退此迁移只恢复后续新工作区的旧默认值，不会把已有工作区重新加入队列。
 
 真实主聊天验收入口在 Backend 的 `TestLiveBuiltinMarket`、`TestLiveBuiltinGitHub` 和 `TestLiveBuiltinOffice`。通过 `BACKEND_TEST_DATABASE_URL` 指向隔离的 PostgreSQL，使用 `KIKO_LIVE_MODEL_E2E=1` 和自有测试模型的 `DEEPSEEK_*` 配置运行。GitHub 用例通过 `KIKO_LIVE_GITHUB_COMMIT` 校验独立读取的 `octocat/Hello-World` 默认分支提交 SHA。设置 `KIKO_LIVE_GITHUB_TOKEN` 可验证 PAT。要验证网页授权，留空该变量，由测试将 GitHub App 凭据写入隔离数据库，传入 `KIKO_LIVE_TEST_GITHUB_CLIENT_ID`、`KIKO_LIVE_TEST_GITHUB_CLIENT_SECRET` 和回调地址 `http://127.0.0.1:18089/api/v1/auth/callbacks/plugin-oauth`。在 Backend 目录执行 `go test -v ./internal/platform/repository -run '^TestLiveBuiltinGitHub$' -count=1`，选择网页授权时打开测试输出的本地链接。

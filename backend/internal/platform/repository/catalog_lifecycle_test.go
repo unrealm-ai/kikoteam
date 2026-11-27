@@ -3,8 +3,9 @@ package repository
 import (
 	"context"
 	"errors"
-	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 	"testing"
+
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
 
 type interruptedCatalogAssets struct {
@@ -19,7 +20,26 @@ func (s *interruptedCatalogAssets) Write(ctx context.Context, key string, b serv
 	s.remaining--
 	return s.SkillAssets.Write(ctx, key, b)
 }
-func TestCatalogRestartAndStarter(t *testing.T) {
+func createCatalogEmployee(t *testing.T, ctx context.Context, templates *service.TemplateService, workspace, owner, model, name string, requiredOnly bool) service.Agent {
+	t.Helper()
+	page, err := templates.List(ctx, "", owner, service.TemplateQuery{Q: name, Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Content.Name != name {
+		t.Fatalf("expected published template %q", name)
+	}
+	template := page.Items[0]
+	employee, err := templates.CreateFromTemplate(ctx, workspace, owner, service.TemplateCreation{
+		TemplateID: template.ID, TemplateVersionID: template.PublishedVersionID, ModelProfileID: model, Name: name, RequiredPackagesOnly: requiredOnly,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return employee
+}
+
+func TestCatalogRestartAndOptInMarketReporter(t *testing.T) {
 	ctx := context.Background()
 	db, models, w, owner := modelFixture(t)
 	assets := runtimeCapabilityServices(t, db).Skills.Assets
@@ -49,38 +69,64 @@ func TestCatalogRestartAndStarter(t *testing.T) {
 			t.Fatal(tbl)
 		}
 	}
-	s := &service.TemplateService{Store: &TemplateStore{DB: db}, Assets: assets}
-	if e = ProvisionCatalogStarters(ctx, db, s); e != nil {
+	model := saveTestModel(t, models, w, owner)
+	if e = SyncCatalog(ctx, db, c, assets); e != nil {
 		t.Fatal(e)
 	}
-	if count("select count(*) from platform_agents where workspace_id=$1", w) != 0 {
-		t.Fatal("starter before model")
+	if count("select count(*) from platform_workspaces where id=$1 and starter_pending", w) != 0 || count("select count(*) from platform_agents where workspace_id=$1 and name='行情简报员'", w) != 0 {
+		t.Fatal("new workspace has a pending or automatically created market reporter")
 	}
-	saveTestModel(t, models, w, owner)
-	finished := make(chan error, 2)
-	for range 2 {
-		go func() { finished <- ProvisionCatalogStarters(ctx, db, s) }()
+	templates := &service.TemplateService{Store: &TemplateStore{DB: db}, Assets: assets}
+	employee := createCatalogEmployee(t, ctx, templates, w, owner, model.ID, "行情简报员", true)
+	if count("select count(*) from platform_capability_packages where workspace_id=$1 and agent_id=$2", w, employee.ID) != 2 {
+		t.Fatal("expected the two required reporter packages")
 	}
-	for range 2 {
-		if e := <-finished; e != nil {
-			t.Fatal(e)
-		}
-	}
-	if count("select count(*) from platform_agents where workspace_id=$1", w) != 1 || count("select count(*) from platform_capability_packages where workspace_id=$1", w) != 2 {
-		t.Fatal("unexpected starter configuration")
-	}
-	var agent string
-	if e = db.QueryRow("select id from platform_agents where workspace_id=$1", w).Scan(&agent); e != nil {
-		t.Fatal(e)
-	}
-	assertNewAgentDefaults(t, db, w, owner, agent)
+	assertNewAgentDefaults(t, db, w, owner, employee.ID)
 	if count("select count(*) from platform_plugin_connections where workspace_id=$1 and plugin_id=$2 and enabled and validated", w, service.CatalogID("plugin", "stock")) != 1 {
 		t.Fatal("public account missing")
 	}
-	if count("select count(*) from platform_workspaces where id=$1 and starter_pending", w) != 0 {
-		t.Fatal("starter flag unconsumed")
+}
+func TestDisableWorkspaceStartersMigration(t *testing.T) {
+	ctx := t.Context()
+	const previous = "000107_builtin_employee_management.sql"
+	db, models, workspace, owner := modelFixtureThrough(t, previous)
+	assets := runtimeCapabilityServices(t, db).Skills.Assets
+	catalog, err := service.BuiltinCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = SyncCatalog(ctx, db, catalog, assets); err != nil {
+		t.Fatal(err)
+	}
+	model := saveTestModel(t, models, workspace, owner)
+	templates := &service.TemplateService{Store: &TemplateStore{DB: db}, Assets: assets}
+	employee := createCatalogEmployee(t, ctx, templates, workspace, owner, model.ID, "行情简报员", false)
+	var queued bool
+	if err = db.QueryRow(`SELECT starter_pending FROM platform_workspaces WHERE id=$1`, workspace).Scan(&queued); err != nil || queued {
+		t.Fatal("manual creation must consume the pending flag for older backend instances", err)
+	}
+	var packageCount int
+	if err = db.QueryRow(`SELECT count(*) FROM platform_capability_packages WHERE agent_id=$1`, employee.ID).Scan(&packageCount); err != nil || packageCount != 3 {
+		t.Fatal("full reporter template must retain the deferred package", packageCount, err)
+	}
+	before := employeeBindings(t, db, workspace)
+	pending, err := (&service.WorkspaceService{Store: NewWorkspaceStore(db)}).Create(ctx, owner, "pending", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRow(`SELECT starter_pending FROM platform_workspaces WHERE id=$1`, pending.ID).Scan(&queued); err != nil || !queued {
+		t.Fatal("expected pending workspace before migration", err)
+	}
+	applyTestMigrations(t, ctx, db, previous, "000108_disable_workspace_starters.sql")
+	var stillPending, keptEmployee bool
+	if err = db.QueryRow(`SELECT starter_pending, EXISTS(SELECT FROM platform_agents WHERE id=$2 AND workspace_id=$3) FROM platform_workspaces WHERE id=$1`, pending.ID, employee.ID, workspace).Scan(&stillPending, &keptEmployee); err != nil {
+		t.Fatal(err)
+	}
+	if stillPending || !keptEmployee || employeeBindings(t, db, workspace) != before {
+		t.Fatal("upgrade must cancel pending creation without changing existing employees or bindings")
 	}
 }
+
 func TestCatalogTenantClientIsolation(t *testing.T) {
 	ctx := context.Background()
 	db, _, w, owner := modelFixture(t)

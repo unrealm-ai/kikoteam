@@ -23,29 +23,16 @@ func verifyCatalogChat(t *testing.T, ctx context.Context, db *sql.DB, runtime *s
 		t.Fatal(err)
 	}
 	templates := &service.TemplateService{Store: &TemplateStore{DB: db}, Assets: runtime.Skills.Assets}
-	if err = ProvisionCatalogStarters(ctx, db, templates); err != nil {
-		t.Fatal(err)
-	}
-	var employee string
-	if err = db.QueryRowContext(ctx, "SELECT id FROM platform_agents WHERE workspace_id=$1 AND name='行情简报员'", w).Scan(&employee); err != nil {
-		t.Fatal(err)
-	}
+	name := "行情简报员"
 	key, operations := "stock", []string{"query_index"}
 	prompt := "请安排一次后台核对，汇总最近一个交易日 A 股三大指数的点位、涨跌幅、行情时间和数据来源，把简报交付回这个对话。"
 	github := t.Name() == "TestLiveBuiltinGitHub"
 	if github {
 		key, operations = "github", []string{"list_commits", "get_commit"}
-		var tid, version string
-		if err = db.QueryRowContext(ctx, "SELECT id,published_version_id FROM platform_agent_templates WHERE builtin_key='release-assistant'").Scan(&tid, &version); err != nil {
-			t.Fatal(err)
-		}
-		a, err := templates.CreateFromTemplate(ctx, w, owner, service.TemplateCreation{TemplateID: tid, TemplateVersionID: version, Name: "研发交付助理", ModelProfileID: model})
-		if err != nil {
-			t.Fatal(err)
-		}
-		employee = a.ID
+		name = "研发交付助理"
 		prompt = "请安排一次后台核对，查公开项目 octocat/Hello-World 默认分支最近一次提交，把完整 SHA 和提交标题回到本对话。"
 	}
+	employee := createCatalogEmployee(t, ctx, templates, w, owner, model, name, !github)
 	var target service.Plugin
 	for _, p := range catalog.Plugins {
 		if p.Key == key {
@@ -55,7 +42,7 @@ func verifyCatalogChat(t *testing.T, ctx context.Context, db *sql.DB, runtime *s
 	if github {
 		connectGitHub(target)
 	}
-	conversation := call("POST", base+"/conversations/web-direct", map[string]string{"agent_id": employee}, "")["id"].(string)
+	conversation := call("POST", base+"/conversations/web-direct", map[string]string{"agent_id": employee.ID}, "")["id"].(string)
 	chat := call("POST", base+"/sessions", map[string]any{"conversation_id": conversation, "mode": "chat", "input": map[string]string{"text": prompt}}, service.NewID())["id"].(string)
 	for deadline := time.Now().Add(4 * time.Minute); time.Now().Before(deadline); time.Sleep(time.Second) {
 		var task, turn string

@@ -211,7 +211,7 @@ func Run(stderr io.Writer, version string) int {
 		log.Error("Invalid official template catalog", "reason", err.Error())
 		return 1
 	}
-	stopCatalog := startTemplateCatalog(ctx, db, catalog, templates, log)
+	stopCatalog := startTemplateCatalog(ctx, db, catalog, assets, log)
 	defer stopCatalog()
 	defer startHostedAssistant(ctx, assistantStore, log)()
 	channelCtx, cancelChannel := context.WithCancel(ctx)

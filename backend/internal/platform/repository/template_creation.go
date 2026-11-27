@@ -145,14 +145,8 @@ func (s *TemplateStore) CommitCreation(ctx context.Context, w, a string, r servi
 		if !listed || !published || scope == "workspace" && owner.String != w {
 			return service.Fail("template_unavailable", 409, "模板不可创建")
 		}
-		// A manually created reporter also satisfies a new workspace's starter.
 		if builtin == "market-reporter" {
-			result, err := m.tx.ExecContext(ctx, "UPDATE platform_workspaces SET starter_pending=false WHERE id=$1 AND starter_pending", w)
-			if err != nil {
-				return err
-			}
-			n, err := result.RowsAffected()
-			if err != nil || r.Starter && n == 0 {
+			if _, err := m.tx.ExecContext(ctx, "UPDATE platform_workspaces SET starter_pending=false WHERE id=$1 AND starter_pending", w); err != nil {
 				return err
 			}
 		}
@@ -185,7 +179,7 @@ func (s *TemplateStore) CommitCreation(ctx context.Context, w, a string, r servi
 			return e
 		}
 		for _, p := range v.Content.Packages {
-			if (r.Starter || r.RequiredPackagesOnly) && p.Onboarding == "deferred" {
+			if r.RequiredPackagesOnly && p.Onboarding == "deferred" {
 				continue
 			}
 			pkg := service.CapabilityPackage{ID: service.NewID(), AgentID: out.ID, Name: p.Name, Description: p.Description, Enabled: true, Version: 1, Scope: service.PackageScope{Mode: "inherit_with_blacklist", AllowMemberIDs: []string{}, DenyMemberIDs: []string{}}, Skills: []service.PackageSkill{}, Plugins: []service.PackagePlugin{}}

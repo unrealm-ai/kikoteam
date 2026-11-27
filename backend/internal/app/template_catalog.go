@@ -12,27 +12,18 @@ import (
 )
 
 // A standalone Backend can start before Event Hub has migrated its database.
-func startTemplateCatalog(parent context.Context, db *sql.DB, catalog service.TemplateCatalog, templates *service.TemplateService, log *slog.Logger) func() {
+func startTemplateCatalog(parent context.Context, db *sql.DB, catalog service.TemplateCatalog, assets service.SkillAssets, log *slog.Logger) func() {
 	ctx, cancel := context.WithCancel(parent)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for {
 			attempt, stop := context.WithTimeout(ctx, time.Minute)
-			err := repository.SyncCatalog(attempt, db, catalog, templates.Assets)
+			err := repository.SyncCatalog(attempt, db, catalog, assets)
 			stop()
 			if err == nil {
 				log.Info("Official catalog ready", "revision", catalog.Revision)
-				for {
-					if e := repository.ProvisionCatalogStarters(ctx, db, templates); e != nil && ctx.Err() == nil {
-						log.Error("Provisioning starter employee failed", "error", e)
-					}
-					select {
-					case <-ctx.Done():
-						return
-					case <-time.After(10 * time.Second):
-					}
-				}
+				return
 			}
 			if ctx.Err() != nil {
 				return

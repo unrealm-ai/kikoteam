@@ -120,7 +120,6 @@ type TemplatePublish struct {
 }
 type TemplateCreation struct {
 	RequiredPackagesOnly bool           `json:"required_packages_only,omitempty"`
-	Starter              bool           `json:"-"`
 	TemplateID           string         `json:"template_id"`
 	TemplateVersionID    string         `json:"template_version_id"`
 	Name                 string         `json:"name"`

@@ -2,7 +2,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import {
   NTabs, NTabPane, NForm, NFormItem, NInput, NButton, NAlert, NModal, NDivider,
-  useMessage, type FormInst, type FormRules
+  useMessage, type FormInst, type FormItemInst, type FormRules
 } from 'naive-ui';
 import { authApi } from '../api';
 import { realPlatform, validPlatformPassword, platformAuth, type AuthConfig, type PasswordVerificationReceipt } from '../api/platform';
@@ -85,6 +85,7 @@ const forgotModel = reactive({
 
 // Register form
 const registerFormRef = ref<FormInst | null>(null);
+const registerCodeField = ref<FormItemInst | null>(null);
 const registerModel = reactive({
   name: '',
   email: '',
@@ -249,11 +250,11 @@ const registerRules = computed<FormRules>(() => ({
     }
   ],
   code: [
-    { required: true, message: '注册必须填写邮箱验证码', trigger: ['blur', 'input'] },
+    { required: true, whitespace: true, message: '注册必须填写邮箱验证码', trigger: 'submit' },
     {
-      validator: (_rule, val: string) => /^\d{6}$/.test((val || '').trim()),
+      validator: (_rule, val: string) => !val?.trim() || /^\d{6}$/.test(val.trim()),
       message: '请输入 6 位数字验证码',
-      trigger: 'blur'
+      trigger: 'submit'
     }
   ],
   password: [
@@ -338,12 +339,13 @@ async function handleSendVerificationCode(purpose: 'register' | 'login' | 'reset
     startCountdown(purpose, res.resendAfterSeconds || 60);
     if (purpose === 'register') {
       registerDebugCode.value = res.debugCode || '';
+      registerCodeField.value?.restoreValidation();
     } else if (purpose === 'login') {
       loginDebugCode.value = res.debugCode || '';
     } else {
       forgotDebugCode.value = res.debugCode || '';
     }
-    message.success(`验证码已发送至 ${res.email}，${Math.floor((res.expiresInSeconds || 300) / 60)} 分钟内有效`);
+    if (purpose !== 'register') message.success(`验证码已发送至 ${res.email}，${Math.floor((res.expiresInSeconds || 300) / 60)} 分钟内有效`);
   } catch (err) {
     authError.value = err instanceof Error ? err.message : '验证码发送失败，请稍后重试';
   } finally {
@@ -926,7 +928,7 @@ onUnmounted(() => {
               />
             </NFormItem>
 
-            <NFormItem v-if="registrationNeedsCode" label="邮箱验证码" path="code">
+            <NFormItem v-if="registrationNeedsCode" ref="registerCodeField" label="邮箱验证码" path="code">
               <div class="verify-code-row">
                 <NInput
                   v-model:value="registerModel.code"
@@ -938,9 +940,10 @@ onUnmounted(() => {
                 />
                 <NButton
                   size="large"
+                  attr-type="button"
                   class="send-code-btn"
                   :loading="sendingPurpose === 'register'"
-                  :disabled="registerCountdown > 0 || sendingPurpose !== null || isSubmitting"
+                  :disabled="!isValidEmail(registerModel.email) || registerCountdown > 0 || sendingPurpose !== null || isSubmitting"
                   @click="handleSendVerificationCode('register')"
                 >
                   {{ sendButtonLabel(registerCountdown, hasSentRegisterCode) }}

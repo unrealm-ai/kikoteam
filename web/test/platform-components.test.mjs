@@ -392,3 +392,59 @@ test('referral reward trigger has a gift icon and reward badge and still opens t
     host.remove();
   }
 });
+
+test('registration code send shows only the countdown after success, while submit still validates the code', async () => {
+  let shouldFail = true;
+  const sent = [];
+  globalThis.fetch = async (url, init) => {
+    if (url === '/api/v1/auth/options') {
+      return Response.json({email_code_enabled:true, registration_verification_required:true, password_registration_enabled:false});
+    }
+    assert.equal(url, '/api/v1/auth/email-codes');
+    sent.push(JSON.parse(init.body));
+    return shouldFail
+      ? Response.json({error:{code:'email_delivery_failed',message:'邮件暂时发送失败'}},{status:503})
+      : Response.json({challenge_id:'register-test',expires_at:new Date(Date.now()+300000).toISOString(),resend_after:60});
+  };
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const app = createApp({render:()=>h(NMessageProvider,null,{default:()=>h(AuthView,{initialTab:'register'})})});
+  const tick = async () => { await new Promise(resolve => setTimeout(resolve, 50)); await nextTick(); };
+  app.mount(host);
+  try {
+    await tick();
+    const form = host.querySelector('form');
+    const send = form.querySelector('button.send-code-btn');
+    const code = form.querySelector('[autocomplete=one-time-code]');
+    const edit = (selector, text) => {
+      const node = form.querySelector(selector);
+      node.value = text;
+      node.dispatchEvent(new window.Event('input', {bubbles:true}));
+    };
+    assert.equal(send.disabled,true);
+    edit('[autocomplete=name]','Test');
+    edit('[type=email]','new@example.test');
+    await nextTick();
+    code.focus();
+    code.blur();
+    await tick();
+    assert.doesNotMatch(form.textContent,/注册必须填写邮箱验证码|请输入 6 位数字验证码/);
+    form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));
+    await tick();
+    assert.match(form.textContent,/注册必须填写邮箱验证码/);
+    assert.doesNotMatch(form.textContent,/请输入 6 位数字验证码/);
+    send.click();
+    await tick();
+    assert.match(host.textContent,/邮件暂时发送失败/);
+    shouldFail = false;
+    send.click();
+    await tick();
+    assert.match(send.textContent,/\d+s 后重发/);
+    assert.equal(send.disabled,true);
+    assert.doesNotMatch(document.body.textContent,/验证码已发送|注册必须填写邮箱验证码|请输入 6 位数字验证码|邮件暂时发送失败/);
+    assert.deepEqual(sent, Array(2).fill({email:'new@example.test',purpose:'register'}));
+  } finally {
+    app.unmount();
+    host.remove();
+  }
+});

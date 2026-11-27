@@ -500,7 +500,7 @@ defineExpose({ openCreateModal });
               @update:value="v => createForm.modelId = v || ''"
             />
             <span v-if="realPlatform" class="create-engine-hint">所选模型用于该员工的对话和任务执行。</span>
-            <NAlert v-if="realPlatform && createForm.modelId.startsWith('platform:')" type="warning" :bordered="false" style="margin-top:6px">选择官方模型创建员工后，官方模型费用将由你的积分账户支付。</NAlert>
+            <NAlert v-if="realPlatform && createForm.modelId.startsWith('platform:')" type="warning" :bordered="false" style="margin-top:6px">选择官方模型创建员工后，官方模型费用将由工作区所有者的积分账户支付。</NAlert>
             <NAlert
               v-if="enabledModels.length && !compatibleModelsForCreate.length"
               type="warning"

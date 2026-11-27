@@ -65,8 +65,8 @@ func admissionIdentity(ctx context.Context, tx *sql.Tx, w, agent, payer string, 
 	}
 	var enabled bool
 	e := tx.QueryRowContext(ctx, `SELECT a.enabled FROM platform_agents a
- JOIN platform_agent_model_keys k ON k.agent_id=a.id
- JOIN platform_members p ON p.workspace_id=a.workspace_id AND p.user_id=$4 AND p.status='active'
+ JOIN platform_agent_model_keys k ON k.agent_id=a.id AND k.payer_account_id=$4
+ JOIN platform_members p ON p.workspace_id=a.workspace_id AND p.user_id=k.payer_account_id AND p.role='owner' AND p.status='active'
  WHERE a.workspace_id=$1 AND a.id=$2 AND k.key_hash=$3 FOR SHARE OF a,k,p`, w, agent, digest, payer).Scan(&enabled)
 	if errors.Is(e, sql.ErrNoRows) || e == nil && !enabled {
 		return platform.Fail("employee_unavailable", 403, "AI 员工或扣费账户不可用")

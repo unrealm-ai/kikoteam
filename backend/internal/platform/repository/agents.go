@@ -7,7 +7,7 @@ import (
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
 
-type AgentKeyWriter func(context.Context, *sql.Tx, string, string, string) error
+type AgentKeyWriter func(context.Context, *sql.Tx, string, string) error
 type AgentStore struct {
 	DB        *sql.DB
 	EnsureKey AgentKeyWriter
@@ -34,12 +34,11 @@ func (t *agentTx) OfficialModel(ctx context.Context, id string) (m service.Model
 	e = t.model.tx.QueryRowContext(ctx, `SELECT name,enabled,validated FROM platform_proxy_models WHERE id=$1 FOR SHARE`, id).Scan(&m.Name, &m.Enabled, &m.Validated)
 	return m, workspaceDBError(e)
 }
-func (t *agentTx) EnsureModelKey(ctx context.Context, id, actor string) (bool, error) {
+func (t *agentTx) EnsureModelKey(ctx context.Context, id string) error {
 	if t.ensureKey == nil {
-		return false, nil
+		return nil
 	}
-	e := t.ensureKey(ctx, t.model.tx, t.model.workspace, id, actor)
-	return e == nil, e
+	return t.ensureKey(ctx, t.model.tx, t.model.workspace, id)
 }
 
 const agentModelJoins = ` LEFT JOIN platform_model_profiles m ON m.id=a.model_profile_id AND m.workspace_id=a.workspace_id

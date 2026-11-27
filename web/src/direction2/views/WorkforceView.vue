@@ -1437,7 +1437,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
               </div>
               <p class="fb-sub">{{ personaEngineMeta.protocolHint }}</p>
               <NAlert v-if="realPlatform && currentEditingEmp.modelId.startsWith('platform:') && currentEditingEmp.modelId !== parsedSnapshot?.modelId" type="warning" style="margin-bottom:12px">
-                <NCheckbox v-model:checked="confirmPlatformBilling" :disabled="!canManage">确认切换到官方计费模型，由当前操作账号承担后续模型用量费用。</NCheckbox>
+                <NCheckbox v-model:checked="confirmPlatformBilling" :disabled="!canManage">确认切换到官方计费模型，由工作区所有者的积分账户支付后续模型费用。</NCheckbox>
               </NAlert>
               <div class="fb-grid fb-grid-3">
                 <div class="fb-item">

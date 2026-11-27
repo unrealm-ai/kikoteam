@@ -20,6 +20,7 @@ import (
 
 	mc "github.com/unrealm-ai/kikoteam/backend/internal/manager/controller"
 	delegation "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/taskdelegation"
+	workitems "github.com/unrealm-ai/kikoteam/backend/internal/manager/mcp/workitems"
 	mr "github.com/unrealm-ai/kikoteam/backend/internal/manager/repository"
 	manager "github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/controller"
@@ -44,7 +45,12 @@ type proxyFixture struct {
 
 func modelProxyFixture(t *testing.T) *proxyFixture {
 	t.Helper()
-	f := &proxyFixture{db: workspaceTestDB(t), secrets: ps.Secrets{Root: []byte(strings.Repeat("m", 40))},
+	return modelProxyFixtureOnDB(t, workspaceTestDB(t))
+}
+
+func modelProxyFixtureOnDB(t *testing.T, db *sql.DB) *proxyFixture {
+	t.Helper()
+	f := &proxyFixture{db: db, secrets: ps.Secrets{Root: []byte(strings.Repeat("m", 40))},
 		engineToken: strings.Repeat("e", 40), entered: make(chan struct{}, 2), release: make(chan struct{})}
 	f.store = pr.Store{DB: f.db}
 	f.provider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +85,9 @@ func modelProxyFixture(t *testing.T) *proxyFixture {
 		t.Fatal(e)
 	}
 	mux.Handle("/mcp/task-delegation", delegate)
+	if err := workitems.Register(mux, managerStore, f.engineToken); err != nil {
+		t.Fatal(err)
+	}
 	(pc.Proxy{Calls: f.store, Secrets: f.secrets, Upstream: upstream}).Routes(mux, strings.Repeat("h", 40))
 	mux.Handle("/api/", (&controller.Server{Origin: origin, Auth: auth, Official: &ps.Models{Store: f.store, Secrets: f.secrets, Upstream: upstream, AllowLoopbackHTTP: true},
 		Models: models, Agents: &service.AgentService{Store: &AgentStore{DB: f.db, EnsureKey: f.secrets.EnsureKey}},
@@ -274,7 +283,8 @@ func TestOfficialModelsAndCreditsEndToEnd(t *testing.T) {
 	if original["total"] != float64(0) {
 		t.Fatalf("official models entered workspace management: %v", original)
 	}
-	employee := f.api(t, user, "POST", base+"/agents", map[string]string{"name": "Support", "platform_model_id": chat}, "", 201)
+	reviewExec(t, f.db, `INSERT INTO platform_members(workspace_id,user_id,role) VALUES($1,$2,'admin')`, w, adminID)
+	employee := f.api(t, admin, "POST", base+"/agents", map[string]string{"name": "Support", "platform_model_id": chat}, "", 201)
 	id := employee["id"].(string)
 	if employee["payer"].(map[string]any)["id"] != userID {
 		t.Fatalf("incorrect payer: %v", employee)
@@ -314,6 +324,7 @@ func TestOfficialModelsAndCreditsEndToEnd(t *testing.T) {
 		}
 	}
 	checkBalance(user, userID, "-4.000000")
+	checkBalance(admin, adminID, "1000.000000")
 	if status, _, e := f.callModel(t.Context(), "chat/completions", key, chat, "blocked"); e != nil || status != 402 {
 		t.Fatalf("overdraft not blocked: %d %v", status, e)
 	}
@@ -454,8 +465,9 @@ func TestOfficialModelMigrationFromExistingAccounts(t *testing.T) {
 func TestOfficialModelLegacyAndTemplateCreation(t *testing.T) {
 	f := modelProxyFixture(t)
 	admin, user := proxyBrowserClient(t), proxyBrowserClient(t)
-	f.register(t, admin, "admin@legacy.test")
+	adminID, _ := f.register(t, admin, "admin@legacy.test")
 	payer, w := f.register(t, user, "owner@legacy.test")
+	reviewExec(t, f.db, `INSERT INTO platform_members(workspace_id,user_id,role) VALUES($1,$2,'admin')`, w, adminID)
 	f.createModel(t, admin, "chat_completions", true)
 	modelID := f.createModel(t, admin, "anthropic_messages", false)
 	byok := service.NewID()
@@ -482,6 +494,10 @@ func TestOfficialModelLegacyAndTemplateCreation(t *testing.T) {
 	if out["payer"] != nil {
 		t.Fatalf("custom model update implicitly bound a wallet for an unrelated default: %v", out)
 	}
+	bound := f.api(t, admin, "PATCH", old, map[string]any{"version": 3, "platform_model_id": modelID, "confirm_platform_billing": true}, "", 200)
+	if got := bound["payer"].(map[string]any)["id"]; got != payer {
+		t.Fatalf("legacy first binding payer=%v, want workspace owner %s", got, payer)
+	}
 	templateSvc := &service.TemplateService{Store: &TemplateStore{DB: f.db, EnsureKey: f.secrets.EnsureKey}}
 	template, e := templateSvc.Create(t.Context(), w, payer, testTemplateContent())
 	if e != nil {
@@ -491,7 +507,7 @@ func TestOfficialModelLegacyAndTemplateCreation(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	created := f.api(t, user, "POST", base+"/agents/from-template", map[string]any{
+	created := f.api(t, admin, "POST", base+"/agents/from-template", map[string]any{
 		"template_id": template.ID, "template_version_id": template.PublishedVersionID, "name": "Official from template",
 		"platform_model_id": modelID, "parameters": map[string]string{"project": "Support"},
 	}, "", 201)
@@ -611,6 +627,58 @@ func (f *proxyFixture) startEngine(t *testing.T, ctx context.Context, root strin
 			if raw, e := os.ReadFile(logs.Name()); e == nil {
 				t.Logf("Engine diagnostics: %s", raw)
 			}
+		}
+	}
+}
+
+func TestOfficialModelWorkspaceOwnerPayerUpgrade(t *testing.T) {
+	ctx := t.Context()
+	f := modelProxyFixtureOnDB(t, workspaceTestDBThrough(t, "000103_conversation_last_message.sql"))
+	admin, user := proxyBrowserClient(t), proxyBrowserClient(t)
+	creator, _ := f.register(t, admin, "creator@payer-upgrade.test")
+	owner, w := f.register(t, user, "owner@payer-upgrade.test")
+	reviewExec(t, f.db, `INSERT INTO platform_members(workspace_id,user_id,role) VALUES($1,$2,'admin')`, w, creator)
+	model := f.createModel(t, admin, "chat_completions", true)
+	id := f.api(t, admin, "POST", "/workspaces/"+w+"/agents", map[string]string{"name": "Migrated", "platform_model_id": model}, "", 201)["id"].(string)
+	key, err := f.secrets.RuntimeKey(ctx, f.db, w, id, model, "chat_completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Construct the payer snapshot an old binary would have written for an already admitted call.
+	inFlight, err := f.store.Admit(ctx, key, model, "chat_completions", time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewExec(t, f.db, `UPDATE platform_agent_model_keys SET payer_account_id=$2 WHERE agent_id=$1`, id, creator)
+	reviewExec(t, f.db, `UPDATE platform_model_usage SET payer_account_id=$2 WHERE id=$1`, inFlight.ID, creator)
+	if _, err := f.store.Admit(ctx, key, model, "chat_completions", time.Now().Add(time.Minute)); err == nil {
+		t.Fatal("new proxy accepted previous creator as the payer")
+	}
+
+	migration, err := os.ReadFile("../../../../event-hub/database/postgres/migrations/000104_workspace_owner_model_payer.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewExec(t, f.db, string(migration))
+	newKey, err := f.secrets.RuntimeKey(ctx, f.db, w, id, model, "chat_completions")
+	if err != nil || newKey != key {
+		t.Fatalf("runtime credential was not preserved: %v", err)
+	}
+	status, after, err := f.callModel(ctx, "chat/completions", key, model, "after migration")
+	if err != nil || status != 200 {
+		t.Fatalf("new call status=%d error=%v", status, err)
+	}
+	if err = f.store.Record(ctx, inFlight.ID, "", "", "", &proxy.Usage{Input: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.store.Settle(ctx, inFlight.ID); err != nil {
+		t.Fatal(err)
+	}
+	for call, want := range map[string]string{inFlight.ID: creator, after: owner} {
+		var payer string
+		err = f.db.QueryRowContext(ctx, `SELECT account_id FROM platform_credit_ledger WHERE kind='model_charge' AND usage_id=$1`, call).Scan(&payer)
+		if err != nil || payer != want {
+			t.Fatalf("call %s charged %s, want %s: %v", call, payer, want, err)
 		}
 	}
 }

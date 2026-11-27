@@ -80,7 +80,7 @@ type AgentTx interface {
 	Member(context.Context, string) (Member, error)
 	Model(context.Context, string) (ModelProfile, error)
 	OfficialModel(context.Context, string) (ModelProfile, error)
-	EnsureModelKey(context.Context, string, string) (bool, error)
+	EnsureModelKey(context.Context, string) error
 	Get(context.Context, string) (Agent, error)
 	List(context.Context, AgentListQuery) (AgentPage, error)
 	Create(context.Context, Agent, string) error
@@ -206,7 +206,7 @@ func (s *AgentService) Create(ctx context.Context, w, a string, r AgentCreate) (
 		if e := t.Create(ctx, v, a); e != nil {
 			return e
 		}
-		if _, e := t.EnsureModelKey(ctx, v.ID, a); e != nil {
+		if e := t.EnsureModelKey(ctx, v.ID); e != nil {
 			return e
 		}
 		var e error
@@ -261,7 +261,7 @@ func (s *AgentService) Update(ctx context.Context, w, a, id string, r AgentPatch
 			}
 		}
 		if selecting && v.Payer == nil && v.PlatformModelID != "" {
-			_, e = t.EnsureModelKey(ctx, v.ID, a)
+			e = t.EnsureModelKey(ctx, v.ID)
 			if e != nil {
 				return e
 			}

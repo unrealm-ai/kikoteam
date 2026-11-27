@@ -174,7 +174,7 @@ func (s *TemplateStore) CommitCreation(ctx context.Context, w, a string, r servi
 		if e = at.Create(ctx, out, a); e != nil {
 			return e
 		}
-		if _, e = at.EnsureModelKey(ctx, out.ID, a); e != nil {
+		if e = at.EnsureModelKey(ctx, out.ID); e != nil {
 			return e
 		}
 		values, err := json.Marshal(params)

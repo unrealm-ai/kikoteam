@@ -443,9 +443,9 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller?.abort(); guard
               </NAlert>
               <p class="field-hint">员工对话和任务执行都使用所选模型，不会回退到工作区默认模型。</p>
               <p v-if="officialApplies && selected?.payer" class="field-hint">官方模型费用由 {{ selected.payer.name }} 的积分账户支付。</p>
-              <p v-if="officialApplies && !selected" class="field-hint">该员工使用官方模型产生的费用将从你的积分账户扣除。</p>
+              <p v-if="officialApplies && !selected" class="field-hint">该员工使用官方模型产生的费用将从工作区所有者的积分账户扣除。</p>
               <div v-if="firstBinding" style="margin-top: 4px;">
-                <NCheckbox v-model:checked="confirmBilling">确认该员工使用官方模型的费用从我的积分账户扣除</NCheckbox>
+                <NCheckbox v-model:checked="confirmBilling">确认该员工使用官方模型的费用从工作区所有者的积分账户扣除</NCheckbox>
               </div>
             </div>
 

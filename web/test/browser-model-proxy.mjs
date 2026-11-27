@@ -33,7 +33,7 @@ try {
   const {page:admin,workspace:adminWorkspace}=await register('admin@browser.example','平台测试员');
   await admin.goto(`${app}/#view=platform-admin&ws=${adminWorkspace}`);
   await admin.getByRole('button',{name:'官方模型',exact:true}).click();
-  await admin.getByRole('button',{name:'添加官方模型'}).click();
+  await admin.locator('.official header').getByRole('button',{name:'添加官方模型',exact:true}).click();
   await field(admin,'模型名称').fill('官方浏览器测试模型');
   await field(admin,'服务地址').fill(upstream+'/v1');
   await field(admin,'上游模型 ID').fill('actual');
@@ -49,11 +49,11 @@ try {
 
   const {page:user,workspace}=await register('user@browser.example','新员工创建者');
   await user.goto(`${app}/#view=employees&ws=${workspace}`);
-  await user.getByRole('button',{name:'新建 AI 员工'}).click();
-  await user.getByPlaceholder('例如：研发助手').fill('模型测试员工');
-  await user.getByText('该员工使用官方模型产生的费用将从你的积分账户扣除。').waitFor();
+  await user.locator('.workforce-list-container .list-header').getByRole('button',{name:'新建 AI 员工'}).click();
+  await user.getByPlaceholder('例如：SRE 故障值班助手').fill('模型测试员工');
+  await user.getByText('选择官方模型创建员工后，官方模型费用将由工作区所有者的积分账户支付。').waitFor();
   const created = user.waitForResponse(r=>r.request().method()==='POST' && r.url().endsWith('/agents'));
-  await user.getByRole('button',{name:'创建员工',exact:true}).click();
+  await user.getByRole('button',{name:'创建并进入渠道配置',exact:true}).click();
   const employeeReply=await created;
   assert.equal(employeeReply.status(),201);
   const employee=await employeeReply.json();

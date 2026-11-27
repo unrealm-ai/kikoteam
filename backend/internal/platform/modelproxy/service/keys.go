@@ -70,8 +70,17 @@ func (s Secrets) credential(agent string) ([]byte, []byte, error) {
 	return hash[:], encrypted, e
 }
 
-func (s Secrets) EnsureKey(ctx context.Context, tx *sql.Tx, workspace, agent, payer string) error {
-	if e := repo.EnsureWallet(ctx, tx, payer); e != nil {
+func (s Secrets) EnsureKey(ctx context.Context, tx *sql.Tx, workspace, agent string) error {
+	var payer string
+	e := tx.QueryRowContext(ctx, `SELECT user_id FROM platform_members
+ WHERE workspace_id=$1 AND role='owner' AND status='active' FOR SHARE`, workspace).Scan(&payer)
+	if errors.Is(e, sql.ErrNoRows) {
+		return platform.Fail("platform_billing_unconfigured", 422, "工作区所有者不可用，无法设置官方模型扣费账户")
+	}
+	if e != nil {
+		return e
+	}
+	if e = repo.EnsureWallet(ctx, tx, payer); e != nil {
 		return e
 	}
 	hash, raw, e := s.credential(agent)
@@ -96,7 +105,7 @@ func (s Secrets) RuntimeKey(ctx context.Context, db *sql.DB, w, agent, model, pr
 	var raw []byte
 	e := db.QueryRowContext(ctx, `SELECT k.key_ciphertext FROM platform_agent_model_keys k
  JOIN platform_agents a ON a.id=k.agent_id AND a.workspace_id=k.workspace_id AND a.enabled
- JOIN platform_members p ON p.workspace_id=k.workspace_id AND p.user_id=k.payer_account_id AND p.status='active'
+ JOIN platform_members p ON p.workspace_id=k.workspace_id AND p.user_id=k.payer_account_id AND p.role='owner' AND p.status='active'
  JOIN platform_proxy_models m ON m.id=$3 AND m.protocol=$4 AND m.enabled AND m.validated
  WHERE k.workspace_id=$1 AND k.agent_id=$2`, w, agent, model, protocol).Scan(&raw)
 	if errors.Is(e, sql.ErrNoRows) {

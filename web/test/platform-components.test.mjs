@@ -301,3 +301,60 @@ test('Invitation link copy button selects modal input and falls back to execComm
 });
 
 test.after(()=>window.happyDOM.close());
+
+test('Password login shows the automatically issued email code field only after correct credentials', async () => {
+  const requests = [], sessions = [];
+  const email = 'legacy@example.test', password = 'legacy-password';
+  globalThis.fetch = async (url, init) => {
+    if (url.endsWith('/auth/options')) return Response.json({email_code_enabled:true, registration_verification_required:true});
+    assert.equal(url,'/api/v1/auth/sessions');
+    const body = JSON.parse(init.body);
+    requests.push(body);
+    if (body.password !== password) return Response.json({error:{code:'invalid_credentials',message:'邮箱或密码错误'}},{status:401});
+    if (!body.code) return Response.json({challenge_id:'verify-id',expires_at:new Date(Date.now()+300000).toISOString(),resend_after:60},{status:202});
+    if (body.code !== '042681') return Response.json({error:{code:'invalid_code',message:'验证码错误'}},{status:400});
+    return Response.json({user:{id:'legacy',email,name:'Legacy',email_verified:true}});
+  };
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const app = createApp({render:()=>h(NMessageProvider,null,{default:()=>h(AuthView,{onAuthenticated:session=>sessions.push(session)})})});
+  const tick = async () => { await new Promise(r=>setTimeout(r,50)); await nextTick(); };
+  const input = (selector, value) => {
+    const node = host.querySelector(selector);
+    assert.ok(node,selector);
+    node.value = value;
+    node.dispatchEvent(new window.Event('input',{bubbles:true}));
+  };
+  const submit = async () => {
+    await nextTick();
+    host.querySelector('form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));
+    await tick();
+  };
+  app.mount(host);
+  try {
+    await tick();
+    input('input[type=email]',email);
+    input('input[type=password]','wrong-password');
+    await submit();
+    assert.match(host.textContent,/邮箱或密码错误/);
+    assert.equal(host.querySelector('[autocomplete=one-time-code]'),null);
+    input('input[type=password]',password);
+    await submit();
+    assert.ok(host.querySelector('[autocomplete=one-time-code]'));
+    assert.doesNotMatch(host.textContent,/邮箱或密码错误|邮箱尚未验证/);
+    assert.deepEqual(requests[1],{email,password,method:'password'});
+    assert.equal(sessions.length,0);
+    input('[autocomplete=one-time-code]','000000');
+    await submit();
+    assert.match(host.textContent,/验证码错误/);
+    assert.equal(sessions.length,0);
+    input('[autocomplete=one-time-code]','042681');
+    await submit();
+    assert.deepEqual(requests.at(-1),{email,password,code:'042681',challenge_id:'verify-id',method:'password'});
+    assert.equal(sessions.length,1);
+    assert.equal(sessions[0].user.emailVerified,true);
+  } finally {
+    app.unmount();
+    host.remove();
+  }
+});

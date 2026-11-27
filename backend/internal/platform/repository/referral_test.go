@@ -195,4 +195,25 @@ func TestReferralHTTPAndAtomicRewards(t *testing.T) {
 	revoked, _ := register("revoked-code@example.test", code, "password", "", "", 201)
 	assertNoAttribution(revoked.ID)
 	assertReward(inviter.ID, 2, 200*proxy.Units)
+
+	var newLink service.ReferralLink
+	w = call(http.MethodPost, linkPath, adminCookie, nil, 200)
+	if err := json.Unmarshal(w.Body.Bytes(), &newLink); err != nil || newLink.Code == "" {
+		t.Fatalf("admin referral link: %v", err)
+	}
+	legacy, _ := register("verify-at-login@example.test", newLink.Code, "password", "", "", 201)
+	assertReward(admin.ID, 0, 0)
+	reviewExec(t, db, `UPDATE platform_mail_settings SET verification_required=true WHERE singleton`)
+	login := map[string]string{"method": "password", "email": legacy.Email, "password": "test-long-password"}
+	w = call(http.MethodPost, "/auth/sessions", "", login, 202)
+	var receipt service.ChallengeReceipt
+	if err := json.Unmarshal(w.Body.Bytes(), &receipt); err != nil || receipt.ID == "" {
+		t.Fatalf("login verification receipt: %v", err)
+	}
+	assertReward(admin.ID, 0, 0)
+	login["code"], login["challenge_id"] = sink.code, receipt.ID
+	call(http.MethodPost, "/auth/sessions", "", login, 200)
+	assertReward(admin.ID, 1, 100*proxy.Units)
+	call(http.MethodPost, "/auth/sessions", "", login, 400)
+	assertReward(admin.ID, 1, 100*proxy.Units)
 }

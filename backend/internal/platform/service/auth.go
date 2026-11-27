@@ -45,6 +45,12 @@ type ChallengeReceipt struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 	ResendAfter int       `json:"resend_after"`
 }
+
+// PasswordVerificationPending signals that credentials were accepted but no session was issued.
+type PasswordVerificationPending struct{ ChallengeReceipt }
+
+func (*PasswordVerificationPending) Error() string { return "login email verification pending" }
+
 type AuthTx interface {
 	CreateAccount(context.Context, Account) error
 	CreatePersonalWorkspace(context.Context, string, Workspace) error
@@ -135,10 +141,24 @@ func (s *AuthService) RequestCode(ctx context.Context, raw, purpose, source stri
 	if purpose != "register" && purpose != "login" && purpose != "reset_password" {
 		return ChallengeReceipt{}, Fail("invalid_purpose", 400, "验证码用途无效")
 	}
-	if err = s.Store.Allow(ctx, "mail-ip:"+HashToken(source), 30, time.Hour); err != nil {
+	return s.issueCode(ctx, email, purpose, source, "")
+}
+
+const verifyLoginPurpose = "verify_login"
+
+// A verification code cannot be used for plain code login or after a password change.
+func (s *AuthService) challengeHash(id, code, passwordHash string) string {
+	if passwordHash != "" {
+		return s.codeHash(id, verifyLoginPurpose+":"+passwordHash+":"+code)
+	}
+	return s.codeHash(id, code)
+}
+
+func (s *AuthService) issueCode(ctx context.Context, email, purpose, source, passwordHash string) (ChallengeReceipt, error) {
+	if err := s.Store.Allow(ctx, "mail-ip:"+HashToken(source), 30, time.Hour); err != nil {
 		return ChallengeReceipt{}, err
 	}
-	if err = s.Store.Allow(ctx, "mail-email:"+HashToken(email), 10, time.Hour); err != nil {
+	if err := s.Store.Allow(ctx, "mail-email:"+HashToken(email), 10, time.Hour); err != nil {
 		return ChallengeReceipt{}, err
 	}
 	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
@@ -148,7 +168,7 @@ func (s *AuthService) RequestCode(ctx context.Context, raw, purpose, source stri
 	code := fmt.Sprintf("%06d", n.Int64())
 	id := NewID()
 	exp := s.now().Add(5 * time.Minute)
-	challenge := Challenge{id, email, purpose, s.codeHash(id, code), exp}
+	challenge := Challenge{id, email, purpose, s.challengeHash(id, code, passwordHash), exp}
 	if err = s.Store.Issue(ctx, challenge); err != nil {
 		return ChallengeReceipt{}, err
 	}
@@ -252,8 +272,48 @@ func (s *AuthService) Login(ctx context.Context, email, method, password, code, 
 	if err != nil || a.PasswordHash == "" || bcrypt.CompareHashAndPassword([]byte(a.PasswordHash), []byte(password)) != nil {
 		return Account{}, "", Fail("invalid_credentials", 401, "邮箱或密码错误")
 	}
-	err = s.Store.PasswordSession(ctx, a.Email, a.PasswordHash, HashToken(token), s.now().Add(30*24*time.Hour))
+	if code != "" || id != "" {
+		if code == "" || id == "" {
+			return Account{}, "", Fail("invalid_code", 400, "请输入有效的邮箱验证码")
+		}
+		err = s.verifyPasswordLogin(ctx, &a, code, id, HashToken(token))
+	} else {
+		err = s.Store.PasswordSession(ctx, a.Email, a.PasswordHash, HashToken(token), s.now().Add(30*24*time.Hour))
+		var failure *Error
+		if errors.As(err, &failure) && failure.Code == "password_login_verification_required" {
+			receipt, sendErr := s.issueCode(ctx, email, verifyLoginPurpose, source, a.PasswordHash)
+			if sendErr != nil {
+				return Account{}, "", sendErr
+			}
+			return Account{}, "", &PasswordVerificationPending{receipt}
+		}
+	}
 	return a, token, err
+}
+
+func (s *AuthService) verifyPasswordLogin(ctx context.Context, a *Account, code, id, tokenHash string) error {
+	challenge := Challenge{ID: id, Email: a.Email, Purpose: verifyLoginPurpose, Hash: s.challengeHash(id, code, a.PasswordHash)}
+	return s.Store.Consume(ctx, challenge, func(tx AuthTx) error {
+		current, err := tx.FindAccount(ctx, a.Email)
+		if err != nil {
+			return err
+		}
+		if current.ID != a.ID || current.PasswordHash != a.PasswordHash || current.EmailVerified {
+			return Fail("login_verification_changed", 409, "登录状态已变化，请重新登录")
+		}
+		if err = tx.VerifyEmail(ctx, current.ID); err != nil {
+			return err
+		}
+		if err = tx.RevokeSessions(ctx, current.ID); err != nil {
+			return err
+		}
+		if err = tx.CreateSession(ctx, tokenHash, current.ID, s.now().Add(30*24*time.Hour)); err != nil {
+			return err
+		}
+		current.EmailVerified = true
+		*a = current
+		return nil
+	})
 }
 func (s *AuthService) ResetPassword(ctx context.Context, email, code, id, password string, sources ...string) error {
 	policy, policyErr := s.MailPolicy(ctx)

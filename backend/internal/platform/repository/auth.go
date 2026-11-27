@@ -208,6 +208,15 @@ func (s *AuthStore) PasswordSession(ctx context.Context, email, expectedHash, to
 	if a.PasswordHash != expectedHash {
 		return service.Fail("invalid_credentials", 401, "邮箱或密码错误")
 	}
+	if !a.EmailVerified {
+		policy, err := readMailPolicy(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if policy.Enabled && policy.VerificationRequired {
+			return service.Fail("password_login_verification_required", 403, "登录前需要验证邮箱")
+		}
+	}
 	if e = createSession(ctx, tx, token, a.ID, expiry); e != nil {
 		return e
 	}

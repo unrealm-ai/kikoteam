@@ -192,3 +192,78 @@ func TestHTTPPasswordRegistrationWithoutSMTP(t *testing.T) {
 		t.Fatal(cfg)
 	}
 }
+
+func TestHTTPPasswordLoginVerifiesLegacyEmailWithoutReset(t *testing.T) {
+	db := workspaceTestDB(t)
+	enableMailFixture(t, db, "")
+	sink := &codeSink{}
+	auth := &service.AuthService{Store: &AuthStore{DB: db}, Mailer: sink, Secret: []byte("test-only-login-verification-secret")}
+	const origin = "https://kiko.example"
+	h := (&controller.Server{Auth: auth, Origin: origin}).Handler()
+	const email, password = "legacy@example.test", "legacy-password"
+	account, previousToken, err := auth.RegisterWithPassword(t.Context(), email, "Legacy", password, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewExec(t, db, `UPDATE platform_mail_settings SET verification_required=true WHERE singleton`)
+	call := func(path string, body map[string]string, status int) *httptest.ResponseRecorder {
+		t.Helper()
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodPost, origin+"/api/v1/"+path, bytes.NewReader(data))
+		r.Header.Set("Origin", origin)
+		r.Header.Set("X-CSRF-Protection", "1")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != status {
+			t.Fatalf("status = %d, want %d: %s", w.Code, status, w.Body)
+		}
+		if status != http.StatusOK && w.Header().Get("Set-Cookie") != "" {
+			t.Fatal("issued session before verification")
+		}
+		return w
+	}
+	invalid := call("auth/sessions", map[string]string{"email": email, "method": "password", "password": "wrong-password"}, 401)
+	if !strings.Contains(invalid.Body.String(), "invalid_credentials") || sink.code != "" {
+		t.Fatal("wrong password did not fail without an email")
+	}
+	call("auth/email-codes", map[string]string{"email": email, "purpose": "verify_login"}, 400)
+	pending := call("auth/sessions", map[string]string{"email": email, "method": "password", "password": password}, 202)
+	var receipt service.ChallengeReceipt
+	if err = json.Unmarshal(pending.Body.Bytes(), &receipt); err != nil || receipt.ID == "" || receipt.ResendAfter != 60 {
+		t.Fatalf("invalid challenge receipt: %v", err)
+	}
+	code := sink.code
+	if code == "" || strings.Contains(pending.Body.String(), "\"code\"") {
+		t.Fatal("unexpected code delivery or exposure")
+	}
+	request := map[string]string{"email": email, "method": "code", "code": code, "challenge_id": receipt.ID}
+	call("auth/sessions", request, 400)
+	request["method"], request["password"] = "password", password
+	request["code"] = "000000"
+	if code == "000000" {
+		request["code"] = "999999"
+	}
+	call("auth/sessions", request, 400)
+	before, err := auth.Me(t.Context(), previousToken)
+	if err != nil || before.EmailVerified {
+		t.Fatalf("invalid code changed account state: %v", err)
+	}
+	request["code"] = code
+	ok := call("auth/sessions", request, 200)
+	cookies := ok.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].HttpOnly {
+		t.Fatal("missing authenticated cookie")
+	}
+	verified, err := auth.Me(t.Context(), cookies[0].Value)
+	if err != nil || verified.ID != account.ID || !verified.EmailVerified {
+		t.Fatalf("new session is not verified: %v", err)
+	}
+	if _, err = auth.Me(t.Context(), previousToken); err == nil {
+		t.Fatal("old session survived verification")
+	}
+	call("auth/sessions", request, 400)
+	call("auth/sessions", map[string]string{"email": email, "method": "password", "password": password}, 200)
+}

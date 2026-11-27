@@ -451,6 +451,37 @@ test('an explicitly disabled database record with no SMTP profile stays disabled
   } finally { await m.close(); }
 });
 
+test('enabling SMTP defaults to registration verification and allows opting out before saving', async () => {
+  const m = await mount(r => {
+    if (r.url === mail && r.method === 'GET') return Response.json({...baseMail,enabled:false});
+    if (r.url === mail+'/test') return Response.json({ok:true,test_receipt:'fixture-proof'});
+    if (r.url === mail && r.method === 'PATCH') return Response.json({...baseMail,...r.body,version:5});
+    throw new Error('Unexpected endpoint');
+  });
+  try {
+    m.button('注册与邀请').click(); await wait();
+    const verification = () => [...m.host.querySelectorAll('.n-checkbox')]
+      .find(node => node.textContent.trim() === '注册时必须验证邮箱').getAttribute('aria-checked');
+    assert.equal(verification(),'false');
+    await m.choose('启用邮件','.n-checkbox');
+    assert.equal(verification(),'true');
+    await m.choose('启用邮件','.n-checkbox');
+    assert.equal(verification(),'false');
+    await m.choose('启用邮件','.n-checkbox');
+    assert.equal(verification(),'true');
+    m.button('发测试邮件到我的邮箱').click(); await wait();
+    assert.equal(m.requests.find(r=>r.url===mail+'/test').body.registration_verification_required,true);
+    assert.ok(!m.requests.some(r=>r.method==='PATCH'));
+    await m.choose('注册时必须验证邮箱','.n-checkbox');
+    assert.equal(await m.saveSection(),true);
+    const saved = m.requests.find(r=>r.url===mail && r.method==='PATCH').body;
+    assert.equal(saved.enabled,true);
+    assert.equal(saved.registration_verification_required,false);
+    assert.equal(verification(),'false');
+    assert.deepEqual(m.errors,[]);
+  } finally { await m.close(); }
+});
+
 test('SMTP receipt expiry blocks saves again without resetting the form', async () => {
   const m = await mount(r => {
     if (r.url === mail && r.method === 'GET') return Response.json(baseMail);

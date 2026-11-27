@@ -32,6 +32,7 @@ export async function platformRequest<T>(path: string, init: RequestInit = {}): 
   if (response.status !== 204 && payload === null) throw new D2ApiError(response.status, 'INVALID_JSON_RESPONSE', '服务端响应格式错误');
   return payload as T;
 }
+export type PasswordVerificationReceipt = { challenge_id: string; expires_at: string; resend_after: number };
 type SessionWire = { user: { id: string; email: string; name: string; email_verified?: boolean;is_platform_admin?:boolean }; workspaces?: WorkspaceWire[] };
 export type WorkspaceWire = { id: string; name: string; description?: string; role: string; version: number };
 export function workspaceFromWire(w: WorkspaceWire): WorkspaceInfo { return { ...w, desc: w.description || '' }; }
@@ -53,7 +54,11 @@ export const platformAuth = {
     }
     return all.map(workspaceFromWire);
   },
-  loginWithEmail: async (p: { email: string; password: string }) => sessionFromWire(await platformRequest<SessionWire>('/auth/sessions', post({ ...p, method: 'password' }))),
+  loginWithEmail: async (p: { email: string; password: string; code?: string; challenge_id?: string }, signal?: AbortSignal) => {
+    const result = await platformRequest<SessionWire | PasswordVerificationReceipt>('/auth/sessions', { ...post({ ...p, method: 'password' }), signal: signal ?? null });
+    if ('challenge_id' in result) return { verification: result } as const;
+    return { session: sessionFromWire(result) } as const;
+  },
   loginWithEmailCode: async (p: { email: string; code: string }) => sessionFromWire(await platformRequest<SessionWire>('/auth/sessions', post({ ...p, method: 'code', challenge_id: challenges.get(key(p.email, 'login')) }))),
   sendEmailCode: async (p: { email: string; purpose: 'login' | 'register' | 'reset_password' }): Promise<SendEmailCodeResponse> => {
     const result = await platformRequest<{ challenge_id: string; expires_at: string; resend_after: number }>('/auth/email-codes', post(p));

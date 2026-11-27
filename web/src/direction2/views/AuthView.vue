@@ -5,8 +5,8 @@ import {
   useMessage, type FormInst, type FormRules
 } from 'naive-ui';
 import { authApi } from '../api';
-import { realPlatform, validPlatformPassword, platformAuth, type AuthConfig } from '../api/platform';
-import { setAuthToken } from '../api/client';
+import { realPlatform, validPlatformPassword, platformAuth, type AuthConfig, type PasswordVerificationReceipt } from '../api/platform';
+import { D2ApiError, setAuthToken } from '../api/client';
 import type { AuthSessionResponse } from '../types';
 import { productDescriptor } from '../product-brand';
 
@@ -59,6 +59,15 @@ const loginPasswordModel = reactive({
   password: ''
 });
 
+let passwordLoginAbort: AbortController | undefined;
+const passwordVerification = ref<PasswordVerificationReceipt | null>(null);
+const passwordVerificationCode = ref('');
+const passwordVerificationCountdown = ref(0);
+function clearPasswordVerification() {
+  passwordVerification.value = null;
+  passwordVerificationCode.value = '';
+  passwordVerificationCountdown.value = 0;
+}
 const loginCodeFormRef = ref<FormInst | null>(null);
 const loginCodeModel = reactive({
   email: '',
@@ -113,13 +122,15 @@ function isValidEmail(val: string): boolean {
   return val.trim().length <= 254 && EMAIL_REGEX.test(val.trim());
 }
 
-function startCountdown(purpose: 'register' | 'login' | 'reset_password', seconds = 60) {
+function startCountdown(purpose: 'register' | 'login' | 'reset_password' | 'verify_login', seconds = 60) {
   if (purpose === 'register') {
     registerCountdown.value = seconds;
     hasSentRegisterCode.value = true;
   } else if (purpose === 'login') {
     loginCountdown.value = seconds;
     hasSentLoginCode.value = true;
+  } else if (purpose === 'verify_login') {
+    passwordVerificationCountdown.value = seconds;
   } else {
     forgotCountdown.value = seconds;
     hasSentForgotCode.value = true;
@@ -128,11 +139,13 @@ function startCountdown(purpose: 'register' | 'login' | 'reset_password', second
     countdownTimer = setInterval(() => {
       if (registerCountdown.value > 0) registerCountdown.value -= 1;
       if (loginCountdown.value > 0) loginCountdown.value -= 1;
+      if (passwordVerificationCountdown.value > 0) passwordVerificationCountdown.value -= 1;
       if (forgotCountdown.value > 0) forgotCountdown.value -= 1;
       if (
         registerCountdown.value <= 0 &&
         loginCountdown.value <= 0 &&
         forgotCountdown.value <= 0 &&
+        passwordVerificationCountdown.value <= 0 &&
         countdownTimer
       ) {
         clearInterval(countdownTimer);
@@ -268,13 +281,16 @@ const mockGoogleRules: FormRules = {
 };
 
 function handleTabChange(val: string | number) {
+  if (isSubmitting.value) return;
+  clearPasswordVerification();
   activeTab.value = val === 'register' ? 'register' : 'login';
   authError.value = '';
   authSuccess.value = '';
 }
 
 function switchLoginMethod(method: 'password' | 'code' | 'forgot') {
-  if (method !== 'password' && !codeEnabled.value) return;
+  if (isSubmitting.value || (method !== 'password' && !codeEnabled.value)) return;
+  clearPasswordVerification();
   if (method === 'forgot' && !forgotModel.email.trim() && loginPasswordModel.email.trim()) {
     forgotModel.email = loginPasswordModel.email.trim();
   } else if (method === 'code' && !loginCodeModel.email.trim() && loginPasswordModel.email.trim()) {
@@ -335,25 +351,55 @@ async function handleSendVerificationCode(purpose: 'register' | 'login' | 'reset
   }
 }
 
-async function handleEmailPasswordLogin() {
+async function handleEmailPasswordLogin(resend = false) {
+  if (isSubmitting.value || (resend && passwordVerificationCountdown.value > 0)) return;
   authError.value = '';
   authSuccess.value = '';
-  try {
-    await loginPasswordFormRef.value?.validate();
-  } catch {
+  const challenge = resend ? null : passwordVerification.value;
+  const code = passwordVerificationCode.value.trim();
+  if (challenge && !/^\d{6}$/.test(code)) {
+    authError.value = '请输入 6 位数字验证码';
     return;
   }
   isSubmitting.value = true;
+  const controller = new AbortController();
+  passwordLoginAbort = controller;
+  const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]);
+  let validated = false;
   try {
-    const session = await authApi.loginWithEmail({
-      email: loginPasswordModel.email.trim(),
-      password: loginPasswordModel.password
-    });
+    await loginPasswordFormRef.value?.validate();
+    if (controller.signal.aborted) return;
+    validated = true;
+    const credentials = { email: loginPasswordModel.email.trim(), password: loginPasswordModel.password };
+    let session: AuthSessionResponse;
+    if (realPlatform) {
+      const result = await platformAuth.loginWithEmail({
+        ...credentials,
+        ...(challenge ? {code, challenge_id: challenge.challenge_id} : {}),
+      }, signal);
+      if (controller.signal.aborted) return;
+      if (result.verification) {
+        passwordVerification.value = result.verification;
+        passwordVerificationCode.value = '';
+        startCountdown('verify_login', result.verification.resend_after || 60);
+        return;
+      }
+      session = result.session;
+    } else {
+      session = await authApi.loginWithEmail(credentials) as AuthSessionResponse;
+    }
+    if (controller.signal.aborted) return;
     message.success(`欢迎回来，${session.user.name}`);
+    clearPasswordVerification();
     completeSession(session);
   } catch (err) {
+    if (!validated || controller.signal.aborted) return;
+    if (err instanceof D2ApiError && ['invalid_credentials', 'login_verification_changed', 'email_code_disabled'].includes(err.code)) {
+      clearPasswordVerification();
+    }
     authError.value = err instanceof Error ? err.message : '登录失败，请检查邮箱与密码';
   } finally {
+    passwordLoginAbort = undefined;
     isSubmitting.value = false;
   }
 }
@@ -560,6 +606,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  passwordLoginAbort?.abort();
   if (countdownTimer) {
     clearInterval(countdownTimer);
     countdownTimer = null;
@@ -620,11 +667,12 @@ onUnmounted(() => {
             label-placement="top"
             :show-require-mark="false"
             class="auth-form"
-            @submit.prevent="handleEmailPasswordLogin"
+            @submit.prevent="handleEmailPasswordLogin()"
           >
             <NFormItem label="邮箱地址" path="email">
               <NInput
                 v-model:value="loginPasswordModel.email"
+                :disabled="isSubmitting || Boolean(passwordVerification)"
                 placeholder="name@company.com"
                 size="large"
                 :input-props="{ type: 'email', autocomplete: 'email' }"
@@ -634,6 +682,7 @@ onUnmounted(() => {
             <NFormItem label="登录密码" path="password">
               <NInput
                 v-model:value="loginPasswordModel.password"
+                :disabled="isSubmitting || Boolean(passwordVerification)"
                 type="password"
                 show-password-on="click"
                 placeholder="请输入登录密码"
@@ -642,8 +691,33 @@ onUnmounted(() => {
               />
             </NFormItem>
 
+            <NFormItem v-if="passwordVerification" label="邮箱验证码">
+              <div class="verify-code-row">
+                <NInput
+                  v-model:value="passwordVerificationCode"
+                  placeholder="6 位数字验证码"
+                  size="large"
+                  maxlength="6"
+                  class="verify-code-input"
+                  :disabled="isSubmitting"
+                  :input-props="{ inputmode: 'numeric', autocomplete: 'one-time-code', autofocus: true }"
+                />
+                <NButton
+                  size="large"
+                  class="send-code-btn"
+                  :disabled="passwordVerificationCountdown > 0 || isSubmitting"
+                  @click="handleEmailPasswordLogin(true)"
+                >
+                  {{ sendButtonLabel(passwordVerificationCountdown, true) }}
+                </NButton>
+              </div>
+            </NFormItem>
+
             <div class="auth-method-row">
-              <button v-if="codeEnabled" type="button" class="auth-link-btn" @click="switchLoginMethod('code')">
+              <button v-if="passwordVerification" type="button" class="auth-link-btn" :disabled="isSubmitting" @click="clearPasswordVerification(); authError = ''">
+                修改邮箱或密码
+              </button>
+              <button v-if="codeEnabled && !passwordVerification" type="button" class="auth-link-btn" @click="switchLoginMethod('code')">
                 使用邮箱验证码登录
               </button>
               <button v-if="codeEnabled" type="button" class="auth-link-btn" @click="switchLoginMethod('forgot')">

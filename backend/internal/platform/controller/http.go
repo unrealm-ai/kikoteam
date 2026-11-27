@@ -312,6 +312,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) (any, int, error)
 		return nil, 0, e
 	}
 	a, t, e := s.Auth.Login(r.Context(), b.Email, b.Method, b.Password, b.Code, b.Challenge, s.source(r))
+	var pending *service.PasswordVerificationPending
+	if errors.As(e, &pending) {
+		return pending.ChallengeReceipt, http.StatusAccepted, nil
+	}
 	if e != nil {
 		return nil, 0, e
 	}

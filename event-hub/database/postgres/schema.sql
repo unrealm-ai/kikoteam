@@ -3428,7 +3428,7 @@ CREATE TABLE public.platform_email_challenges (
     consumed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT platform_email_challenges_attempts_check CHECK ((attempts >= 0)),
-    CONSTRAINT platform_email_challenges_purpose_check CHECK ((purpose = ANY (ARRAY['register'::text, 'login'::text, 'reset_password'::text])))
+    CONSTRAINT platform_email_challenges_purpose_check CHECK ((purpose = ANY (ARRAY['register'::text, 'login'::text, 'reset_password'::text, 'verify_login'::text])))
 );
 
 

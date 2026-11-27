@@ -9,3 +9,5 @@
 000004_invitation_email_outbox.sql 增加加密邀请邮件outbox、投递状态与租约领取元数据；旧邀请不生成新投递，不自动补发历史邮件。
 
 `000104_workspace_owner_model_payer.sql` 将现有员工代理 Key 的付款人更新为所在工作区有效所有者，补齐必要的钱包，不修改 Key 内容、历史流水或已准入请求的付款快照。迁移前停止旧 Backend 接收新请求或写入员工配置，迁移后启用新版。
+
+`000109_password_login_verification.sql` 为现有验证码表增加独立的登录补验证用途，不修改账号或既有验证码。回滚只删除这类临时挑战。

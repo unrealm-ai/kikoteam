@@ -2,10 +2,12 @@ post:
   operationId: createSession
   summary: createSession
   description: 'Creates an HttpOnly session cookie. Password method requires password; code
-    method requires code and challenge_id. No bearer token is returned. Each request can create
-    a new session. Unverified password-registered accounts cannot use code login: returns 403
-    email_verification_required; use code-based password reset to prove email ownership and
-    replace old credentials first.'
+    method requires code and challenge_id. When email verification is required and an unverified
+    account supplies the correct password, sends a dedicated verification code and returns 202
+    without a session. Submit method password with the same email, password, code and challenge_id
+    to verify the address, revoke old sessions, and sign in without changing the password.
+    Unverified accounts cannot use plain code login; use password reset if the password is unknown.
+    No bearer token is returned.'
   security: []
   responses:
     '200':
@@ -23,6 +25,12 @@ post:
         application/json:
           schema:
             $ref: ../../openapi.yaml#/components/schemas/AuthResult
+    '202':
+      description: Password accepted and verification code sent. No session cookie is issued.
+      content:
+        application/json:
+          schema:
+            $ref: ../../openapi.yaml#/components/schemas/CodeReceipt
     default:
       description: Structured error (400 invalid input, 401 no session, 403 forbidden/CSRF/email_code_disabled (email disabled),
         404 missing resource, 409 stale version/conflict, 410 invalid invite, 429 rate limit,
@@ -83,3 +91,6 @@ post:
             then:
               required:
               - password
+              dependentRequired:
+                code: [challenge_id]
+                challenge_id: [code]

@@ -209,7 +209,7 @@ defineExpose({ dirty, save, discard });
     <NForm v-if="draft" :disabled="Boolean(busy)" label-placement="top" class="editor-form-stack" @submit.prevent="save()">
       <div class="setting-toggle-box">
         <div class="setting-toggle-row">
-          <NCheckbox :checked="draft.enabled" @update:checked="v => edit({enabled: v, registration_verification_required: v && draft?.registration_verification_required === true})">启用邮件</NCheckbox>
+          <NCheckbox :checked="draft.enabled" @update:checked="v => edit({enabled: v, registration_verification_required: v})">启用邮件</NCheckbox>
           <NCheckbox :checked="draft.registration_verification_required" :disabled="!draft.enabled"
             @update:checked="v => edit({registration_verification_required: v})">注册时必须验证邮箱</NCheckbox>
         </div>

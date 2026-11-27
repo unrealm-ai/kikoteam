@@ -98,6 +98,14 @@ func TestMCPManagementContract(t *testing.T) {
 			if slices.ContainsFunc([]string{"workspace_id", "actor_id", "user_id"}, func(s string) bool { return strings.Contains(string(raw), s) }) || !assistant && strings.Contains(string(raw), "employee_id") {
 				t.Fatal("identity or scoped target escaped into schema", string(raw))
 			}
+			if (x.Name == "create_employee" || x.Name == "update_employee") && strings.Contains(string(raw), `"avatar"`) {
+				t.Fatal("avatar escaped into mutation schema", string(raw))
+			}
+			if x.Name == "update_employee" && slices.ContainsFunc([]string{
+				`"model_id"`, `"model_source"`, `"web_access"`, `"usage_config"`, `"scope"`, `"trigger_scope"`, `"conversation_scope"`, `"maintainers"`, `"enabled"`,
+			}, func(key string) bool { return strings.Contains(string(raw), key) }) {
+				t.Fatal("model, access, or activation controls must stay out of the model-facing schema", string(raw))
+			}
 			if x.Name == "list_employee_resources" && strings.Contains(string(raw), `"purpose"`) != assistant {
 				t.Fatal("creation selector must only be advertised by the Web assistant")
 			}

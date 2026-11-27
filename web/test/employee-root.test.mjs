@@ -8,8 +8,8 @@ const window=new Window({url:'http://127.0.0.1:5173/#/?ws=w&view=employees'});
 for(const name of ['Event','EventTarget','PointerEvent','location','history','window','document','navigator','HTMLElement','Element','SVGElement','Node','Text','Comment','Image','InputEvent','MouseEvent','KeyboardEvent','HTMLInputElement','Document','MutationObserver','ResizeObserver','getComputedStyle','requestAnimationFrame','cancelAnimationFrame']){
  if(name==='window')globalThis.window=window;else if(window[name]!==undefined)Object.defineProperty(globalThis,name,{configurable:true,writable:true,value:typeof window[name]==='function'&&['getComputedStyle','requestAnimationFrame','cancelAnimationFrame'].includes(name)?window[name].bind(window):window[name]});
 }
-const built=await esbuild.build({stdin:{contents:"export {default as RootApp} from './src/App.vue'; export {activeWorkspaceId} from './src/direction2/api/client'; export {createApp,h,nextTick} from 'vue'; export {NMessageProvider,NDialogProvider} from 'naive-ui';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',loader:{'.css':'empty'},define:{'import.meta.env.VITE_PLATFORM_REAL':'true','import.meta.env.DEV':'false'},plugins:[{name:'vue-test',setup(build){build.onLoad({filter:/\.vue$/},async({path})=>{const source=await fs.readFile(path,'utf8');const {descriptor}=parse(source);return {contents:compileScript(descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'};});}}]});
-const {RootApp,activeWorkspaceId,createApp,h,NMessageProvider,NDialogProvider,nextTick}=await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
+const built=await esbuild.build({stdin:{contents:"export {default as RootApp} from './src/App.vue'; export {default as EmployeeAvatar} from './src/direction2/components/D2EmployeeAvatar.vue'; export {activeWorkspaceId} from './src/direction2/api/client'; export {createApp,h,nextTick,ref} from 'vue'; export {NMessageProvider,NDialogProvider} from 'naive-ui';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',loader:{'.css':'empty'},define:{'import.meta.env.VITE_PLATFORM_REAL':'true','import.meta.env.DEV':'false'},plugins:[{name:'vue-test',setup(build){build.onLoad({filter:/\.vue$/},async({path})=>{const source=await fs.readFile(path,'utf8');const {descriptor}=parse(source);return {contents:compileScript(descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'};});}}]});
+const {RootApp,EmployeeAvatar,activeWorkspaceId,createApp,h,NMessageProvider,NDialogProvider,nextTick,ref}=await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
 const pause=async()=>{await new Promise(r=>setTimeout(r,40));await nextTick()};
 test('Actual root app provides dialog context and employee page remains mounted through dirty-close confirmation',async()=>{
  const errors=[],requests=[];
@@ -170,4 +170,100 @@ test('Platform administration is the third settings tab for real platform admini
    assert.deepEqual(errors,[]);
   }finally{app.unmount();host.remove();await pause()}
  }
+});
+
+test('KIKO assistant shortcut renders in global topbar-right instead of left main nav and toggles active state', async () => {
+ const ws={id:'w',name:'Workspace',role:'owner',version:1};
+ const assistantAgent={id:'a',name:'KIKO 助手',role:'体验助手',avatar:'cn-v2-01',instruction:'',model_profile_id:'m',model_name:'Model',model_available:true,enabled:true,version:1,config_version:1,admission_epoch:1,harness:'pi'};
+ const otherAgent={...assistantAgent,id:'b',name:'普通员工'};
+ const directRequests=[];
+ globalThis.fetch=async (url,init={})=>{
+  if(url==='/api/v1/me')return Response.json({user:{id:'u',name:'Owner',email:'owner@example.test'}});
+  if(url.includes('/api/v1/workspaces?'))return Response.json({items:[ws],total:1});
+  if(url==='/api/v1/workspaces/w')return Response.json(ws);
+  if(url==='/api/v1/workspaces/w/assistant')return Response.json({agent_id:'a',cards:[]});
+  if(url.includes('agent-templates'))return Response.json({items:[],total:0,page:1,page_size:20});
+  if(url.includes('/agents?'))return Response.json({items:[assistantAgent,otherAgent],total:2,page:1,page_size:20});
+  if(url.includes('/conversations?'))return Response.json({items:[],next_cursor:null});
+  if(url.endsWith('/conversations/group-a'))return Response.json({id:'group-a',agent_id:'a',chat_session_id:null,lifecycle:'active'});
+  if(url.endsWith('/web-direct')){
+   const {agent_id}=JSON.parse(init.body);
+   directRequests.push(agent_id);
+   return Response.json({id:'direct-'+agent_id,agent_id,chat_session_id:null,lifecycle:'active'});
+  }
+  if(url.includes('/sessions?'))return Response.json({items:[],next_cursor:null});
+  return Response.json({error:{code:'not_found',message:'接口不存在'}},{status:404});
+ };
+ window.history.replaceState(null,'','/#/?ws=w&view=market');
+ const host=document.createElement('div');document.body.appendChild(host);
+ const errors=[];
+ const mount=()=>{const app=createApp(RootApp);app.config.errorHandler=e=>errors.push(String(e));app.mount(host);return app};
+ let app=mount();
+ try{
+  await pause();await pause();
+  const rail=host.querySelector('nav[aria-label="主导航"]');
+  assert.equal(rail?.querySelector('[aria-label="KIKO 助手"]'),null);
+  const topbarBtn=host.querySelector('.topbar-right .assistant-pill-btn');
+  assert.ok(topbarBtn);
+  assert.equal(topbarBtn.getAttribute('aria-label'),'KIKO 助手');
+  assert.equal(topbarBtn.querySelector('img').getAttribute('src'),'/brand/kiko-assistant-nav.svg');
+  assert.equal(topbarBtn.classList.contains('is-active'),false);
+  assert.ok(host.querySelector('.market-onboarding.is-compact'));
+  topbarBtn.click();await pause();await pause();
+  assert.equal(window.location.hash,'#/?ws=w&view=chat&emp=a');
+  assert.equal(topbarBtn.classList.contains('is-active'),true);
+  assert.equal(host.querySelector('.unified-fallback-header img').getAttribute('src'),'/brand/kiko-assistant-idle.svg');
+  const conversations=host.querySelector('.conversation-workspace');
+  assert.ok(conversations.classList.contains('mobile-chat'),'shortcut opens the chat even on first list load');
+  host.querySelector('.unified-fallback-header .back').click();await pause();
+  assert.equal(conversations.classList.contains('mobile-chat'),false);
+  topbarBtn.click();await pause();
+  assert.ok(conversations.classList.contains('mobile-chat'),'same shortcut reopens chat after returning to the mobile list');
+  window.history.replaceState(null,'','/#/?ws=w&view=chat&sub=group-a&emp=a');
+  window.dispatchEvent(new window.Event('hashchange'));await pause();await pause();
+  assert.equal(window.location.hash,'#/?ws=w&view=chat&sub=group-a&emp=a');
+  assert.equal(topbarBtn.classList.contains('is-active'),false,'a source conversation is not the assistant private chat');
+  const startChatBtn=[...host.querySelectorAll('button')].find(b=>b.textContent.includes('发起对话'));
+  assert.ok(startChatBtn);startChatBtn.click();await pause();
+  const otherBtn=[...document.querySelectorAll('.modal-agent-item')].find(b=>b.textContent.includes('普通员工'));
+  assert.ok(otherBtn);otherBtn.click();await pause();
+  assert.equal(window.location.hash,'#/?ws=w&view=chat&emp=b');
+  assert.equal(topbarBtn.classList.contains('is-active'),false);
+  assert.equal(directRequests.at(-1),'b');
+  app.unmount();
+  directRequests.length=0;
+  app=mount();await pause();await pause();
+  assert.equal(directRequests.at(-1),'b','refresh opens the newly selected direct conversation');
+  assert.equal(host.textContent.includes('来源对话与员工不匹配'),false);
+  assert.deepEqual(errors,[]);
+ }finally{app.unmount();host.remove();await pause()}
+});
+
+test('KIKO avatar uses distinct fixed SVGs and animates busy transitions only in chat', async () => {
+ const host=document.createElement('div');
+ document.body.appendChild(host);
+ const busy=ref(false);
+ const app=createApp({render:()=>h('div',[
+  h(EmployeeAvatar,{name:'KIKO',assistant:true,assistantBusy:busy.value}),
+  h(EmployeeAvatar,{name:'KIKO',assistant:true}),
+  h(EmployeeAvatar,{name:'普通员工',preset:'cn-v2-01'})
+ ])});
+ app.mount(host);
+ try{
+  const [chat,nav,normal]=host.querySelectorAll('.d2-emp-avatar');
+  const src=avatar=>avatar.querySelector('img').getAttribute('src');
+  assert.equal(src(chat),'/brand/kiko-assistant-idle.svg');
+  assert.equal(src(nav),'/brand/kiko-assistant-nav.svg');
+  assert.equal(src(normal),'/employee-avatars/cn-v2-01.webp');
+  assert.equal(chat.classList.contains('kiko-avatar-to-idle'),false);
+  busy.value=true;await nextTick();
+  assert.equal(src(chat),'/brand/kiko-assistant-work.svg');
+  assert.equal(chat.classList.contains('kiko-avatar-to-work'),true);
+  assert.equal(src(nav),'/brand/kiko-assistant-nav.svg');
+  busy.value=false;await nextTick();
+  assert.equal(src(chat),'/brand/kiko-assistant-idle.svg');
+  assert.equal(chat.classList.contains('kiko-avatar-to-idle'),true);
+  assert.equal(chat.classList.contains('kiko-avatar-to-work'),false);
+  assert.equal(nav.classList.contains('kiko-avatar-to-idle'),false);
+ }finally{app.unmount();host.remove()}
 });

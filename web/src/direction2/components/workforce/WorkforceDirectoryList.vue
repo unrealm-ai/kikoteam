@@ -328,7 +328,7 @@ defineExpose({ openCreateModal });
       >
         <div class="ec-body">
           <div class="ec-top">
-            <D2EmployeeAvatar :name="emp.name" :preset="emp.avatar" :identity-key="emp.id" size="md" />
+            <D2EmployeeAvatar :name="emp.name" :preset="emp.avatar" :identity-key="emp.id" :assistant="emp.isAssistant" size="md" />
             <div class="ec-meta">
               <div class="ec-title-row">
                 <h3 class="ec-name" :title="emp.name">{{ emp.name }}</h3>

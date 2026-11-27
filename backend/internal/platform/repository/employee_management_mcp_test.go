@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -238,30 +239,74 @@ func TestEmployeeManagementMCPRealWebAndSharedSkill(t *testing.T) {
 	if profile["name"] != "更新物流员工" || profile["role"] != "负责查运单" {
 		t.Fatal(profile)
 	}
-	f.expect(t, "update_employee", map[string]any{"config_key": "avatar", "avatar": "bot-test", "version": 3}, "")
-	avatar := f.expect(t, "get_employee", map[string]any{"config_key": "avatar"}, "")
-	if avatar["avatar"] != "bot-test" {
-		t.Fatal(avatar)
+	f.expect(t, "update_employee", map[string]any{"config_key": "avatar", "version": 3}, "invalid_employee_management_request")
+	f.expect(t, "get_employee", map[string]any{"config_key": "avatar"}, "invalid_employee_management_request")
+	employeeID := created["id"].(string)
+	readWebRecord := func() ps.Agent {
+		t.Helper()
+		a, err := (&ps.AgentService{Store: NewAgentStore(db)}).Get(ctx, w, member, employeeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	preset := readWebRecord().Avatar
+	if !regexp.MustCompile(`^cn-v2-(0[1-9]|1[0-9]|2[0-7])$`).MatchString(preset) {
+		t.Fatal("create must save a supported portrait", preset)
+	}
+	if _, included := created["avatar"]; included {
+		t.Fatal("create should not return avatar", created)
+	}
+	overview = f.expect(t, "get_employee", map[string]any{"employee_id": employeeID}, "")
+	if _, included := overview["overview"].(map[string]any)["avatar"]; included {
+		t.Fatal("employee overview should not return avatar", overview)
+	}
+	createdList := f.expect(t, "list_employees", map[string]any{"id": employeeID}, "")
+	if _, included := createdList["items"].([]any)[0].(map[string]any)["avatar"]; included {
+		t.Fatal("employee list should not return avatar", createdList)
+	}
+	f.expect(t, "get_employee", map[string]any{"employee_id": employeeID, "config_key": "avatar"}, "invalid_employee_management_request")
+	f.expect(t, "update_employee", map[string]any{"employee_id": employeeID, "config_key": "avatar", "version": 1}, "invalid_employee_management_request")
+	if after := readWebRecord(); after.Version != 1 || after.Avatar != preset {
+		t.Fatal("MCP avatar write changed employee", after)
+	}
+	webPreset := "cn-v2-01"
+	if preset == webPreset {
+		webPreset = "cn-v2-02"
+	}
+	agents := &ps.AgentService{Store: NewAgentStore(db)}
+	if _, err = agents.Update(ctx, w, member, employeeID, ps.AgentPatch{Version: 1, Avatar: &webPreset}); err != nil {
+		t.Fatal("Web employee save must retain avatar updates", err)
+	}
+	if after := readWebRecord(); after.Avatar != webPreset || after.Version != 2 {
+		t.Fatal(after)
 	}
 	model := saveTestModel(t, &ps.ModelService{Store: NewModelStore(db), Prober: modelProbeStub{}, Secret: []byte("test-model-secret-at-least-thirty-two-bytes"), NormalizeEndpoint: func(_ string, url string) (string, error) { return url, nil }}, w, owner)
 	configs := f.expect(t, "get_employee", map[string]any{"employee_id": employee}, "")["available_configs"].([]any)
 	modelConfig := ""
 	for _, raw := range configs {
 		item := raw.(map[string]any)
-		if item["key"] == "model" && item["writable"] == true {
+		if item["key"] == "avatar" {
+			t.Fatal("get must not advertise avatar", configs)
+		}
+		if item["key"] == "model" && item["writable"] == false {
 			modelConfig = item["key"].(string)
 		}
 	}
 	if modelConfig == "" {
-		t.Fatal("get did not advertise a writable model configuration", configs)
+		t.Fatal("get did not advertise a read-only model configuration", configs)
 	}
 	previousModel := f.expect(t, "get_employee", map[string]any{"employee_id": employee, "config_key": modelConfig}, "")
-	updateChoices := f.expect(t, "list_employee_resources", map[string]any{"resource_type": "model", "id": model.ID, "employee_id": employee}, "")
-	updateChoice := updateChoices["items"].([]any)[0].(map[string]any)
-	f.expect(t, "update_employee", map[string]any{"employee_id": employee, "config_key": modelConfig, "model_source": updateChoice["source"], "model_id": updateChoice["id"], "version": previousModel["version"]}, "")
+	f.expect(t, "update_employee", map[string]any{"employee_id": employee, "config_key": modelConfig, "version": previousModel["version"]}, "invalid_employee_management_request")
 	current := f.expect(t, "get_employee", map[string]any{"config_key": "model"}, "")
-	if current["model_id"] != model.ID {
+	if current["model_id"] != previousModel["model_id"] || current["version"] != previousModel["version"] || current["writable"] != false {
 		t.Fatal(current)
+	}
+	if _, err = agents.Update(ctx, w, owner, employee, ps.AgentPatch{Version: int64(current["version"].(float64)), ModelProfileID: &model.ID}); err != nil {
+		t.Fatal("Web employee save must retain model updates", err)
+	}
+	if after := f.expect(t, "get_employee", map[string]any{"config_key": "model"}, ""); after["model_id"] != model.ID {
+		t.Fatal(after)
 	}
 	reviewExec(t, db, `DELETE FROM platform_agent_maintainers WHERE agent_id=$1 AND user_id=$2`, employee, member)
 	f.expect(t, "list_employee_resources", map[string]any{"resource_type": "model", "id": model.ID}, "")

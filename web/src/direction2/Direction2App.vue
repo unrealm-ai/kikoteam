@@ -31,7 +31,7 @@ import { d2ThemeOverrides } from './styles/theme-overrides';
 // 导航视图状态
 type RailView = 'home' | 'chat' | 'employees' | 'tasks' | 'resources' | 'settings' | 'market' | 'platform-admin' | 'credits';
 interface RailNavItem {
-  view: RailView | 'assistant';
+  view: RailView;
   label: string;
   paths?: string[];
   polylines?: string[];
@@ -41,7 +41,6 @@ interface RailNavItem {
 
 const railNavItems: RailNavItem[] = [
   {view:'market',label:'AI 员工市场',paths:['M3 10h18v11H3z','M2 3h20v7H2z','M10 14h4v7']},
-  {view:'assistant',label:'KIKO 助手',rects:[{width:18,height:14,x:3,y:5,rx:5}],paths:['M8 11h1','M15 11h1','M10 15h4']},
   {
     view: 'employees',
     label: 'AI 员工',
@@ -148,10 +147,10 @@ const shellError = ref('');
 const currentUser = ref<UserProfile | null>(null);
 const canOpenPlatformAdminTab = computed(() => realPlatform && currentUser.value?.isPlatformAdmin === true);
 const assistantEntry = ref<AssistantEntry>();
+const assistantOpenRequest = ref(0);
 const assistantDemo = ref<{card: AssistantCard; workspace: string; agent: string; key: string}>();
-const assistantNavActive = computed(() => !!assistantEntry.value?.agent_id && currentView.value === 'chat' && targetEmployeeId.value === assistantEntry.value.agent_id);
-const visibleRailNavItems = computed(() => railNavItems.filter(item =>
-  item.view === 'assistant' ? realPlatform && !!assistantEntry.value?.agent_id : item.view !== 'market' || realPlatform));
+const assistantNavActive = computed(() => !!assistantEntry.value?.agent_id && currentView.value === 'chat' && !subParam.value && targetEmployeeId.value === assistantEntry.value.agent_id);
+const visibleRailNavItems = computed(() => railNavItems.filter(item => item.view !== 'market' || realPlatform));
 watch([activeWorkspaceId, shellStatus, () => currentUser.value?.id, currentView], ([workspace, status], _old, onCleanup) => {
   const controller = new AbortController();
   let retry: ReturnType<typeof setTimeout> | undefined;
@@ -663,12 +662,20 @@ function applyNavigation(view: string, param?: string, targetId?: string, extraT
   }
 }
 
+function syncChatEmployee(id: string, direct = false) {
+  if (currentView.value !== 'chat' || (!direct && targetEmployeeId.value === id)) return;
+  subParam.value = undefined;
+  targetEmployeeId.value = id;
+  syncUrlHash(true);
+}
+
 function openAssistant(card?: AssistantCard) {
   const agent = assistantEntry.value?.agent_id;
   if (!agent || card && !assistantEntry.value?.cards.some(item => item.key === card.key)) return;
   runWithUnsavedGuard(() => {
     if (agent !== assistantEntry.value?.agent_id) return;
     if (card) assistantDemo.value = {card, workspace: activeWorkspaceId.value, agent, key: crypto.randomUUID()};
+    assistantOpenRequest.value++;
     applyNavigation('chat', undefined, agent);
   });
 }
@@ -791,6 +798,19 @@ function openApproval(id: string) {
 
           <div class="topbar-right">
             <ReferralInvite v-if="realPlatform && currentUser" :key="currentUser.id" />
+            <button
+              v-if="realPlatform && assistantEntry?.agent_id"
+              type="button"
+              class="assistant-pill-btn"
+              :class="{ 'is-active': assistantNavActive }"
+              aria-label="KIKO 助手"
+              @click="openAssistant()"
+            >
+              <span class="assistant-pill-icon" aria-hidden="true">
+                <img src="/brand/kiko-assistant-nav.svg" alt="" width="18" height="18" />
+              </span>
+              <span class="assistant-pill-text">KIKO 助手</span>
+            </button>
             <!-- 待处理提醒入口 (人在回路全局统一入口：直达任务中心待确认审批流) -->
             <button
               type="button"
@@ -861,10 +881,10 @@ function openApproval(id: string) {
                     <button
                       type="button"
                       class="rail-item"
-                      :class="{ active: item.view === 'assistant' ? assistantNavActive : currentView === item.view && !assistantNavActive }"
+                      :class="{ active: currentView === item.view }"
                       :aria-label="item.label"
-                      :aria-current="(item.view === 'assistant' ? assistantNavActive : currentView === item.view && !assistantNavActive) ? 'page' : undefined"
-                      @click="item.view === 'assistant' ? openAssistant() : navigate(item.view)"
+                      :aria-current="currentView === item.view ? 'page' : undefined"
+                      @click="navigate(item.view)"
                     >
                       <span class="rail-icon" aria-hidden="true">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1035,14 +1055,14 @@ function openApproval(id: string) {
                 @navigate="navigate"
                 @open-approval="openApproval"
               />
-              <PlatformConversationsView v-else-if="realPlatform && currentView === 'chat'" :key="'manager-chat-' + currentUser?.id + '-' + activeWorkspaceId" :account-id="currentUser?.id" :selected-employee-id="targetEmployeeId" :selected-conversation-id="subParam" :assistant-entry="assistantEntry" :assistant-demo="assistantDemo" @demo-consumed="key => { if (assistantDemo?.key === key) assistantDemo = undefined }" />
+              <PlatformConversationsView v-else-if="realPlatform && currentView === 'chat'" :key="'manager-chat-' + currentUser?.id + '-' + activeWorkspaceId" :account-id="currentUser?.id" :selected-employee-id="targetEmployeeId" :selected-conversation-id="subParam" :assistant-entry="assistantEntry" :assistant-open-request="assistantOpenRequest" :assistant-demo="assistantDemo" @select-employee="syncChatEmployee" @demo-consumed="key => { if (assistantDemo?.key === key) assistantDemo = undefined }" />
               <ConversationsView
                 v-else-if="currentView === 'chat'"
                 :key="'chat-' + activeWorkspaceId"
                 :selected-employee-id="targetEmployeeId"
                 @navigate="navigate"
               />
-              <AgentMarketView v-else-if="realPlatform && currentView === 'market'" :key="'market-'+activeWorkspaceId" :platform-admin="currentUser?.isPlatformAdmin===true" :assistant-cards="assistantEntry?.cards" @assistant-demo="openAssistant" @navigate="navigate"/>
+              <AgentMarketView v-else-if="realPlatform && currentView === 'market'" :key="'market-'+activeWorkspaceId" :platform-admin="currentUser?.isPlatformAdmin===true" :assistant-agent-id="assistantEntry?.agent_id" :assistant-cards="assistantEntry?.cards" @assistant-demo="openAssistant" @open-assistant="openAssistant()" @navigate="navigate"/>
               <MyCreditsView v-else-if="realPlatform && currentView === 'credits' && currentUser" :key="currentUser.id" :account-id="currentUser.id" />
               <WorkforceView
                 v-else-if="currentView === 'employees'"
@@ -1267,7 +1287,54 @@ function openApproval(id: string) {
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+}
+.assistant-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--id-accent-primary-border);
+  background: var(--id-accent-primary-soft);
+  color: var(--id-accent-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.assistant-pill-btn:hover {
+  background: rgba(37, 99, 235, 0.13);
+  border-color: var(--id-accent-primary);
+}
+.assistant-pill-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--id-focus-ring);
+}
+.assistant-pill-btn.is-active {
+  background: var(--id-accent-primary);
+  border-color: var(--id-accent-primary);
+  color: var(--id-text-inverse);
+}
+.assistant-pill-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(37, 99, 235, 0.14);
+  color: var(--id-accent-primary);
+  flex-shrink: 0;
+}
+.assistant-pill-btn.is-active .assistant-pill-icon {
+  background: rgba(255, 255, 255, 0.22);
+  color: var(--id-text-inverse);
+}
+.assistant-pill-text {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
 }
 .reminder-pill-btn {
   display: inline-flex;
@@ -1943,6 +2010,9 @@ function openApproval(id: string) {
   }
   .topbar-right {
     order: 2;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
   }
   .topbar-center {
     order: 3;
@@ -1957,9 +2027,13 @@ function openApproval(id: string) {
   .brand-kiko-text {
     font-size: 15px;
   }
+  .assistant-pill-btn,
   .reminder-pill-btn {
     padding: 0 10px;
     height: 30px;
+  }
+  .assistant-pill-btn {
+    padding-left: 7px;
   }
   .search-kbd {
     display: none;

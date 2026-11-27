@@ -5,31 +5,42 @@ import { resolveD2AvatarPreset } from '../types';
 const props = withDefaults(
   defineProps<{
     name: string;
+    assistant?: boolean | undefined;
+    assistantBusy?: boolean | undefined;
     preset?: string | null | undefined;
     identityKey?: string | undefined;
     size?: 'sm' | 'md' | 'lg' | 'xl' | undefined;
     rounded?: 'circle' | 'square' | undefined;
   }>(),
   {
+    assistantBusy: undefined,
     size: 'md',
     rounded: 'circle'
   }
 );
 
 const failed = ref(false);
-watch(() => [props.preset, props.identityKey], () => {
+const transition = ref<'idle' | 'work'>();
+watch(() => [props.preset, props.identityKey, props.assistant, props.assistantBusy], () => {
   failed.value = false;
+});
+watch(() => props.assistantBusy, (busy, previous) => {
+  transition.value = busy === undefined || previous === undefined ? undefined : busy ? 'work' : 'idle';
 });
 
 const selected = computed(() => resolveD2AvatarPreset(props.preset, props.identityKey ?? props.name));
-const src = computed(() => `/employee-avatars/${selected.value}.webp`);
+const src = computed(() => {
+  if (!props.assistant) return `/employee-avatars/${selected.value}.webp`;
+  const face = props.assistantBusy === undefined ? 'nav' : props.assistantBusy ? 'work' : 'idle';
+  return `/brand/kiko-assistant-${face}.svg`;
+});
 const initial = computed(() => Array.from((props.name || '员').trim())[0] || '员');
 </script>
 
 <template>
   <span
     class="d2-emp-avatar"
-    :class="[`d2-emp-avatar--${size}`, `d2-emp-avatar--${rounded}`]"
+    :class="[`d2-emp-avatar--${size}`, `d2-emp-avatar--${rounded}`, assistant && transition && `kiko-avatar-to-${transition}`]"
     :title="name"
   >
     <img v-if="!failed" :src="src" :alt="name" @error="failed = true" />
@@ -81,6 +92,16 @@ const initial = computed(() => Array.from((props.name || '员').trim())[0] || '�
   height: 100%;
   object-fit: cover;
   display: block;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kiko-avatar-to-work img { animation: kiko-avatar-wake 280ms ease-out; }
+  .kiko-avatar-to-idle img { animation: kiko-avatar-rest 260ms ease-out; }
+}
+@keyframes kiko-avatar-wake {
+  45% { transform: translateY(-5%) scale(1.06); }
+}
+@keyframes kiko-avatar-rest {
+  45% { transform: translateY(3%) scale(0.96); }
 }
 .d2-avatar-fallback {
   line-height: 1;

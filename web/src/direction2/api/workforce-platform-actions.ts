@@ -86,7 +86,7 @@ export function createWorkforcePlatformActions(workspace=()=>activeWorkspaceId.v
     for(const key of ['channels','capabilityPackages','triggers','unifiedAccess','humanConfirmationRules','webChatAccess','handoffPolicy'] as const){
       if(JSON.stringify(current.employee[key])!==JSON.stringify(draft[key]))throw new Error('请在对应配置卡片分别保存，不能跨配置覆盖版本');
     }
-    return updateBasics(id,{name:draft.name,role:draft.role,avatar:draft.avatar,prompt:draft.prompt,modelId:draft.modelId,executionEngine:draft.executionEngine,thinkingLevel:draft.thinkingLevel},expected);
+    return updateBasics(id,{name:draft.name,role:draft.role,...(!current.agent.is_assistant ? {avatar:draft.avatar} : {}),prompt:draft.prompt,modelId:draft.modelId,executionEngine:draft.executionEngine,thinkingLevel:draft.thinkingLevel},expected);
   },
   async saveEmployeeChannels(id:string,edited:EmployeeChannelBinding[],_expected?:number,_workspace?:string,resourceVersions?:DigitalEmployee['resourceVersions']){
     const w=workspace(),current=snapshot(id);const original=current.employee.channels;

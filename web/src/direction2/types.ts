@@ -282,6 +282,7 @@ export interface HumanConfirmationRule {
 }
 
 export interface DigitalEmployee {
+  isAssistant?: boolean | undefined;
   canManage?: boolean | undefined;
   canChat?: boolean | undefined;
   cardResources?: { channels: PlatformType[]; packageCount: number; triggerCount: number };

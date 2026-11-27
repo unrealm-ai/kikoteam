@@ -25,6 +25,9 @@ type agentTx struct {
 
 func (t *agentTx) Member(ctx context.Context, a string) (service.Member, error) {
 	if caller, ok := service.EmployeeManagementFrom(ctx); ok {
+		if err := lockManagementSource(ctx, t.model, caller, caller.Employee); err != nil {
+			return service.Member{}, err
+		}
 		isAssistant, err := liveManagementCaller(ctx, t.model, caller)
 		if err != nil {
 			return service.Member{}, err
@@ -53,14 +56,14 @@ func (t *agentTx) EnsureModelKey(ctx context.Context, id string) error {
 const agentModelJoins = ` LEFT JOIN platform_model_profiles m ON m.id=a.model_profile_id AND m.workspace_id=a.workspace_id
  LEFT JOIN platform_proxy_models o ON o.id=a.platform_model_id LEFT JOIN platform_agent_model_keys k ON k.agent_id=a.id
  LEFT JOIN platform_accounts p ON p.id=k.payer_account_id`
-const agentColumns = `a.id,a.name,a.role,a.avatar,a.instruction,coalesce(a.model_profile_id::text,''),coalesce(a.platform_model_id::text,''),coalesce(m.name,o.name),coalesce(m.enabled AND m.validated,o.enabled AND o.validated),a.enabled,a.version,a.config_version,a.admission_epoch,a.created_at,a.updated_at,a.web_access,COALESCE(a.source_agent_template_version_id::text,''),a.template_parameters,COALESCE((SELECT template_id::text FROM platform_agent_template_versions WHERE id=a.source_agent_template_version_id),''),coalesce(p.id::text,''),coalesce(p.name,'')`
+const agentColumns = `a.id,a.name,a.role,a.avatar,a.instruction,coalesce(a.model_profile_id::text,''),coalesce(a.platform_model_id::text,''),coalesce(m.name,o.name),coalesce(m.enabled AND m.validated,o.enabled AND o.validated),a.enabled,a.version,a.config_version,a.admission_epoch,a.created_at,a.updated_at,a.web_access,COALESCE(a.source_agent_template_version_id::text,''),a.template_parameters,COALESCE((SELECT template_id::text FROM platform_agent_template_versions WHERE id=a.source_agent_template_version_id),''),coalesce(p.id::text,''),coalesce(p.name,''),EXISTS(SELECT 1 FROM platform_workspaces w WHERE w.id=a.workspace_id AND w.assistant_agent_id=a.id)`
 
 func scanAgent(row scanner, extra ...any) (service.Agent, error) {
 	var a service.Agent
 	var access, params []byte
 	var source, template string
 	var payer service.AgentPayer
-	columns := []any{&a.ID, &a.Name, &a.Role, &a.Avatar, &a.Instruction, &a.ModelProfileID, &a.PlatformModelID, &a.ModelName, &a.ModelAvailable, &a.Enabled, &a.Version, &a.ConfigVersion, &a.AdmissionEpoch, &a.CreatedAt, &a.UpdatedAt, &access, &source, &params, &template, &payer.ID, &payer.Name}
+	columns := []any{&a.ID, &a.Name, &a.Role, &a.Avatar, &a.Instruction, &a.ModelProfileID, &a.PlatformModelID, &a.ModelName, &a.ModelAvailable, &a.Enabled, &a.Version, &a.ConfigVersion, &a.AdmissionEpoch, &a.CreatedAt, &a.UpdatedAt, &access, &source, &params, &template, &payer.ID, &payer.Name, &a.IsAssistant}
 	e := row.Scan(append(columns, extra...)...)
 	if payer.ID != "" {
 		a.Payer = &payer

@@ -31,6 +31,13 @@ func (t *agentTx) CanManageEmployee(ctx context.Context, employee, actor string)
 }
 
 func (t *channelTx) AuthorizeEmployee(ctx context.Context, employee, actor string) error {
+	if t.write {
+		var workspace string
+		if err := t.tx.QueryRowContext(ctx, `SELECT id FROM platform_workspaces WHERE id=$1 FOR KEY SHARE`, t.workspace).Scan(&workspace); err != nil {
+			return workspaceDBError(err)
+		}
+		return LockEmployeeManagement(ctx, t.tx, t.workspace, employee, actor)
+	}
 	return AuthorizeEmployeeManagement(ctx, t.tx, t.workspace, employee, actor)
 }
 

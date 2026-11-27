@@ -7,17 +7,20 @@ import (
 )
 
 type HumanToolsConfig struct {
-	WorkMCPURL     string `json:"work_mcp_url,omitempty"`
-	WorkMCPToken   string `json:"work_mcp_token,omitempty"`
-	WorkURL        string `json:"work_url,omitempty"`
-	WorkToken      string `json:"work_token,omitempty"`
-	WorkRole       string `json:"work_role,omitempty"`
-	URL            string `json:"url"`
-	Token          string `json:"token"`
-	Input          string `json:"input"`
-	Mode           string `json:"mode"`
-	RecipientsMCP  bool   `json:"recipients_mcp,omitempty"`
-	ReapprovalOnly bool   `json:"reapproval_only,omitempty"`
+	AssistantMCPBaseURL     string `json:"assistant_mcp_base_url,omitempty"`
+	AssistantDemoToken      string `json:"assistant_demo_token,omitempty"`
+	EmployeeManagementToken string `json:"employee_management_token,omitempty"`
+	WorkMCPURL              string `json:"work_mcp_url,omitempty"`
+	WorkMCPToken            string `json:"work_mcp_token,omitempty"`
+	WorkURL                 string `json:"work_url,omitempty"`
+	WorkToken               string `json:"work_token,omitempty"`
+	WorkRole                string `json:"work_role,omitempty"`
+	URL                     string `json:"url"`
+	Token                   string `json:"token"`
+	Input                   string `json:"input"`
+	Mode                    string `json:"mode"`
+	RecipientsMCP           bool   `json:"recipients_mcp,omitempty"`
+	ReapprovalOnly          bool   `json:"reapproval_only,omitempty"`
 }
 
 func (h HumanToolsConfig) validForPlan(enabled bool) bool {
@@ -25,7 +28,8 @@ func (h HumanToolsConfig) validForPlan(enabled bool) bool {
 		return h == (HumanToolsConfig{})
 	}
 	return h.ReapprovalOnly && h.Mode == "task" && h.URL != "" && h.Token != "" && h.Input != "" && !h.RecipientsMCP &&
-		h.WorkMCPURL == "" && h.WorkMCPToken == "" && h.WorkURL == "" && h.WorkToken == "" && h.WorkRole == ""
+		h.WorkMCPURL == "" && h.WorkMCPToken == "" && h.WorkURL == "" && h.WorkToken == "" && h.WorkRole == "" &&
+		h.AssistantMCPBaseURL == "" && h.AssistantDemoToken == "" && h.EmployeeManagementToken == ""
 }
 
 func (c Config) humanToolsPath() string {
@@ -34,6 +38,7 @@ func (c Config) humanToolsPath() string {
 
 // Turn-bound credentials are excluded from the Pi configuration signature.
 // Publish them atomically so a reused process never sees a partial file.
+// The extension refreshes its native transport only between settled prompts.
 func (c Config) PrepareHumanTools() error {
 	if c.HumanToolsExtension == "" {
 		return nil

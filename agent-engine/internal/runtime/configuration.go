@@ -64,34 +64,11 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 		cfg.HumanMCPToken = ""
 		cfg.HumanToolsToken = ""
 	}
-	if current.Mode == "task" && cfg.EmployeeManagementToken != "" && !cfg.ReportOnly {
-		out.MCP["employee_management"] = map[string]any{
-			"url": w.Backend.URL + "/mcp/assistant/platform",
-			"headers": map[string]string{
-				"Authorization":          "Bearer " + cfg.EmployeeManagementToken,
-				"X-Kiko-Assistant-Input": turn.Input.ID,
-			},
-			"exposure": "direct",
-		}
-	}
-	if cfg.AssistantMCPToken != "" && !cfg.ReportOnly && current.Mode == "task" && cfg.AssistantToolSet == "demo" {
-		out.MCP["assistant_"+cfg.AssistantToolSet] = map[string]any{
-			"url": w.Backend.URL + "/mcp/assistant/" + cfg.AssistantToolSet,
-			"headers": map[string]string{
-				"Authorization":          "Bearer " + cfg.AssistantMCPToken,
-				"X-Kiko-Assistant-Input": turn.Input.ID,
-			},
-			"exposure": "direct",
-		}
-	}
 	w.configureHumanMCP(&out, current.Mode, turn.Input.ID, cfg)
 	if cfg.HumanToolsToken != "" && (current.Mode == "task" || cfg.HumanMCPToken == "") {
 		w.configureHumanTools(&out, turn, cfg, cfg.HumanMCPToken != "")
 	}
 	if current.Mode == "task" && cfg.WorkLocalToken != "" && cfg.WorkMCPToken != "" {
-		out.HumanToolsExtension = filepath.Join(filepath.Dir(filepath.Dir(w.Launcher)), "extensions/human-tools.mjs")
-		out.HumanTools.Mode = current.Mode
-		out.HumanTools.Input = turn.Input.ID
 		out.HumanTools.WorkURL = w.Backend.URL + "/api/internal/v1/sessions/" + current.SessionID + "/work-item-tools"
 		out.HumanTools.WorkToken = cfg.WorkLocalToken
 		out.HumanTools.WorkRole = cfg.WorkRole
@@ -100,6 +77,9 @@ func (w *Worker) prepareConfiguration(ctx context.Context, current repository.Wo
 		out.HumanTools.WorkMCPToken = cfg.WorkMCPToken
 		// Role changes alter the set and schema of local boundary tools.
 		out.WorkMCPRole = cfg.WorkRole
+	}
+	if current.Mode == "task" {
+		w.configureAssistantTurnMCP(&out, turn.Input.ID, cfg)
 	}
 	if current.Mode == "chat" && (cfg.DelegationToken != "" || cfg.ChatDelegationCatalogToken != "") {
 		w.configureChatDelegation(&out, turn.Input.ID, cfg)
@@ -209,11 +189,33 @@ func (w *Worker) configureAttachmentLookup(out *pi.Config, current repository.Wo
 }
 
 func (w *Worker) configureHumanTools(out *pi.Config, turn repository.Turn, cfg integration.HarnessConfig, recipientsMCP bool) {
-	out.HumanToolsExtension = filepath.Join(filepath.Dir(filepath.Dir(w.Launcher)), "extensions/human-tools.mjs")
+	out.HumanToolsExtension = w.humanToolsExtension()
 	out.HumanTools = pi.HumanToolsConfig{
 		URL:   w.Backend.URL + "/api/internal/v1/sessions/" + cfg.SessionID + "/human-tools",
 		Token: cfg.HumanToolsToken, Input: turn.Input.ID, Mode: cfg.Mode, RecipientsMCP: recipientsMCP,
 	}
+}
+
+// Enable the existing extension throughout an ordinary task Session, including
+// turns that have no Assistant authorization. A missing grant removes its
+// registration at the next prompt boundary, not the native Pi process.
+func (w *Worker) configureAssistantTurnMCP(out *pi.Config, input string, cfg integration.HarnessConfig) {
+	out.HumanToolsExtension = w.humanToolsExtension()
+	out.HumanTools.Mode, out.HumanTools.Input = "task", input
+	if cfg.ReportOnly {
+		return
+	}
+	out.HumanTools.EmployeeManagementToken = cfg.EmployeeManagementToken
+	if cfg.AssistantToolSet == "demo" {
+		out.HumanTools.AssistantDemoToken = cfg.AssistantMCPToken
+	}
+	if out.HumanTools.EmployeeManagementToken != "" || out.HumanTools.AssistantDemoToken != "" {
+		out.HumanTools.AssistantMCPBaseURL = w.Backend.URL + "/mcp/assistant"
+	}
+}
+
+func (w *Worker) humanToolsExtension() string {
+	return filepath.Join(filepath.Dir(filepath.Dir(w.Launcher)), "extensions/human-tools.mjs")
 }
 
 func configurationSignature(out pi.Config, key string, skills ...integration.Skill) (pi.Config, string, error) {

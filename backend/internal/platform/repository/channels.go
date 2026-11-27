@@ -15,6 +15,7 @@ func NewChannelStore(db *sql.DB) *ChannelStore { return &ChannelStore{db} }
 type channelTx struct {
 	tx        *sql.Tx
 	workspace string
+	write     bool
 }
 
 func (s *ChannelStore) WithWorkspace(ctx context.Context, w string, fn func(service.ChannelTx) error) error {
@@ -26,7 +27,7 @@ func (s *ChannelStore) WithWorkspace(ctx context.Context, w string, fn func(serv
 	if _, e = tx.ExecContext(ctx, `SELECT id FROM platform_channel_config_clock WHERE id=true FOR UPDATE`); e != nil {
 		return e
 	}
-	if e = fn(&channelTx{tx, w}); e != nil {
+	if e = fn(&channelTx{tx: tx, workspace: w, write: true}); e != nil {
 		return e
 	}
 	return tx.Commit()
@@ -88,7 +89,7 @@ func (s *ChannelStore) WithBindingRead(ctx context.Context, w string, fn func(se
 		return err
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
-	if err = fn(&channelTx{tx, w}); err != nil {
+	if err = fn(&channelTx{tx: tx, workspace: w}); err != nil {
 		return err
 	}
 	return tx.Commit()

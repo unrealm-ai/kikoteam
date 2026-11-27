@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -213,31 +214,75 @@ func assertCatalogHeaders(t *testing.T, m map[string]any, token, input string) {
 	}
 }
 
-func TestEmployeeManagementOnlyExecutionWithTrustedInputCredential(t *testing.T) {
+func TestAssistantTurnCredentialsDoNotReplacePi(t *testing.T) {
 	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
 	worker := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
-	for _, s := range []struct {
-		mode, token      string
-		correction, want bool
+	current := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "workspace", AgentID: "employee", Mode: "task", ConversationID: "conversation"}
+	cfg := integration.HarnessConfig{SessionID: current.SessionID, WorkspaceID: current.WorkspaceID, AgentID: current.AgentID,
+		Mode: current.Mode, ConversationID: current.ConversationID, AssistantToolSet: "demo"}
+	var stable string
+	for _, step := range []struct {
+		input, management, demo string
+		report                  bool
 	}{
-		{"task", "input-grant", false, true},
-		{"task", "", false, false},
-		{"task", "input-grant", true, false},
-		{"chat", "input-grant", false, false},
+		{input: "initial-no-grant"},
+		{input: "first", management: "management-1", demo: "demo-1"},
+		{input: "second", management: "management-2", demo: "demo-2"},
+		{input: "demo-only", demo: "demo-3"},
+		{input: "revoked"},
+		{input: "pure-report", management: "stale-management", demo: "stale-demo", report: true},
 	} {
-		current := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "workspace", AgentID: "employee", Mode: s.mode, ConversationID: "conversation"}
-		cfg := integration.HarnessConfig{SessionID: current.SessionID, WorkspaceID: current.WorkspaceID, AgentID: current.AgentID, Mode: current.Mode, ConversationID: current.ConversationID, EmployeeManagementToken: s.token}
-		turn := repository.Turn{Input: repository.Input{ID: "bound-input", CorrectionOnly: s.correction}}
+		cfg.EmployeeManagementToken, cfg.AssistantMCPToken, cfg.ReportOnly = step.management, step.demo, step.report
+		out, signature, err := worker.prepareConfiguration(t.Context(), current, repository.Turn{Input: repository.Input{ID: step.input}}, cfg, integration.Endpoint{})
+		if err != nil || signature == "" || out.HumanToolsExtension == "" {
+			t.Fatalf("%s: configuration unusable: %v", step.input, err)
+		}
+		if stable != "" && stable != signature {
+			t.Fatalf("%s: per-turn credential changed the native Pi signature", step.input)
+		}
+		stable = signature
+		if _, exists := out.MCP["employee_management"]; exists {
+			t.Fatal("static Pi config contains employee management")
+		}
+		if _, exists := out.MCP["assistant_demo"]; exists {
+			t.Fatal("static Pi config contains assistant demo")
+		}
+		management, demo := step.management, step.demo
+		if step.report {
+			management, demo = "", ""
+		}
+		if out.HumanTools.Mode != "task" || out.HumanTools.Input != step.input ||
+			out.HumanTools.EmployeeManagementToken != management || out.HumanTools.AssistantDemoToken != demo {
+			t.Fatalf("%s: wrong per-turn Assistant authorization", step.input)
+		}
+		if (management != "" || demo != "") != (out.HumanTools.AssistantMCPBaseURL == "http://manager.invalid/mcp/assistant") {
+			t.Fatalf("%s: wrong per-turn Assistant endpoint", step.input)
+		}
+	}
+}
+
+func TestAssistantTurnCredentialsNotExposedToChatOrCorrection(t *testing.T) {
+	t.Setenv("KIKO_RUNTIME_TEMP_ROOT", t.TempDir())
+	worker := Worker{Root: t.TempDir(), Backend: &integration.Backend{URL: "http://manager.invalid"}}
+	for _, mode := range []string{"task", "chat"} {
+		current := repository.Work{Assignment: repository.Assignment{SessionID: NewID()}, WorkspaceID: "workspace", AgentID: "employee", Mode: mode, ConversationID: "conversation"}
+		cfg := integration.HarnessConfig{SessionID: current.SessionID, WorkspaceID: current.WorkspaceID, AgentID: current.AgentID,
+			Mode: mode, ConversationID: current.ConversationID, EmployeeManagementToken: "fixture", AssistantToolSet: "demo", AssistantMCPToken: "fixture-demo",
+			HumanToolsToken: "fixture-human"}
+		turn := repository.Turn{Input: repository.Input{ID: "bound-input", CorrectionOnly: mode == "task"}}
 		out, _, err := worker.prepareConfiguration(t.Context(), current, turn, cfg, integration.Endpoint{})
-		entry, ok := out.MCP["employee_management"].(map[string]any)
-		if err != nil || ok != s.want {
-			t.Fatal(s, ok, err)
+		if err != nil || out.HumanTools.EmployeeManagementToken != "" || out.HumanTools.AssistantDemoToken != "" || out.HumanTools.AssistantMCPBaseURL != "" {
+			t.Fatalf("%s: Assistant authorization escaped ordinary task scope: %v", mode, err)
 		}
-		if ok {
-			headers := entry["headers"].(map[string]string)
-			if entry["url"] != "http://manager.invalid/mcp/assistant/platform" || headers["Authorization"] != "Bearer input-grant" || headers["X-Kiko-Assistant-Input"] != "bound-input" {
-				t.Fatal(entry)
-			}
-		}
+	}
+}
+
+func TestAssistantTurnSetupErrorIsNotSuccessfulModelTurn(t *testing.T) {
+	e := promptSetupFailure(map[string]any{"type": "extension_error", "event": "before_agent_start", "error": "[kiko_assistant_mcp_unavailable]"})
+	if !errors.Is(e, errAssistantMCPUnavailable) || promptErrorKind(e) != "assistant_mcp_unavailable" {
+		t.Fatalf("wrong Assistant startup outcome: %v", e)
+	}
+	if e := promptSetupFailure(map[string]any{"type": "message_update", "event": "before_agent_start", "error": "[kiko_assistant_mcp_unavailable]"}); e != nil {
+		t.Fatal("ordinary message content was treated as a trusted failure marker")
 	}
 }

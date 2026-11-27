@@ -9,6 +9,8 @@ import (
 // EmployeeManagementCaller is reconstructed by Manager from the live input. It is never a tool argument.
 type EmployeeManagementCaller struct {
 	Workspace, Actor, Employee, Input string
+	Session, Engine, Assignment       string
+	Generation                        int64
 	Channel                           bool
 }
 
@@ -57,12 +59,11 @@ type EmployeeSummary struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Role    string `json:"role"`
-	Avatar  string `json:"avatar"`
 	Enabled bool   `json:"enabled"`
 }
 
 func ManagementSummary(a Agent) EmployeeSummary {
-	return EmployeeSummary{a.ID, a.Name, a.Role, a.Avatar, a.Enabled}
+	return EmployeeSummary{a.ID, a.Name, a.Role, a.Enabled}
 }
 
 type ManagementResource struct {

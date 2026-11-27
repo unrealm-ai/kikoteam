@@ -5,6 +5,7 @@ export interface AgentConfiguration {
   name: string; role: string; avatar: string; instruction: string; model_profile_id?: string; platform_model_id?: string;
 }
 export interface Agent extends AgentConfiguration {
+  is_assistant?: boolean;
   model_profile_id: string;
   can_manage?: boolean;
   can_chat?: boolean;

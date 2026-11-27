@@ -15,6 +15,7 @@ type AgentCardResources struct {
 	TriggerCount int      `json:"trigger_count"`
 }
 type Agent struct {
+	IsAssistant     bool                `json:"is_assistant,omitempty"`
 	CanChat         bool                `json:"can_chat"`
 	CanManage       bool                `json:"can_manage"`
 	CardResources   *AgentCardResources `json:"card_resources,omitempty"`
@@ -296,6 +297,9 @@ func (s *AgentService) Update(ctx context.Context, w, a, id string, r AgentPatch
 		}
 		if v.Version != r.Version {
 			return Fail("agent_version_conflict", 409, "员工已更新，请刷新后重试")
+		}
+		if v.IsAssistant && r.Avatar != nil {
+			return Fail("assistant_avatar_locked", 403, "KIKO 助手使用平台固定头像，不能更换")
 		}
 		v.CanManage = true
 		old := v

@@ -25,6 +25,7 @@ Go 实现，可多实例部署，主动向 backend 注册、心跳和对账。ba
 - **MCP 接入**　把 builtin MCP、Runner 对每个 stdio 插件提供的 HTTP 端点，以及远程 HTTP MCP 分别写入 Harness 配置。Pi 直接调用目标 MCP，Engine 不实现 MCP Gateway。
 - **人工确认整改**　原 Session 使用 Pi CLI 的受限配置继续原生历史。整改轮次只通过既有人工确认扩展开放职责查询和 `ask_human`，沿原停稳协议交给 Manager 等待新批准。
 - **事项交接**　复用人工确认的 Pi 终止及停稳机制。Manager 按 Input 装配普通任务、接手任务及原任务验收工具。仅事项 MCP 的逐 Input 凭据变化不触发 Pi 重启；现有平台授权扩展通过 Pi 的公开 MCP 注册接口在本轮执行前替换相应客户端，Manager 仍核对请求原有的 Input 身份。模型、事项角色等稳定配置变化不绕过现有 Runner 停稳门禁。见[事项交接](../backend/docs/work-items.md)。
+- **员工管理／助手体验 MCP**　普通任务保持同一 Pi 实例。权限与身份仍由 Manager 逐轮签发并逐调用复验。Engine 等上一轮 Pi 已停稳后才原子写入本轮凭据；既有授权扩展撤下旧连接，确认工具隐藏后才挂载本轮获准的连接。凭据变化或失去资格不会单独引起 Pi 重启；已派发的调用仍使用原连接的授权。连接准备失败时本轮不会提交模型请求。主对话和仅整改轮次不挂载这两个工具族。
 - **TaskSpace 执行历史**　仅 TaskSpace 的执行任务挂载 `task_space_history`，使用当前 Input 的专用凭据直连 Manager MCP。见 [TaskSpace 执行历史](../backend/docs/task-spaces.md#执行-agent-读取同空间任务)。
 - **执行控制**　按 backend 登记的归属与代次领取 Input，响应持久停止边界；与 Runner 协调收尾，无法确认旧执行隔离时阻塞后续执行。backend 受理控制不等于执行已停止。
 - **记录与恢复**　把 Pi 原生输出映射到[平铺会话事件](../backend/docs/session-events.md)，按实际功能实现预设计类型子集；可靠状态提交后推送，临时文本增量不持久化。Pi 持久化原生历史，Engine 保存身份映射，Engine 保留目录并提交 Turn、Input 和可靠事件；故障中断旧 Turn，后续新 Input 加载原会话，不做逐轮检查点或自动续跑。

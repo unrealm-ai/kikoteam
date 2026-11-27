@@ -70,6 +70,17 @@ func TestHostedAssistantProvisioningBothWorkspacePaths(t *testing.T) {
 		if err != nil || entry.AgentID == "" || len(entry.Cards) != 3 || entry.Experienced {
 			t.Fatal(entry, err)
 		}
+		agents := &service.AgentService{Store: NewAgentStore(db)}
+		before, err := agents.Get(ctx, w, user, entry.AgentID)
+		if err != nil || !before.IsAssistant {
+			t.Fatal(before, err)
+		}
+		avatar := "custom-avatar"
+		_, err = agents.Update(ctx, w, user, entry.AgentID, service.AgentPatch{Version: before.Version, Avatar: &avatar})
+		var denied *service.Error
+		if !errors.As(err, &denied) || denied.Code != "assistant_avatar_locked" {
+			t.Fatal(err)
+		}
 		var creator, payer string
 		if err = db.QueryRow(`SELECT a.creator_account_id,k.payer_account_id FROM platform_agents a
  JOIN platform_agent_model_keys k ON k.agent_id=a.id WHERE a.id=$1 AND a.platform_model_id=$2`, entry.AgentID, model).Scan(&creator, &payer); err != nil || creator != user || payer != user {

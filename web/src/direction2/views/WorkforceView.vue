@@ -20,6 +20,7 @@ import PlatformPackagesPanel from './PlatformPackagesPanel.vue';
 import PlatformTriggersPanel from './PlatformTriggersPanel.vue';
 import { useWorkforcePorts } from '../api/workforce-ports';
 import { useWorkforceChannelStatuses } from '../composables/useWorkforceChannelStatuses';
+import { useWorkforceConnectionDirectory } from '../composables/useWorkforceConnectionDirectory';
 import { D2ApiError, activeWorkspaceId } from '../api/client';
 import { realPlatform, platformAuth } from '../api/platform';
 import type { AgentStatusCounts } from '../api/agents';
@@ -44,7 +45,6 @@ import {
   buildPrincipalRefsFromIds,
   isEmployeeRolePresetApplied,
   isPersonaConstraintApplied,
-  mergeConnectionDirectoryData,
   normalizeEmployeeAccessSelections,
   patchVerifiedWecomOnEmployee
 } from '../utils/workforce';
@@ -56,7 +56,6 @@ import {
   type ChannelDirectoryUser,
   type ChannelGroupOption,
   type ChannelSyncSourceDetail,
-  type ConnectionDirectoryQueryResult,
   type DigitalEmployee,
   type EmployeeChannelBinding,
   type EmployeeTrigger,
@@ -206,6 +205,7 @@ const rulesTabRef = ref<InstanceType<typeof WorkforceRulesTab> | null>(null);
 
 const avatarPresets = ALL_AVATAR_PRESETS;
 const showAvatarPickerModal = ref(false);
+const canChangeAvatar = computed(() => canManage.value && !currentEditingEmp.value?.isAssistant);
 
 function normalizeEmp(emp: DigitalEmployee): DigitalEmployee {
   emp.executionEngine = normalizeExecutionEngine(emp.executionEngine);
@@ -387,6 +387,7 @@ async function patchBasicsSection<K extends keyof DigitalEmployee>(
 }
 
 async function selectAvatar(av: string) {
+  if (!canChangeAvatar.value) return;
   if(!canManage.value){message.warning('你没有此员工的管理权限');return;}
   const emp = currentEditingEmp.value;
   if (!emp) return;
@@ -605,47 +606,9 @@ function handleEmployeeCreated(newEmp: DigitalEmployee) {
   void openEmployeeDetail(newEmp, 'channels');
 }
 
-function mergeConnectionDirectoryResult(res: ConnectionDirectoryQueryResult) {
-  const merged = mergeConnectionDirectoryData(directoryUsers.value, directoryDepartments.value, res);
-  directoryUsers.value = merged.users;
-  directoryDepartments.value = merged.departments;
-}
-
-async function preloadConnectionScopedDirectory(sources: ChannelSyncSourceDetail[]) {
-  directoryUsers.value = [];
-  const connTasks: Promise<ConnectionDirectoryQueryResult>[] = [
-    resourcesApi.queryWebDirectory({ page: 1, pageSize: 20 })
-  ];
-  const seenConns = new Set<string>();
-  const enqueueConn = (channel: PlatformType, connectionId?: string | undefined) => {
-    const cleanConn = connectionId?.trim();
-    if (!cleanConn) return;
-    const key = `${channel}::${cleanConn}`;
-    if (seenConns.has(key)) return;
-    seenConns.add(key);
-    if (channel === 'feishu' || channel === 'dingtalk') {
-      connTasks.push(resourcesApi.queryChannelSnapshotDirectory(channel, cleanConn, { page: 1, pageSize: 20 }));
-    } else if (channel === 'wecom') {
-      connTasks.push(resourcesApi.searchWecomConnectionDirectory(cleanConn, { page: 1, pageSize: 20 }));
-    }
-  };
-
-  for (const src of sources) {
-    enqueueConn(src.channel, src.connectionId);
-  }
-  for (const emp of employees.value) {
-    for (const ch of emp.channels) {
-      enqueueConn(ch.platform, ch.connectionId);
-    }
-  }
-
-  const results = await Promise.allSettled(connTasks);
-  for (const r of results) {
-    if (r.status === 'fulfilled') {
-      mergeConnectionDirectoryResult(r.value);
-    }
-  }
-}
+const { mergeConnectionDirectoryResult, preloadConnectionScopedDirectory } = useWorkforceConnectionDirectory({
+  resourcesApi, employees, directoryUsers, directoryDepartments
+});
 
 const isLoading = ref(false);
 const hasLoadedOnce = ref(false);
@@ -1171,9 +1134,9 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
         <div class="detail-hero-left">
           <button class="back-link-btn" @click="handleBackToList">← 返回员工名录</button>
           <div class="emp-profile-summary">
-            <div class="profile-avatar-wrap" :class="{ 'avatar-clickable': canManage }" :title="canManage ? '点击更换员工头像' : undefined" @click="canManage && (showAvatarPickerModal = true)">
-              <D2EmployeeAvatar :name="currentEditingEmp.name" :preset="currentEditingEmp.avatar" :identity-key="currentEditingEmp.id" size="lg" />
-              <span v-if="canManage" class="avatar-edit-badge">更换</span>
+            <div class="profile-avatar-wrap" :class="{ 'avatar-clickable': canChangeAvatar }" :title="canChangeAvatar ? '点击更换员工头像' : undefined" @click="canChangeAvatar && (showAvatarPickerModal = true)">
+              <D2EmployeeAvatar :name="currentEditingEmp.name" :preset="currentEditingEmp.avatar" :identity-key="currentEditingEmp.id" :assistant="currentEditingEmp.isAssistant" size="lg" />
+              <span v-if="canChangeAvatar" class="avatar-edit-badge">更换</span>
             </div>
             <div class="profile-titles">
               <div class="pt-row">
@@ -1580,7 +1543,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
     </template>
 
     <!-- 更换头像弹窗 -->
-    <NModal v-model:show="showAvatarPickerModal" preset="card" title="选择员工头像" style="width: min(520px, 94vw);">
+    <NModal v-if="canChangeAvatar" v-model:show="showAvatarPickerModal" preset="card" title="选择员工头像" style="width: min(520px, 94vw);">
       <div class="avatar-picker-header">
         <div class="avatar-picker-intro">
           <D2EmployeeAvatar :name="currentEditingEmp?.name || ''" :preset="currentEditingEmp?.avatar" :identity-key="currentEditingEmp?.id" size="lg" />

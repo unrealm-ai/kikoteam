@@ -12,7 +12,7 @@ import SessionTaskReport from './SessionTaskReport.vue';
 import D2EmployeeAvatar from './D2EmployeeAvatar.vue';
 import { clockTime, eventText, presentationRows, sessionStatus as status, taskReport, toolTaskTarget, type TaskNavigationTarget } from '../utils/session-presentation';
 import { classifyArtifact, formatArtifactSize } from '../utils/artifact-preview';
-const props = defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; subtitle?: string | undefined; agentAvatar?: string | undefined; agentId?: string | undefined; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined; artifacts?: TaskArtifact[] | undefined; initialInputText?: string | undefined; initialInputTime?: string | undefined; selectedArtifactId?: string | undefined }>();
+const props = withDefaults(defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; subtitle?: string | undefined; agentAvatar?: string | undefined; assistantAvatar?: boolean | undefined; assistantAvatarBusy?: boolean | undefined; agentId?: string | undefined; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined; artifacts?: TaskArtifact[] | undefined; initialInputText?: string | undefined; initialInputTime?: string | undefined; selectedArtifactId?: string | undefined }>(), { assistantAvatarBusy: undefined });
 const emit = defineEmits<{ changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [target: TaskNavigationTarget, turn?: string]; selectArtifact: [file: TaskArtifact]; downloadArtifact: [file: TaskArtifact] }>();
 const flow = useSessionEvents(toRef(props, 'workspace'), toRef(props, 'sessionId'), () => emit('changed'), toRef(props, 'turnId'));
 const { session } = flow;
@@ -173,6 +173,8 @@ async function confirm(requestID: string, confirmed: boolean) {
 }
 const stopUnavailable = computed(() => !writable.value || !!props.turnId || controlBusy.value || submitting.value || held.value || (props.publicDetail ? !shared.value?.can_stop : props.stopDisabled || !session.value || session.value.lifecycle === 'archived'));
 const isActiveExecution = computed(() => ['running', 'queued', 'stopping'].includes(session.value?.execution.state || ''));
+const assistantWorking = computed(() => props.assistantAvatarBusy === undefined ? undefined :
+  props.assistantAvatarBusy || ['running', 'stopping'].includes(session.value?.execution.state || ''));
 async function stop() {
   if (stopUnavailable.value) return;
   const id = props.sessionId, w = props.workspace; controlBusy.value = true; actionError.value = ''; notice.value = '';
@@ -250,7 +252,7 @@ watch(rows, async (nextRows, prevRows) => {
   <section class="session-panel" :aria-label="title">
     <header v-if="!embedded" class="unified-session-header">
       <slot name="header-prefix" />
-      <D2EmployeeAvatar v-if="!task && agentId" :name="title" :preset="agentAvatar" :identity-key="agentId" size="sm" />
+      <D2EmployeeAvatar v-if="!task && agentId" :name="title" :preset="agentAvatar" :identity-key="agentId" :assistant="assistantAvatar" :assistant-busy="assistantWorking" size="sm" />
       <div class="session-heading">
         <div class="session-heading-top">
           <strong>{{ title }}</strong>

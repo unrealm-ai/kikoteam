@@ -10,6 +10,23 @@ test('basic save preserves employee CAS, omits unchanged model and never submits
  await port.updateEmployeeBasics('a',{name:'New',modelId:'workspace:m',thinkingLevel:null,channels:['not submitted']},7);
  assert.deepEqual(writes,[{name:'New',version:7}]);
 });
+test('full assistant save leaves the fixed avatar out but still updates the profile',async()=>{
+ const writes=[];
+ globalThis.fetch=async(url,init={})=>{
+  if(url.endsWith('/agents/a')){
+   const patch=init.method==='PATCH'?JSON.parse(init.body):null;
+   if(patch)writes.push(patch);
+   return Response.json({...agent,is_assistant:true,...(patch?{name:patch.name,version:8}:{})});
+  }
+  return response(url);
+ };
+ const employee=await api.getWorkforcePlatformEmployee('assistant','a');
+ const saved=await api.createWorkforcePlatformActions(()=> 'assistant').saveFullEmployee('a',{...employee,name:'Renamed assistant'},7);
+ assert.equal(saved.name,'Renamed assistant');
+ assert.equal(saved.isAssistant,true);
+ assert.equal(writes.length,1);
+ assert.equal(Object.hasOwn(writes[0],'avatar'),false);
+});
 test('stale form is rejected before write and full save refuses cross-resource draft overwrite',async()=>{
  let writes=0;globalThis.fetch=async(url,init={})=>{if(init.method==='PATCH')writes++;return response(url);};
  const employee=await api.getWorkforcePlatformEmployee('w','a');const port=api.createWorkforcePlatformActions(()=> 'w');

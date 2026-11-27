@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
 
@@ -27,15 +29,20 @@ func liveManagementCaller(ctx context.Context, t *modelTx, v service.EmployeeMan
  FROM manager_inputs i JOIN manager_sessions s ON s.id=i.session_id
  JOIN platform_workspaces w ON w.id=s.workspace_id
  JOIN manager_conversations c ON c.id=s.conversation_id
+ JOIN platform_agents a ON a.id=s.agent_id AND a.workspace_id=w.id
  WHERE w.id=$1 AND s.agent_id=$2 AND i.id=$3 AND s.mode='task' AND s.lifecycle='active'
  AND i.status='started' AND i.turn_id=s.active_turn_id AND s.stop_revision=s.applied_stop_revision
+ AND c.lifecycle='active' AND a.enabled AND i.admission_epoch=a.admission_epoch
+ AND ($6='' OR (s.id=NULLIF($6,'')::uuid AND s.engine_id=NULLIF($7,'')::uuid
+   AND s.assignment_id=NULLIF($8,'')::uuid AND s.generation=$9))
+ AND NOT EXISTS(SELECT FROM manager_human_chat_inputs h WHERE h.input_id=i.id)
  AND i.source_kind='user' AND i.trigger_agent_loop AND i.trigger_event_id IS NULL AND i.work_assignment_id IS NULL
  AND i.confirmation_request_id IS NULL AND s.trigger_id IS NULL AND manager_input_actor_allowed(i.id)
  AND NOT EXISTS(SELECT FROM manager_tasks k JOIN manager_inputs orig ON orig.id=k.source_chat_input_id
    WHERE k.id=s.task_id AND orig.source_kind<>'user' AND i.seq=1)
  AND (CASE WHEN $5::boolean THEN i.channel_principal_id=$4::uuid AND i.submitted_by IS NULL AND c.channel_chat_type='direct'
  ELSE i.submitted_by=$4::uuid AND i.channel_principal_id IS NULL AND c.web_user_id=i.submitted_by END)
- FOR SHARE OF s,i`, t.workspace, v.Employee, v.Input, v.Actor, v.Channel).Scan(&assistant)
+ FOR SHARE OF s,i`, t.workspace, v.Employee, v.Input, v.Actor, v.Channel, v.Session, v.Engine, v.Assignment, v.Generation).Scan(&assistant)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, managementDenied()
 	}
@@ -53,7 +60,88 @@ func managementTarget(ctx context.Context, t *modelTx, v service.EmployeeManagem
 	return nil
 }
 
+// Acquire the same rows modified by usage/binding changes. Check policy in a
+// separate statement after acquiring the locks so it sees a revoke we waited for.
+// The caller already holds the workspace lock through ModelStore.
+func lockManagementSource(ctx context.Context, t *modelTx, v service.EmployeeManagementCaller, target string) error {
+	if !service.ValidWorkspaceSubject(v.Session) || !service.ValidWorkspaceSubject(v.Engine) ||
+		!service.ValidWorkspaceSubject(v.Assignment) || v.Generation < 1 || !service.ValidWorkspaceSubject(v.Input) ||
+		!service.ValidWorkspaceSubject(v.Employee) || !service.ValidWorkspaceSubject(v.Actor) ||
+		!service.ValidWorkspaceSubject(target) || v.Workspace != t.workspace {
+		return managementDenied()
+	}
+	// Match admission: workspace, employees, conversation, channel, session.
+	// No-key update also permits the normal FK reads on employees.
+	rows, err := t.tx.QueryContext(ctx, `SELECT id FROM platform_agents WHERE workspace_id=$1
+ AND id IN ($2,$3) ORDER BY id FOR NO KEY UPDATE`, t.workspace, v.Employee, target)
+	if err != nil {
+		return err
+	}
+	count, expected := 0, 1
+	if v.Employee != target {
+		expected++
+	}
+	for rows.Next() {
+		count++
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	if count != expected {
+		return managementDenied()
+	}
+	var id string
+	err = t.tx.QueryRowContext(ctx, `SELECT c.id FROM manager_conversations c
+ JOIN manager_sessions s ON s.conversation_id=c.id
+ WHERE s.id=$1 AND c.workspace_id=$2 FOR SHARE OF c NOWAIT`, v.Session, t.workspace).Scan(&id)
+	if err != nil {
+		return denyMissingManagementRow(err)
+	}
+	if v.Channel {
+		if err = lockManagementChannel(ctx, t, v); err != nil {
+			return err
+		}
+	}
+	err = t.tx.QueryRowContext(ctx, `SELECT s.id FROM manager_sessions s JOIN manager_inputs i ON i.session_id=s.id
+ WHERE s.id=$1 AND i.id=$2 AND s.workspace_id=$3 FOR SHARE OF s,i NOWAIT`, v.Session, v.Input, t.workspace).Scan(&id)
+	return denyMissingManagementRow(err)
+}
+
+func lockManagementChannel(ctx context.Context, t *modelTx, v service.EmployeeManagementCaller) error {
+	var binding, locked string
+	err := t.tx.QueryRowContext(ctx, `SELECT channel_binding_id FROM manager_conversations c
+ JOIN manager_sessions s ON s.conversation_id=c.id WHERE s.id=$1 AND c.channel_binding_id IS NOT NULL`, v.Session).Scan(&binding)
+	if err != nil {
+		return denyMissingManagementRow(err)
+	}
+	err = t.tx.QueryRowContext(ctx, `SELECT id FROM platform_channel_bindings
+ WHERE id=$1 AND workspace_id=$2 AND agent_id=$3 FOR SHARE`, binding, t.workspace, v.Employee).Scan(&locked)
+	if err != nil {
+		return denyMissingManagementRow(err)
+	}
+	err = t.tx.QueryRowContext(ctx, `SELECT id FROM manager_channel_principals
+ WHERE id=$1 AND workspace_id=$2 AND binding_id=$3 FOR SHARE`, v.Actor, t.workspace, binding).Scan(&locked)
+	return denyMissingManagementRow(err)
+}
+
+func denyMissingManagementRow(err error) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return managementDenied()
+	}
+	var lockErr *pgconn.PgError
+	if errors.As(err, &lockErr) && lockErr.Code == "55P03" {
+		return service.Fail("employee_management_busy", 409, "当前任务状态正在更新，请稍后重试")
+	}
+	return err
+}
+
 func authorizeManagementWrite(ctx context.Context, t *modelTx, v service.EmployeeManagementCaller, target string) error {
+	if err := lockManagementSource(ctx, t, v, target); err != nil {
+		return err
+	}
 	if err := managementTarget(ctx, t, v, target); err != nil {
 		return err
 	}
@@ -107,13 +195,13 @@ func (s *EmployeeManagementStore) Read(ctx context.Context, v service.EmployeeMa
 }
 
 func (s *EmployeeManagementStore) Employees(ctx context.Context, v service.EmployeeManagementCaller, q service.ManagementQuery) (service.ManagementPage[service.EmployeeSummary], error) {
-	return managementList(ctx, s, v, q, func(t *modelTx) error { return authorizeAssistantWeb(ctx, t, v) }, `SELECT id,name,role,avatar,enabled,created_at FROM platform_agents WHERE workspace_id=$1`,
+	return managementList(ctx, s, v, q, func(t *modelTx) error { return authorizeAssistantWeb(ctx, t, v) }, `SELECT id,name,role,enabled,created_at FROM platform_agents WHERE workspace_id=$1`,
 		func(r *sql.Rows) (service.EmployeeSummary, error) {
 			var a service.EmployeeSummary
-			e := r.Scan(&a.ID, &a.Name, &a.Role, &a.Avatar, &a.Enabled)
+			e := r.Scan(&a.ID, &a.Name, &a.Role, &a.Enabled)
 			return a, e
 		},
-		"id,name,role,avatar,enabled")
+		"id,name,role,enabled")
 }
 
 var managementResources = map[string]string{
@@ -182,7 +270,14 @@ func authorizeResourceCatalog(ctx context.Context, t *modelTx, v service.Employe
 		return authorizeAssistantWeb(ctx, t, v)
 	}
 	if v.Channel {
-		return authorizeManagementWrite(ctx, t, v, target)
+		if err := managementTarget(ctx, t, v, target); err != nil {
+			return err
+		}
+		allowed, err := managementPermission(ctx, t, v, target)
+		if err == nil && !allowed {
+			return managementDenied()
+		}
+		return err
 	}
 	if err := managementTarget(ctx, t, v, target); err != nil {
 		return err

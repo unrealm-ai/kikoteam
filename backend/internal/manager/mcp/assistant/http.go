@@ -34,7 +34,7 @@ func Config(ctx context.Context) ms.HarnessConfig {
 }
 
 func Mount(mux *http.ServeMux, engine Engine, allow Allow, secret, family, mode string, server *sdk.Server) {
-	mount(mux, engine, secret, family, mode, func(ctx context.Context, cfg ms.HarnessConfig, actor string) (context.Context, bool) {
+	mount(mux, engine, secret, family, mode, func(ctx context.Context, cfg ms.HarnessConfig, actor string, _ ms.DelegationIdentity) (context.Context, bool) {
 		if mode == "task" && cfg.Configuration.Capabilities == nil {
 			return ctx, false
 		}
@@ -44,8 +44,9 @@ func Mount(mux *http.ServeMux, engine Engine, allow Allow, secret, family, mode 
 }
 
 func MountPlatform(mux *http.ServeMux, engine Engine, secret string, assistant, ordinary *sdk.Server) {
-	mount(mux, engine, secret, "platform", "task", func(ctx context.Context, cfg ms.HarnessConfig, actor string) (context.Context, bool) {
-		caller := ps.EmployeeManagementCaller{Workspace: cfg.WorkspaceID, Actor: actor, Employee: cfg.AgentID, Input: cfg.InputID, Channel: cfg.ChannelPrincipalID != nil}
+	mount(mux, engine, secret, "platform", "task", func(ctx context.Context, cfg ms.HarnessConfig, actor string, id ms.DelegationIdentity) (context.Context, bool) {
+		caller := ps.EmployeeManagementCaller{Workspace: cfg.WorkspaceID, Actor: actor, Employee: cfg.AgentID, Input: cfg.InputID, Channel: cfg.ChannelPrincipalID != nil,
+			Session: id.SessionID, Engine: id.EngineID, Assignment: id.AssignmentID, Generation: id.Generation}
 		return ps.WithEmployeeManagement(ctx, caller), cfg.EmployeeManagementEligible && actor != ""
 	}, func(r *http.Request) *sdk.Server {
 		cfg := Config(r.Context())
@@ -56,7 +57,7 @@ func MountPlatform(mux *http.ServeMux, engine Engine, secret string, assistant, 
 	})
 }
 
-type authorize func(context.Context, ms.HarnessConfig, string) (context.Context, bool)
+type authorize func(context.Context, ms.HarnessConfig, string, ms.DelegationIdentity) (context.Context, bool)
 
 func mount(mux *http.ServeMux, engine Engine, secret, family, mode string, auth authorize, selectServer func(*http.Request) *sdk.Server) {
 	transport := sdk.NewStreamableHTTPHandler(selectServer, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
@@ -80,7 +81,7 @@ func mount(mux *http.ServeMux, engine Engine, secret, family, mode string, auth 
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		ctx, ok := auth(ctx, cfg, actor)
+		ctx, ok := auth(ctx, cfg, actor, id)
 		if !ok {
 			w.WriteHeader(http.StatusForbidden)
 			return

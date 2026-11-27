@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-108 -98 216 206" fill="none">
+  <defs>
+    <linearGradient id="mint-body" x1="-70" y1="-70" x2="70" y2="75" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4CE6B4" />
+      <stop offset="0.52" stop-color="#25C795" />
+      <stop offset="1" stop-color="#14A377" />
+    </linearGradient>
+
+    <linearGradient id="mint-rim" x1="0" y1="-70" x2="0" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.45" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+
+    <radialGradient id="floor-shadow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#0F172A" stop-opacity="0.14" />
+      <stop offset="1" stop-color="#0F172A" stop-opacity="0" />
+    </radialGradient>
+
+    <pattern id="led-matrix" width="10" height="10" patternUnits="userSpaceOnUse">
+      <circle cx="5" cy="5" r="1.15" fill="#064E3B" fill-opacity="0.09" />
+    </pattern>
+
+    <clipPath id="voxel-head-clip">
+      <rect x="-42" y="-70" width="84" height="140" rx="12" />
+      <rect x="-58" y="-56" width="116" height="112" rx="14" />
+      <rect x="-72" y="-42" width="144" height="84" rx="14" />
+      <rect x="-86" y="-22" width="172" height="44" rx="12" />
+    </clipPath>
+
+    <g id="voxel-body">
+      <ellipse cx="0" cy="86" rx="58" ry="10" fill="url(#floor-shadow)" />
+      <g clip-path="url(#voxel-head-clip)">
+        <rect x="-90" y="-76" width="180" height="152" fill="url(#mint-body)" />
+        <rect x="-90" y="-76" width="180" height="152" fill="url(#led-matrix)" />
+        <rect x="-90" y="-72" width="180" height="58" fill="url(#mint-rim)" />
+        <rect x="-86" y="54" width="172" height="22" fill="#0B7A58" fill-opacity="0.18" />
+      </g>
+    </g>
+  </defs>
+  <g>
+      <use href="#voxel-body" />
+      <!-- Crisp dark charcoal eyes with micro highlight -->
+      <rect x="-36" y="-14" width="18" height="20" rx="5" fill="#18181B" />
+      <rect x="18" y="-14" width="18" height="20" rx="5" fill="#18181B" />
+      <rect x="-32" y="-10" width="5" height="5" rx="1.5" fill="#A7F3D0" fill-opacity="0.85" />
+      <rect x="22" y="-10" width="5" height="5" rx="1.5" fill="#A7F3D0" fill-opacity="0.85" />
+      <!-- Mouth -->
+      <rect x="-9" y="20" width="18" height="10" rx="4" fill="#18181B" />
+  </g>
+</svg>

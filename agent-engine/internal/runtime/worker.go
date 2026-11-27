@@ -488,8 +488,8 @@ func (w *Worker) finishPrompt(ctx context.Context, writer *eventWriter, client *
 	status, code := "completed", ""
 	if stopped {
 		status = "canceled"
-	} else if errors.Is(err, errWorkMCPUnavailable) {
-		status, code = "failed", "work_mcp_unavailable"
+	} else if errors.Is(err, errWorkMCPUnavailable) || errors.Is(err, errAssistantMCPUnavailable) {
+		status, code = "failed", promptErrorKind(err)
 	} else if err != nil || writer.err != nil {
 		status = "failed"
 		code = "execution_failed"
@@ -508,6 +508,19 @@ func (w *Worker) finishPrompt(ctx context.Context, writer *eventWriter, client *
 }
 
 var errWorkMCPUnavailable = errors.New("[kiko_work_mcp_unavailable]")
+var errAssistantMCPUnavailable = errors.New("[kiko_assistant_mcp_unavailable]")
+
+func promptSetupFailure(u pi.Update) error {
+	if u["type"] != "extension_error" || u["event"] != "before_agent_start" {
+		return nil
+	}
+	for _, err := range []error{errWorkMCPUnavailable, errAssistantMCPUnavailable} {
+		if u["error"] == err.Error() {
+			return err
+		}
+	}
+	return nil
+}
 
 func (w *Worker) readPrompt(ctx, promptCtx context.Context, cancel context.CancelCauseFunc, writer *eventWriter, client *pi.Client, promptText string, requests chan<- pi.Update, state *steering) error {
 	var setupErr error
@@ -520,8 +533,8 @@ func (w *Worker) readPrompt(ctx, promptCtx context.Context, cancel context.Cance
 		}
 	}
 	_, err := client.Prompt(promptCtx, promptText, func() { recordRoot("committed") }, func(u pi.Update) {
-		if u["type"] == "extension_error" && u["event"] == "before_agent_start" && u["error"] == errWorkMCPUnavailable.Error() {
-			setupErr = errWorkMCPUnavailable
+		if e := promptSetupFailure(u); e != nil {
+			setupErr = errors.Join(setupErr, e)
 		}
 		if u["type"] == "extension_ui_request" && u["method"] == "confirm" {
 			select {

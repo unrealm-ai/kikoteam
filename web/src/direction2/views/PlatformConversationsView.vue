@@ -14,9 +14,9 @@ import { agentsApi, type Agent } from '../api/agents';
 import { managerApi, type Conversation, type ManagerSession } from '../api/manager';
 import { taskApi } from '../api/tasks';
 import { sessionStatus, workItemProgress, type TaskNavigationTarget } from '../utils/session-presentation';
-const props = defineProps<{ accountId?: string | undefined; selectedEmployeeId?: string | undefined; selectedConversationId?: string | undefined; assistantEntry?: AssistantEntry | undefined;
+const props = defineProps<{ accountId?: string | undefined; selectedEmployeeId?: string | undefined; selectedConversationId?: string | undefined; assistantEntry?: AssistantEntry | undefined; assistantOpenRequest?: number | undefined;
  assistantDemo?: {card: AssistantCard; workspace: string; agent: string; key: string} | undefined }>();
-const emit = defineEmits<{demoConsumed: [key: string]}>();
+const emit = defineEmits<{demoConsumed: [key: string]; selectEmployee: [id: string, direct?: boolean]}>();
 const demoOpen = ref(false);
 const demoCards = computed(() => props.assistantEntry?.agent_id === selected.value && !props.selectedConversationId ? props.assistantEntry?.cards || [] : []);
 const agents = ref<Agent[]>([]), startedIds = ref<string[]>([]), selected = ref(''), search = ref(''), listError = ref(''), loading = ref(false);
@@ -54,6 +54,10 @@ const modalAgents = computed(() => {
 });
 const unstartedCount = computed(() => agents.value.filter(a => !startedIds.value.includes(a.id)).length);
 const runningTasksCount = computed(() => tasks.value.filter(t => ['running', 'queued', 'stopping'].includes(t.execution.state)).length);
+const assistantChat = computed(() => !props.selectedConversationId && (
+  employee.value?.is_assistant === true || !!employee.value && props.assistantEntry?.agent_id === employee.value.id
+));
+const assistantBusy = computed(() => sending.value || chatSending.value || tasks.value.some(t => ['running', 'stopping'].includes(t.execution.state)));
 function storageKey(w: string) { return `kiko:started-chats:v2:${props.accountId}:${w}`; }
 function readStoredStarted(w: string): string[] {
   try {
@@ -74,10 +78,14 @@ function markStarted(agentId: string) {
   startedIds.value = next;
   persistStarted(activeWorkspaceId.value, next);
 }
-function startAgentChat(agentId: string) {
-  markStarted(agentId);
+function selectDirectEmployee(agentId: string) {
+  emit('selectEmployee', agentId, true);
   selected.value = agentId;
   mobileChat.value = true;
+}
+function startAgentChat(agentId: string) {
+  markStarted(agentId);
+  selectDirectEmployee(agentId);
   newChatOpen.value = false;
   modalSearch.value = '';
 }
@@ -106,7 +114,9 @@ async function loadAgents() {
     startedIds.value = merged;
     persistStarted(w, merged);
     agents.value = all;
-    selected.value = props.selectedEmployeeId && validIds.has(props.selectedEmployeeId) ? props.selectedEmployeeId : (merged[0] || all[0]?.id || '');
+    const requested = props.selectedEmployeeId && validIds.has(props.selectedEmployeeId) ? props.selectedEmployeeId : '';
+    selected.value = requested || merged[0] || all[0]?.id || '';
+    if (requested) mobileChat.value = true;
   } catch (e) { if (!signal.aborted) listError.value = e instanceof Error ? e.message : '员工加载失败'; }
   finally { if (!signal.aborted) loading.value = false; }
 }
@@ -221,11 +231,14 @@ async function openTask(target: TaskNavigationTarget, turn = '') {
     taskID.value = task.sessionID; detailTaskID.value = task.taskID; detailTurnID.value = turn; showTasks.value = true; showFiles.value = false;
   } catch (e) { if (g === generation && attempt === taskOpenGeneration) tasksError.value = e instanceof Error ? e.message : '任务详情不可读取'; }
 }
-watch(selected, () => { void open(); });
+watch(selected, id => { if (id) emit('selectEmployee', id); });
+watch([selected, () => props.selectedConversationId], () => { void open(); }, { flush: 'post' });
 watch(showTasks, visible => { if (!visible) { taskOpenGeneration++; taskFullscreen.value = false; } });
 watch(taskID, id => { if (!id) { taskOpenGeneration++; taskFullscreen.value = false; } });
 watch(() => props.selectedEmployeeId, id => { if (id && agents.value.some(a => a.id === id)) { selected.value = id; mobileChat.value = true; } });
-watch(() => props.selectedConversationId, () => { void open(); });
+watch(() => props.assistantOpenRequest, () => {
+  if (assistantChat.value) mobileChat.value = true;
+}, { flush: 'post' });
 watch([activeWorkspaceId, () => props.accountId], () => { selected.value = ''; newChatOpen.value = false; modalSearch.value = ''; void loadAgents(); });
 onMounted(() => { void loadAgents(); timer = setInterval(() => { void refreshTasks(); }, 5000); document.addEventListener('visibilitychange', visibility); });
 onUnmounted(() => { generation++; controller.abort(); listController.abort(); if (timer) clearInterval(timer); document.removeEventListener('visibilitychange', visibility); });
@@ -243,8 +256,8 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
       <p v-if="listError" class="error">{{ listError }} <NButton size="tiny" @click="loadAgents">重试</NButton></p>
       <NSkeleton v-if="loading" text :repeat="4" />
       <div class="sidebar-items">
-        <button v-for="agent in filtered" :key="agent.id" class="employee" :class="{ selected: selected === agent.id }" @click="selected = agent.id; mobileChat = true">
-          <D2EmployeeAvatar :name="agent.name" :preset="agent.avatar" :identity-key="agent.id" size="md" />
+        <button v-for="agent in filtered" :key="agent.id" class="employee" :class="{ selected: selected === agent.id }" @click="selectDirectEmployee(agent.id)">
+          <D2EmployeeAvatar :name="agent.name" :preset="agent.avatar" :identity-key="agent.id" :assistant="agent.is_assistant" size="md" />
           <span class="emp-meta">
             <span class="emp-name-row">
               <strong>{{ agent.name }}</strong>
@@ -264,7 +277,7 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
     <main class="chat-area">
       <header v-if="!chatID" class="unified-fallback-header">
         <NButton class="back" size="small" @click="mobileChat = false">返回员工列表</NButton>
-        <D2EmployeeAvatar v-if="employee" :name="employee.name" :preset="employee.avatar" :identity-key="employee.id" size="sm" />
+        <D2EmployeeAvatar v-if="employee" :name="employee.name" :preset="employee.avatar" :identity-key="employee.id" :assistant="employee.is_assistant || assistantChat" :assistant-busy="assistantChat ? assistantBusy : undefined" size="sm" />
         <div class="fallback-heading">
           <strong>{{ employee?.name || '选择 AI 员工' }}</strong>
           <span class="muted">{{ employee?.role || '对话协作 · 任务持续跟进' }}</span>
@@ -291,6 +304,8 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
             :subtitle="employee?.role || '对话协作 · 任务持续跟进'"
             :agent-avatar="employee?.avatar"
             :agent-id="employee?.id"
+            :assistant-avatar="employee?.is_assistant || assistantChat"
+            :assistant-avatar-busy="assistantChat ? assistantBusy : undefined"
             :tasks="tasks"
             :attachment-paths="draft.paths.value"
             :attachment-ids="draft.attachmentIds.value"
@@ -316,8 +331,8 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
           </ManagerSessionPanel>
           <section v-else-if="conversation.lifecycle === 'active'" class="new-chat">
             <div class="new-chat-body">
-              <div class="welcome-card">
-                <D2EmployeeAvatar v-if="employee" :name="employee.name" :preset="employee.avatar" :identity-key="employee.id" size="lg" />
+              <div class="welcome-card" :class="{ 'has-demo-cards': demoCards.length && !assistantEntry?.experienced && !demoOpen }">
+                <D2EmployeeAvatar v-if="employee" :name="employee.name" :preset="employee.avatar" :identity-key="employee.id" :assistant="employee.is_assistant || assistantChat" :assistant-busy="assistantChat ? assistantBusy : undefined" size="lg" />
                 <h3>与「{{ employee?.name }}」开始协作</h3>
                 <p class="muted">{{ employee?.role ? `${employee.role}。` : '' }}暂无历史消息，请向「{{ employee?.name }}」发送工作需求。</p>
                 <AssistantDemoCards v-if="demoCards.length && !assistantEntry?.experienced && !demoOpen" :cards="demoCards" :disabled="locked" @choose="card => sendDemo(card)" />
@@ -373,7 +388,7 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
         <NInput v-model:value="modalSearch" size="small" clearable placeholder="搜索 AI 员工姓名或岗位..." style="margin-bottom:10px" />
         <div class="modal-agent-list">
           <button v-for="agent in modalAgents" :key="agent.id" type="button" class="modal-agent-item" @click="startAgentChat(agent.id)">
-            <D2EmployeeAvatar :name="agent.name" :preset="agent.avatar" :identity-key="agent.id" size="sm" />
+            <D2EmployeeAvatar :name="agent.name" :preset="agent.avatar" :identity-key="agent.id" :assistant="agent.is_assistant" size="sm" />
             <div class="modal-agent-info">
               <strong>{{ agent.name }}</strong>
               <small>{{ agent.role || 'AI 员工' }}</small>
@@ -418,6 +433,7 @@ h3{font-size:14px;margin:0}
 .new-chat{flex:1;border:1px solid var(--id-border-subtle);border-radius:var(--id-radius-lg);background:var(--id-bg-surface);display:flex;flex-direction:column;overflow:hidden;min-height:420px}
 .new-chat-body{flex:1;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--id-bg-subtle);overflow:auto}
 .welcome-card{max-width:440px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px}
+.welcome-card.has-demo-cards{max-width:820px;width:100%}
 .welcome-card h3{font-size:16px;font-weight:600;color:var(--id-text-primary);margin-top:4px}
 .welcome-card p{margin:0;line-height:1.6}
 .quick-prompts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:6px}

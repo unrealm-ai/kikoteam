@@ -14,8 +14,8 @@ const pause=async()=>{await new Promise(r=>setTimeout(r,40));await nextTick()};
 
 const fixture={id:'template-one',scope:'official',version:2,sequence:1,template_version_id:'fixed-version',latest_version_id:'fixed-version',published_version_id:'fixed-version',is_listed:true,status:'published',has_unpublished_changes:false,content:{schema_version:1,name:'周报员',role:'整理工单与代码',avatar:'',category:'engineering',instruction_template:'整理周报',parameters:[],resource_refs:[],examples:[],packages:[{package_key:'weekly',name:'整理工单',description:'业务进展',onboarding_requirement:'required',skills:[],plugins:[]},{package_key:'code',name:'补充代码变更',description:'代码提交摘要',onboarding_requirement:'deferred',skills:[],plugins:[]}]}};
 const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
-async function mount(role='owner',create,template=fixture){
- const calls=[],guards=[],navigations=[];globalThis.fetch=async(url,init={})=>{
+async function mount(role='owner',create,template=fixture,extraProps={}){
+ const calls=[],guards=[],navigations=[],demos=[];let assistantOpens=0;globalThis.fetch=async(url,init={})=>{
  calls.push({url,init,body:init.body?JSON.parse(init.body):null});
  if(url.endsWith('/agents/from-template'))return create?create():Response.json({id:'created-agent',name:'周报员'});
  if(url.includes('/capability-package-templates?'))return Response.json({items:[],total:0,page:1,page_size:20});
@@ -28,8 +28,8 @@ async function mount(role='owner',create,template=fixture){
  return Response.json({role});
  };
  activeWorkspaceId.value='workspace-one';const host=document.createElement('div');document.body.append(host);
- const app=createApp({render:()=>h(NMessageProvider,null,{default:()=>h(AgentMarketView,{platformAdmin:false,onNavigate:(...a)=>navigations.push(a)})})});app.provide('d2DraftGuard',{register:g=>guards.push(g),unregister:()=>{}});app.mount(host);await pause();
- return {calls,guards,navigations,async cleanup(){app.unmount();host.remove();await pause()}};
+ const app=createApp({render:()=>h(NMessageProvider,null,{default:()=>h(AgentMarketView,{platformAdmin:false,...extraProps,onNavigate:(...a)=>navigations.push(a),onAssistantDemo:c=>demos.push(c),onOpenAssistant:()=>{assistantOpens+=1}})})});app.provide('d2DraftGuard',{register:g=>guards.push(g),unregister:()=>{}});app.mount(host);await pause();
+ return {calls,guards,navigations,demos,get assistantOpens(){return assistantOpens},async cleanup(){app.unmount();host.remove();await pause()}};
 }
 test('market card and detail display the portrait saved in the template', async () => {
  const template = {...fixture, content: {...fixture.content, avatar: 'cn-v2-06'}};
@@ -93,4 +93,69 @@ test('create a market preset directly without a workspace package template',asyn
   assert.deepEqual(c.packages[0].skills,[{resource_key:skill.resource_key}]);
   assert.deepEqual(c.packages[0].plugins,[{resource_key:plugin.resource_key}]);
  }finally{await m.cleanup()}
+});
+
+test('market shows demo cards with quick-create actions and emits assistantDemo/openAssistant', async () => {
+ const card = {
+  key: 'complaints',
+  title: '并行处理两起客诉',
+  description: '同时查两单，分别给出处理方案。',
+  input: 'demo-input',
+ };
+ const m = await mount('member', undefined, fixture, {
+  assistantAgentId: 'assistant-1',
+  assistantCards: [card],
+ });
+ try {
+  assert.equal(document.querySelector('.onboarding-pill')?.textContent.trim(),'内置体验工具使用样例数据');
+  const cardBtn = document.querySelector('.demo-card');
+  assert.ok(cardBtn);
+  assert.match(cardBtn.textContent, /推荐/);
+  assert.match(cardBtn.textContent, /同时跟进两单/);
+  cardBtn.click();
+  await pause();
+  assert.deepEqual(m.demos, [card]);
+  button('让 KIKO 帮我创建员工').click();
+  await pause();
+  assert.equal(m.assistantOpens, 1);
+  button('+ 快速创建员工').click();
+  await pause();
+  assert.deepEqual(m.navigations, [['employees', 'create']]);
+ } finally {
+  await m.cleanup();
+ }
+});
+
+test('market keeps quick-create header button and compact banner when demo cards are hidden', async () => {
+ const withAssistant = await mount('member', undefined, fixture, {
+  assistantAgentId: 'assistant-1',
+  assistantCards: [],
+ });
+ try {
+  assert.equal(document.querySelector('.demo-card'), null);
+  assert.ok(document.querySelector('.market-onboarding.is-compact'));
+  assert.ok(button('让 KIKO 帮我创建员工'));
+  assert.ok(button('从空白快速创建'));
+  button('+ 快速创建员工').click();
+  await pause();
+  assert.deepEqual(withAssistant.navigations, [['employees', 'create']]);
+ } finally {
+  await withAssistant.cleanup();
+ }
+
+ const withoutAssistant = await mount('member', undefined, fixture, {
+  assistantAgentId: undefined,
+  assistantCards: [],
+ });
+ try {
+  assert.equal(document.querySelector('.demo-card'), null);
+  assert.ok(document.querySelector('.market-onboarding.is-compact'));
+  assert.equal(button('让 KIKO 帮我创建员工'), undefined);
+  button('从空白快速创建').click();
+  button('+ 快速创建员工').click();
+  await pause();
+  assert.deepEqual(withoutAssistant.navigations, [['employees', 'create'], ['employees', 'create']]);
+ } finally {
+  await withoutAssistant.cleanup();
+ }
 });

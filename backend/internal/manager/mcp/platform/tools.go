@@ -3,6 +3,8 @@ package platform
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math/rand/v2"
 	"slices"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -84,7 +86,6 @@ type resourceFields struct {
 type createInput struct {
 	Name        string `json:"name"`
 	Role        string `json:"role,omitempty"`
-	Avatar      string `json:"avatar,omitempty"`
 	Instruction string `json:"instruction,omitempty"`
 	ModelID     string `json:"model_id,omitempty" jsonschema:"取自 list_employee_resources 的 id；省略时优先用工作区默认模型，其次平台默认模型"`
 	ModelSource string `json:"model_source,omitempty" jsonschema:"指定模型时使用资源列表返回的 source（workspace 或 platform）"`
@@ -97,14 +98,11 @@ type bindingInput struct {
 	VersionID  string `json:"resource_version_id,omitempty" jsonschema:"添加时填写查询到的资源版本 ID，移除时无需填写"`
 }
 type updateFields struct {
-	Key         string        `json:"config_key" jsonschema:"profile、avatar、instruction、model 或 capability_packages"`
+	Key         string        `json:"config_key" jsonschema:"profile、instruction 或 capability_packages"`
 	Version     int64         `json:"version" jsonschema:"从同一 config_key 读取的当前版本；能力包填该包版本"`
 	Name        *string       `json:"name,omitempty"`
-	Avatar      *string       `json:"avatar,omitempty"`
 	Role        *string       `json:"role,omitempty"`
 	Instruction *string       `json:"instruction,omitempty"`
-	ModelID     *string       `json:"model_id,omitempty" jsonschema:"更新模型时传资源列表返回的 id"`
-	ModelSource string        `json:"model_source,omitempty" jsonschema:"更新模型时传资源列表返回的 source"`
 	Binding     *bindingInput `json:"binding,omitempty" jsonschema:"仅 config_key=capability_packages，填写一项共享 Skill 或 MCP 的增删动作"`
 }
 
@@ -144,7 +142,7 @@ func (t Tools) Server(assistant bool) *sdk.Server {
 		addTool(sv, "list_employees", "在当前工作区分页查找员工；可按名称搜索或用 ID 精确过滤，只返回概览。", func(ctx context.Context, c ps.EmployeeManagementCaller, i ps.ManagementQuery) (any, error) {
 			return t.Directory.Employees(ctx, c, i)
 		})
-		addTool(sv, "create_employee", "按用户明确要求创建 AI 员工，仅 Web 身份支持。", t.create)
+		addTool(sv, "create_employee", "按用户明确要求创建 AI 员工，仅 Web 身份支持；平台会自动选头像。", t.create)
 	}
 	return sv
 }
@@ -157,9 +155,8 @@ type configOption struct {
 
 var configOptions = []configOption{
 	{"profile", "名称和岗位职责", true},
-	{"avatar", "头像", true},
 	{"instruction", "岗位行为规范与约束", true},
-	{"model", "当前基座模型及来源", true},
+	{"model", "当前基座模型及来源（只读）", false},
 	{"capability_packages", "每个包的挂载与版本（一次查一页）", true},
 }
 
@@ -198,13 +195,11 @@ func configSection(a ps.Agent, key string) (any, error) {
 	switch key {
 	case "profile":
 		d["name"], d["role"] = a.Name, a.Role
-	case "avatar":
-		d["avatar"] = a.Avatar
 	case "instruction":
 		d["instruction"] = a.Instruction
 	case "model":
 		d["model_id"], d["model_source"] = modelIdentity(a)
-		d["name"], d["available"] = a.ModelName, a.ModelAvailable
+		d["name"], d["available"], d["writable"] = a.ModelName, a.ModelAvailable, false
 	default:
 		return nil, invalid("请使用 get_employee 返回的配置 key")
 	}
@@ -254,6 +249,9 @@ func (t Tools) resources(ctx context.Context, c ps.EmployeeManagementCaller, i r
 	return t.Directory.Resources(ctx, c, target, i.Kind, i.ManagementQuery)
 }
 
+// Keep the preset range in sync with the portraits served under web/public/employee-avatars.
+const portraitPresetCount = 27
+
 func (t Tools) create(ctx context.Context, c ps.EmployeeManagementCaller, i createInput) (any, error) {
 	if c.Channel {
 		return nil, ps.Fail("employee_creation_web_only", 403, "请使用有创建权限的 Web 账号创建员工")
@@ -266,7 +264,7 @@ func (t Tools) create(ctx context.Context, c ps.EmployeeManagementCaller, i crea
 			return nil, e
 		}
 	}
-	r := ps.AgentCreate{Name: i.Name, Role: i.Role, Avatar: i.Avatar, Instruction: i.Instruction}
+	r := ps.AgentCreate{Name: i.Name, Role: i.Role, Avatar: fmt.Sprintf("cn-v2-%02d", rand.IntN(portraitPresetCount)+1), Instruction: i.Instruction}
 	switch source {
 	case "workspace":
 		r.ModelProfileID = id
@@ -300,16 +298,9 @@ func (t Tools) update(ctx context.Context, c ps.EmployeeManagementCaller, i upda
 	if e = i.validateSection(); e != nil {
 		return nil, e
 	}
-	patch := ps.AgentPatch{Version: i.Version, Name: i.Name, Avatar: i.Avatar, Role: i.Role, Instruction: i.Instruction}
+	patch := ps.AgentPatch{Version: i.Version, Name: i.Name, Role: i.Role, Instruction: i.Instruction}
 	if i.Key == "capability_packages" {
 		return t.updateBinding(ctx, c, target, i.Version, *i.Binding)
-	}
-	if i.Key == "model" {
-		if i.ModelSource == "platform" {
-			// Preserve the Web purchase/credit confirmation without letting the model manufacture it.
-			return nil, ps.Fail("platform_billing_confirmation_required", 409, "切换到平台模型需要确认积分扣费，请在 Web 员工设置中保存")
-		}
-		patch.ModelProfileID = i.ModelID
 	}
 	a, e := t.Agents.Update(ctx, c.Workspace, c.Actor, target, patch)
 	if e != nil {
@@ -319,17 +310,17 @@ func (t Tools) update(ctx context.Context, c ps.EmployeeManagementCaller, i upda
 }
 
 func (i updateInput) validateSection() error {
+	if i.Key == "model" {
+		return invalid("此工具不支持修改模型，请在网页员工设置中保存")
+	}
+	if i.Key == "avatar" {
+		return invalid("此工具不支持修改员工头像")
+	}
 	n := 0
 	if i.Name != nil || i.Role != nil {
 		n++
 	}
-	if i.Avatar != nil {
-		n++
-	}
 	if i.Instruction != nil {
-		n++
-	}
-	if i.ModelID != nil || i.ModelSource != "" {
 		n++
 	}
 	if i.Binding != nil {
@@ -341,16 +332,8 @@ func (i updateInput) validateSection() error {
 			if i.Name != nil || i.Role != nil {
 				return nil
 			}
-		case "avatar":
-			if i.Avatar != nil {
-				return nil
-			}
 		case "instruction":
 			if i.Instruction != nil {
-				return nil
-			}
-		case "model":
-			if i.ModelID != nil && ps.ValidWorkspaceSubject(*i.ModelID) && (i.ModelSource == "workspace" || i.ModelSource == "platform") {
 				return nil
 			}
 		case "capability_packages":

@@ -14,8 +14,23 @@ function askQuestionModeError({ type, questions }, reapprovalOnly) {
   return Array.isArray(questions) && questions.length > 0 ? "" : informationMode;
 }
 const workServer = "work_items";
-const workPrefix = "mcp__work_items__";
 const workUnavailable = "[kiko_work_mcp_unavailable]";
+const assistantUnavailable = "[kiko_assistant_mcp_unavailable]";
+const assistantFamilies = [
+  {
+    name: "employee_management", endpoint: "platform", token: "employee_management_token",
+    tools: ["get_employee", "list_employee_resources", "update_employee"],
+    assistantTools: ["create_employee", "list_employees"],
+  },
+  {
+    name: "assistant_demo", endpoint: "demo", token: "assistant_demo_token",
+    tools: [
+      "get_order", "get_logistics", "get_support_history", "get_meeting_notes", "get_release_plan",
+      "list_project_chat", "get_incident_logs", "get_incident_metrics", "get_release_changes",
+      "get_oncall_runbook", "rollback_release",
+    ],
+  },
+];
 const roleTools = {
   ordinary: ["work_item_list_handoff_employees"],
   assignee: ["work_item_list_handoff_employees", "work_item_get_current","work_item_read_file"],
@@ -24,38 +39,74 @@ const roleTools = {
 
 // Pi does not remove definitions from getAllTools: hiding makes them
 // unreachable and removes them from getActiveTools. Check both surfaces.
-const visibleWork = (pi) => new Set([
-  ...pi.getActiveTools().filter((name) => name.startsWith(workPrefix)),
-  ...pi.getAllTools().filter((tool) => tool.name.startsWith(workPrefix) && tool.exposure !== "hidden").map((tool) => tool.name),
+const toolPrefix = (server) => "mcp__" + server + "__";
+const visibleMCP = (pi, server) => new Set([
+  ...pi.getActiveTools().filter((name) => name.startsWith(toolPrefix(server))),
+  ...pi.getAllTools().filter((tool) => tool.name.startsWith(toolPrefix(server)) && tool.exposure !== "hidden").map((tool) => tool.name),
 ]);
-async function waitForWork(predicate, signal, timeout = 3000) {
-  const deadline = Date.now() + timeout;
+async function waitForMCP(predicate, signal, unavailable) {
+  const deadline = Date.now() + 3000;
   for (;;) {
-    if (signal?.aborted) throw new Error(workUnavailable);
+    if (signal?.aborted) throw new Error(unavailable);
     if (predicate()) return;
-    if (Date.now() >= deadline) throw new Error(workUnavailable);
+    if (Date.now() >= deadline) throw new Error(unavailable);
     await setTimeout(20, undefined, { signal });
   }
 }
+
+function catalogueReady(pi, name, expected) {
+  const active = new Set(pi.getActiveTools());
+  const visible = visibleMCP(pi, name);
+  return visible.size === expected.length && expected.every((tool) => {
+    const nativeName = toolPrefix(name) + tool;
+    return active.has(nativeName) && visible.has(nativeName);
+  });
+}
+
 export async function refreshWorkMCP(pi, credentials, role, signal) {
   const { work_mcp_url: url, work_mcp_token: token, input } = credentials;
   if (!url || !token || !input || credentials.work_role !== role || !Object.hasOwn(roleTools, role)) {
     throw new Error(workUnavailable);
   }
-  const expected = ["artifact_publish", ...roleTools[role]].map((name) => workPrefix + name);
+  const expected = ["artifact_publish", ...roleTools[role]];
   // The built-in MCP extension handles this asynchronously. Remove the
   // old registration and observe tools hidden before testing freshness of
   // the new same-name tools. Old in-flight HTTP requests keep old headers.
   pi.unregisterMcpServer(workServer);
-  await waitForWork(() => visibleWork(pi).size === 0, signal);
+  await waitForMCP(() => visibleMCP(pi, workServer).size === 0, signal, workUnavailable);
   pi.registerMcpServer(workServer, {
     url, headers: { Authorization: "Bearer " + token, "X-Kiko-Work-Input": input }, exposure: "direct",
   });
-  await waitForWork(() => {
-    const active = new Set(pi.getActiveTools());
-    const visible = visibleWork(pi);
-    return visible.size === expected.length && expected.every((name) => active.has(name) && visible.has(name));
-  }, signal);
+  await waitForMCP(() => catalogueReady(pi, workServer, expected), signal, workUnavailable);
+}
+
+function removeAssistantMCP(pi) {
+  for (const family of assistantFamilies) pi.unregisterMcpServer(family.name);
+}
+
+async function refreshAssistantMCP(pi, credentials, signal) {
+  // Engine sends the next prompt only after Pi agent_settled. Native Pi awaits
+  // its tool batches before settling: no prior prepared call crosses this
+  // registration boundary. A dispatched HTTP call captured its old transport.
+  removeAssistantMCP(pi);
+  await waitForMCP(() => assistantFamilies.every(({ name }) => visibleMCP(pi, name).size === 0), signal, assistantUnavailable);
+  const active = assistantFamilies.filter((family) => credentials[family.token]);
+  if (active.length === 0) return;
+  const { assistant_mcp_base_url: base, input } = credentials;
+  if (!base || !input) throw new Error(assistantUnavailable);
+  for (const family of active) {
+    pi.registerMcpServer(family.name, {
+      url: base + "/" + family.endpoint,
+      headers: { Authorization: "Bearer " + credentials[family.token], "X-Kiko-Assistant-Input": input },
+      exposure: "direct",
+    });
+  }
+  // Manager decides whether the management catalogue is the 3-tool local one
+  // or the full 5-tool KIKO Web catalogue, using the signed current Input.
+  await waitForMCP(() => active.every(({ name, tools, assistantTools }) =>
+    catalogueReady(pi, name, tools) ||
+      (assistantTools && catalogueReady(pi, name, [...tools, ...assistantTools])),
+  ), signal, assistantUnavailable);
 }
 
 export default function humanTools(pi) {
@@ -114,18 +165,28 @@ export default function humanTools(pi) {
   pi.on("before_agent_start", async (_event, ctx) => {
     gate = false;
     roundConfig = undefined;
-    if (!work_role) return;
-    // Snapshot work credentials for the entire native run. Do not reload mutable
+    const assistant = mode === "task" && !reapproval_only;
+    if (!work_role && !assistant) return;
+    // Snapshot credentials for the entire native run. Do not reload mutable
     // credentials from a delayed tool or retry after a new Turn has opened.
+    let failure = work_role ? workUnavailable : assistantUnavailable;
     try {
       const current = config();
-      await refreshWorkMCP(pi, current, work_role, ctx.signal);
+      if (work_role) await refreshWorkMCP(pi, current, work_role, ctx.signal);
+      if (assistant) {
+        failure = assistantUnavailable;
+        await refreshAssistantMCP(pi, current, ctx.signal);
+      }
       roundConfig = Object.freeze(current);
     } catch {
       gate = true;
-      pi.unregisterMcpServer(workServer);
-      await ctx.abort();
-      throw new Error(workUnavailable);
+      try {
+        if (work_role) pi.unregisterMcpServer(workServer);
+        if (assistant) removeAssistantMCP(pi);
+      } finally {
+        await ctx.abort();
+        throw new Error(failure);
+      }
     }
   });
   pi.on("tool_call", (event, ctx) => {

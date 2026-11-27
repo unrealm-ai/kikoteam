@@ -10,8 +10,8 @@ import type {Agent} from '../api/agents';
 import AssistantDemoCards from '../components/AssistantDemoCards.vue';
 import type { AssistantCard } from '../api/assistant';
 import TemplateIdentity from '../components/TemplateIdentity.vue';
-const props=defineProps<{platformAdmin:boolean;assistantCards?:AssistantCard[] | undefined}>();
-const emit=defineEmits<{navigate:[target:string,param?:string,targetId?:string]; assistantDemo:[card:AssistantCard]}>();
+const props=defineProps<{platformAdmin:boolean;assistantAgentId?:string | undefined;assistantCards?:AssistantCard[] | undefined}>();
+const emit=defineEmits<{navigate:[target:string,param?:string,targetId?:string]; assistantDemo:[card:AssistantCard]; openAssistant:[]}>();
 const message=useMessage();
 const official=ref(true),manage=ref(false),q=ref(''),category=ref(''),sort=ref('recommended'),page=ref(1),total=ref(0),role=ref('');
 const items=ref<AgentTemplate[]>([]),selected=ref<AgentTemplate>(),content=ref<Content>(emptyContent()),history=ref<TemplateVersion[]>([]);
@@ -156,14 +156,54 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
 </script>
 <template>
 <section class="market">
-<header><div><h1>AI 员工市场</h1><p>选择岗位模板，查看交付示例，创建团队需要的 AI 员工。</p></div><div><NButton v-if="canManage" @click="manage=!manage">{{manage?'返回市场':'管理模板'}}</NButton><NButton v-if="manage&&canManage" type="primary" @click="edit()">新建模板</NButton></div></header>
-<section v-if="assistantCards?.length && !manage" aria-label="体验 AI 员工">
-  <h2>体验 AI 员工</h2>
-  <AssistantDemoCards :cards="assistantCards" @choose="card => emit('assistantDemo', card)" />
+<header>
+  <div>
+    <h1>AI 员工市场</h1>
+    <p>选择岗位模板，查看交付示例，创建团队需要的 AI 员工。</p>
+  </div>
+  <div class="header-actions">
+    <NButton v-if="canCreate && !manage" type="primary" @click="emit('navigate', 'employees', 'create')">+ 快速创建员工</NButton>
+    <NButton v-if="canManage" @click="manage=!manage">{{manage?'返回市场':'管理模板'}}</NButton>
+    <NButton v-if="manage&&canManage" type="primary" @click="edit()">新建模板</NButton>
+  </div>
+</header>
+<section v-if="assistantCards?.length && !manage" class="market-onboarding" aria-label="体验 AI 员工">
+  <div class="onboarding-header">
+    <div class="onboarding-heading">
+      <div class="onboarding-title-row">
+        <h2>体验 AI 员工</h2>
+        <span class="onboarding-pill">内置体验工具使用样例数据</span>
+      </div>
+      <p class="onboarding-subtitle">无需配置模型与业务账号，选择一个真实工作场景立即体验任务拆分、人工确认与主动回告。</p>
+    </div>
+    <div v-if="canCreate || assistantAgentId" class="onboarding-actions">
+      <NButton v-if="assistantAgentId && canCreate" size="small" type="primary" secondary @click="emit('openAssistant')">让 KIKO 帮我创建员工</NButton>
+      <NButton v-if="canCreate" size="small" secondary @click="emit('navigate', 'employees', 'create')">从空白快速创建</NButton>
+    </div>
+  </div>
+  <AssistantDemoCards :cards="assistantCards" hide-note @choose="card => emit('assistantDemo', card)" />
+</section>
+<section v-else-if="!manage && (assistantAgentId || canCreate)" class="market-onboarding is-compact" aria-label="快速创建 AI 员工">
+  <div class="onboarding-header">
+    <div class="onboarding-heading">
+      <div class="onboarding-title-row">
+        <h2>快速创建专属 AI 员工</h2>
+      </div>
+      <p class="onboarding-subtitle">
+        {{ assistantAgentId
+          ? '除了从下方岗位模板创建，你也可以直接自定义空白岗位，或通过对话让 KIKO 助手帮你配置。'
+          : '除了从下方岗位模板创建，你也可以直接从空白快速创建自定义岗位员工，灵活配置模型与能力包。' }}
+      </p>
+    </div>
+    <div class="onboarding-actions">
+      <NButton v-if="assistantAgentId" size="small" type="primary" secondary @click="emit('openAssistant')">让 KIKO 帮我创建员工</NButton>
+      <NButton v-if="canCreate" size="small" secondary @click="emit('navigate', 'employees', 'create')">从空白快速创建</NButton>
+    </div>
+  </div>
 </section>
 <nav><NButton :type="official?'primary':'default'" @click="official=true;manage=false">官方精选</NButton><NButton :type="!official?'primary':'default'" @click="official=false;manage=false">工作区模板</NButton></nav>
 <div class="filters"><NInput v-model:value="q" placeholder="搜索岗位、职责或交付物" @keyup.enter="page=1;load()" /><NButton @click="page=1;load()">搜索</NButton><NSelect v-model:value="category" :options="categories"/><NSelect v-model:value="sort" :options="[{label:'推荐排序',value:'recommended'},{label:'最近发布',value:'published_at'}]"/></div>
-<NAlert v-if="error" type="error">{{error}}<NButton @click="load">重试</NButton></NAlert><p v-else-if="loading">正在读取模板…</p><div v-else-if="!items.length" class="empty"><h2>{{manage?'还没有模板':'暂无匹配的岗位'}}</h2><p>可以调整筛选，或由管理员制作工作区模板。</p></div>
+<NAlert v-if="error" type="error">{{error}}<NButton @click="load">重试</NButton></NAlert><p v-else-if="loading">正在读取模板…</p><div v-else-if="!items.length" class="empty"><h2>{{manage?'还没有模板':'暂无匹配的岗位'}}</h2><p>可以调整筛选，或由管理员制作工作区模板。</p><div v-if="!manage && canCreate" class="empty-actions"><NButton size="small" secondary @click="emit('navigate', 'employees', 'create')">从空白快速创建</NButton></div></div>
 <div v-else class="grid">
   <article v-for="t in items" :key="t.id" class="template-card">
     <TemplateIdentity :template="t" :category="categoryLabel(t.content.category)" />
@@ -229,6 +269,35 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
 .market header, .card-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .market header h1 { margin: 0; font-size: 28px; }
 .market header p { margin: 4px 0 0; }
+.header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
+.market-onboarding {
+  margin-top: 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--id-border-subtle, #dfe5ec);
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f8faff 0%, #ffffff 55%, #f6fbf9 100%);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+}
+.market-onboarding.is-compact { padding: 14px 18px; }
+.onboarding-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.market-onboarding.is-compact .onboarding-header { align-items: center; }
+.market-onboarding:not(.is-compact) .onboarding-header { margin-bottom: 14px; }
+.onboarding-heading { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 320px; }
+.onboarding-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.onboarding-title-row h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--id-text-primary, #0f172a); }
+.onboarding-pill {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+}
+.onboarding-subtitle { margin: 0; font-size: 13px; line-height: 1.5; color: var(--id-text-secondary, #526071); }
+.onboarding-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+.empty-actions { display: flex; justify-content: center; gap: 10px; margin-top: 12px; }
 p { color: #526071; line-height: 1.65; }
 nav, .filters, footer { display: flex; gap: 12px; margin: 20px 0; }
 .filters .n-select { min-width: 150px; max-width: 230px; }
@@ -254,6 +323,7 @@ footer { flex-wrap: wrap; position: sticky; bottom: 0; background: white; paddin
 @media (max-width: 700px) {
   .market { padding: 16px; }
   .market header { flex-wrap: wrap; }
+  .market-onboarding { padding: 14px; }
   .market > .filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .market > .filters .n-select { min-width: 0; max-width: none; }
   .market > .filters .n-select:last-child { min-width: 104px; }

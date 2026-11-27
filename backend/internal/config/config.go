@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
-	"net/mail"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -33,33 +31,16 @@ type Config struct {
 		URL Reference `json:"url"`
 	} `json:"database"`
 	Auth struct {
-		Secret                   Reference `json:"secret"`
-		RequireEmailVerification bool      `json:"require_email_verification"`
+		Secret Reference `json:"secret"`
 	} `json:"auth"`
-	Mail struct {
-		Enabled bool `json:"enabled"`
-		SMTP    struct {
-			Address     string    `json:"address"`
-			Host        string    `json:"host"`
-			Username    string    `json:"username"`
-			Password    Reference `json:"password"`
-			From        string    `json:"from"`
-			ImplicitTLS bool      `json:"implicit_tls"`
-		} `json:"smtp"`
-	} `json:"mail"`
-	MCPPrivateCIDRs          []netip.Prefix `json:"-"`
-	GitHubOAuthClientID      string         `json:"-"`
-	GitHubOAuthClientSecret  string         `json:"-"`
-	HostedAssistantAvailable bool           `json:"-"`
-	ModelProxyOrigin         string         `json:"-"`
-	AllowHTTPIPOrigin        bool           `json:"-"`
-	DSN                      string         `json:"-"`
-	AuthSecret               string         `json:"-"`
-	SMTPPassword             string         `json:"-"`
+	MCPPrivateCIDRs   []netip.Prefix `json:"-"`
+	ModelProxyOrigin  string         `json:"-"`
+	AllowHTTPIPOrigin bool           `json:"-"`
+	DSN               string         `json:"-"`
+	AuthSecret        string         `json:"-"`
 }
 
-// Load gives file policy precedence over legacy policy environment variables.
-// Explicit basic deployment environment values override file values.
+// Load reads process configuration; explicit deployment environment values override file values.
 func Load() (Config, error) {
 	var c Config
 	c.Server.Address = "127.0.0.1:8080"
@@ -91,25 +72,8 @@ func Load() (Config, error) {
 		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			return c, fmt.Errorf("configuration must be an object")
 		}
-	} else {
-		if c.Auth.RequireEmailVerification, err = envBool("KIKO_REGISTRATION_VERIFICATION_REQUIRED"); err != nil {
-			return c, err
-		}
-		if c.Mail.Enabled, err = envBool("KIKO_MAIL_ENABLED"); err != nil {
-			return c, err
-		}
-		if c.Mail.Enabled {
-			c.Mail.SMTP.Address = os.Getenv("SMTP_ADDRESS")
-			c.Mail.SMTP.Host = os.Getenv("SMTP_HOST")
-			c.Mail.SMTP.From = os.Getenv("SMTP_FROM")
-			c.Mail.SMTP.Username = os.Getenv("SMTP_USERNAME")
-			c.Mail.SMTP.Password.Value = os.Getenv("SMTP_PASSWORD")
-			if c.Mail.SMTP.ImplicitTLS, err = envBool("SMTP_IMPLICIT_TLS"); err != nil {
-				return c, err
-			}
-		}
 	}
-	if filePresent && (c.Database.URL.Value != "" || c.Auth.Secret.Value != "" || c.Mail.Enabled && c.Mail.SMTP.Password.Value != "") {
+	if filePresent && (c.Database.URL.Value != "" || c.Auth.Secret.Value != "") {
 		st, statErr := os.Stat(path)
 		if statErr != nil || st.Mode().Perm()&0077 != 0 {
 			return c, fmt.Errorf("configuration with inline secrets must be private (0600)")
@@ -122,12 +86,7 @@ func Load() (Config, error) {
 	override(&c.Server.Address, "KIKO_HTTP_ADDRESS")
 	override(&c.Server.WebDir, "KIKO_WEB_DIR")
 	override(&c.Server.TrustedProxies, "KIKO_TRUSTED_PROXY_CIDRS")
-	if c.HostedAssistantAvailable, err = envBool("KIKO_HOSTED_ASSISTANT_AVAILABLE"); err != nil {
-		return c, err
-	}
 	c.ModelProxyOrigin = os.Getenv("KIKO_MODEL_PROXY_ORIGIN")
-	c.GitHubOAuthClientID = strings.TrimSpace(os.Getenv("KIKO_GITHUB_OAUTH_CLIENT_ID"))
-	c.GitHubOAuthClientSecret = strings.TrimSpace(os.Getenv("KIKO_GITHUB_OAUTH_CLIENT_SECRET"))
 	if v, ok := os.LookupEnv("DATABASE_URL"); ok {
 		c.Database.URL = Reference{Value: v}
 	}
@@ -142,9 +101,6 @@ func Load() (Config, error) {
 	if c.AuthSecret, err = resolve(c.Auth.Secret, base, "auth.secret"); err != nil {
 		return c, err
 	}
-	if c.Auth.RequireEmailVerification && !c.Mail.Enabled {
-		return c, fmt.Errorf("auth.require_email_verification requires mail.enabled")
-	}
 
 	for _, raw := range strings.Split(os.Getenv("KIKO_MCP_PRIVATE_CIDRS"), ",") {
 		if strings.TrimSpace(raw) == "" {
@@ -155,37 +111,6 @@ func Load() (Config, error) {
 			return c, fmt.Errorf("KIKO_MCP_PRIVATE_CIDRS contains an invalid CIDR")
 		}
 		c.MCPPrivateCIDRs = append(c.MCPPrivateCIDRs, prefix.Masked())
-	}
-	if !c.Mail.Enabled {
-		// Ignore even invalid/unresolvable SMTP values when mail is disabled.
-		c.Mail.SMTP.Address, c.Mail.SMTP.Host, c.Mail.SMTP.Username, c.Mail.SMTP.From = "", "", "", ""
-		c.Mail.SMTP.Password = Reference{}
-		return c, nil
-	}
-	return c.validateMail(base)
-}
-
-func (c Config) validateMail(base string) (Config, error) {
-	host, port, err := net.SplitHostPort(c.Mail.SMTP.Address)
-	if err != nil || host == "" || port == "" {
-		return c, fmt.Errorf("mail.smtp.address must be host:port")
-	}
-	p, err := strconv.Atoi(port)
-	if err != nil || p < 1 || p > 65535 {
-		return c, fmt.Errorf("mail.smtp.address port is invalid")
-	}
-	if strings.TrimSpace(c.Mail.SMTP.Host) == "" {
-		return c, fmt.Errorf("mail.smtp.host is required")
-	}
-	sender, parseErr := mail.ParseAddress(c.Mail.SMTP.From)
-	if parseErr != nil || sender.Address != c.Mail.SMTP.From || strings.ContainsAny(c.Mail.SMTP.From, "\r\n") {
-		return c, fmt.Errorf("mail.smtp.from is required and must be a valid address")
-	}
-	if c.SMTPPassword, err = resolve(c.Mail.SMTP.Password, base, "mail.smtp.password"); err != nil {
-		return c, err
-	}
-	if (c.Mail.SMTP.Username == "") != (c.SMTPPassword == "") {
-		return c, fmt.Errorf("mail.smtp.username and password must be supplied together")
 	}
 	return c, nil
 }

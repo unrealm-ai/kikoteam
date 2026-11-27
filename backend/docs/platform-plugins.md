@@ -60,7 +60,7 @@
 启用网页授权需要为本部署注册一个 GitHub App。
 
 1. 部署管理员注册 GitHub App，在 Callback URL 填入 `${KIKO_PUBLIC_ORIGIN}/api/v1/auth/callbacks/plugin-oauth`，其中 Origin 使用浏览器访问平台的实际地址。为 Contents、Issues、Pull requests 选择 Read-only，将应用安装到需要访问的仓库。
-2. 平台管理员在「设置 → 平台管理 → 集成设置」保存 GitHub 插件 OAuth 的 Client ID、Client Secret 并启用。每套部署配置一次。数据库尚未保存时才读取旧 `KIKO_GITHUB_OAUTH_CLIENT_ID` 和 `KIKO_GITHUB_OAUTH_CLIENT_SECRET`；缺少或禁用时仍可用 PAT。
+2. 平台管理员在「设置 → 平台管理 → 插件集成」保存 GitHub 插件 OAuth 的 Client ID、Client Secret 并启用。每套部署配置一次。只读取数据库配置，缺少或禁用时仍可用 PAT。
 3. 空间管理员在 GitHub 插件连接中点「前往 GitHub 授权」。Backend 请求 `offline_access` 用于续期，通过只读端点读取登录身份后保存连接。实际可读仓库取决于应用安装范围和授权用户的权限。[GitHub App 用户授权文档](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app)
 
 从旧版本升级时先停旧 Backend，由 Event Hub 执行迁移 `000082`，再运行目录同步并启动新版 Backend。迁移按每条连接固定的插件版本填入认证方式。连接 ID、加密凭据、员工的版本绑定及能力包权限均保留。已有员工可在原插件版本内切换认证。

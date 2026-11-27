@@ -24,6 +24,7 @@ func TestBrowserHarness(t *testing.T) {
 		t.Skip("manual browser fixture")
 	}
 	db := workspaceTestDB(t)
+	enableMailFixture(t, db, "")
 	dir, err := os.MkdirTemp("", "kiko-test-mail-")
 	if err != nil {
 		t.Fatal(err)

@@ -207,7 +207,7 @@ external 表示对外契约，包含逐操作声明的匿名例外。契约源�
 
 ### 托管助手发放与入口
 
-- 先应用 Event Hub 迁移 106。托管部署才设置 KIKO_HOSTED_ASSISTANT_AVAILABLE=true；平台发放开关另由管理员通过 GET/PATCH /api/v1/platform/assistant-settings 查看和保存。更新携带 expected_version 与 enabled。
+- 先应用 Event Hub 迁移 106。默认关闭的数据库发放开关由管理员通过 GET/PATCH /api/v1/platform/assistant-settings 查看和保存。更新携带 expected_version 与 enabled。
 - 开关启用后，注册自动建区和手动建区都通过同一个数据库事务留下发放记录。Backend 按工作区异步领取并重验开关与已验证的平台默认模型；不补发存量工作区。创建员工、默认确认人、模型扣费绑定、内置能力包、助手关联和发放成功一起提交。
 - GET /api/v1/workspaces/{workspace_id}/assistant 仅为有权使用该 Web 私聊的成员返回 agent_id，满足体验包 Web 私聊权限才返回体验卡。卡片只发送一条普通聊天输入。工作区发放中返回 pending，不暴露后台错误详情。
 - 管理包默认工作区创建人的 Web 私聊可用；体验包继承员工私聊范围；群聊与触发器默认关闭。运行时凭证绑定本轮输入和执行分配，每次工具调用重验场景及权限。管理工具目前只返回接入状态，不读写业务配置，体验工具只用样例。

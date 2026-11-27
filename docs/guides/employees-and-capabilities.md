@@ -86,7 +86,7 @@ Skill 是一个包含 `SKILL.md` 的完整目录，用于封装某类专业任�
 | **OAuth 2.0（`oauth`）** | 在员工详情页点击授权，通过浏览器完成第三方 OAuth 登录与 Token 自动续期 |
 
 > [!NOTE]
-> - **GitHub 官方插件 OAuth 配置**：GitHub 插件同时支持个人访问令牌（PAT）和 OAuth。若使用 OAuth，请在你的 GitHub App 中将回调地址注册为 `<KIKO_PUBLIC_ORIGIN>/api/v1/auth/callbacks/plugin-oauth`，并在 `.env` 中配置 `KIKO_GITHUB_OAUTH_CLIENT_ID` 与 `KIKO_GITHUB_OAUTH_CLIENT_SECRET`。
+> - **GitHub 官方插件 OAuth 配置**：GitHub 插件同时支持个人访问令牌（PAT）和 OAuth。若使用 OAuth，请在你的 GitHub App 中将回调地址注册为 `<KIKO_PUBLIC_ORIGIN>/api/v1/auth/callbacks/plugin-oauth`，并在「设置 → 平台管理 → 插件集成」中保存并启用该 App 的 Client ID 和 Client Secret。
 > - **私网 MCP 访问安全**：默认禁止远程 MCP 访问环回地址（Loopback）、链路本地地址及未授权内网网段以防范 SSRF。如果自托管环境需要连接内网自建的 HTTP MCP 服务，必须由管理员在 `.env` 中显式配置 `KIKO_MCP_PRIVATE_CIDRS`（例如 `10.10.0.0/16`）。
 
 ### 4.2 内置官方 MCP 插件一览

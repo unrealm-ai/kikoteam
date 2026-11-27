@@ -59,7 +59,7 @@ func modelProxyFixtureOnDB(t *testing.T, db *sql.DB) *proxyFixture {
 	f := &proxyFixture{db: db, secrets: ps.Secrets{Root: []byte(strings.Repeat("m", 40))},
 		engineToken: strings.Repeat("e", 40), entered: make(chan struct{}, 2), release: make(chan struct{})}
 	f.store = pr.Store{DB: f.db}
-	f.assistant = &HostedAssistantStore{DB: db, EnsureKey: f.secrets.EnsureKey, Available: true}
+	f.assistant = &HostedAssistantStore{DB: db, EnsureKey: f.secrets.EnsureKey}
 	f.provider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		serveProxyFixture(t, f, w, r)
 	}))
@@ -466,9 +466,14 @@ func TestOfficialModelMigrationFromExistingAccounts(t *testing.T) {
 	if _, e = db.ExecContext(ctx, up); e != nil {
 		t.Fatal(e)
 	}
-	v, e := (&service.AgentService{Store: NewAgentStore(db)}).Get(ctx, w.ID, owner, employee)
-	if e != nil || v.ModelProfileID != model || v.PlatformModelID != "" || v.Payer != nil {
-		t.Fatalf("existing employee changed: %v %v", v, e)
+	// Assert the schema and data at migration 018, not today's API projection.
+	var actualModel, platformModel string
+	var hasKey bool
+	e = db.QueryRowContext(ctx, `SELECT model_profile_id,COALESCE(platform_model_id::text,''),
+EXISTS(SELECT 1 FROM platform_agent_model_keys WHERE agent_id=$1) FROM platform_agents
+WHERE id=$1 AND workspace_id=$2`, employee, w.ID).Scan(&actualModel, &platformModel, &hasKey)
+	if e != nil || actualModel != model || platformModel != "" || hasKey {
+		t.Fatalf("existing employee changed: model=%s official=%s hasKey=%t err=%v", actualModel, platformModel, hasKey, e)
 	}
 	var balance, ledger int64
 	e = db.QueryRowContext(ctx, `SELECT balance_units,(SELECT count(*) FROM platform_credit_ledger)
@@ -650,21 +655,27 @@ func (f *proxyFixture) startEngine(t *testing.T, ctx context.Context, root strin
 func TestOfficialModelWorkspaceOwnerPayerUpgrade(t *testing.T) {
 	ctx := t.Context()
 	db := workspaceTestDBThrough(t, "000103_conversation_last_message.sql")
-	// The current employee API needs the creator schema; leave migration 104
-	// unapplied until after seeding the previous billing rows under test.
-	creatorSchema, err := os.ReadFile("../../../../event-hub/database/postgres/migrations/000105_employee_maintainers.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	up, _, _ := strings.Cut(string(creatorSchema), "-- +goose Down")
-	reviewExec(t, db, up)
 	f := modelProxyFixtureOnDB(t, db)
 	admin, user := proxyBrowserClient(t), proxyBrowserClient(t)
 	creator, _ := f.register(t, admin, "creator@payer-upgrade.test")
 	owner, w := f.register(t, user, "owner@payer-upgrade.test")
 	reviewExec(t, f.db, `INSERT INTO platform_members(workspace_id,user_id,role) VALUES($1,$2,'admin')`, w, creator)
 	model := f.createModel(t, admin, "chat_completions", true)
-	id := f.api(t, admin, "POST", "/workspaces/"+w+"/agents", map[string]string{"name": "Migrated", "platform_model_id": model}, "", 201)["id"].(string)
+	// Create the employee using the 103 schema before testing the 104 repair.
+	id := service.NewID()
+	reviewExec(t, db, `INSERT INTO platform_agents(id,workspace_id,name,platform_model_id,version,config_version,admission_epoch)
+VALUES($1,$2,'Migrated',$3,1,1,1)`, id, w, model)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.secrets.EnsureKey(ctx, tx, w, id); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
 	key, err := f.secrets.RuntimeKey(ctx, f.db, w, id, model, "chat_completions")
 	if err != nil {
 		t.Fatal(err)
@@ -680,11 +691,7 @@ func TestOfficialModelWorkspaceOwnerPayerUpgrade(t *testing.T) {
 		t.Fatal("new proxy accepted previous creator as the payer")
 	}
 
-	migration, err := os.ReadFile("../../../../event-hub/database/postgres/migrations/000104_workspace_owner_model_payer.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	reviewExec(t, f.db, string(migration))
+	applyTestMigrations(t, ctx, db, "000103_conversation_last_message.sql", "000104_workspace_owner_model_payer.sql")
 	newKey, err := f.secrets.RuntimeKey(ctx, f.db, w, id, model, "chat_completions")
 	if err != nil || newKey != key {
 		t.Fatalf("runtime credential was not preserved: %v", err)

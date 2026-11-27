@@ -115,9 +115,6 @@ load_config() {
     parse_env "$config" '.env' > "$scratch/config" || exit 1
     db= db_user= db_password= auth= origin= storage=
     port=18080
-    verify_email=false
-    mail=false
-    implicit_tls=false
     while IFS= read -r item; do
         value=${item#*=}
         case ${item%%=*} in
@@ -128,9 +125,6 @@ load_config() {
             KIKO_LOCAL_PORT) port=$value ;;
             KIKO_PUBLIC_ORIGIN) origin=$value ;;
             KIKO_STORAGE_LOCAL_ROOT) storage=$value ;;
-            KIKO_REGISTRATION_VERIFICATION_REQUIRED) verify_email=$value ;;
-            KIKO_MAIL_ENABLED) mail=$value ;;
-            SMTP_IMPLICIT_TLS) implicit_tls=$value ;;
         esac
     done < "$scratch/config"
     for key in POSTGRES_DB POSTGRES_USER; do
@@ -157,14 +151,6 @@ load_config() {
         "http://localhost:$port"|"http://127.0.0.1:$port") ;;
         *) die 'local launcher only accepts localhost/127.0.0.1 origin matching its port' ;;
     esac
-    check_bool KIKO_REGISTRATION_VERIFICATION_REQUIRED "$verify_email"
-    check_bool KIKO_MAIL_ENABLED "$mail"
-    check_bool SMTP_IMPLICIT_TLS "$implicit_tls"
-    [ "$verify_email" != true ] || [ "$mail" = true ] || die 'email verification requires mail enabled'
-}
-
-check_bool() {
-    case $2 in true|false) ;; *) die "$1 must be true or false" ;; esac
 }
 
 random_hex() {

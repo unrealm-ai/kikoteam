@@ -35,15 +35,15 @@
 
 ## 环境配置
 
-`.env.example` 是本地 Compose 的配置模板。Compose 向 Backend、Event Hub 和 Engine 注入连接同一 PostgreSQL 的 DSN，并通过它们在 Compose 网络中的服务名建立互访。`KIKO_HUB_TOKEN` 供 Backend 与 Hub 的内部接口使用，`KIKO_ENGINE_TOKEN` 供 Engine 注册及执行接口使用。容器的内部接口不发布到宿主机。平台认证和邮件配置只注入 Backend。
+`.env.example` 是本地 Compose 的配置模板。Compose 向 Backend、Event Hub 和 Engine 注入连接同一 PostgreSQL 的 DSN，并通过它们在 Compose 网络中的服务名建立互访。`KIKO_HUB_TOKEN` 供 Backend 与 Hub 的内部接口使用，`KIKO_ENGINE_TOKEN` 供 Engine 注册及执行接口使用。容器的内部接口不发布到宿主机。平台认证密钥只注入 Backend。
 
 独立运行二进制时，由进程管理器注入 `DATABASE_URL`、`KIKO_AUTH_SECRET`（32字节以上）、`KIKO_PUBLIC_ORIGIN`，以及可选 `KIKO_HTTP_ADDRESS`、`KIKO_WEB_DIR`、`KIKO_TRUSTED_PROXY_CIDRS`。Hub 注入 `EVENT_HUB_DATABASE_URL`。容器内 `postgres` 服务名只用于本地 Compose 网络，宿主直跑须提供实际PG地址。
 
 Engine 调用官方模型代理时默认使用 `KIKO_PUBLIC_ORIGIN`。本地 Compose 将 `KIKO_MODEL_PROXY_ORIGIN` 设为容器内 Backend 地址，浏览器仍使用 `.env` 指定的公开 Origin。
 
-Backend 可通过 `KIKO_DINGTALK_REGISTRATION_SOURCE` 设置钉钉扫码登记的自有接入来源，默认 `kikoteam`。来源在创建登记时提交给钉钉，切换后需发起新登记才能取得对应二维码；扫码组织的可用范围由钉钉校验。
+钉钉扫码登记的来源标识由 [Backend 源码默认配置](../internal/config/channel_defaults.go) 定义为 `kikoteam`。创建登记时提交给钉钉；修改后仅影响新登记，扫码组织的可用范围由钉钉校验。
 
-全新实例默认允许免验证码密码注册，邮件关闭。SMTP 与注册策略通过「设置 → 平台管理 → 邮件与注册」配置；GitHub 插件 OAuth 在「集成设置」配置。只有尚无对应数据库记录时，既有环境变量／旧 JSON 才继续提供兼容值。环境变量清单见 [部署指南](../../docs/deployment.md#32-smtp注册策略与-github-插件-oauth)。
+SMTP、注册策略、GitHub 插件 OAuth 和 KIKO 助手发放开关仅在平台管理配置，读写数据库。升级迁移见[部署指南](../../docs/deployment.md#32-平台业务配置)。
 
 ## 文件存储配置
 
@@ -55,36 +55,17 @@ Backend 可通过 `KIKO_DINGTALK_REGISTRATION_SOURCE` 设置钉钉扫码登记�
 
 本地入口只接受匹配端口的 localhost/127.0.0.1 HTTP origin，端口固定绑定 127.0.0.1。禁止直接把它改为公网裸露。正式部署应独立提供环境变量和 TLS 入口，明确注册策略；建议开启邮件验证、配置可信代理、备份与持久密钥管理。多个 Backend 副本共用相同秘密与数据库。配置缺失必须失败，不允许每个实例自动创建本地库或不同认证秘密。
 
-## 旧 JSON 配置迁移
+## 启动 JSON 与秘密引用
 
-为了不破坏现有运行实例，旧 `KIKO_CONFIG`/`backend.local.json` 读取暂时保留，但不再提供 JSON 示例。尚未保存数据库邮件设置时，旧 JSON 的认证与邮件策略仍优先于旧环境变量；已保存的数据库设置优先于两者。基础启动环境变量仍可覆盖对应 JSON；这是兼容规则，不是新部署的推荐方式。
+旧 `KIKO_CONFIG` / `backend.local.json` 仅支持基础启动配置；环境变量可覆盖对应启动字段。旧 JSON 内的 `mail` 与 `auth.require_email_verification` 已不再支持，需先在旧版将邮件设置保存至数据库再移除这些键。保留原数据库地址及**原认证秘密**。
 
-迁移时先备份原配置与数据库。保留原数据库地址及**原认证秘密**作为启动输入；从平台管理迁入原 SMTP 与注册策略，并核对生效后，再移除 `KIKO_CONFIG` 和默认位置 JSON。未迁入数据库时不能先删旧 JSON，否则验证码策略可能回落为关闭。不要把现有正式PG直接套成本地Compose新卷。迁移后应验证邮件开关、登录、现有加密模型凭证和重启一致性。
+`database.url` 和 `auth.secret` 是显式引用对象，每个只选一种非空来源：
 
-旧秘密引用（仅兼容读取）可用 env/file/value，规则见下方。新部署没有隐藏JSON策略，只有明确的环境配置。
-
-## 邮件策略
-
-| require_email_verification | mail.enabled | 行为 |
-|---|---|---|
-| false | false | 默认密码注册，完全不读取/校验SMTP及秘密引用 |
-| false | true | 邮件配置必须完整；密码和验证码注册均可用 |
-| true | false | 冲突，明确启动失败 |
-| true | true | 邮件配置必须完整；仅验证码注册 |
-
-mail.disabled 同时禁用所有验证码请求、验证码登录/注册和重置密码，已有旧码也不能绕过；服务端返回403 email_code_disabled，auth/options反映相同策略。未验证密码账号可建自己的工作区，但不能接受定向邀请。
-
-邮件开启时地址必须 host:数字端口，host 是 TLS 证书主机名，from 必须纯邮箱（不支持显示名/换行）。username/password 同时配置或同时省略，后者用于无需认证的TLS中继。implicit_tls=false 时必须 STARTTLS，永不回退明文。启动仅检查配置结构，不联网试发或验证凭证有效性；运行时SMTP故障使该次验证码请求失败，不降级为免验证注册。
-
-## 秘密引用
-
-database.url、auth.secret、mail.smtp.password 是引用对象，每个只选一种非空来源：
-
-    {"env":"SMTP_PASSWORD"}
-    {"file":"/run/secrets/smtp-password"}
+    {"env":"KIKO_AUTH_SECRET"}
+    {"file":"/run/secrets/kiko-auth-secret"}
     {"value":"仅限本地私密配置中的实际值"}
 
-缺失/空环境引用、空文件、多个来源均失败。文件必须普通文件、group/other无权限（0600/0400），相对路径相对配置文件目录，只去掉末尾换行。内联秘密要求配置文件自身owner-only权限。普通字符串不做隐式插值。关闭邮件时连SMTP秘密引用也不解析（仍要求JSON类型和语法有效）。
+缺失或空引用、多个来源均失败。文件必须是私密普通文件（0600/0400），相对路径以配置文件目录为准。内联秘密要求配置文件自身仅所有者可读写。
 
 ## 启动器验收
 

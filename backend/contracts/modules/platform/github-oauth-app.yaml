@@ -12,7 +12,7 @@ settings:
   patch:
     operationId: updatePlatformGitHubOAuthApp
     summary: Save instance GitHub plugin OAuth app settings as a platform administrator
-    description: Configures plugin authorization, not website login. A stored disabled setting overrides the environment.
+    description: Configures plugin authorization, not website login. The app is unavailable until enabled in the database.
     security:
     - sessionCookie: []
     parameters:
@@ -37,7 +37,7 @@ settings:
                 writeOnly: true
                 minLength: 1
                 maxLength: 8192
-                description: Omit to retain the effective secret; use clear_client_secret to explicitly clear it.
+                description: Omit to retain the stored secret; use clear_client_secret to explicitly clear it.
               clear_client_secret: { type: boolean }
     responses:
       '200':
@@ -59,7 +59,7 @@ appResponse:
           enabled: { type: boolean }
           client_id: { type: string }
           has_client_secret: { type: boolean }
-          source: { type: string, enum: [unset, legacy_env, database] }
+          source: { type: string, enum: [unset, database] }
           redirect_uri: { type: string }
 error:
   description: Structured error

@@ -49,6 +49,7 @@ async function mount(handle) {
     const request = {url,method:init.method||'GET',body:init.body ? JSON.parse(init.body) : undefined,headers:init.headers};
     requests.push(request);
     if (url.includes('/accounts?')) return Response.json({items:[],total:0});
+    if (url.endsWith('/task-link-settings') && request.method === 'GET') return Response.json({version:0,origin:'',enabled:true});
     if (url.endsWith('/credit-settings')) return Response.json({signup_bonus:'0',version:1});
     if (url === referralSettings && request.method === 'GET') return Response.json({enabled:false,version:0});
     return handle(request);
@@ -100,7 +101,7 @@ test('SMTP test uses the unsaved draft without saving or revealing the stored pa
   });
   try {
     assert.ok(!m.requests.some(r => r.url === mail || r.url === mail+'/test'));
-    m.button('邮件与注册').click(); await wait();
+    m.button('注册与邀请').click(); await wait();
     assert.equal(m.input('platform-smtp-password').value, '');
     assert.equal(m.input('platform-smtp-password').type, 'password');
     await m.choose('注册时必须验证邮箱','.n-checkbox');
@@ -138,7 +139,7 @@ test('SMTP revision conflict rebases a harmless policy edit; retry stays explici
     throw new Error('Unexpected endpoint');
   });
   try {
-    m.button('邮件与注册').click(); await wait();
+    m.button('注册与邀请').click(); await wait();
     await m.edit('platform-smtp-password','fixture-replacement-password');
     m.button('发测试邮件到我的邮箱').click(); await wait();
     await m.submit('[aria-label="邮件与注册设置"]');
@@ -177,7 +178,7 @@ test('GitHub plugin screen preserves a blank secret, never claims website login,
     throw new Error('Unexpected endpoint');
   });
   try {
-    m.button('集成设置').click(); await wait();
+    m.button('插件集成').click(); await wait();
     assert.match(m.host.textContent,/不用于登录 KIKO 网站/);
     assert.equal(m.input('platform-github-oauth-redirect').value,baseGithub.redirect_uri);
     assert.equal(m.input('platform-github-oauth-secret').value,'');
@@ -216,7 +217,7 @@ test('Channel attachment IP validation starts enabled and applies changes only a
   });
   try {
     assert.ok(!m.requests.some(r => r.url === channelDownloads));
-    m.button('附件下载').click(); await wait();
+    m.button('任务分享与附件').click(); await wait();
     const checkbox = () => m.host.querySelector('[aria-label="附件下载设置"] [role="checkbox"]');
     assert.equal(checkbox()?.getAttribute('aria-checked'), 'true');
     assert.ok(m.button('保存附件下载设置').disabled);
@@ -233,40 +234,6 @@ test('Channel attachment IP validation starts enabled and applies changes only a
   } finally { await m.close(); }
 });
 
-test('Legacy deployment settings are imported without changing fields or resending existing credentials', async () => {
-  let smtpStatus = {...baseMail,source:'environment',version:0};
-  let githubStatus = {...baseGithub,source:'legacy_env',version:0};
-  const m = await mount(r => {
-    if (r.url === mail && r.method === 'GET') return Response.json(smtpStatus);
-    if (r.url === github && r.method === 'GET') return Response.json(githubStatus);
-    if (r.url === mail+'/test') return Response.json({ok:true,test_receipt:'fixture-smtp-receipt'});
-    if (r.url === mail && r.method === 'PATCH') {
-      smtpStatus = {...baseMail,version:1};
-      return Response.json(smtpStatus);
-    }
-    if (r.url === github && r.method === 'PATCH') {
-      githubStatus = {...baseGithub,version:1};
-      return Response.json(githubStatus);
-    }
-    throw new Error('Unexpected endpoint');
-  });
-  try {
-    m.button('邮件与注册').click(); await wait();
-    assert.equal(m.input('platform-smtp-password').value,'');
-    assert.ok(m.button('迁入邮件设置').disabled);
-    m.button('发测试邮件到我的邮箱').click(); await wait();
-    m.button('迁入邮件设置').click(); await wait();
-    m.button('集成设置').click(); await wait();
-    assert.equal(m.input('platform-github-oauth-secret').value,'');
-    m.button('迁入 GitHub OAuth 设置').click(); await wait();
-    assert.deepEqual(m.requests.filter(r=>r.method==='PATCH').map(r=>[r.url,r.body]),[
-      [mail,{version:0,enabled:true,registration_verification_required:false,address:baseMail.address,host:baseMail.host,username:baseMail.username,from:baseMail.from,implicit_tls:false,test_receipt:'fixture-smtp-receipt'}],
-      [github,{expected_version:0,enabled:true}],
-    ]);
-    assert.deepEqual(m.errors,[]);
-  } finally { await m.close(); }
-});
-
 test('SMTP draft passwords do not follow concurrent connection targets after rebasing', async () => {
   let reads=0;
   const m = await mount(r => {
@@ -278,7 +245,7 @@ test('SMTP draft passwords do not follow concurrent connection targets after reb
     throw new Error('Unexpected endpoint');
   });
   try {
-    m.button('邮件与注册').click(); await wait();
+    m.button('注册与邀请').click(); await wait();
     await m.edit('platform-smtp-password','fixture-replacement-password');
     m.button('发测试邮件到我的邮箱').click(); await wait();
     await m.submit('[aria-label="邮件与注册设置"]');
@@ -299,7 +266,7 @@ test('SMTP admin password lockout rejection is not reported as a version conflic
     throw new Error('Unexpected endpoint');
   });
   try {
-    m.button('邮件与注册').click(); await wait();
+    m.button('注册与邀请').click(); await wait();
     const enabled = [...m.host.querySelectorAll('.n-checkbox')].find(n=>n.textContent.includes('启用邮件'));
     enabled.click(); await wait();
     await m.submit('[aria-label="邮件与注册设置"]');
@@ -312,14 +279,14 @@ test('SMTP admin password lockout rejection is not reported as a version conflic
 });
 
 test('new 163 preset accepts only email and code; testing sends the expanded TLS profile without saving', async () => {
-  const empty = {...baseMail,enabled:false,source:'environment',version:0,address:'',host:'',from:'',username:'',password_configured:false};
+  const empty = {...baseMail,enabled:false,source:'unset',version:0,address:'',host:'',from:'',username:'',password_configured:false};
   const m = await mount(r => {
     if (r.url === mail && r.method === 'GET') return Response.json(empty);
     if (r.url === mail+'/test') return Response.json({ok:true,test_receipt:'fixture-smtp-receipt'});
     throw new Error('Unexpected endpoint');
   });
   try {
-    m.button('邮件与注册').click(); await wait();
+    m.button('注册与邀请').click(); await wait();
     assert.match(m.host.textContent,/尚未配置/);
     assert.equal(m.host.querySelector('#platform-smtp-address'),null);
     assert.equal(m.host.querySelector('#platform-smtp-host'),null);
@@ -372,7 +339,7 @@ test('incompatible saved SMTP is not edited or tested implicitly and can be disa
     throw new Error('Unexpected endpoint');
   });
   try {
-    m.button('邮件与注册').click(); await wait();
+    m.button('注册与邀请').click(); await wait();
     assert.match(m.host.textContent,/现有 SMTP 配置不符合简化表单/);
     assert.equal(m.host.querySelector('#platform-smtp-password'),null);
     assert.equal(m.button('发测试邮件到我的邮箱').disabled,true);
@@ -404,7 +371,7 @@ test('SMTP preset replacement is atomic across a concurrent incompatible endpoin
     throw new Error('Unexpected endpoint');
   });
   try {
-    m.button('邮件与注册').click(); await wait();
+    m.button('注册与邀请').click(); await wait();
     assert.equal(m.host.querySelector('#platform-smtp-address'),null);
     assert.equal(m.input('platform-smtp-password').value,'');
     m.button('发测试邮件到我的邮箱').click(); await wait();
@@ -438,7 +405,7 @@ test('SMTP receipt is required by form save, survives a policy edit, and is inva
     throw new Error('Unexpected endpoint');
   });
   try {
-    m.button('邮件与注册').click(); await wait();
+    m.button('注册与邀请').click(); await wait();
     await m.choose('注册时必须验证邮箱','.n-checkbox');
     assert.equal(m.button('保存邮件设置').disabled,true);
     assert.equal(await m.saveSection(),false); await wait();
@@ -474,7 +441,7 @@ test('an explicitly disabled database record with no SMTP profile stays disabled
     throw new Error('Unexpected endpoint');
   });
   try {
-    m.button('邮件与注册').click(); await wait();
+    m.button('注册与邀请').click(); await wait();
     assert.equal(m.host.querySelector('#platform-smtp-from'),null);
     assert.match(m.host.textContent,/平台已保存/);
     assert.equal(m.button('保存邮件设置').disabled,true);
@@ -500,7 +467,7 @@ test('SMTP receipt expiry blocks saves again without resetting the form', async 
     return originalTimeout(callback, milliseconds, ...args);
   };
   try {
-    m.button('邮件与注册').click(); await wait();
+    m.button('注册与邀请').click(); await wait();
     await m.choose('注册时必须验证邮箱','.n-checkbox');
     m.button('发测试邮件到我的邮箱').click(); await wait();
     assert.equal(m.button('保存邮件设置').disabled,false);
@@ -523,6 +490,7 @@ test('Referral rewards are off by default, save an explicit switch, and notify t
     throw new Error('Unexpected endpoint');
   });
   try {
+    m.button('注册与邀请').click(); await wait();
     assert.ok(m.button('保存邀请设置').disabled);
     await m.choose('开启奖励','.n-checkbox');
     m.button('保存邀请设置').click(); await wait();
@@ -535,4 +503,65 @@ test('Referral rewards are off by default, save an explicit switch, and notify t
     window.removeEventListener('kiko:referral-settings-changed', listener);
     await m.close();
   }
+});
+
+test('The assistant provisioning switch is shown and saved from database settings alone', async () => {
+  const assistant = root+'/assistant-settings';
+  const m = await mount(r => {
+    if (r.url.startsWith('/api/v1/platform-models?')) return Response.json({items:[],total:0});
+    if (r.url === assistant && r.method === 'GET') return Response.json({version:1,enabled:false});
+    if (r.url === assistant && r.method === 'PATCH') return Response.json({version:2,enabled:true});
+    throw new Error('Unexpected endpoint');
+  });
+  try {
+    m.button('官方模型与助手').click(); await wait();
+    const control = () => m.host.querySelector('.assistant-settings [role="checkbox"]');
+    assert.equal(control()?.getAttribute('aria-checked'), 'false');
+    assert.doesNotMatch(m.host.textContent, /当前部署未启用/);
+    assert.match(m.host.textContent, /还没有默认模型/);
+    control().click(); await wait();
+    assert.equal(await m.saveSection(), true);
+    assert.deepEqual(m.requests.filter(r=>r.url===assistant && r.method==='PATCH').map(r=>r.body),[
+      {expected_version:1,enabled:true},
+    ]);
+    assert.deepEqual(m.errors, []);
+  } finally { await m.close(); }
+});
+
+test('Grouped settings still use independent APIs and find a default model outside the visible page', async () => {
+  const assistant = root+'/assistant-settings';
+  const olderModel = {
+    id:'fixture-older', name:'旧默认模型', protocol:'chat_completions', base_url:'https://model.example.test',
+    upstream_model_id:'fixture', has_key:false, prices:{input:'0',output:'0'}, enabled:true, validated:true, is_default:true, version:1,
+  };
+  const m = await mount(r => {
+    if (r.url === mail) return Response.json(baseMail);
+    if (r.url === github) return Response.json(baseGithub);
+    if (r.url === channelDownloads) return Response.json({version:0,validate_public_ip:true});
+    if (r.url === assistant) return Response.json({version:1,enabled:false});
+    if (r.url === '/api/v1/platform-models?page=1') {
+      return Response.json({items:[{...olderModel,id:'newer',name:'新模型',is_default:false}],total:101});
+    }
+    if (r.url === '/api/v1/platform-models?page=1&page_size=100') {
+      return Response.json({items:[{...olderModel,id:'newer',name:'新模型',is_default:false}],total:101});
+    }
+    if (r.url === '/api/v1/platform-models?page=2&page_size=100') {
+      return Response.json({items:[olderModel],total:101});
+    }
+    throw new Error('Unexpected endpoint: '+r.url);
+  });
+  try {
+    const labels = [...m.host.querySelectorAll('.admin-subnav button')].map(n=>n.textContent.trim());
+    assert.deepEqual(labels,['账户与注册','官方模型与助手','任务分享与附件','插件集成']);
+    m.button('官方模型与助手').click(); await wait();
+    assert.match(m.host.querySelector('.assistant-settings').textContent, /旧默认模型（已验证、已启用）/);
+    m.button('任务分享与附件').click(); await wait();
+    assert.ok(m.host.querySelector('[aria-label="附件下载设置"]'));
+    assert.ok(m.requests.some(r=>r.url.endsWith('/task-link-settings')));
+    assert.ok(m.requests.some(r=>r.url===channelDownloads));
+    m.button('插件集成').click(); await wait();
+    assert.ok(m.requests.some(r=>r.url===github));
+    assert.ok(!m.requests.some(r=>r.method==='PATCH'));
+    assert.deepEqual(m.errors,[]);
+  } finally { await m.close(); }
 });

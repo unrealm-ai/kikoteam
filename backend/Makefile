@@ -4,7 +4,7 @@ include ../tools/lint.mk
 VERSION ?= dev
 # Each integration case replays isolated PostgreSQL migrations; the repository
 # suite now has more than 150 cases. Keep a bounded per-package budget.
-TEST_TIMEOUT ?= 300s
+TEST_TIMEOUT ?= 30m
 OPENAPI_VALIDATOR ?= ../event-hub/.venv/bin/openapi-spec-validator
 
 .PHONY: build fmt check-fmt vet lint test test-integration check-contracts check

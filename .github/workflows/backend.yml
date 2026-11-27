@@ -23,7 +23,8 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Leave time for setup and live runtime checks around the 30m Go test budget.
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16.6

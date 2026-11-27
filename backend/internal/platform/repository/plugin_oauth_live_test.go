@@ -40,7 +40,7 @@ func liveConnectionAcceptance(t *testing.T, market bool) {
 	}
 	github := t.Name() == "TestLiveBuiltinGitHub"
 	webConsent := github && os.Getenv("KIKO_LIVE_GITHUB_TOKEN") == ""
-	if webConsent && (os.Getenv("KIKO_GITHUB_OAUTH_CLIENT_ID") == "" || os.Getenv("KIKO_GITHUB_OAUTH_CLIENT_SECRET") == "") {
+	if webConsent && (os.Getenv("KIKO_LIVE_TEST_GITHUB_CLIENT_ID") == "" || os.Getenv("KIKO_LIVE_TEST_GITHUB_CLIENT_SECRET") == "") {
 		t.Fatal("configure the test GitHub App and register the loopback callback on port 18089")
 	}
 	key, endpoint, modelID := os.Getenv("DEEPSEEK_API_KEY"), os.Getenv("DEEPSEEK_BASE_URL"), os.Getenv("DEEPSEEK_MODEL")
@@ -109,8 +109,12 @@ func liveConnectionAcceptance(t *testing.T, market bool) {
 	mux.Handle("/api/v1/workspaces/{w}/agents/{a}/plugins/", platformAPI)
 	backend := httptest.NewUnstartedServer(mux)
 	if webConsent {
-		runtime.Plugins.GitHubClientID = os.Getenv("KIKO_GITHUB_OAUTH_CLIENT_ID")
-		runtime.Plugins.GitHubClientSecret = os.Getenv("KIKO_GITHUB_OAUTH_CLIENT_SECRET")
+		runtime.Plugins.OAuthApps = &service.OAuthAppService{Store: &OAuthAppStore{DB: db}, Secret: runtime.Plugins.Secret}
+		reviewExec(t, db, `UPDATE platform_accounts SET is_platform_admin=true WHERE id=$1`, actor)
+		id, secret, on, version := os.Getenv("KIKO_LIVE_TEST_GITHUB_CLIENT_ID"), os.Getenv("KIKO_LIVE_TEST_GITHUB_CLIENT_SECRET"), true, int64(0)
+		if _, err = runtime.Plugins.OAuthApps.UpdateGitHub(ctx, actor, service.OAuthAppPatch{ExpectedVersion: &version, Enabled: &on, ClientID: &id, ClientSecret: &secret}); err != nil {
+			t.Fatal(err)
+		}
 		if err := backend.Listener.Close(); err != nil {
 			t.Fatal(err)
 		}

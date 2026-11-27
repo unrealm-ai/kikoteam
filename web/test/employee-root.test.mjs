@@ -113,7 +113,7 @@ test('Platform administration is the third settings tab for real platform admini
    if(url.includes('/accounts?'))return Response.json({items:[],total:0});
    if(url.endsWith('/credit-settings'))return Response.json({signup_bonus:'0',version:1});
    if(url.endsWith('/platform/mail-settings'))return Response.json({
-    version:0,source:'environment',enabled:false,registration_verification_required:false,
+    version:0,source:'unset',enabled:false,registration_verification_required:false,
     address:'',host:'',username:'',from:'',implicit_tls:false,password_configured:false
    });
    return Response.json({error:{code:'not_found',message:'接口不存在'}},{status:404});
@@ -145,7 +145,7 @@ test('Platform administration is the third settings tab for real platform admini
     assert.equal(adminRequests().length,2);
     if(scenario.link==='view=settings'&&!scenario.failWorkspace){
      const button=(root,label)=>[...root.querySelectorAll('button')].find(node=>node.textContent.trim()===label);
-     button(host,'邮件与注册').click();await pause();
+     button(host,'注册与邀请').click();await pause();
      const customSMTP=[...host.querySelectorAll('.n-radio')].find(node=>node.textContent.trim()==='自定义 SMTP');
      assert.ok(customSMTP);
      customSMTP.click();await pause();

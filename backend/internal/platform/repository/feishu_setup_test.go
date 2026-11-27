@@ -187,6 +187,9 @@ func TestFeishuSetupCancellationAndUnknownAreNotReplayed(t *testing.T) {
 	for _, mode := range []string{"cancel", "unknown", "expired", "revoked"} {
 		t.Run(mode, func(t *testing.T) {
 			db, _, _, w, actor, agent, _ := managerFixture(t)
+			if mode == "revoked" {
+				actor = setupAdminWithoutCreatorRights(t, db, w)
+			}
 			ctx := context.Background()
 			now := time.Now().UTC()
 			provider := &setupProvider{result: service.FeishuPoll{State: "credentials_saved", AppID: "cli_fixture", Secret: "private-secret"}}
@@ -217,9 +220,11 @@ func TestFeishuSetupCancellationAndUnknownAreNotReplayed(t *testing.T) {
 			}
 			v, e = setup.Poll(ctx, w, actor, agent, id)
 			if mode == "revoked" {
-				if e == nil {
-					t.Fatal("revoked admin completed setup")
+				var denied *service.Error
+				if !errors.As(e, &denied) || denied.Status != 403 {
+					t.Fatalf("expected authorization failure after revocation: %v", e)
 				}
+				assertNoSetupBinding(t, db, w, agent, "feishu")
 				return
 			}
 			expected := map[string]string{"cancel": "cancelled", "unknown": "interrupted", "expired": "expired"}[mode]
@@ -403,6 +408,7 @@ func TestFeishuSetupBackgroundUnknownPollNeverReplayedAfterRestart(t *testing.T)
 
 func TestFeishuSetupBackgroundRevocationDoesNotPoll(t *testing.T) {
 	db, _, _, w, actor, agent, _ := managerFixture(t)
+	actor = setupAdminWithoutCreatorRights(t, db, w)
 	now := time.Now().UTC()
 	provider := &setupProvider{ready: true, result: service.FeishuPoll{State: "credentials_saved", AppID: "cli_revoked", Secret: "test-secret"}}
 	setup := &service.FeishuSetupService{Store: &FeishuSetupStore{DB: db}, Channels: &service.ChannelService{Store: &ChannelStore{DB: db}, Secret: []byte(strings.Repeat("s", 32))}, Provider: provider, Now: func() time.Time { return now }}
@@ -418,6 +424,7 @@ func TestFeishuSetupBackgroundRevocationDoesNotPoll(t *testing.T) {
 	if provider.polls.Load() != 0 || provider.checks.Load() != 0 {
 		t.Fatal("revoked actor advanced setup")
 	}
+	assertNoSetupBinding(t, db, w, agent, "feishu")
 }
 
 func TestFeishuSetupBackgroundManualBindingConflictStopsAutomaticChecks(t *testing.T) {
@@ -665,6 +672,9 @@ func TestFeishuSetupContactRangeNeverExpandsLegacyOrChangedBinding(t *testing.T)
 	for _, mode := range []string{"legacy", "revoked", "connection-changed"} {
 		t.Run(mode, func(t *testing.T) {
 			db, _, _, w, actor, agent, _ := managerFixture(t)
+			if mode == "revoked" {
+				actor = setupAdminWithoutCreatorRights(t, db, w)
+			}
 			ctx := context.Background()
 			now := time.Now().UTC()
 			p := &setupProvider{ready: true, result: service.FeishuPoll{State: "credentials_saved", AppID: "cli_fenced", Secret: "secret"}}

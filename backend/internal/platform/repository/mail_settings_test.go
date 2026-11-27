@@ -17,22 +17,20 @@ import (
 func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 	ctx := context.Background()
 	db := workspaceTestDB(t)
-	fallback := service.MailPolicy{Enabled: true}
-	authStore := &AuthStore{DB: db, MailFallback: &fallback}
+	authStore := &AuthStore{DB: db}
 	mailStore := &MailSettingsStore{DB: db}
 	candidate := service.MailSettings{
-		MailPolicy: fallback, Address: "mail.example.test:465", Host: "mail.example.test",
+		MailPolicy: service.MailPolicy{Enabled: true}, Address: "mail.example.test:465", Host: "mail.example.test",
 		Username: "noreply@example.test", From: "noreply@example.test", ImplicitTLS: true,
 	}
 	var deliveryTarget string
 	sends := 0
 	settings := &service.MailSettingsService{
 		Store: mailStore, Secret: bytes.Repeat([]byte("x"), 32),
-		Fallback: service.MailSettingsDraft{MailSettings: candidate, Password: "environment-fixture-secret"},
 		SendTest: func(_ context.Context, d service.MailSettingsDraft, to string) error {
 			sends++
 			deliveryTarget = to
-			if d.Password != "environment-fixture-secret" && d.Password != "database-fixture-secret" {
+			if d.Password != "initial-fixture-secret" && d.Password != "database-fixture-secret" {
 				return errors.New("SMTP fixture rejection")
 			}
 			return nil
@@ -71,14 +69,14 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 	const optionsPath = "/api/v1/auth/options"
 	request("GET", path, "", nil, 401)
 	request("GET", path, memberToken, nil, 403)
-	fallbackView := request("GET", path, adminToken, nil, 200)
-	assertSafeMailView(t, fallbackView, "environment", 0)
-	draft := service.MailSettingsDraft{MailSettings: candidate}
+	unsetView := request("GET", path, adminToken, nil, 200)
+	assertSafeMailView(t, unsetView, "unset", 0)
+	draft := service.MailSettingsDraft{MailSettings: candidate, Password: "initial-fixture-secret"}
 	request("POST", path+"/test", memberToken, draft, 403)
 	if deliveryTarget != "" {
 		t.Fatal("unauthorized mail test reached sender")
 	}
-	fallbackReceipt := testMailReceipt(t, request("POST", path+"/test", adminToken, draft, 200))
+	initialReceipt := testMailReceipt(t, request("POST", path+"/test", adminToken, draft, 200))
 	if deliveryTarget != "admin@example.test" {
 		t.Fatal("mail test must target current admin")
 	}
@@ -112,6 +110,7 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 		t.Fatal("invalid API settings reached the SMTP sender")
 	}
 	draft.Address = "other.example.test:465"
+	draft.Password = ""
 	request("POST", path+"/test", adminToken, draft, 400)
 	draft.Address = candidate.Address
 	draft.Password = "reject-fixture"
@@ -123,10 +122,10 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 	if !strings.Contains(out.Body.String(), "smtp_test_required") {
 		t.Fatal(out.Body.String())
 	}
-	fallbackView = request("GET", path, adminToken, nil, 200)
-	assertSafeMailView(t, fallbackView, "environment", 0)
+	unsetView = request("GET", path, adminToken, nil, 200)
+	assertSafeMailView(t, unsetView, "unset", 0)
 	draft.Password = "database-fixture-secret"
-	draft.TestReceipt = fallbackReceipt
+	draft.TestReceipt = initialReceipt
 	out = request("PATCH", path, adminToken, draft, 400)
 	if !strings.Contains(out.Body.String(), "smtp_test_required") {
 		t.Fatal("receipt for a different effective password was accepted")
@@ -159,7 +158,7 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 	assertSafeMailView(t, view, "database", 2)
 	flags = request("GET", optionsPath, "", nil, 200)
 	if !strings.Contains(flags.Body.String(), `"email_code_enabled":false`) {
-		t.Fatal("explicit DB disable did not override enabled environment")
+		t.Fatal("explicit DB disable did not disable email codes")
 	}
 	request("POST", "/api/v1/auth/email-codes", "", map[string]string{"email": "other@example.test", "purpose": "register"}, 403)
 	draft.Version = 2
@@ -203,7 +202,7 @@ func assertSafeMailView(t *testing.T, w *httptest.ResponseRecorder, source strin
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Version != version || out.Source != source || !out.PasswordConfigured ||
+	if out.Version != version || out.Source != source || out.PasswordConfigured != (version > 0) ||
 		strings.Contains(w.Body.String(), `"password":`) || strings.Contains(w.Body.String(), "fixture-secret") {
 		t.Fatalf("unexpected mail settings projection for source %s version %d", source, version)
 	}

@@ -43,7 +43,15 @@ func TestDingTalkSetupBackgroundBindsWithoutBrowser(t *testing.T) {
 	db, _, _, w, actor, agent, _ := managerFixture(t)
 	ctx := context.Background()
 	now := time.Now()
-	provider := &dingSetupProvider{result: service.DingTalkPoll{State: "SUCCESS", AppID: "ding_background_test", Secret: "synthetic-secret"}}
+	t.Setenv("KIKO_DINGTALK_REGISTRATION_SOURCE", "obsolete-source")
+	provider := &dingSetupProvider{
+		result: service.DingTalkPoll{State: "SUCCESS", AppID: "ding_background_test", Secret: "synthetic-secret"},
+		beginHook: func(source string) {
+			if source != "kikoteam" {
+				t.Fatalf("expected the source from code, got %q", source)
+			}
+		},
+	}
 	channels := &service.ChannelService{Store: &ChannelStore{DB: db}, Secret: []byte(strings.Repeat("s", 32))}
 	setup := &service.DingTalkSetupService{Store: &DingTalkSetupStore{DB: db}, Channels: channels, Provider: provider, Now: func() time.Time { return now }}
 	if _, err := setup.Start(ctx, w, actor, agent, "scheduled-dingtalk"); err != nil {
@@ -178,9 +186,12 @@ func dingMustJSON(t *testing.T, v any) string {
 }
 
 func TestDingTalkSetupCancellationVersionAndUnknown(t *testing.T) {
-	for _, mode := range []string{"cancel", "manual", "expired", "revoked", "transient", "unknown"} {
+	for _, mode := range []string{"cancel", "manual", "expired", "revoked", "creator-demoted", "transient", "unknown"} {
 		t.Run(mode, func(t *testing.T) {
 			db, _, _, w, actor, agent, _ := managerFixture(t)
+			if mode == "revoked" {
+				actor = setupAdminWithoutCreatorRights(t, db, w)
+			}
 			ctx := context.Background()
 			now := time.Now().UTC()
 			p := &dingSetupProvider{result: service.DingTalkPoll{State: "SUCCESS", AppID: "ding_fixture", Secret: "private-secret"}}
@@ -208,7 +219,7 @@ func TestDingTalkSetupCancellationVersionAndUnknown(t *testing.T) {
 				}
 			case "expired":
 				now = now.Add(time.Hour)
-			case "revoked":
+			case "revoked", "creator-demoted":
 				p.pollHook = func() {
 					if _, e := db.Exec(`UPDATE platform_members SET role='member' WHERE workspace_id=$1 AND user_id=$2`, w, actor); e != nil {
 						t.Error(e)
@@ -220,10 +231,18 @@ func TestDingTalkSetupCancellationVersionAndUnknown(t *testing.T) {
 				p.result.State = "UNKNOWN"
 			}
 			v, e = s.Poll(ctx, w, actor, agent, id)
-			if mode == "revoked" {
-				if e == nil {
-					t.Fatal("revoked accepted")
+			if mode == "creator-demoted" {
+				if e != nil || v.Registration.State != "ready" {
+					t.Fatalf("creator should retain management rights after role demotion: %+v %v", v, e)
 				}
+				return
+			}
+			if mode == "revoked" {
+				var denied *service.Error
+				if !errors.As(e, &denied) || denied.Status != 403 {
+					t.Fatalf("expected authorization failure after revocation: %v", e)
+				}
+				assertNoSetupBinding(t, db, w, agent, "dingtalk")
 				return
 			}
 			if e != nil {

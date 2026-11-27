@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/unrealm-ai/kikoteam/backend/internal/config"
 )
 
 var dingSetupKey = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
@@ -153,7 +155,7 @@ func (s *DingTalkSetupService) Start(ctx context.Context, w, a, agent, key strin
 	}
 	source := s.Source
 	if source == "" {
-		source = "kikoteam"
+		source = config.DingTalkRegistrationSource
 	}
 	begin, e := s.Provider.Begin(ctx, source)
 	finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

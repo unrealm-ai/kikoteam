@@ -53,30 +53,26 @@ type MailSettingsRecord struct {
 
 type MailSettingsStore interface {
 	Read(context.Context) (MailSettingsRecord, error)
-	ReadPolicy(context.Context, MailPolicy) (MailPolicy, error)
+	ReadPolicy(context.Context) (MailPolicy, error)
 	AdminEmail(context.Context, string) (string, error)
 	Save(context.Context, string, int64, MailSettingsRecord) (MailSettingsRecord, error)
 }
 
 type MailSettingsService struct {
 	Store     MailSettingsStore
-	Fallback  MailSettingsDraft
 	Secret    []byte
 	SendTest  func(context.Context, MailSettingsDraft, string) error
 	AllowTest func(context.Context, string, int, time.Duration) error
 }
 
 func (s *MailSettingsService) Policy(ctx context.Context) (MailPolicy, error) {
-	return s.Store.ReadPolicy(ctx, s.Fallback.MailPolicy)
+	return s.Store.ReadPolicy(ctx)
 }
 
 func (s *MailSettingsService) Runtime(ctx context.Context) (MailSettingsDraft, error) {
 	record, err := s.Store.Read(ctx)
 	if err != nil {
 		return MailSettingsDraft{}, err
-	}
-	if record.Version == 0 {
-		return s.Fallback, nil
 	}
 	draft := MailSettingsDraft{MailSettings: record.MailSettings, Version: record.Version}
 	if record.Enabled {
@@ -94,7 +90,7 @@ func (s *MailSettingsService) Get(ctx context.Context, actor string) (MailSettin
 		return MailSettingsView{}, err
 	}
 	if record.Version == 0 {
-		return MailSettingsView{MailSettings: s.Fallback.MailSettings, Source: "environment", PasswordConfigured: s.Fallback.Password != ""}, nil
+		return MailSettingsView{Source: "unset"}, nil
 	}
 	return mailSettingsView(record), nil
 }
@@ -119,9 +115,6 @@ func (s *MailSettingsService) prepare(ctx context.Context, in MailSettingsDraft,
 	if old.Version != in.Version {
 		return in, old, MailSettingsConflict()
 	}
-	if old.Version == 0 {
-		old.MailSettings = s.Fallback.MailSettings
-	}
 	in.Address = strings.TrimSpace(in.Address)
 	in.Host = strings.TrimSpace(in.Host)
 	in.Username = strings.TrimSpace(in.Username)
@@ -137,13 +130,9 @@ func (s *MailSettingsService) prepare(ctx context.Context, in MailSettingsDraft,
 		return in, old, err
 	}
 	if in.Password == "" && in.Username != "" && targetMatches {
-		if old.Version == 0 {
-			in.Password = s.Fallback.Password
-		} else {
-			in.Password, err = s.open(old.Ciphertext)
-			if err != nil {
-				return in, old, err
-			}
+		in.Password, err = s.open(old.Ciphertext)
+		if err != nil {
+			return in, old, err
 		}
 	}
 	if in.Password == "" {
@@ -239,9 +228,6 @@ func (s *MailSettingsService) Save(ctx context.Context, actor string, in MailSet
 func (s *MailSettingsService) mailSettingsCiphertext(candidate MailSettingsDraft, old MailSettingsRecord) ([]byte, error) {
 	if candidate.Enabled {
 		return s.seal(candidate.Password)
-	}
-	if old.Version == 0 {
-		return s.seal(s.Fallback.Password)
 	}
 	return old.Ciphertext, nil
 }

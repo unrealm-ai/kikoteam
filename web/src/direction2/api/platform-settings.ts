@@ -11,7 +11,7 @@ export interface MailSettingsFields {
 }
 export type MailSettings = MailSettingsFields & {
   version: number;
-  source: 'environment' | 'database';
+  source: 'unset' | 'database';
   password_configured: boolean;
 };
 export type MailSettingsWrite = MailSettingsFields & { version: number; password?: string };
@@ -23,7 +23,7 @@ export interface GithubOAuthApp {
   enabled: boolean;
   client_id: string;
   has_client_secret: boolean;
-  source: 'unset' | 'legacy_env' | 'database';
+  source: 'unset' | 'database';
   redirect_uri: string;
 }
 export interface GithubOAuthWrite {

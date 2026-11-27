@@ -139,27 +139,14 @@ server {
 | `KIKO_TRUSTED_PROXY_CIDRS` | 否 | 空 | 可信反向代理网段（逗号分隔 CIDR），用于安全解析 `X-Forwarded-For` |
 | `KIKO_ALLOW_HTTP_IP_ORIGIN` | 否 | `false` | 内网使用纯 HTTP + IP 地址（如 `http://192.168.1.10:18080`）访问时需显式设为 `true` |
 | `KIKO_MCP_PRIVATE_CIDRS` | 否 | 空 | 允许远程 HTTP MCP 访问的私网网段白名单（逗号分隔 CIDR）；永不允许环回与链路本地地址 |
-| `KIKO_GITHUB_OAUTH_CLIENT_ID` | 否 | 空 | 官方 GitHub 插件 OAuth App Client ID（回调地址为 `<KIKO_PUBLIC_ORIGIN>/api/v1/auth/callbacks/plugin-oauth`） |
-| `KIKO_GITHUB_OAUTH_CLIENT_SECRET` | 否 | 空 | 官方 GitHub 插件 OAuth App Client Secret |
-| `KIKO_DINGTALK_REGISTRATION_SOURCE` | 否 | `kikoteam` | 钉钉扫码创建机器人时提交的来源标识 |
 
-### 3.2 SMTP、注册策略与 GitHub 插件 OAuth
+### 3.2 平台业务配置
 
-新部署从「设置 → 平台管理」保存实例级配置，不需要给启动模板填 SMTP 或 GitHub 凭据。无数据库配置时，旧部署继续使用既有 env/旧 JSON 值。管理员保存后，以数据库为准；停用不是恢复 env。迁移后如需移除旧环境变量，整组移除并核对重启前后能力一致。
+「设置 → 平台管理」中的邮件与注册策略、GitHub 插件 OAuth 和 KIKO 助手发放开关仅从数据库读取，不从环境变量或旧 JSON 回退。邮件和 GitHub OAuth 未配置时不可用，默认允许密码注册。助手发放开关默认关闭；开启后，只有配置了可用的平台默认模型才给新工作区发放，不补发。
 
-以下邮件环境变量仅用于兼容已有部署。GitHub 插件旧变量见上表；两组配置都不用于网站第三方登录。
+**从旧版本升级**：如果 SMTP 或 GitHub OAuth 仍靠部署环境生效，先在旧版的平台管理保存到数据库并验证，再升级。GitHub 保留同一 App 和密钥，以保留可兼容的旧授权；没有迁入的老 OAuth 连接可能需要重新授权。SMTP 未迁入时，升级后验证码登录、注册和找回密码不可用，注册会回到密码模式。升级前确认至少一位平台管理员能用密码登录，同时保留原数据库与认证密钥。旧 Backend JSON 中的 `mail` 与 `auth.require_email_verification` 在升级前删除。
 
-
-| 变量名 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `KIKO_REGISTRATION_VERIFICATION_REQUIRED` | 否 | `false` | 是否强制要求邮箱验证码才能注册（开启时必须同时开启 `KIKO_MAIL_ENABLED=true`） |
-| `KIKO_MAIL_ENABLED` | 否 | `false` | 是否启用 SMTP 邮件发送（用于注册验证码、密码重置与邮件邀请） |
-| `SMTP_ADDRESS` | 启用邮件时必填 | 空 | SMTP 服务器 `host:port`（如 `smtp.example.com:587`） |
-| `SMTP_HOST` | 启用邮件时必填 | 空 | TLS 证书校验主机名（如 `smtp.example.com`） |
-| `SMTP_FROM` | 启用邮件时必填 | 空 | 发件人纯邮箱地址（如 `noreply@example.com`，不含显示名） |
-| `SMTP_USERNAME` | 条件必填 | 空 | SMTP 认证用户名（与 `SMTP_PASSWORD` 同时提供或同时省略） |
-| `SMTP_PASSWORD` | 条件必填 | 空 | SMTP 认证密码 |
-| `SMTP_IMPLICIT_TLS` | 否 | `false` | `465` 端口隐式 TLS 设为 `true`；`false` 时强制要求 `STARTTLS`，绝不回退明文 |
+钉钉扫码登记的来源标识由 Backend 源码配置（默认 `kikoteam`），不从环境或平台管理读取。
 
 ### 3.3 存储配置变量（Backend & Agent Engine）
 

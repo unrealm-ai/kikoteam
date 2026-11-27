@@ -28,6 +28,9 @@ def prepare():
 
 def run():
     env = dict(os.environ)
+    # Never forward obsolete provider secrets left in the launching shell.
+    for name in ("SMTP_PASSWORD", "KIKO_GITHUB_OAUTH_CLIENT_SECRET"):
+        env.pop(name, None)
     for name in ("DATABASE_URL", "KIKO_AUTH_SECRET", "KIKO_ENGINE_TOKEN"):
         value = env.get(name, "")
         if not value or name != "DATABASE_URL" and len(value.encode()) < 32:
@@ -53,11 +56,7 @@ def run():
         # Backend and Engine start independently; Event Hub owns migration and
         # retries. Runner is started lazily by Engine, never as a global daemon.
         for component in ("event-hub", "backend", "agent-engine"):
-            child_env = env.copy()
-            if component != "backend":
-                child_env.pop("KIKO_GITHUB_OAUTH_CLIENT_ID", None)
-                child_env.pop("KIKO_GITHUB_OAUTH_CLIENT_SECRET", None)
-            process = subprocess.Popen([str(ROOT / component / "bin" / component)], cwd=ROOT, env=child_env, start_new_session=True)
+            process = subprocess.Popen([str(ROOT / component / "bin" / component)], cwd=ROOT, env=env, start_new_session=True)
             children.append((component, process))
         print("Native processes started: " + env["KIKO_PUBLIC_ORIGIN"] + " (API only; Ctrl-C stops processes and retains data)", flush=True)
         while not stopping:

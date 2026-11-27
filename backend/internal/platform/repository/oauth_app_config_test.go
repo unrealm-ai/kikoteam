@@ -22,7 +22,7 @@ func TestGitHubOAuthAppAdminHTTPStorageAndDisable(t *testing.T) {
 	db, _, _, _, actor, _, cookie := managerFixture(t)
 	ctx := context.Background()
 	s := &service.OAuthAppService{Store: &OAuthAppStore{DB: db}, Secret: []byte(strings.Repeat("k", 40)),
-		LegacyClientID: "legacy-app", LegacyClientSecret: "legacy-private-credential", RedirectURI: testGitHubRedirect}
+		RedirectURI: testGitHubRedirect}
 	h := (&controller.Server{OAuthApps: s, Auth: &service.AuthService{Store: &AuthStore{DB: db}}, Origin: "https://kiko.example"}).Handler()
 	do := func(method, body string, auth, csrf bool, want int) service.OAuthAppStatus {
 		t.Helper()
@@ -51,18 +51,19 @@ func TestGitHubOAuthAppAdminHTTPStorageAndDisable(t *testing.T) {
 	do("GET", "", true, false, 403) // Workspace owner is not a platform admin.
 	reviewExec(t, db, `UPDATE platform_accounts SET is_platform_admin=true WHERE id=$1`, actor)
 	got := do("GET", "", true, false, 200)
-	if got.Version != 0 || got.Source != "legacy_env" || !got.Enabled || !got.HasClientSecret || got.ClientID != "legacy-app" || got.RedirectURI != testGitHubRedirect {
-		t.Fatal("effective legacy settings absent", got)
+	if got.Version != 0 || got.Source != "unset" || got.Enabled || got.HasClientSecret || got.ClientID != "" || got.RedirectURI != testGitHubRedirect {
+		t.Fatal("unset settings unexpectedly enabled", got)
 	}
 	do("PATCH", `{"expected_version":0,"enabled":false}`, true, false, 403)
 	do("PATCH", `{"expected_version":0,"enabled":true,"clear_client_secret":true}`, true, true, 400)
 	do("PATCH", `{"enabled":true}`, true, true, 400)
-	got = do("PATCH", `{"expected_version":0,"enabled":true}`, true, true, 200)
+	do("PATCH", `{"expected_version":0,"enabled":true}`, true, true, 400)
+	got = do("PATCH", `{"expected_version":0,"enabled":true,"client_id":"fixture-app","client_secret":"fixture-private-credential"}`, true, true, 200)
 	if got.Version != 1 || got.Source != "database" || !got.Enabled || !got.HasClientSecret {
-		t.Fatal("legacy import not written", got)
+		t.Fatal("database settings not written", got)
 	}
 	var ciphertext []byte
-	if err := db.QueryRowContext(ctx, `SELECT client_secret FROM platform_oauth_app_configs WHERE provider='github' AND purpose='plugin'`).Scan(&ciphertext); err != nil || len(ciphertext) < 28 || bytes.Contains(ciphertext, []byte(s.LegacyClientSecret)) {
+	if err := db.QueryRowContext(ctx, `SELECT client_secret FROM platform_oauth_app_configs WHERE provider='github' AND purpose='plugin'`).Scan(&ciphertext); err != nil || len(ciphertext) < 28 || bytes.Contains(ciphertext, []byte("fixture-private-credential")) {
 		t.Fatal("missing encryption", err)
 	}
 	do("PATCH", `{"expected_version":0,"enabled":false}`, true, true, 409)
@@ -113,7 +114,7 @@ func TestGitHubOAuthAppRotationPinsAuthorization(t *testing.T) {
 		t.Fatal("missing official GitHub plugin")
 	}
 	apps := &service.OAuthAppService{Store: &OAuthAppStore{DB: db}, Secret: rt.Plugins.Secret,
-		LegacyClientID: "legacy-test-app", LegacyClientSecret: "legacy-test-secret", RedirectURI: testGitHubRedirect}
+		RedirectURI: testGitHubRedirect}
 	fixture := &githubFixture{t: t}
 	wire := &githubConfigTransport{fixture: fixture}
 	s := rt.Plugins
@@ -144,15 +145,19 @@ func TestGitHubOAuthAppRotationPinsAuthorization(t *testing.T) {
 	finish := func(state string) (service.PluginAccount, error) {
 		return s.CompleteOAuth(ctx, actor, "fixture-browser", state, "fixture-code", githubIssuer)
 	}
-	legacyState := begin("legacy-test-app")
+	if _, e := s.AuthorizeOAuth(ctx, w, actor, "fixture-browser", "", id, req); oauthErrorCode(e) != "github_oauth_unconfigured" || wire.requests != 0 {
+		t.Fatal("unset database configuration attempted authorization", e)
+	}
 	client, secret := "fixture-app", "fixture-secret"
 	patch(0, true, &client, &secret)
+	legacyState := begin(client)
+	patch(1, true, nil, nil)
 	n := wire.requests
 	if _, err = finish(legacyState); oauthErrorCode(err) != "oauth_client_changed" || n != wire.requests {
 		t.Fatal("stale callback reached provider or lacked clear error", err)
 	}
 	current := begin(client)
-	wire.exchangeHook = func() { patch(1, true, nil, nil) }
+	wire.exchangeHook = func() { patch(2, true, nil, nil) }
 	if _, err = finish(current); oauthErrorCode(err) != "oauth_client_changed" {
 		t.Fatal("rotation during exchange saved the stale grant", err)
 	}
@@ -165,7 +170,7 @@ func TestGitHubOAuthAppRotationPinsAuthorization(t *testing.T) {
 	if err != nil || !account.Enabled || account.AuthMethod != "oauth" {
 		t.Fatal("new attempt did not use saved app", err)
 	}
-	patch(2, false, nil, nil)
+	patch(3, false, nil, nil)
 	n = wire.requests
 	if _, err = s.AuthorizeOAuth(ctx, w, actor, "fixture-browser", "", id, req); oauthErrorCode(err) != "github_oauth_unconfigured" || n != wire.requests {
 		t.Fatal("disabled app fell back or attempted provider", err)

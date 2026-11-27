@@ -107,11 +107,9 @@ type PluginStore interface {
 	WithWorkspace(context.Context, string, func(PluginTx) error) error
 }
 type PluginService struct {
-	OAuthApps          *OAuthAppService
-	Store              PluginStore
-	Probe              MCPProbe
-	Secret             []byte
-	RedirectURI        string
-	GitHubClientID     string
-	GitHubClientSecret string
+	OAuthApps   *OAuthAppService
+	Store       PluginStore
+	Probe       MCPProbe
+	Secret      []byte
+	RedirectURI string
 }

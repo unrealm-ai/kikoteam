@@ -71,8 +71,13 @@ func TestAgentAuthorizationIsolationAndConcurrentPatch(t *testing.T) {
 	if _, e := db.Exec(`INSERT INTO platform_members(workspace_id,user_id,role,status,version) VALUES($1,$2,'member','active',1)`, w, member); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := s.Create(ctx, w, member, service.AgentCreate{Name: "Denied", ModelProfileID: m.ID}); e == nil {
-		t.Fatal("member write")
+	own, e := s.Create(ctx, w, member, service.AgentCreate{Name: "Member employee", ModelProfileID: m.ID})
+	if e != nil {
+		t.Fatalf("ordinary member cannot create their own employee: %v", e)
+	}
+	renamed := "Member managed"
+	if updated, err := s.Update(ctx, w, member, own.ID, service.AgentPatch{Version: own.Version, Name: &renamed}); err != nil || updated.Name != renamed {
+		t.Fatalf("creator cannot manage their own employee: %v", err)
 	}
 	a, e := s.Create(ctx, w, owner, service.AgentCreate{Name: "Employee", ModelProfileID: m.ID})
 	if e != nil {
@@ -80,6 +85,10 @@ func TestAgentAuthorizationIsolationAndConcurrentPatch(t *testing.T) {
 	}
 	if _, e = s.Get(ctx, w, member, a.ID); e != nil {
 		t.Fatal(e)
+	}
+	var denied *service.Error
+	if _, err := s.Update(ctx, w, member, a.ID, service.AgentPatch{Version: a.Version, Name: &renamed}); !errors.As(err, &denied) || denied.Status != 403 {
+		t.Fatalf("member modified another employee without management permission: %v", err)
 	}
 	other, e := (&service.WorkspaceService{Store: NewWorkspaceStore(db)}).Create(ctx, owner, "Other", "")
 	if e != nil {
@@ -119,7 +128,7 @@ func TestAgentAuthorizationIsolationAndConcurrentPatch(t *testing.T) {
 		t.Fatal(success)
 	}
 	p, e := s.List(ctx, w, owner, service.AgentListQuery{Page: 1, PageSize: 1})
-	if e != nil || p.Total != 1 || len(p.Items) != 1 {
+	if e != nil || p.Total != 2 || len(p.Items) != 1 {
 		t.Fatal(p, e)
 	}
 }

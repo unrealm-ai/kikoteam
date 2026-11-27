@@ -1,9 +1,8 @@
 package service
 
 type AssistantSettings struct {
-	Version   int64 `json:"version"`
-	Enabled   bool  `json:"enabled"`
-	Available bool  `json:"available"`
+	Version int64 `json:"version"`
+	Enabled bool  `json:"enabled"`
 }
 
 type AssistantSettingsPatch struct {

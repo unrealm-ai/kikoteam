@@ -9,9 +9,6 @@ import (
 )
 
 func startHostedAssistant(parent context.Context, store *repository.HostedAssistantStore, log *slog.Logger) func() {
-	if !store.Available {
-		return func() {}
-	}
 	ctx, cancel := context.WithCancel(parent)
 	done := make(chan struct{})
 	go func() {

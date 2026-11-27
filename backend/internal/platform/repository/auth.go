@@ -12,7 +12,6 @@ import (
 
 type AuthStore struct {
 	DB             *sql.DB
-	MailFallback   *service.MailPolicy
 	InitCredits    func(context.Context, *sql.Tx, string) error
 	RewardReferral func(context.Context, *sql.Tx, string, string) error
 }
@@ -77,14 +76,12 @@ func (s *AuthStore) Consume(ctx context.Context, c service.Challenge, fn func(se
 	if e = lockAdminInitialization(ctx, tx); e != nil {
 		return e
 	}
-	if s.MailFallback != nil {
-		policy, err := readMailPolicy(ctx, tx, *s.MailFallback)
-		if err != nil {
-			return err
-		}
-		if !policy.Enabled {
-			return service.Fail("email_code_disabled", 403, "当前部署未启用邮箱验证码，请使用密码登录或联系管理员")
-		}
+	policy, err := readMailPolicy(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !policy.Enabled {
+		return service.Fail("email_code_disabled", 403, "当前部署未启用邮箱验证码，请使用密码登录或联系管理员")
 	}
 	e = tx.QueryRowContext(ctx, `SELECT code_hash,attempts, consumed_at IS NULL AND expires_at>now() FROM platform_email_challenges WHERE id::text=$1 AND email=$2 AND purpose=$3 FOR UPDATE`, c.ID, c.Email, c.Purpose).Scan(&hash, &attempts, &valid)
 	if errors.Is(e, sql.ErrNoRows) {
@@ -259,14 +256,12 @@ func (s *AuthStore) RegisterPassword(ctx context.Context, a service.Account, wor
 	if e = lockAdminInitialization(ctx, tx); e != nil {
 		return e
 	}
-	if s.MailFallback != nil {
-		policy, err := readMailPolicy(ctx, tx, *s.MailFallback)
-		if err != nil {
-			return err
-		}
-		if policy.VerificationRequired {
-			return service.Fail("email_verification_required", 403, "当前部署要求邮箱验证码注册")
-		}
+	policy, err := readMailPolicy(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if policy.VerificationRequired {
+		return service.Fail("email_verification_required", 403, "当前部署要求邮箱验证码注册")
 	}
 	auth := &authTx{tx: tx, initCredits: s.InitCredits, rewardReferral: s.RewardReferral}
 	if e = auth.CreateAccount(ctx, a); e != nil {

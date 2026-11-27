@@ -27,7 +27,7 @@ function noTransport(s: MailSettings) {
   return ![s.address, s.host, s.from, s.username].some(value => value.trim()) && !s.password_configured;
 }
 function isFirstSetup(s: MailSettings) {
-  return s.source === 'environment' && s.version === 0 && !s.enabled &&
+  return s.source === 'unset' && s.version === 0 && !s.enabled &&
     !s.registration_verification_required && noTransport(s);
 }
 function toProfile(s: MailSettings): Profile {
@@ -138,8 +138,6 @@ watch([
   () => draft.value?.password,
 ], invalidateTestReceipt, { flush: 'sync' });
 const enabledSaveBlocked = computed(() => draft.value?.enabled === true && !testReceipt.value);
-const importable = computed(() => snapshot.value?.source === 'environment' && snapshot.value.version === 0 &&
-  snapshot.value.enabled && draft.value?.profile.provider !== 'legacy');
 const canKeepCode = computed(() => !!draft.value && !!snapshot.value && keepsStoredCode(draft.value, snapshot.value));
 const passwordLabel = computed(() => draft.value?.profile.provider === '163' ? '客户端授权码' : 'SMTP 密码或授权码');
 function editProfile(profile: Profile) {
@@ -187,7 +185,7 @@ defineExpose({ dirty, save, discard });
       </div>
       <div v-if="snapshot || dirty" class="editor-meta-pills">
         <template v-if="snapshot">
-          <NTag size="small">{{ snapshot.source === 'database' ? '平台已保存' : isFirstSetup(snapshot) ? '尚未配置' : '部署环境配置' }}</NTag>
+          <NTag size="small">{{ snapshot.source === 'database' ? '平台已保存' : '尚未配置' }}</NTag>
           <span class="mono-pill tabular-num">版本 {{ snapshot.version }}</span>
         </template>
         <span v-if="dirty" class="status-pill status-pill--warning">
@@ -255,8 +253,7 @@ defineExpose({ dirty, save, discard });
         <NButton size="small" secondary :loading="busy === 'read'" @click="load(dirty)">读取最新版本</NButton>
         <div class="editor-footer-primary">
           <NButton size="small" secondary :disabled="!draft.enabled || draft.profile.provider === 'legacy' || conflict" :loading="busy === 'test'" @click="sendTest">发测试邮件到我的邮箱</NButton>
-          <NButton v-if="importable && !dirty" size="small" :disabled="conflict || enabledSaveBlocked" :loading="busy === 'write'" type="primary" @click="save(true)">迁入邮件设置</NButton>
-          <NButton v-else size="small" :disabled="!dirty || conflict || enabledSaveBlocked" :loading="busy === 'write'" type="primary" attr-type="submit">保存邮件设置</NButton>
+          <NButton size="small" :disabled="!dirty || conflict || enabledSaveBlocked" :loading="busy === 'write'" type="primary" attr-type="submit">保存邮件设置</NButton>
         </div>
       </footer>
     </NForm>

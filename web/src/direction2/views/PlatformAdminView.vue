@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { NAlert, NButton, NDrawer, NDrawerContent, NEmpty, NForm, NFormItem, NInput, NModal, NPagination, NPopconfirm, NTag } from 'naive-ui';
 import { platformRequest } from '../api/platform';
+import type { DefaultOfficialModelStatus } from '../api/models';
 import { D2ApiError } from '../api/client';
 import { creditsApi, type Settings } from '../api/credits';
 import OfficialModelsView from './OfficialModelsView.vue';
@@ -15,10 +16,15 @@ import PlatformChannelDownloadSettings from './PlatformChannelDownloadSettings.v
 import PlatformAssistantSettings from './PlatformAssistantSettings.vue';
 
 interface Account { id:string; name:string; email:string; is_platform_admin:boolean; platform_admin_version:number; credit_balance:string }
-type AdminSection = 'accounts' | 'models' | 'mail' | 'integrations' | 'downloads' | 'task-links' | 'assistant';
+type AdminSection = 'accounts' | 'models' | 'sharing' | 'integrations';
 const tab = ref<AdminSection>('accounts');
-const mailOpened = ref(false), integrationsOpened = ref(false);
-const downloadsOpened = ref(false), taskLinksOpened = ref(false);
+const accountTab = ref<'users' | 'registration'>('users');
+const registrationOpened = ref(false), integrationsOpened = ref(false), sharingOpened = ref(false);
+const modelStatus = ref<DefaultOfficialModelStatus>({state:'loading'});
+function selectRegistration() {
+  registrationOpened.value = true;
+  accountTab.value = 'registration';
+}
 const mailEditor = ref<InstanceType<typeof PlatformMailSettings>>();
 const githubEditor = ref<InstanceType<typeof PlatformGithubOAuthSettings>>();
 const downloadsEditor = ref<InstanceType<typeof PlatformChannelDownloadSettings>>();
@@ -26,11 +32,9 @@ const assistantOpened = ref(false);
 const assistantEditor = ref<InstanceType<typeof PlatformAssistantSettings>>();
 const taskLinksEditor = ref<InstanceType<typeof PlatformTaskLinkSettings>>();
 function selectSection(section: AdminSection) {
-  if (section === 'mail') mailOpened.value = true;
   if (section === 'integrations') integrationsOpened.value = true;
-  if (section === 'downloads') downloadsOpened.value = true;
-  if (section === 'assistant') assistantOpened.value = true;
-  if (section === 'task-links') taskLinksOpened.value = true;
+  if (section === 'sharing') sharingOpened.value = true;
+  if (section === 'models') assistantOpened.value = true;
   tab.value = section;
 }
 const hasUnsaved = () => mailEditor.value?.dirty === true || githubEditor.value?.dirty === true || downloadsEditor.value?.dirty === true || taskLinksEditor.value?.dirty === true || assistantEditor.value?.dirty === true;
@@ -120,27 +124,29 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
     <header class="platform-admin-banner">
       <div class="admin-banner-copy">
         <h1>平台管理</h1>
-        <p class="sub-desc">管理全平台注册账户、积分额度、官方托管模型与底层基础设施配置。</p>
+        <p class="sub-desc">管理平台账户、官方模型、任务分享与插件集成。</p>
       </div>
       <nav class="admin-subnav" aria-label="平台管理分区">
-        <NButton size="small" :quaternary="tab !== 'accounts'" :type="tab==='accounts'?'primary':'default'" @click="selectSection('accounts')">用户管理</NButton>
-        <NButton size="small" :quaternary="tab !== 'models'" :type="tab==='models'?'primary':'default'" @click="selectSection('models')">官方模型</NButton>
-        <NButton size="small" :quaternary="tab !== 'mail'" :type="tab==='mail'?'primary':'default'" :class="{ 'has-unsaved-dot': mailEditor?.dirty }" @click="selectSection('mail')">邮件与注册</NButton>
-        <NButton size="small" :quaternary="tab !== 'integrations'" :type="tab==='integrations'?'primary':'default'" :class="{ 'has-unsaved-dot': githubEditor?.dirty }" @click="selectSection('integrations')">集成设置</NButton>
-        <NButton size="small" :quaternary="tab !== 'downloads'" :type="tab==='downloads'?'primary':'default'" :class="{ 'has-unsaved-dot': downloadsEditor?.dirty }" @click="selectSection('downloads')">附件下载</NButton>
-        <NButton size="small" :quaternary="tab !== 'task-links'" :type="tab==='task-links'?'primary':'default'" :class="{ 'has-unsaved-dot': taskLinksEditor?.dirty }" @click="selectSection('task-links')">任务详情链接</NButton>
-        <NButton size="small" :quaternary="tab !== 'assistant'" :type="tab==='assistant'?'primary':'default'" :class="{ 'has-unsaved-dot': assistantEditor?.dirty }" @click="selectSection('assistant')">KIKO 助手</NButton>
+        <NButton size="small" :quaternary="tab !== 'accounts'" :type="tab==='accounts'?'primary':'default'" :class="{ 'has-unsaved-dot': mailEditor?.dirty }" @click="selectSection('accounts')">账户与注册</NButton>
+        <NButton size="small" :quaternary="tab !== 'models'" :type="tab==='models'?'primary':'default'" :class="{ 'has-unsaved-dot': assistantEditor?.dirty }" @click="selectSection('models')">官方模型与助手</NButton>
+        <NButton size="small" :quaternary="tab !== 'sharing'" :type="tab==='sharing'?'primary':'default'" :class="{ 'has-unsaved-dot': downloadsEditor?.dirty || taskLinksEditor?.dirty }" @click="selectSection('sharing')">任务分享与附件</NButton>
+        <NButton size="small" :quaternary="tab !== 'integrations'" :type="tab==='integrations'?'primary':'default'" :class="{ 'has-unsaved-dot': githubEditor?.dirty }" @click="selectSection('integrations')">插件集成</NButton>
       </nav>
     </header>
 
-    <PlatformAssistantSettings v-if="assistantOpened" v-show="tab==='assistant'" ref="assistantEditor" />
-    <OfficialModelsView v-if="tab==='models'"/>
-    <PlatformMailSettings v-if="mailOpened" v-show="tab==='mail'" ref="mailEditor" />
+    <OfficialModelsView v-if="tab==='models'" @default-model-status="status => modelStatus = status"/>
+    <PlatformAssistantSettings v-if="assistantOpened" v-show="tab==='models'" ref="assistantEditor" :model-status="modelStatus"/>
+    <div v-if="sharingOpened" v-show="tab==='sharing'" class="accounts-panel-stack">
+      <PlatformTaskLinkSettings ref="taskLinksEditor" />
+      <PlatformChannelDownloadSettings ref="downloadsEditor" />
+    </div>
     <PlatformGithubOAuthSettings v-if="integrationsOpened" v-show="tab==='integrations'" ref="githubEditor" />
-    <PlatformChannelDownloadSettings v-if="downloadsOpened" v-show="tab==='downloads'" ref="downloadsEditor" />
-    <PlatformTaskLinkSettings v-if="taskLinksOpened" v-show="tab==='task-links'" ref="taskLinksEditor" />
 
-    <section v-if="tab==='accounts'" class="accounts-panel-stack">
+    <nav v-if="tab==='accounts'" class="account-subnav" aria-label="账户与注册子分区">
+      <NButton size="small" :type="accountTab==='users'?'primary':'default'" @click="accountTab='users'">用户管理</NButton>
+      <NButton size="small" :type="accountTab==='registration'?'primary':'default'" @click="selectRegistration">注册与邀请</NButton>
+    </nav>
+    <section v-if="registrationOpened" v-show="tab==='accounts' && accountTab==='registration'" class="accounts-panel-stack">
       <form v-if="settings" class="settings-card settings signup-bonus-card" @submit.prevent="saveSettings">
         <div class="signup-bonus-copy">
           <label for="signup-bonus">新用户注册赠送积分</label>
@@ -156,7 +162,10 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
       <NAlert v-if="settingsNotice" type="success">{{settingsNotice}}</NAlert>
 
       <PlatformReferralSettings />
+      <PlatformMailSettings ref="mailEditor" />
+    </section>
 
+    <section v-if="tab==='accounts' && accountTab==='users'" class="accounts-panel-stack">
       <div class="members-table-card">
         <div class="accounts-toolbar">
           <div class="search">
@@ -297,6 +306,8 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
   border-radius: 50%;
   background: var(--id-status-warning-dot);
 }
+
+.account-subnav { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .accounts-panel-stack {
   display: flex;

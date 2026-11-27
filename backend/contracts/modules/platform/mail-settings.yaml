@@ -13,13 +13,12 @@ settings:
     operationId: updatePlatformMailSettings
     summary: Save instance mail transport and registration policy as a platform administrator
     description: >-
-      Version zero covers the environment fallback before the first database save.
+      Version zero means no mail settings have been saved; email is disabled.
       Every enabled save requires a current test_receipt for the same SMTP
       profile, credential, administrator and configuration version.
       Disabling retains the existing connection and credentials: repeat the existing
       connection fields or leave them empty, do not send a password or require
-      registration verification. A stored disabled policy does not fall back to
-      environment variables.
+      registration verification. Settings are stored only in the database.
     security:
     - sessionCookie: []
     parameters:
@@ -100,7 +99,7 @@ mailSettingsResponse:
         required: [version, source, enabled, registration_verification_required, address, host, username, from, implicit_tls, password_configured]
         properties:
           version: { type: integer, minimum: 0 }
-          source: { type: string, enum: [environment, database] }
+          source: { type: string, enum: [unset, database] }
           enabled: { type: boolean }
           registration_verification_required: { type: boolean }
           address: { type: string }

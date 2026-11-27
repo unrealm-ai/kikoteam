@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -140,16 +139,36 @@ func TestCatalogGitHubConnectionUpgrade(t *testing.T) {
 	s.RedirectURI = "https://kiko.example/api/v1/auth/callbacks/plugin-oauth"
 	id, version := old.Ref().ID, old.Ref().VersionID
 	var employees []string
+	// Seed the rows an 081-era service would have written. Current employee
+	// and package APIs require later columns and cannot create this fixture.
+	usage, err := json.Marshal(service.InitialAgentUsage())
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{"Reviewer", "Analyst"} {
-		a, err := (&service.AgentService{Store: NewAgentStore(db)}).Create(ctx, w, actor, service.AgentCreate{Name: name, ModelProfileID: model.ID})
+		agentID, packageID := service.NewID(), service.NewID()
+		pkg := service.CapabilityPackage{
+			ID: packageID, AgentID: agentID, Name: "GitHub", Enabled: true, Version: 1,
+			Scope:   service.PackageScope{Mode: "whitelist_with_blacklist", AllowMemberIDs: []string{actor}},
+			Plugins: []service.PackagePlugin{{PluginID: id, VersionID: version}},
+		}
+		scope, err := json.Marshal(pkg.Scope)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = (&service.PackageService{Store: NewPackageStore(db)}).Create(ctx, w, actor, a.ID, service.PackageCreate{Name: "GitHub", Scope: &service.PackageScope{Mode: "whitelist_with_blacklist", AllowMemberIDs: []string{actor}}, Plugins: []service.PackagePlugin{{PluginID: id, VersionID: version}}})
+		snapshot, err := json.Marshal(pkg)
 		if err != nil {
 			t.Fatal(err)
 		}
-		employees = append(employees, a.ID)
+		reviewExec(t, db, `INSERT INTO platform_agents(id,workspace_id,name,model_profile_id,version,config_version,admission_epoch,usage_config)
+VALUES($1,$2,$3,$4,1,1,1,$5)`, agentID, w, name, model.ID, usage)
+		reviewExec(t, db, `INSERT INTO platform_capability_packages(id,workspace_id,agent_id,name,version,scope)
+VALUES($1,$2,$3,'GitHub',1,$4)`, packageID, w, agentID, scope)
+		reviewExec(t, db, `INSERT INTO platform_capability_package_plugins(workspace_id,package_id,plugin_id,version_id)
+VALUES($1,$2,$3,$4)`, w, packageID, id, version)
+		reviewExec(t, db, `INSERT INTO platform_capability_package_versions(workspace_id,package_id,version,snapshot)
+VALUES($1,$2,1,$3)`, w, packageID, snapshot)
+		employees = append(employees, agentID)
 	}
 	preview := old
 	preview.Key, preview.Name = "github_pat", "GitHub PAT"
@@ -195,24 +214,16 @@ VALUES($1,$2,$3,$4,'legacy',5,true,true,$5,now())`, connection, w, resource.ID, 
 		return state
 	}
 	before := snapshot()
-	data, err := os.ReadFile("../../../../event-hub/database/postgres/migrations/000082_plugin_connection_auth_method.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	reviewExec(t, db, strings.Split(string(data), "-- +goose Down")[0])
+	const migration = "000082_plugin_connection_auth_method.sql"
+	applyTestMigrations(t, ctx, db, "000081_employee_capability_versions.sql", migration)
 	if err = SyncCatalog(ctx, db, catalog, rt.Skills.Assets); err != nil {
 		t.Fatal(err)
 	}
 	if snapshot() != before {
 		t.Fatal("upgrade changed a connection, binding or permission")
 	}
-	// The fixture staged migration 82 explicitly. Runtime now persists GitHub
-	// app pins, so install its schema before exercising post-migration OAuth.
-	data, err = os.ReadFile("../../../../event-hub/database/postgres/migrations/000090_platform_oauth_app_configs.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	reviewExec(t, db, strings.Split(string(data), "-- +goose Down")[0])
+	// Once the 082 boundary is verified, upgrade before invoking current APIs.
+	applyTestMigrations(t, ctx, db, migration, "")
 	var count int
 	if err = db.QueryRow("SELECT count(*) FROM platform_plugins WHERE builtin_key LIKE 'github%' AND listed").Scan(&count); err != nil || count != 1 {
 		t.Fatal("expected one official GitHub listing", err)
@@ -298,7 +309,12 @@ VALUES($1,$2,$3,$4,'legacy',5,true,true,$5,now())`, connection, w, resource.ID, 
 	if _, err := s.AuthorizeOAuth(ctx, w, actor, "browser", "", id, req); err == nil {
 		t.Fatal("OAuth started without a registered client")
 	}
-	s.GitHubClientID, s.GitHubClientSecret = "fixture-app", "fixture-secret"
+	reviewExec(t, db, `UPDATE platform_accounts SET is_platform_admin=true WHERE id=$1`, actor)
+	s.OAuthApps = &service.OAuthAppService{Store: &OAuthAppStore{DB: db}, Secret: s.Secret}
+	clientID, clientSecret, on, revision := "fixture-app", "fixture-secret", true, int64(0)
+	if _, err = s.OAuthApps.UpdateGitHub(ctx, actor, service.OAuthAppPatch{ExpectedVersion: &revision, Enabled: &on, ClientID: &clientID, ClientSecret: &clientSecret}); err != nil {
+		t.Fatal(err)
+	}
 	begin := func(employee string, rev int64) string {
 		t.Helper()
 		link, err := s.AuthorizeOAuth(ctx, w, actor, "browser", employee, id, service.PluginAccountPut{Name: "GitHub", PluginVersionID: version, Version: rev})
@@ -310,7 +326,7 @@ VALUES($1,$2,$3,$4,'legacy',5,true,true,$5,now())`, connection, w, resource.ID, 
 			t.Fatal(err)
 		}
 		q := u.Query()
-		if u.Scheme+"://"+u.Host+u.Path != githubIssuer+"/authorize" || q.Get("scope") != "offline_access" || q.Get("client_id") != s.GitHubClientID || q.Get("redirect_uri") != s.RedirectURI || q.Get("code_challenge_method") != "S256" || strings.Contains(link, s.GitHubClientSecret) {
+		if u.Scheme+"://"+u.Host+u.Path != githubIssuer+"/authorize" || q.Get("scope") != "offline_access" || q.Get("client_id") != clientID || q.Get("redirect_uri") != s.RedirectURI || q.Get("code_challenge_method") != "S256" || strings.Contains(link, clientSecret) {
 			t.Fatal("incorrect GitHub consent URL")
 		}
 		fixture.challenge = q.Get("code_challenge")
@@ -398,7 +414,10 @@ VALUES($1,$2,$3,$4,'legacy',5,true,true,$5,now())`, connection, w, resource.ID, 
 	// The current release must also default to PAT without deployment OAuth configuration.
 	checkAdmission(employees[0], "team-account")
 	checkAdmission(employees[1], "")
-	s.GitHubClientID, s.GitHubClientSecret = "", ""
+	on, revision = false, 1
+	if _, err = s.OAuthApps.UpdateGitHub(ctx, actor, service.OAuthAppPatch{ExpectedVersion: &revision, Enabled: &on}); err != nil {
+		t.Fatal(err)
+	}
 	created, err := s.PutAccount(ctx, w, actor, "", id, service.PluginAccountPut{Name: "new", PluginVersionID: latest.VersionID, Secret: &valid})
 	if err != nil || created.AuthMethod != "bearer" {
 		t.Fatal("new GitHub connection did not default to PAT", err)

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 	"sync"
 	"testing"
@@ -19,8 +20,18 @@ func (m *codeSink) SendCode(_ context.Context, _, _, code string) error {
 	m.code = code
 	return nil
 }
+func enableMailFixture(t *testing.T, db *sql.DB, actor string) {
+	t.Helper()
+	if actor == "" {
+		actor = service.NewID()
+		reviewExec(t, db, `INSERT INTO platform_accounts(id,email,name) VALUES($1,'fixture-mail-admin@example.test','Mail Fixture')`, actor)
+	}
+	reviewExec(t, db, `INSERT INTO platform_mail_settings(singleton,version,enabled,verification_required,address,host,username,sender,implicit_tls,updated_by)
+	VALUES(true,1,true,false,'','','','',false,$1)`, actor)
+}
 func TestPostgresEmailCodeSingleUseAndReset(t *testing.T) {
 	db := workspaceTestDB(t)
+	enableMailFixture(t, db, "")
 	sink := &codeSink{}
 	store := &AuthStore{DB: db}
 	s := &service.AuthService{Store: store, Mailer: sink, Secret: []byte("test-only-secret-test-only-secret")}
@@ -83,6 +94,7 @@ func TestPostgresEmailCodeSingleUseAndReset(t *testing.T) {
 }
 func TestPostgresResendInvalidatesOldCodeAndAttemptLimit(t *testing.T) {
 	db := workspaceTestDB(t)
+	enableMailFixture(t, db, "")
 	sink := &codeSink{}
 	s := &service.AuthService{Store: &AuthStore{DB: db}, Mailer: sink, Secret: []byte("test-only-secret-test-only-secret")}
 	ctx := context.Background()
@@ -129,6 +141,7 @@ func TestPostgresDistributedRateLimit(t *testing.T) {
 }
 func TestPasswordSessionRejectsPreResetHash(t *testing.T) {
 	db := workspaceTestDB(t)
+	enableMailFixture(t, db, "")
 	sink := &codeSink{}
 	store := &AuthStore{DB: db}
 	s := &service.AuthService{Store: store, Mailer: sink, Secret: []byte("test-only-secret-test-only-secret")}
@@ -166,6 +179,7 @@ func TestPasswordSessionRejectsPreResetHash(t *testing.T) {
 
 func TestUnverifiedMailboxRecoveryRevokesPreclaimCredentials(t *testing.T) {
 	db := workspaceTestDB(t)
+	enableMailFixture(t, db, "")
 	sink := &codeSink{}
 	store := &AuthStore{DB: db}
 	s := &service.AuthService{Store: store, Mailer: sink, Secret: []byte("test-only-secret-test-only-secret")}

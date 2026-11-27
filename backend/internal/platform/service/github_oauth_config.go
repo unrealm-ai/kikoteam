@@ -28,40 +28,27 @@ func (m githubOAuthMaterial) permitsGrant(pin string) bool {
 }
 
 func (s *PluginService) gitHubOAuthMaterial(ctx context.Context, t PluginTx) (githubOAuthMaterial, error) {
-	m := githubOAuthMaterial{clientID: s.GitHubClientID, secret: s.GitHubClientSecret, legacyCompatible: true}
-	var revision int64
-	var legacyPin string
-	if app := s.OAuthApps; app != nil {
-		reader, ok := t.(gitHubOAuthConfigReader)
-		if !ok {
-			return m, Fail("github_oauth_unconfigured", 503, "GitHub OAuth 应用配置不可用")
-		}
-		config, err := reader.GitHubOAuthApp(ctx)
-		if err != nil {
-			return m, err
-		}
-		revision = config.Version
-		m.clientID, m.secret = app.LegacyClientID, app.LegacyClientSecret
-		if revision != 0 {
-			if !config.Enabled {
-				return m, Fail("github_oauth_unconfigured", 503, "平台管理员未启用 GitHub OAuth 应用")
-			}
-			m.clientID = config.ClientID
-			m.secret, err = app.decrypt(config.Ciphertext)
-			if err != nil {
-				return m, err
-			}
-			legacyPin = config.LegacyGrantPin
-		}
+	var m githubOAuthMaterial
+	reader, ok := t.(gitHubOAuthConfigReader)
+	if !ok || s.OAuthApps == nil {
+		return m, Fail("github_oauth_unconfigured", 503, "GitHub OAuth 应用配置不可用")
 	}
-	if m.clientID == "" || m.secret == "" {
-		return m, Fail("github_oauth_unconfigured", 503, "请联系平台管理员配置 GitHub OAuth 应用")
+	config, err := reader.GitHubOAuthApp(ctx)
+	if err != nil {
+		return m, err
+	}
+	if !config.Enabled || config.ClientID == "" || len(config.Ciphertext) == 0 {
+		return m, Fail("github_oauth_unconfigured", 503, "请联系平台管理员在平台管理中配置并启用 GitHub OAuth 应用")
+	}
+	m.clientID = config.ClientID
+	m.secret, err = s.OAuthApps.decrypt(config.Ciphertext)
+	if err != nil {
+		return m, err
 	}
 	m.grantPin = gitHubAppPin(s.Secret, "grant", m.clientID, m.secret)
-	m.attemptPin = gitHubAppPin(s.Secret, fmt.Sprintf("attempt:%d", revision), m.clientID, m.secret)
-	if revision != 0 {
-		m.legacyCompatible = hmac.Equal([]byte(m.grantPin), []byte(legacyPin))
-	}
+	m.attemptPin = gitHubAppPin(s.Secret, fmt.Sprintf("attempt:%d", config.Version), m.clientID, m.secret)
+	// Keep accepting unpinned grants already migrated to the same application.
+	m.legacyCompatible = hmac.Equal([]byte(m.grantPin), []byte(config.LegacyGrantPin))
 	return m, nil
 }
 

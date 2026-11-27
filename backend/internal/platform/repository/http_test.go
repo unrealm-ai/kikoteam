@@ -14,6 +14,7 @@ import (
 
 func TestHTTPIdentityWorkspaceInviteLifecycle(t *testing.T) {
 	db := workspaceTestDB(t)
+	enableMailFixture(t, db, "")
 	sink := &codeSink{}
 	h := (&controller.Server{Auth: &service.AuthService{Store: &AuthStore{DB: db}, Mailer: sink, Secret: []byte("test-only-secret-test-only-secret")}, Workspaces: &service.WorkspaceService{EmailInvitationsEnabled: true, MailSecret: []byte("test-only-secret-test-only-secret"), Store: NewWorkspaceStore(db), PublicURL: "https://kiko.example"}, CodeLoginEnabled: true, Origin: "https://kiko.example", SecureCookies: true}).Handler()
 	request := func(method, path, body, cookie string) (*httptest.ResponseRecorder, map[string]any) {

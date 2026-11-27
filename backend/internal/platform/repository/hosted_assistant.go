@@ -11,11 +11,10 @@ import (
 type HostedAssistantStore struct {
 	DB        *sql.DB
 	EnsureKey AgentKeyWriter
-	Available bool
 }
 
 func (s *HostedAssistantStore) ReadAdmin(ctx context.Context, actor string) (service.AssistantSettings, error) {
-	out := service.AssistantSettings{Available: s.Available}
+	out := service.AssistantSettings{}
 	err := s.DB.QueryRowContext(ctx, `SELECT s.version,s.enabled FROM platform_assistant_settings s
  JOIN platform_accounts a ON a.id=$1 AND a.is_platform_admin WHERE s.singleton`, actor).Scan(&out.Version, &out.Enabled)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -25,12 +24,9 @@ func (s *HostedAssistantStore) ReadAdmin(ctx context.Context, actor string) (ser
 }
 
 func (s *HostedAssistantStore) SaveAdmin(ctx context.Context, actor string, p service.AssistantSettingsPatch) (service.AssistantSettings, error) {
-	out := service.AssistantSettings{Available: s.Available}
+	out := service.AssistantSettings{}
 	if p.ExpectedVersion < 1 || p.Enabled == nil {
 		return out, service.Fail("invalid_assistant_settings", 400, "请提供助手开关和当前设置版本")
-	}
-	if !s.Available && *p.Enabled {
-		return out, service.Fail("assistant_unavailable", 409, "当前部署未开启托管助手支持")
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -54,9 +50,6 @@ func (s *HostedAssistantStore) SaveAdmin(ctx context.Context, actor string, p se
 
 // ProvisionNext retries technical failures without leaving partially created employees or packages.
 func (s *HostedAssistantStore) ProvisionNext(ctx context.Context) (bool, error) {
-	if !s.Available {
-		return false, nil
-	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -145,9 +138,6 @@ func (s *HostedAssistantStore) Entry(ctx context.Context, workspace, actor strin
 	}
 	if err != nil {
 		return out, err
-	}
-	if !s.Available {
-		return out, nil
 	}
 	ok, err := s.ToolAllowed(ctx, workspace, actor, out.AgentID, "demo", nil)
 	if ok {

@@ -52,6 +52,7 @@ func TestRegistrationCreatesOnePersonalWorkspaceAtomically(t *testing.T) {
 
 func TestOTPRegistrationAlsoCreatesPersonalWorkspace(t *testing.T) {
 	db := workspaceTestDB(t)
+	enableMailFixture(t, db, "")
 	sink := &codeSink{}
 	auth := &service.AuthService{Store: &AuthStore{DB: db}, Mailer: sink, Secret: []byte("test-only-test-only-test-only-secret")}
 	ctx := context.Background()

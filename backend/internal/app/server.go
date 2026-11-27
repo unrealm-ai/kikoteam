@@ -80,15 +80,9 @@ func Run(stderr io.Writer, version string) int {
 	db.SetMaxOpenConns(20)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(30 * time.Minute)
-	fallbackMailPolicy := service.MailPolicy{Enabled: cfg.Mail.Enabled, VerificationRequired: cfg.Auth.RequireEmailVerification}
-	authStore := &repository.AuthStore{DB: db, InitCredits: mprepo.Signup, RewardReferral: mprepo.RewardReferral, MailFallback: &fallbackMailPolicy}
+	authStore := &repository.AuthStore{DB: db, InitCredits: mprepo.Signup, RewardReferral: mprepo.RewardReferral}
 	mailSettings := &service.MailSettingsService{
 		Store: &repository.MailSettingsStore{DB: db}, Secret: []byte(secret), AllowTest: authStore.Allow,
-		Fallback: service.MailSettingsDraft{Password: cfg.SMTPPassword, MailSettings: service.MailSettings{
-			MailPolicy: fallbackMailPolicy,
-			Address:    cfg.Mail.SMTP.Address, Host: cfg.Mail.SMTP.Host, Username: cfg.Mail.SMTP.Username,
-			From: cfg.Mail.SMTP.From, ImplicitTLS: cfg.Mail.SMTP.ImplicitTLS,
-		}},
 		SendTest: func(ctx context.Context, d service.MailSettingsDraft, to string) error {
 			return integration.SMTPForSettings(d).SendTest(ctx, to)
 		},
@@ -137,7 +131,6 @@ func Run(stderr io.Writer, version string) int {
 	feishuSetup := &service.FeishuSetupService{Store: &repository.FeishuSetupStore{DB: db}, Channels: channels, Provider: &feishusetup.Client{}}
 	dingtalkSetup := &service.DingTalkSetupService{
 		Store: &repository.DingTalkSetupStore{DB: db}, Channels: channels, Provider: &dingtalksetup.Client{},
-		Source: strings.TrimSpace(os.Getenv("KIKO_DINGTALK_REGISTRATION_SOURCE")),
 	}
 	hubToken, hubErr := loadHubToken()
 	if hubErr != nil {
@@ -145,20 +138,18 @@ func Run(stderr io.Writer, version string) int {
 		return 1
 	}
 	oauthApps := &service.OAuthAppService{Store: &repository.OAuthAppStore{DB: db}, Secret: []byte(secret),
-		LegacyClientID: cfg.GitHubOAuthClientID, LegacyClientSecret: cfg.GitHubOAuthClientSecret,
 		RedirectURI: origin + "/api/v1/auth/callbacks/plugin-oauth"}
 	plugins := &service.PluginService{
 		OAuthApps:   oauthApps,
 		RedirectURI: origin + "/api/v1/auth/callbacks/plugin-oauth", Store: repository.NewPluginStore(db),
 		Secret: []byte(secret), Probe: &integration.MCPProber{PrivateCIDRs: cfg.MCPPrivateCIDRs},
-		GitHubClientID: cfg.GitHubOAuthClientID, GitHubClientSecret: cfg.GitHubOAuthClientSecret,
 	}
 	packages := &service.PackageService{Store: repository.NewPackageStore(db)}
 	templates := &service.TemplateService{Store: &repository.TemplateStore{DB: db, EnsureKey: proxySecrets.EnsureKey}, Assets: assets}
 	admins := &service.AdminService{Store: &repository.AdminStore{DB: db}}
 	wecomGroupStore := &repository.WecomGroupRefreshStore{DB: db}
 	taskLinks := &service.TaskLinkSettingsService{Store: &repository.TaskLinkSettingsStore{DB: db}}
-	assistantStore := &repository.HostedAssistantStore{DB: db, EnsureKey: proxySecrets.EnsureKey, Available: cfg.HostedAssistantAvailable}
+	assistantStore := &repository.HostedAssistantStore{DB: db, EnsureKey: proxySecrets.EnsureKey}
 	agents := &service.AgentService{Store: &repository.AgentStore{DB: db, EnsureKey: proxySecrets.EnsureKey}}
 	api := (&controller.Server{Assistants: assistantStore, AssistantToolDescriptions: assistantToolDescriptions, TaskLinks: taskLinks, Referrals: &repository.ReferralStore{DB: db}, Catalog: &repository.ResourceCatalog{DB: db, Assets: assets, Plugins: plugins}, SharingPolicies: &service.GroupSharingService{Store: &repository.GroupSharingStore{DB: db}}, PeopleSelectors: &service.PeopleSelectorService{Secret: []byte(secret), Channels: channels, Wecom: wecomContacts, Store: repository.NewPeopleSelectorStore(db, []byte(secret))}, GroupSelectors: &service.GroupSelectorService{Store: repository.NewGroupSelectorStore(db), Secret: []byte(secret)}, WecomGroups: &service.WecomGroupRefresh{Channels: channels, Store: wecomGroupStore}, ChannelGroups: &service.ChannelGroupDiscovery{Channels: channels, Store: &repository.ChannelGroupCache{DB: db}, Provider: &feishugroups.Client{}, Secret: []byte(secret)}, AgentUsage: &service.AgentUsageService{Store: &repository.AgentUsageStore{DB: db}}, WebGroups: &service.WebGroupService{Store: &repository.WebGroupStore{DB: db}}, WecomContacts: wecomContacts, Official: official, Templates: templates, Admin: admins, Channels: channels, FeishuSetup: feishuSetup, DingTalkSetup: dingtalkSetup, Skills: skills, Plugins: plugins, Packages: packages, Agents: agents, Models: models, Auth: auth, Workspaces: ws, Origin: origin, SecureCookies: u.Scheme == "https", Logger: log, TrustedProxies: proxies, MailSettings: mailSettings, OAuthApps: oauthApps, ChannelDownloads: &service.ChannelDownloadSettingsService{Store: &repository.ChannelDownloadSettingsStore{DB: db}}}).Handler()
 	mux := http.NewServeMux()
@@ -178,11 +169,8 @@ func Run(stderr io.Writer, version string) int {
 	managementTools := platformmcp.Tools{Directory: &repository.EmployeeManagementStore{DB: db}, Agents: agents, Packages: packages}
 	assistantmcp.MountPlatform(mux, managerStore, engineToken, managementTools.Server(true), managementTools.Server(false))
 
-	var assistantAllow assistantmcp.Allow
-	if cfg.HostedAssistantAvailable {
-		assistantAllow = assistantStore.ToolAllowed
-		assistantmcp.Mount(mux, managerStore, assistantAllow, engineToken, "demo", "task", demomcp.Server(engineToken))
-	}
+	assistantAllow := assistantStore.ToolAllowed
+	assistantmcp.Mount(mux, managerStore, assistantAllow, engineToken, "demo", "task", demomcp.Server(engineToken))
 	(&managercontroller.Server{AssistantToolAllowed: assistantAllow, TrustedProxies: proxies, Runtime: &service.RuntimeService{Packages: packages, Skills: skills, Plugins: plugins}, Service: managerService, Engines: managerStore, EngineToken: engineToken, ResolveModelKey: func(ctx context.Context, w, actor string, c manager.Configuration) (string, error) {
 		return models.RuntimeModelKey(ctx, w, actor, c.ModelProfileID, c.Protocol, c.BaseURL, c.ModelID)
 	}, ResolveOfficialModel: func(ctx context.Context, w, actor, agent string, c *manager.Configuration) (string, error) {

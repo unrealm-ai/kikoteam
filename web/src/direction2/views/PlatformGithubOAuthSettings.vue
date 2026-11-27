@@ -42,14 +42,13 @@ const editor = useVersionedPlatformSettings<GithubOAuthApp, Draft>({
   },
 });
 const {snapshot, draft, busy, error, notice, conflict, dirty, edit, load, save, discard} = editor;
-const importable = computed(() => snapshot.value?.source === 'legacy_env' && snapshot.value.version === 0);
 const clientIdChanged = computed(() => draft.value?.clientId.trim() !== snapshot.value?.client_id);
 function editClientId(value: string) {
   const reset = value.trim() !== draft.value?.clientId.trim();
   edit({clientId: value, ...(reset ? {clientSecret: '', clearSecret: false} : {})});
 }
 const sourceLabel = computed(() => snapshot.value?.source === 'database' ? '平台已保存'
-  : snapshot.value?.source === 'legacy_env' ? '部署环境配置' : '未配置');
+  : '未配置');
 
 const copyState = ref<'idle' | 'copied' | 'failed'>('idle');
 let copyTimer: ReturnType<typeof setTimeout> | undefined;
@@ -140,8 +139,7 @@ defineExpose({ dirty, save, discard });
       <footer class="editor-footer">
         <NButton size="small" secondary :loading="busy === 'read'" @click="load(dirty)">读取最新版本</NButton>
         <div class="editor-footer-primary">
-          <NButton v-if="importable && !dirty" size="small" :disabled="conflict" :loading="busy === 'write'" type="primary" @click="save(true)">迁入 GitHub OAuth 设置</NButton>
-          <NButton v-else size="small" :disabled="!dirty || conflict" :loading="busy === 'write'" type="primary" attr-type="submit">保存 GitHub OAuth 设置</NButton>
+          <NButton size="small" :disabled="!dirty || conflict" :loading="busy === 'write'" type="primary" attr-type="submit">保存 GitHub OAuth 设置</NButton>
         </div>
       </footer>
     </NForm>

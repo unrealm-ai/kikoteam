@@ -96,6 +96,7 @@ func TestReferralHTTPAndAtomicRewards(t *testing.T) {
 	}
 
 	admin, adminCookie := register("admin@example.test", "", "password", "", "", 201)
+	enableMailFixture(t, db, admin.ID)
 	inviter, cookie := register("inviter@example.test", "", "password", "", "", 201)
 	const settingsPath = "/platform/referral-settings"
 	const linkPath = "/referrals/me"

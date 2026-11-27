@@ -48,12 +48,18 @@ func workspaceTestDBThrough(t *testing.T, lastMigration string) *sql.DB {
 	cfg.RuntimeParams["search_path"] = schema
 	db := stdlib.OpenDB(*cfg)
 	t.Cleanup(func() { _ = db.Close() })
+	applyTestMigrations(t, ctx, db, "", lastMigration)
+	return db
+}
+
+func applyTestMigrations(t *testing.T, ctx context.Context, db *sql.DB, after, through string) {
+	t.Helper()
 	files, err := filepath.Glob("../../../../event-hub/database/postgres/migrations/*.sql")
 	if err != nil || len(files) == 0 {
 		t.Fatalf("migrations missing: %v", err)
 	}
 	for _, file := range files {
-		if lastMigration != "" && filepath.Base(file) > lastMigration {
+		if name := filepath.Base(file); name <= after || through != "" && name > through {
 			continue
 		}
 		data, err := os.ReadFile(file)
@@ -65,7 +71,6 @@ func workspaceTestDBThrough(t *testing.T, lastMigration string) *sql.DB {
 			t.Fatalf("migration %s: %v", file, err)
 		}
 	}
-	return db
 }
 func insertWorkspaceAccount(t *testing.T, db *sql.DB, id, email string) {
 	t.Helper()

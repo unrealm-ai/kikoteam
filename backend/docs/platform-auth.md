@@ -94,7 +94,7 @@
 
 ## 本地入门与邮箱验证策略
 
-- 管理员可在「设置 → 平台管理 → 邮件与注册」启用邮箱验证；新实例默认关闭。未保存数据库设置时仍沿用旧配置文件或环境变量。`GET /api/v1/auth/options` 返回 `password_registration_enabled`、`email_code_enabled`、`registration_verification_required` 三个布尔值，不暴露邮件服务配置或秘密。
+- 管理员可在「设置 → 平台管理 → 账户与注册 → 注册与邀请」启用邮箱验证；新实例默认关闭。未保存时保持关闭，不读取旧配置文件或环境变量。`GET /api/v1/auth/options` 返回 `password_registration_enabled`、`email_code_enabled`、`registration_verification_required` 三个布尔值，不暴露邮件服务配置或秘密。
 - `POST /auth/registrations` 使用 `method: password` 时必须提供密码，不携带 code/challenge_id；新账号 `email_verified=false`。可密码登录、建立自己的工作区，不证明邮箱归属，**不能接受邮箱定向邀请**。本期没有自动关联外部企业身份或按邮箱合并已有账号。
 - 启用邮件和强制邮箱验证后，服务端拒绝密码注册，只接受验证码注册；不能靠修改前端开关绕过。保存时拒绝「邮件关闭但强制邮箱验证」组合，旧配置加载仍按原规则校验。
 - `method: code` 保留原流程，省略 method 的旧客户端仍按验证码注册处理。已有邮箱唯一约束，无论是否验证都不会被重复注册覆盖。
@@ -119,26 +119,18 @@ Owner 可邀请 admin/member，admin 只能邀请 member；Owner 不可被普通
 
 ## 运行配置
 
-部署配置见[启动配置](configuration.md)。以下邮件环境变量仅适用于尚未保存数据库配置、也没有旧配置文件的兼容部署；新实例通过平台管理配置邮件。
+部署配置见[启动配置](configuration.md)。邮件与注册策略只从数据库读取，由平台管理员配置。
 
 ```
 DATABASE_URL=postgres://...                  # 同 Event Hub 业务库
 KIKO_PUBLIC_ORIGIN=https://your.example     # 开发仅允许 http://localhost 或 127.0.0.1
-KIKO_REGISTRATION_VERIFICATION_REQUIRED=false # 开源本地默认；公网建议 true
 KIKO_AUTH_SECRET=<至少32字节随机值>           # 不提交仓库
 KIKO_HTTP_ADDRESS=127.0.0.1:8080
 KIKO_TRUSTED_PROXY_CIDRS=127.0.0.1/32      # 仅同机反代时示例，按实际代理网段设置
 KIKO_WEB_DIR=/absolute/path/web/dist        # 可选，只传构建产物目录
-KIKO_MAIL_ENABLED=true # 仅无配置文件兼容模式
-SMTP_ADDRESS=smtp.example:465
-SMTP_HOST=smtp.example
-SMTP_IMPLICIT_TLS=true                     # false 时强制 STARTTLS
-SMTP_USERNAME=...
-SMTP_PASSWORD=...
-SMTP_FROM=sender@example
 ```
 
-邮件禁用时服务器可以启动，密码注册可用，所有验证码接口返回403 email_code_disabled。邮件开启则配置必须完整否则启动失败。配置文件推荐入口及优先级见[启动配置](configuration.md)。网络与查询请求有时间界限；关闭时最多等待 15 秒收尾。`/healthz`、`/readyz` 表达进程 HTTP 服务已运行，不保证数据库业务表已迁移。
+邮件禁用时服务器可以启动，密码注册可用，所有验证码接口返回403 email_code_disabled。邮件设置须先通过试发才能启用；不影响进程启动。配置文件推荐入口及优先级见[启动配置](configuration.md)。网络与查询请求有时间界限；关闭时最多等待 15 秒收尾。`/healthz`、`/readyz` 表达进程 HTTP 服务已运行，不保证数据库业务表已迁移。
 
 ## 验证
 

@@ -28,7 +28,7 @@ func TestHostedAssistantProvisioningBothWorkspacePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	secrets := ps.Secrets{Root: []byte("assistant-test-root-key-at-least-32-bytes")}
-	store := &HostedAssistantStore{DB: db, Available: true, EnsureKey: secrets.EnsureKey}
+	store := &HostedAssistantStore{DB: db, EnsureKey: secrets.EnsureKey}
 	ws := &service.WorkspaceService{Store: NewWorkspaceStore(db)}
 	makeWorkspace := func(name string) service.Workspace {
 		t.Helper()

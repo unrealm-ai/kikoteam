@@ -45,9 +45,9 @@ type OAuthAppRepository interface {
 }
 
 type OAuthAppService struct {
-	Store                                           OAuthAppRepository
-	Secret                                          []byte
-	LegacyClientID, LegacyClientSecret, RedirectURI string
+	Store       OAuthAppRepository
+	Secret      []byte
+	RedirectURI string
 }
 
 func (s *OAuthAppService) GitHubStatus(ctx context.Context, actor string) (OAuthAppStatus, error) {
@@ -63,12 +63,6 @@ func (s *OAuthAppService) status(c OAuthAppConfig) OAuthAppStatus {
 		ClientID: c.ClientID, HasClientSecret: len(c.Ciphertext) > 0, Source: "database", RedirectURI: s.RedirectURI}
 	if c.Version == 0 {
 		out.Source = "unset"
-		out.ClientID = s.LegacyClientID
-		out.HasClientSecret = s.LegacyClientSecret != ""
-		out.Enabled = out.ClientID != "" && out.HasClientSecret
-		if out.ClientID != "" || out.HasClientSecret {
-			out.Source = "legacy_env"
-		}
 	}
 	return out
 }
@@ -92,12 +86,6 @@ func (s *OAuthAppService) applyGitHubPatch(c OAuthAppConfig, p OAuthAppPatch) (O
 		return c, Fail("oauth_app_version_conflict", 409, "OAuth 应用配置已变化，请刷新")
 	}
 	var secret string
-	if c.Version == 0 {
-		c.ClientID = s.LegacyClientID
-		if !p.ClearClientSecret && p.ClientSecret == nil {
-			secret = s.LegacyClientSecret
-		}
-	}
 	if p.ClientID != nil {
 		next := strings.TrimSpace(*p.ClientID)
 		if next != c.ClientID {
@@ -132,10 +120,6 @@ func (s *OAuthAppService) applyGitHubPatch(c OAuthAppConfig, p OAuthAppPatch) (O
 	c.Enabled = *p.Enabled
 	if c.Enabled && (c.ClientID == "" || len(c.Ciphertext) == 0) {
 		return c, invalidOAuthApp()
-	}
-	if c.Version == 0 && s.LegacyClientID != "" && s.LegacyClientSecret != "" &&
-		c.ClientID == s.LegacyClientID && secret == s.LegacyClientSecret && !p.ClearClientSecret {
-		c.LegacyGrantPin = gitHubAppPin(s.Secret, "grant", c.ClientID, secret)
 	}
 	c.Version++
 	return c, nil

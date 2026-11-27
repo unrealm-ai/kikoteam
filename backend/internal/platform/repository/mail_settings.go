@@ -19,15 +19,15 @@ func (s *MailSettingsStore) Read(ctx context.Context) (r service.MailSettingsRec
 	return r, e
 }
 
-func (s *MailSettingsStore) ReadPolicy(ctx context.Context, fallback service.MailPolicy) (service.MailPolicy, error) {
-	return readMailPolicy(ctx, s.DB, fallback)
+func (s *MailSettingsStore) ReadPolicy(ctx context.Context) (service.MailPolicy, error) {
+	return readMailPolicy(ctx, s.DB)
 }
 
-func readMailPolicy(ctx context.Context, db querier, fallback service.MailPolicy) (service.MailPolicy, error) {
+func readMailPolicy(ctx context.Context, db querier) (service.MailPolicy, error) {
 	var policy service.MailPolicy
 	err := db.QueryRowContext(ctx, `SELECT enabled, verification_required FROM platform_mail_settings WHERE singleton`).Scan(&policy.Enabled, &policy.VerificationRequired)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fallback, nil
+		return policy, nil
 	}
 	return policy, err
 }
@@ -100,7 +100,7 @@ func requirePasswordAdmin(ctx context.Context, db querier, excluding *string) er
 
 func preservePasswordAdminWhenMailDisabled(ctx context.Context, db querier, excluding string) error {
 	var disabled bool
-	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM platform_mail_settings WHERE singleton AND NOT enabled)`).Scan(&disabled); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT NOT EXISTS (SELECT 1 FROM platform_mail_settings WHERE singleton AND enabled)`).Scan(&disabled); err != nil {
 		return err
 	}
 	if !disabled {

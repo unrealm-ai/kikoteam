@@ -246,8 +246,8 @@ func testRuntimeHumanRequests(t *testing.T, ctx context.Context, db *sql.DB, bas
 	}
 	rcPath := base + "/agents/" + agent + "/human-recipients"
 	ref := platform.SelectionRef{Kind: "user", Provider: "web", WorkspaceID: workspace, AgentID: agent, ExternalID: approver}
-	rules := call("PATCH", rcPath, manager.HumanRecipients{Recipients: []manager.HumanRecipient{{Ref: ref, IsDefault: true}}}, "")
-	if rules["version"] != "1" {
+	rules := call("PATCH", rcPath, manager.HumanRecipients{Version: 1, Recipients: []manager.HumanRecipient{{Ref: ref, IsDefault: true}}}, "")
+	if rules["version"] != "2" {
 		t.Fatalf("unexpected rules: %v", rules)
 	}
 	conversation := call("POST", base+"/conversations", map[string]string{"agent_id": agent}, "")["id"]

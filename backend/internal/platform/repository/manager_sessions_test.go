@@ -29,11 +29,6 @@ func managerFixture(t *testing.T) (*sql.DB, *manager.Service, *http.ServeMux, st
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Runtime tests explicitly use an open employee; product creation defaults
-	// remain creator-only and are tested by AgentUsage tests.
-	if _, err = db.ExecContext(ctx, `UPDATE platform_agents SET usage_config=jsonb_set(usage_config,'{access}', '{"mode":"all","allow":[],"deny":[]}'::jsonb) WHERE id=$1`, a.ID); err != nil {
-		t.Fatal(err)
-	}
 	s := &manager.Service{Store: &managerrepo.Store{DB: db}, CursorSecret: []byte(strings.Repeat("s", 32))}
 	auth := &service.AuthService{Store: &AuthStore{DB: db}}
 	token := "runtime-fixture-session"

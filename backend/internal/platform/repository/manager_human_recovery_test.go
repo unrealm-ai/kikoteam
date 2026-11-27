@@ -18,7 +18,7 @@ func TestHumanRecoveryReassignIsVersionedAndAudited(t *testing.T) {
 	member := service.NewID()
 	insertWorkspaceAccount(t, db, member, "recover-member@example.test")
 	reviewExec(t, db, `INSERT INTO platform_members(workspace_id,user_id,role) VALUES($1,$2,'member')`, workspace, member)
-	rules, err := store.HumanRecipients(ctx, workspace, owner, agent, &manager.HumanRecipients{Recipients: []manager.HumanRecipient{
+	rules, err := store.HumanRecipients(ctx, workspace, owner, agent, &manager.HumanRecipients{Version: 1, Recipients: []manager.HumanRecipient{
 		{Scope: "original", Ref: service.SelectionRef{Kind: "user", Provider: "web", WorkspaceID: workspace, AgentID: agent, ExternalID: owner}},
 		{Scope: "backup", Ref: service.SelectionRef{Kind: "user", Provider: "web", WorkspaceID: workspace, AgentID: agent, ExternalID: member}},
 	}})

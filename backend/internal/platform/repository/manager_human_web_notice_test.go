@@ -19,7 +19,7 @@ func TestWebHumanNoticeRecordsOnePassiveInputForAssignee(t *testing.T) {
 	insertWorkspaceAccount(t, db, member, "web-confirmation@example.test")
 	reviewExec(t, db, "INSERT INTO platform_members(workspace_id,user_id,role) VALUES($1,$2,'member')", workspace, member)
 	ref := service.SelectionRef{Kind: "user", Provider: "web", WorkspaceID: workspace, AgentID: agent, ExternalID: member}
-	rules, err := store.HumanRecipients(ctx, workspace, owner, agent, &manager.HumanRecipients{Recipients: []manager.HumanRecipient{{Ref: ref, IsDefault: true}}})
+	rules, err := store.HumanRecipients(ctx, workspace, owner, agent, &manager.HumanRecipients{Version: 1, Recipients: []manager.HumanRecipient{{Ref: ref, IsDefault: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}

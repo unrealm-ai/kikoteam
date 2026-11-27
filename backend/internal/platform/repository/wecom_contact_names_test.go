@@ -227,7 +227,7 @@ func TestWecomSameBotRotationAndReenablePreserveVerifiedPeople(t *testing.T) {
 	}
 	// Use the normal configuration write so the saved recipient is authorized.
 	save(b.AppID, true, nil)
-	rules, err := store.HumanRecipients(ctx, b.WorkspaceID, actor, b.AgentID, &manager.HumanRecipients{Recipients: []manager.HumanRecipient{{Ref: original, IsDefault: true}}})
+	rules, err := store.HumanRecipients(ctx, b.WorkspaceID, actor, b.AgentID, &manager.HumanRecipients{Version: 1, Recipients: []manager.HumanRecipient{{Ref: original, IsDefault: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}

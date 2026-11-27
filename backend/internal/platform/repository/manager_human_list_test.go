@@ -17,6 +17,7 @@ func TestHumanChatListPagesAndReferences(t *testing.T) {
 	store := sessions.Store.(*managerrepo.Store)
 	ref := service.SelectionRef{Kind: "user", Provider: "web", WorkspaceID: workspace, AgentID: agent, ExternalID: owner}
 	rules, err := store.HumanRecipients(ctx, workspace, owner, agent, &manager.HumanRecipients{
+		Version:    1,
 		Recipients: []manager.HumanRecipient{{Ref: ref, IsDefault: true}},
 	})
 	if err != nil {

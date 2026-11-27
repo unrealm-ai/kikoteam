@@ -164,15 +164,14 @@ func (s *TemplateStore) CommitCreation(ctx context.Context, w, a string, r servi
 		if err != nil {
 			return err
 		}
-		initialUsage := service.InitialAgentUsage()
-		out = service.Agent{InitialUsage: &initialUsage, ID: service.NewID(), Name: r.Name, Role: v.Content.Role, Avatar: v.Content.Avatar, Instruction: instruction, ModelProfileID: r.ModelProfileID, PlatformModelID: r.PlatformModelID, Harness: "pi", Enabled: true, Version: 1, ConfigVersion: 1, AdmissionEpoch: 1}
+		out = service.Agent{ID: service.NewID(), Name: r.Name, Role: v.Content.Role, Avatar: v.Content.Avatar, Instruction: instruction, ModelProfileID: r.ModelProfileID, PlatformModelID: r.PlatformModelID, Harness: "pi", Enabled: true, Version: 1, ConfigVersion: 1, AdmissionEpoch: 1}
 		if r.Role != nil {
 			out.Role = *r.Role
 		}
 		if r.Avatar != nil {
 			out.Avatar = *r.Avatar
 		}
-		if e = at.Save(ctx, out, true, true); e != nil {
+		if e = at.Create(ctx, out, a); e != nil {
 			return e
 		}
 		if _, e = at.EnsureModelKey(ctx, out.ID, a); e != nil {

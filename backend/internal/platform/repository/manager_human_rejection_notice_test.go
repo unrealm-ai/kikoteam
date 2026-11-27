@@ -21,7 +21,7 @@ func humanRejectionFixture(t *testing.T, db *sql.DB, store *managerrepo.Store, w
 	approver := service.NewID()
 	insertWorkspaceAccount(t, db, approver, "approver-rejection@example.test")
 	reviewExec(t, db, `INSERT INTO platform_members(workspace_id,user_id,role) VALUES($1,$2,'member')`, w, approver)
-	rules, err := store.HumanRecipients(ctx, w, owner, a, &manager.HumanRecipients{Recipients: []manager.HumanRecipient{{
+	rules, err := store.HumanRecipients(ctx, w, owner, a, &manager.HumanRecipients{Version: 1, Recipients: []manager.HumanRecipient{{
 		Ref: service.SelectionRef{Kind: "user", Provider: "web", WorkspaceID: w, AgentID: a, ExternalID: approver}, IsDefault: true,
 	}}})
 	if err != nil {

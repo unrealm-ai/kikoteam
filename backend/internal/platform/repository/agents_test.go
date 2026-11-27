@@ -2,7 +2,10 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	managerrepo "github.com/unrealm-ai/kikoteam/backend/internal/manager/repository"
+	manager "github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 	"os"
 	"reflect"
@@ -231,5 +234,51 @@ func TestAgentMigrationPreservesExistingModelAndAccount(t *testing.T) {
 	var n int
 	if e = db.QueryRow(`SELECT count(*) FROM platform_accounts WHERE id=$1`, owner).Scan(&n); e != nil || n != 1 {
 		t.Fatal(n, e)
+	}
+}
+
+func assertNewAgentDefaults(t *testing.T, db *sql.DB, w, creator, agent string) {
+	t.Helper()
+	ctx := t.Context()
+	usage, err := (&AgentUsageStore{DB: db}).ReadUsage(ctx, w, creator, agent)
+	if err != nil || usage.UsageConfig.Access.Mode != "all" || len(usage.UsageConfig.Access.Allow) != 0 || len(usage.UsageConfig.Access.Deny) != 0 {
+		t.Fatalf("new employee must be open to all: %+v %v", usage, err)
+	}
+	store := &managerrepo.Store{DB: db}
+	rules, err := store.HumanRecipients(ctx, w, creator, agent, nil)
+	if err != nil || rules.Version != 1 || len(rules.Recipients) != 1 {
+		t.Fatalf("expected initial confirmation rules: %+v %v", rules, err)
+	}
+	got := rules.Recipients[0]
+	want := service.SelectionRef{Kind: "user", Provider: "web", WorkspaceID: w, AgentID: agent, ExternalID: creator}
+	if got.Ref != want || !got.IsDefault || got.Scope != "" || got.ID == "" || got.Name == "" {
+		t.Fatalf("expected the creating Web account as the fallback: %+v", got)
+	}
+}
+
+func TestAgentCreationDefaultsUseCreatingAdminAndPreserveUpdates(t *testing.T) {
+	db, models, w, owner := modelFixture(t)
+	ctx := t.Context()
+	m := saveTestModel(t, models, w, owner)
+	admin := service.NewID()
+	insertWorkspaceAccount(t, db, admin, "agent-admin@example.test")
+	reviewExec(t, db, `INSERT INTO platform_members(workspace_id,user_id,role,status,version) VALUES($1,$2,'admin','active',1)`, w, admin)
+	s := &service.AgentService{Store: NewAgentStore(db)}
+	a, err := s.Create(ctx, w, admin, service.AgentCreate{Name: "Employee", ModelProfileID: m.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertNewAgentDefaults(t, db, w, admin, a.ID)
+	store := &managerrepo.Store{DB: db}
+	if _, err := store.HumanRecipients(ctx, w, admin, a.ID, &manager.HumanRecipients{Version: 1, Recipients: []manager.HumanRecipient{}}); err != nil {
+		t.Fatal(err)
+	}
+	name := "Renamed employee"
+	if _, err := s.Update(ctx, w, admin, a.ID, service.AgentPatch{Version: a.Version, Name: &name}); err != nil {
+		t.Fatal(err)
+	}
+	rules, err := store.HumanRecipients(ctx, w, admin, a.ID, nil)
+	if err != nil || rules.Version != 2 || len(rules.Recipients) != 0 {
+		t.Fatalf("updating the employee must not restore a cleared fallback: %+v %v", rules, err)
 	}
 }

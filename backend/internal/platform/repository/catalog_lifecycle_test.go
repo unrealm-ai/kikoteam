@@ -69,6 +69,11 @@ func TestCatalogRestartAndStarter(t *testing.T) {
 	if count("select count(*) from platform_agents where workspace_id=$1", w) != 1 || count("select count(*) from platform_capability_packages where workspace_id=$1", w) != 2 {
 		t.Fatal("unexpected starter configuration")
 	}
+	var agent string
+	if e = db.QueryRow("select id from platform_agents where workspace_id=$1", w).Scan(&agent); e != nil {
+		t.Fatal(e)
+	}
+	assertNewAgentDefaults(t, db, w, owner, agent)
 	if count("select count(*) from platform_plugin_connections where workspace_id=$1 and plugin_id=$2 and enabled and validated", w, service.CatalogID("plugin", "stock")) != 1 {
 		t.Fatal("public account missing")
 	}

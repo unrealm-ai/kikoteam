@@ -120,46 +120,74 @@ func (t *agentTx) List(ctx context.Context, q service.AgentListQuery) (service.A
 	}
 	return page, rows.Err()
 }
-func (t *agentTx) Save(ctx context.Context, a service.Agent, create, config bool) error {
-	args := []any{a.ID, t.model.workspace, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.Enabled, a.Version, a.ConfigVersion, a.AdmissionEpoch, a.PlatformModelID}
-	var e error
-	if create {
-		_, e = t.model.tx.ExecContext(ctx, `INSERT INTO platform_agents(id,workspace_id,name,role,avatar,instruction,model_profile_id,enabled,version,config_version,admission_epoch,platform_model_id) VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid,$8,$9,$10,$11,NULLIF($12,'')::uuid)`, args...)
-	} else {
-		var result sql.Result
-		result, e = t.model.tx.ExecContext(ctx, `UPDATE platform_agents SET name=$3,role=$4,avatar=$5,instruction=$6,model_profile_id=NULLIF($7,'')::uuid,platform_model_id=NULLIF($12,'')::uuid,enabled=$8,version=$9,config_version=$10,admission_epoch=$11,updated_at=now() WHERE id=$1 AND workspace_id=$2 AND version=$9-1`, args...)
-		if e == nil {
-			var n int64
-			n, e = result.RowsAffected()
-			if e == nil && n != 1 {
-				return service.Fail("agent_version_conflict", 409, "员工已更新，请刷新后重试")
-			}
-		}
+
+// Create is shared by manual, template and system provisioning. The creator
+// must be the trusted Web account for the new employee, not a service identity.
+func (t *agentTx) Create(ctx context.Context, a service.Agent, creator string) error {
+	usage, err := json.Marshal(service.InitialAgentUsage())
+	if err != nil {
+		return err
 	}
-	if e != nil {
-		return e
+	w := t.model.workspace
+	if _, err := t.model.tx.ExecContext(ctx, `INSERT INTO platform_agents(id,workspace_id,name,role,avatar,instruction,model_profile_id,enabled,version,config_version,admission_epoch,platform_model_id,usage_config)
+ VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid,$8,$9,$10,$11,NULLIF($12,'')::uuid,$13)`,
+		a.ID, w, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.Enabled, a.Version, a.ConfigVersion, a.AdmissionEpoch, a.PlatformModelID, usage); err != nil {
+		return err
 	}
-	if create && a.InitialUsage != nil {
-		raw, err := json.Marshal(a.InitialUsage)
+	if err := t.saveVersion(ctx, a); err != nil {
+		return err
+	}
+	return t.createDefaultHumanRecipient(ctx, a.ID, creator)
+}
+
+func (t *agentTx) createDefaultHumanRecipient(ctx context.Context, agent, creator string) error {
+	w := t.model.workspace
+	ref, err := json.Marshal(service.SelectionRef{Kind: "user", Provider: "web", WorkspaceID: w, AgentID: agent, ExternalID: creator})
+	if err != nil {
+		return err
+	}
+	result, err := t.model.tx.ExecContext(ctx, `INSERT INTO platform_agent_human_recipients(agent_id,version,recipients)
+ SELECT $2,1,jsonb_build_array(jsonb_build_object('id',$4::text,'name',candidate.name,'scope','','is_default',true,'ref',$3::jsonb))
+ FROM (SELECT manager_human_recipient_name($1,$2,$3::jsonb) AS name) candidate WHERE candidate.name IS NOT NULL`,
+		w, agent, ref, service.NewID())
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err == nil && n != 1 {
+		return service.Fail("human_recipient_forbidden", 403, "员工创建人当前无权使用员工，无法设为默认确认人")
+	}
+	return err
+}
+
+func (t *agentTx) Update(ctx context.Context, a service.Agent, config bool) error {
+	result, err := t.model.tx.ExecContext(ctx, `UPDATE platform_agents SET name=$3,role=$4,avatar=$5,instruction=$6,model_profile_id=NULLIF($7,'')::uuid,platform_model_id=NULLIF($12,'')::uuid,enabled=$8,version=$9,config_version=$10,admission_epoch=$11,updated_at=now() WHERE id=$1 AND workspace_id=$2 AND version=$9-1`,
+		a.ID, t.model.workspace, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.Enabled, a.Version, a.ConfigVersion, a.AdmissionEpoch, a.PlatformModelID)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return service.Fail("agent_version_conflict", 409, "员工已更新，请刷新后重试")
+	}
+	if config {
+		return t.saveVersion(ctx, a)
+	}
+	if a.WebAccess.Mode != "" {
+		raw, err := json.Marshal(a.WebAccess)
 		if err != nil {
 			return err
 		}
-		if _, err = t.model.tx.ExecContext(ctx, `UPDATE platform_agents SET usage_config=$2 WHERE id=$1`, a.ID, raw); err != nil {
-			return err
-		}
+		_, err = t.model.tx.ExecContext(ctx, `UPDATE platform_agents SET web_access=$2 WHERE id=$1`, a.ID, raw)
+		return err
 	}
-	if !config {
-		if a.WebAccess.Mode != "" {
-			raw, err := json.Marshal(a.WebAccess)
-			if err != nil {
-				return err
-			}
-			if _, err = t.model.tx.ExecContext(ctx, `UPDATE platform_agents SET web_access=$2 WHERE id=$1`, a.ID, raw); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	_, e = t.model.tx.ExecContext(ctx, `INSERT INTO platform_agent_versions(workspace_id,agent_id,version,name,role,avatar,instruction,model_profile_id,platform_model_id) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::uuid,NULLIF($9,'')::uuid)`, t.model.workspace, a.ID, a.ConfigVersion, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.PlatformModelID)
-	return e
+	return nil
+}
+
+func (t *agentTx) saveVersion(ctx context.Context, a service.Agent) error {
+	_, err := t.model.tx.ExecContext(ctx, `INSERT INTO platform_agent_versions(workspace_id,agent_id,version,name,role,avatar,instruction,model_profile_id,platform_model_id) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::uuid,NULLIF($9,'')::uuid)`, t.model.workspace, a.ID, a.ConfigVersion, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.PlatformModelID)
+	return err
 }

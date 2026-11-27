@@ -56,6 +56,7 @@ func TestTemplatePublishCreateScopeAndRollback(t *testing.T) {
 	if a.Instruction != "为 支付 整理周报。" || a.TemplateOrigin == nil || a.WebAccess.Mode != "workspace" {
 		t.Fatal(a)
 	}
+	assertNewAgentDefaults(t, db, w, owner, a.ID)
 	other := service.NewID()
 	insertWorkspaceAccount(t, db, other, "other-market@example.test")
 	if _, e = db.Exec(`INSERT INTO platform_members(workspace_id,user_id,role) VALUES($1,$2,'member')`, w, other); e != nil {
@@ -65,10 +66,12 @@ func TestTemplatePublishCreateScopeAndRollback(t *testing.T) {
 	if e = db.QueryRow(`SELECT platform_agent_web_allowed($1,$2,$3)`, w, a.ID, other).Scan(&allowed); e != nil || !allowed {
 		t.Fatal("workspace member should be able to use the new employee", e)
 	}
-	b, e := s.CreateFromTemplate(ctx, w, owner, req)
+	reviewExec(t, db, `UPDATE platform_members SET role='admin' WHERE workspace_id=$1 AND user_id=$2`, w, other)
+	b, e := s.CreateFromTemplate(ctx, w, other, req)
 	if e != nil || b.ID == a.ID {
 		t.Fatal("ordinary create incorrectly deduplicated", e)
 	}
+	assertNewAgentDefaults(t, db, w, other, b.ID)
 	// A bad persisted package name fails after Agent INSERT; the whole final transaction must roll back.
 	bad := testTemplateContent()
 	bad.Name = "rollback"

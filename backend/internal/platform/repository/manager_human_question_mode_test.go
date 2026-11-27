@@ -19,7 +19,7 @@ func TestAskHumanModeConflictsDoNotFenceAndPureApprovalCanReplay(t *testing.T) {
 	db, sessions, _, w, owner, agent, _ := managerFixture(t)
 	ctx := context.Background()
 	store := sessions.Store.(*managerrepo.Store)
-	rules, err := store.HumanRecipients(ctx, w, owner, agent, &manager.HumanRecipients{Recipients: []manager.HumanRecipient{{
+	rules, err := store.HumanRecipients(ctx, w, owner, agent, &manager.HumanRecipients{Version: 1, Recipients: []manager.HumanRecipient{{
 		Ref:       service.SelectionRef{Provider: "web", Kind: "user", WorkspaceID: w, AgentID: agent, ExternalID: owner},
 		IsDefault: true, Scope: "上线",
 	}}})

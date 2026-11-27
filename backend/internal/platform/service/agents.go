@@ -16,7 +16,6 @@ type AgentCardResources struct {
 }
 type Agent struct {
 	CardResources   *AgentCardResources `json:"card_resources,omitempty"`
-	InitialUsage    *AgentUsage         `json:"-"`
 	WebAccess       WebAccess           `json:"web_access"`
 	Payer           *AgentPayer         `json:"payer,omitempty"`
 	TemplateOrigin  *TemplateOrigin     `json:"template_origin,omitempty"`
@@ -84,7 +83,8 @@ type AgentTx interface {
 	EnsureModelKey(context.Context, string, string) (bool, error)
 	Get(context.Context, string) (Agent, error)
 	List(context.Context, AgentListQuery) (AgentPage, error)
-	Save(context.Context, Agent, bool, bool) error
+	Create(context.Context, Agent, string) error
+	Update(context.Context, Agent, bool) error
 }
 type AgentStore interface {
 	WithWorkspace(context.Context, string, func(AgentTx) error) error
@@ -192,8 +192,7 @@ func ValidateAgentModel(ctx context.Context, t AgentTx, v *Agent) error {
 	return nil
 }
 func (s *AgentService) Create(ctx context.Context, w, a string, r AgentCreate) (Agent, error) {
-	initialUsage := InitialAgentUsage()
-	v := Agent{InitialUsage: &initialUsage, ID: NewID(), Name: r.Name, Role: r.Role, Avatar: r.Avatar, Instruction: r.Instruction, ModelProfileID: r.ModelProfileID, PlatformModelID: r.PlatformModelID, Harness: "pi", Enabled: true, Version: 1, ConfigVersion: 1, AdmissionEpoch: 1}
+	v := Agent{ID: NewID(), Name: r.Name, Role: r.Role, Avatar: r.Avatar, Instruction: r.Instruction, ModelProfileID: r.ModelProfileID, PlatformModelID: r.PlatformModelID, Harness: "pi", Enabled: true, Version: 1, ConfigVersion: 1, AdmissionEpoch: 1}
 	if e := validateAgent(&v); e != nil {
 		return Agent{}, e
 	}
@@ -204,7 +203,7 @@ func (s *AgentService) Create(ctx context.Context, w, a string, r AgentCreate) (
 		if e := ValidateAgentModel(ctx, t, &v); e != nil {
 			return e
 		}
-		if e := t.Save(ctx, v, true, true); e != nil {
+		if e := t.Create(ctx, v, a); e != nil {
 			return e
 		}
 		if _, e := t.EnsureModelKey(ctx, v.ID, a); e != nil {
@@ -271,7 +270,7 @@ func (s *AgentService) Update(ctx context.Context, w, a, id string, r AgentPatch
 			v.ConfigVersion++
 		}
 		v.Version++
-		if e := t.Save(ctx, v, false, changed); e != nil {
+		if e := t.Update(ctx, v, changed); e != nil {
 			return e
 		}
 		v, e = t.Get(ctx, id)

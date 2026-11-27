@@ -29,8 +29,8 @@ func testHumanRecipientFallbackAndRevocation(t *testing.T, decision string) {
 	}
 	specialist, fallback := member("specialist@example.test"), member("fallback@example.test")
 	specialist.Scope, fallback.IsDefault = "财务", true
-	rules, err := store.HumanRecipients(ctx, workspace, owner, agent, &manager.HumanRecipients{Recipients: []manager.HumanRecipient{specialist, fallback}})
-	if err != nil || rules.Version != 1 || !rules.Recipients[1].IsDefault {
+	rules, err := store.HumanRecipients(ctx, workspace, owner, agent, &manager.HumanRecipients{Version: 1, Recipients: []manager.HumanRecipient{specialist, fallback}})
+	if err != nil || rules.Version != 2 || !rules.Recipients[1].IsDefault {
 		t.Fatal(rules, err)
 	}
 	specialist, fallback = rules.Recipients[0], rules.Recipients[1]
@@ -211,7 +211,7 @@ func TestHumanRecipientsAcrossChannels(t *testing.T) {
 		}
 		recipients = append(recipients, manager.HumanRecipient{Scope: provider, IsDefault: provider == "wecom", Ref: ref})
 	}
-	rules, err := store.HumanRecipients(ctx, workspace, owner, agent, &manager.HumanRecipients{Recipients: recipients})
+	rules, err := store.HumanRecipients(ctx, workspace, owner, agent, &manager.HumanRecipients{Version: 1, Recipients: recipients})
 	if err != nil || len(rules.Recipients) != 4 || !rules.Recipients[3].IsDefault {
 		t.Fatal(rules, err)
 	}

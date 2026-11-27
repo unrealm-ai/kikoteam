@@ -12,10 +12,6 @@ import (
 
 // SyncCatalog serializes releases and publishes the entire catalog atomically.
 func SyncCatalog(ctx context.Context, db *sql.DB, catalog service.TemplateCatalog, assets service.SkillAssets) error {
-	versions, err := stageCatalog(ctx, catalog, assets)
-	if err != nil {
-		return err
-	}
 	data, err := json.Marshal(catalog)
 	if err != nil {
 		return err
@@ -34,10 +30,16 @@ func SyncCatalog(ctx context.Context, db *sql.DB, catalog service.TemplateCatalo
 	if catalog.Revision < revision {
 		return fmt.Errorf("catalog downgrade from %d to %d refused", revision, catalog.Revision)
 	}
+	if catalog.Revision == revision && previous != digest {
+		return fmt.Errorf("catalog contents changed without incrementing revision %d", revision)
+	}
+	// Immutable assets must be complete before any competing release can read
+	// them. Use the same database lock for staging as for publishing.
+	versions, err := stageCatalog(ctx, catalog, assets)
+	if err != nil {
+		return err
+	}
 	if catalog.Revision == revision {
-		if previous != digest {
-			return fmt.Errorf("catalog contents changed without incrementing revision %d", revision)
-		}
 		return tx.Commit()
 	}
 	if err = syncCatalogResources(ctx, tx, catalog, versions); err != nil {

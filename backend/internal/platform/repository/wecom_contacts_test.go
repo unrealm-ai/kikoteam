@@ -290,13 +290,14 @@ func TestWecomVerificationIssuanceLimitIs200PerRollingHour(t *testing.T) {
 }
 
 func TestWecomContactHTTPAdminCSRFAndNoStore(t *testing.T) {
-	db, s, b, actor := wecomContactFixture(t)
+	db, s, b, _ := wecomContactFixture(t)
+	actor, token := setupAdminSessionWithoutCreatorRights(t, db, b.WorkspaceID)
 	api := (&controller.Server{Channels: s.Channels, WecomContacts: s, Auth: &service.AuthService{Store: &AuthStore{DB: db}}, Origin: "http://localhost"}).Handler()
 	base := "/api/v1/workspaces/" + b.WorkspaceID + "/agents/" + b.AgentID + "/channels/wecom/contacts"
 	request := func(method, path, body string, auth, csrf bool) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		if auth {
-			r.Header.Set("Cookie", "kiko_session=runtime-fixture-session")
+			r.Header.Set("Cookie", "kiko_session="+token)
 		}
 		if csrf {
 			r.Header.Set("X-CSRF-Protection", "1")

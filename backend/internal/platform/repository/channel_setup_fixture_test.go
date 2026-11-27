@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
@@ -24,4 +25,15 @@ func assertNoSetupBinding(t *testing.T, db *sql.DB, workspace, agent, provider s
 	if err != nil || count != 0 {
 		t.Fatalf("expected no %s binding after revocation, count=%d err=%v", provider, count, err)
 	}
+}
+
+// setupAdminSessionWithoutCreatorRights provides the real HTTP identity for
+// tests that need to demote the only role authorizing a channel operation.
+func setupAdminSessionWithoutCreatorRights(t *testing.T, db *sql.DB, workspace string) (actor, token string) {
+	t.Helper()
+	actor, token = setupAdminWithoutCreatorRights(t, db, workspace), service.NewID()
+	if err := (&AuthStore{DB: db}).CreateSession(t.Context(), service.HashToken(token), actor, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	return actor, token
 }

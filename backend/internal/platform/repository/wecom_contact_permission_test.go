@@ -13,7 +13,8 @@ import (
 )
 
 func TestWecomContactPermissionHTTPReadOnlyScopedAndFresh(t *testing.T) {
-	db, s, b, actor := wecomContactFixture(t)
+	db, s, b, _ := wecomContactFixture(t)
+	actor, token := setupAdminSessionWithoutCreatorRights(t, db, b.WorkspaceID)
 	calls := 0
 	outcomes := []error{nil, service.Fail("wecom_contacts_authorization_denied", 502, "sensitive"), service.Fail("wecom_contacts_unavailable", 502, "sensitive"), service.Fail("wecom_contacts_authentication_failed", 502, "sensitive"), service.Fail("wecom_contacts_unsupported", 502, "sensitive"), nil}
 	s.Provider = contactProviderFunc(func(_ context.Context, app, secret, q string) (service.WecomContactSearch, error) {
@@ -33,7 +34,7 @@ func TestWecomContactPermissionHTTPReadOnlyScopedAndFresh(t *testing.T) {
 		t.Helper()
 		r := httptest.NewRequest("GET", path, nil)
 		if authenticated {
-			r.Header.Set("Cookie", "kiko_session=runtime-fixture-session")
+			r.Header.Set("Cookie", "kiko_session="+token)
 		}
 		w := httptest.NewRecorder()
 		api.ServeHTTP(w, r)

@@ -86,7 +86,10 @@ func TestWecomGroupRefreshScopedAtomicAndStableIDs(t *testing.T) {
 func TestWecomGroupRefreshNeverPublishesPartialOrRevoked(t *testing.T) {
 	for _, mode := range []string{"failed", "expired", "revoked", "tenant", "duplicate", "rollback"} {
 		t.Run(mode, func(t *testing.T) {
-			db, _, _, _, actor, _, binding := channelManagerFixture(t)
+			db, _, _, workspace, actor, _, binding := channelManagerFixture(t)
+			if mode == "revoked" {
+				actor = setupAdminWithoutCreatorRights(t, db, workspace)
+			}
 			ctx := context.Background()
 			reviewExec(t, db, `UPDATE platform_channel_bindings SET provider='wecom',app_id='bot',external_tenant_id='bot',identity_verified_generation=connection_generation WHERE id=$1`, binding)
 			b := service.ChannelBinding{ID: binding, Generation: 1, Revision: 1, TenantID: "bot"}

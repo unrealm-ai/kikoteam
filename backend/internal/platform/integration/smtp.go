@@ -23,14 +23,18 @@ type SMTP struct {
 }
 
 func (s *SMTP) SendCode(ctx context.Context, to, purpose, code string) error {
-	_, err := s.send(ctx, to, "Kiko verification code", "您的 Kiko 验证码是 "+code+"，5 分钟内有效。如非本人操作，请忽略。", "")
+	message, err := verificationMessage(purpose, code)
+	if err != nil {
+		return err
+	}
+	_, err = s.send(ctx, to, message, "")
 	return err
 }
 func (s *SMTP) SendInvitation(ctx context.Context, to, link, messageID string) (string, error) {
-	return s.send(ctx, to, "Kiko workspace invitation", "您收到 Kiko 工作区邀请。请登录后访问以下链接：\r\n"+link+"\r\n如非预期，请忽略此邮件。", messageID)
+	return s.send(ctx, to, plainMessage("Kiko workspace invitation", "您收到 Kiko 工作区邀请。请登录后访问以下链接：\r\n"+link+"\r\n如非预期，请忽略此邮件。"), messageID)
 }
 func (s *SMTP) SendTest(ctx context.Context, to string) error {
-	_, err := s.send(ctx, to, "KIKO SMTP test", "KIKO 企业级AI员工云平台 SMTP 测试邮件。", "")
+	_, err := s.send(ctx, to, plainMessage("KIKO SMTP test", "KIKO 企业级AI员工云平台 SMTP 测试邮件。"), "")
 	return err
 }
 
@@ -40,7 +44,7 @@ func (s *SMTP) Probe(ctx context.Context) error {
 	})
 }
 
-func (s *SMTP) send(ctx context.Context, to, subject, body, messageID string) (string, error) {
+func (s *SMTP) send(ctx context.Context, to string, message smtpMessage, messageID string) (string, error) {
 	if s.Address == "" || strings.ContainsAny(s.From+to+messageID, "\r\n") {
 		return "failed", fmt.Errorf("SMTP not configured or invalid envelope")
 	}
@@ -53,7 +57,7 @@ func (s *SMTP) send(ctx context.Context, to, subject, body, messageID string) (s
 			return e
 		}
 		var e error
-		status, e = submitMessage(client, s.From, to, subject, body, messageID)
+		status, e = submitMessage(client, s.From, to, message, messageID)
 		return e
 	})
 	return status, err
@@ -137,17 +141,17 @@ func (s RuntimeSMTP) SendInvitation(ctx context.Context, to, link, messageID str
 	return SMTPForSettings(current).SendInvitation(ctx, to, link, messageID)
 }
 
-func submitMessage(client *smtp.Client, from, to, subject, body, messageID string) (string, error) {
+func submitMessage(client *smtp.Client, from, to string, message smtpMessage, messageID string) (string, error) {
 	w, err := client.Data()
 	if err != nil {
 		return "failed", err
 	}
 	// Once DATA body transmission starts, a disconnect has an uncertain outcome.
-	headers := "From: " + from + "\r\nTo: " + to + "\r\nSubject: " + subject + "\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+	headers := "From: " + from + "\r\nTo: " + to + "\r\nSubject: " + message.subject + "\r\nMIME-Version: 1.0\r\nContent-Type: " + message.contentType + "\r\n"
 	if messageID != "" {
 		headers += "Message-ID: <" + messageID + ">\r\n"
 	}
-	if _, err = fmt.Fprint(w, headers+"\r\n"+body+"\r\n"); err != nil {
+	if _, err = fmt.Fprint(w, headers+"\r\n"+message.body+"\r\n"); err != nil {
 		return "unknown", err
 	}
 	if err = w.Close(); err != nil {

@@ -71,7 +71,7 @@ func TestSMTPInvitationOutcomes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			status, err := submitMessage(client, "from@example.test", "to@example.test", "Invitation", "test body", "stable-id@example.test")
+			status, err := submitMessage(client, "from@example.test", "to@example.test", plainMessage("Invitation", "test body"), "stable-id@example.test")
 			if status != tc.want || (err == nil) != (tc.want == "sent") {
 				t.Fatalf("status=%s err=%v", status, err)
 			}

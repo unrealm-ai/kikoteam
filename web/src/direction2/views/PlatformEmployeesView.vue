@@ -370,7 +370,7 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller?.abort(); guard
       <NAlert v-if="error || modelError" type="warning">配置操作结果不受列表刷新影响；刷新失败：{{error || modelError}} <NButton text @click="load">重新读取列表</NButton></NAlert>
       <div class="detail-top-bar">
         <div class="detail-hero-left">
-          <button class="back-link-btn" :disabled="saving || setupBusy" @click="close">← 返回员工名录</button>
+          <button class="back-link-btn" :disabled="saving || setupBusy" @click="close">← 返回员工列表</button>
           <div class="emp-profile-summary">
             <D2EmployeeAvatar :name="form.name || 'AI 员工'" :preset="form.avatar" :identity-key="selected?.id" size="lg" />
             <div class="profile-titles"><div class="pt-row"><h2>{{ selected?.name || '新建 AI 员工' }}</h2><span class="engine-label">Pi</span><span v-if="selected" class="ec-code">v{{ selected.config_version }}</span><NTag v-if="dirty" size="small" type="warning">未保存</NTag></div><p>{{ selected?.role || '配置员工职责、模型与工作渠道' }}</p></div>

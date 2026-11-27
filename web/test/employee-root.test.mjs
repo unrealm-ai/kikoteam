@@ -43,11 +43,11 @@ test('Actual root app provides dialog context and employee page remains mounted 
   assert.equal(document.querySelector('.brand-logo').title,'KIKO 企业级AI员工云平台');
   assert.equal(document.querySelector('.brand-logo .platform-tag').textContent,'企业级AI员工云平台');
   assert.equal(document.querySelector('.brand-logo img').getAttribute('src'),'/brand/mark.svg');
-  assert.equal(document.querySelector('.view-title').textContent,'AI 员工名录');
+  assert.equal(document.querySelector('.view-title').textContent,'AI 员工');
   button('管理配置').click();await pause();
   const persona=[...document.querySelectorAll('.n-tabs-tab')].find(t=>t.textContent.trim()==='设定与模型');assert.ok(persona);persona.click();await pause();
   const input=document.querySelector('.emp-name-input input');assert.ok(input);input.value='Draft';input.dispatchEvent(new window.Event('input',{bubbles:true}));await pause();
-  button('← 返回员工名录').click();await pause();assert.match(document.body.textContent,/存在未保存的配置草稿/);assert.ok(button('继续编辑'));assert.ok(document.querySelector('.employee-detail-container'));assert.deepEqual(errors,[]);
+  button('← 返回员工列表').click();await pause();assert.match(document.body.textContent,/存在未保存的配置草稿/);assert.ok(button('继续编辑'));assert.ok(document.querySelector('.employee-detail-container'));assert.deepEqual(errors,[]);
   button('继续编辑').click();await pause();assert.equal(document.querySelector('.emp-name-input input').value,'Draft');assert.ok(document.querySelector('.employee-detail-container'));
   assert.ok(requests.every(r=>r.url.startsWith('/api/v1/')));assert.equal(requests.some(r=>r.init.method && r.init.method!=='GET'),false);assert.deepEqual(errors,[]);
  }finally{app.unmount();host.remove();await pause()}
@@ -75,9 +75,10 @@ test('Market is the first and default destination, but explicit links still open
   try{
    await pause();await pause();
    const rail=[...host.querySelectorAll('nav[aria-label="主导航"] button')];
-   assert.equal(rail[0]?.getAttribute('aria-label'),'AI 员工市场');
+   assert.equal(rail[0]?.getAttribute('aria-label'),'首页');
    assert.equal(rail[0]?.getAttribute('aria-current'),view==='market'?'page':null);
-   assert.ok(!rail.some(button=>button.getAttribute('aria-label')==='首页'));
+   assert.equal(rail.filter(button=>button.getAttribute('aria-label')==='首页').length,1);
+   assert.ok(rail.some(button=>button.getAttribute('aria-label')==='AI 员工'));
    assert.equal(document.title,`${expected} · Workspace · KIKO 企业级AI员工云平台`);
    assert.equal(window.location.hash,`#/?ws=w&view=${view}`);
    if(view==='market')assert.equal(host.querySelector('h1')?.textContent,'AI 员工市场');

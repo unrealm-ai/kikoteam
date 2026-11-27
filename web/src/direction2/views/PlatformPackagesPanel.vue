@@ -164,7 +164,7 @@ async function save() {
   } catch (e) { if (current === epoch) formError.value = e instanceof Error ? e.message : '保存失败'; return false; }
   finally { saving.value = false; }
 }
-const close = useDraftClose('能力包配置', show, dirty, busy, discard, save);
+const close = useDraftClose('能力包配置', show, dirty, busy, discard, save, () => canSave.value);
 function copyTemplate() {
   const t = templates.value.find(t => t.id === templateID.value);
   if (!t || busy.value) return;
@@ -276,7 +276,7 @@ onUnmounted(discard);
       </div>
     </template>
 
-    <NDrawer :show="show" :width="employeeId ? 'min(640px, 95vw)' : 'min(820px,96vw)'" :mask-closable="false" :close-on-esc="false">
+    <NDrawer :show="show" :width="employeeId ? 'min(640px, 95vw)' : 'min(820px,96vw)'" :mask-closable="!busy" :close-on-esc="!busy" @update:show="open => { if (!open) close(); }">
       <NDrawerContent :class="{ 'employee-package-drawer': employeeId }">
         <template #header>
           <div class="resource-heading">

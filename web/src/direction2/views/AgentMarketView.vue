@@ -7,6 +7,8 @@ import {templatesApi,emptyContent,renderInstruction,type AgentTemplate,type Cont
 import {allPages,packagesApi,skillsApi,pluginsApi,type Skill,type Plugin,type CapabilityPackage} from '../api/capabilities';
 import {modelProfilesApi,choiceValue,modelOptions,modelSelection,type ModelChoice} from '../api/models';
 import type {Agent} from '../api/agents';
+import {workforcePlatformResources, type WorkforceModelResource} from '../api/workforce-platform-resources';
+import EmployeeCreateModal from '../components/workforce/EmployeeCreateModal.vue';
 import AssistantDemoCards from '../components/AssistantDemoCards.vue';
 import type { AssistantCard } from '../api/assistant';
 import TemplateIdentity from '../components/TemplateIdentity.vue';
@@ -20,6 +22,25 @@ const models=ref<ModelChoice[]>([]),packages=ref<CapabilityPackage[]>([]),packag
 const skills=ref<Skill[]>([]), plugins=ref<Plugin[]>([]);
 const name=ref(''),model=ref(''),params=ref<Record<string,unknown>>({}),override=ref(''),editedInstruction=ref(false),baseline=ref(''),formError=ref('');
 let epoch=0;let abort:AbortController|undefined;
+const showQuickCreate=ref(false);
+const quickCreateModels=ref<WorkforceModelResource[]>([]);
+let quickCreateRequest:AbortController|undefined;
+async function loadQuickCreateModels(){
+ const w=activeWorkspaceId.value;
+ quickCreateRequest?.abort();
+ const request=quickCreateRequest=new AbortController();
+ try {
+  const rows=await workforcePlatformResources.listModels(w,AbortSignal.any([request.signal,AbortSignal.timeout(20000)]));
+  if(!request.signal.aborted&&w===activeWorkspaceId.value)quickCreateModels.value=rows.map(m=>({...m,enabled:m.selectable}));
+ } catch(e) {
+  if(!request.signal.aborted&&w===activeWorkspaceId.value)message.warning(e instanceof Error?e.message:'模型选项加载失败，请重试');
+ }
+}
+function openQuickCreate(){
+ if(!canCreate.value||manage.value)return;
+ showQuickCreate.value=true;
+ void loadQuickCreateModels();
+}
 const canManage=computed(()=>official.value?props.platformAdmin:['owner','admin'].includes(role.value));
 const canCreate=computed(()=>['owner','admin','member'].includes(role.value));
 const canManageWorkspaceTemplates=computed(()=>['owner','admin'].includes(role.value));
@@ -29,7 +50,7 @@ const rendered=computed(()=>selected.value?renderInstruction(selected.value.cont
 const dirty=computed(()=>panel.value==='edit'&&JSON.stringify(content.value)!==baseline.value||panel.value==='create');
 const guard=inject<{register:(v:typeof draft)=>void;unregister:(v:typeof draft)=>void}>('d2DraftGuard');
 const draft={hasUnsaved:()=>dirty.value||busy.value,getLabel:()=> 'AI 员工模板',save:async()=>{if(panel.value==='edit'){await save();return !dirty.value}return false},discard:()=>{panel.value='';formError.value=''}};guard?.register(draft);
-function close(){if(dirty.value&&!confirm('离开会丢弃尚未提交的内容，确定离开？'))return;panel.value='';formError.value=''}
+function close(){if(busy.value)return;if(dirty.value&&!confirm('离开会丢弃尚未提交的内容，确定离开？'))return;panel.value='';formError.value=''}
 async function load(){
  const current=++epoch;abort?.abort();abort=new AbortController();loading.value=true;error.value='';items.value=[];
  const w=activeWorkspaceId.value;
@@ -151,8 +172,8 @@ async function create(requiredPackagesOnly=false){
 }
 watch([official,manage,category,sort],()=>{page.value=1;panel.value='';void load()});
 watch(page,()=>void load());
-watch(activeWorkspaceId,()=>{++epoch;panel.value='';manage.value=false;role.value='';busy.value=false;page.value=1;void load()},{immediate:true});
-onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
+watch(activeWorkspaceId,()=>{++epoch;panel.value='';manage.value=false;role.value='';busy.value=false;page.value=1;showQuickCreate.value=false;quickCreateModels.value=[];quickCreateRequest?.abort();void load()},{immediate:true});
+onUnmounted(()=>{++epoch;abort?.abort();quickCreateRequest?.abort();guard?.unregister(draft)});
 </script>
 <template>
 <section class="market">
@@ -162,7 +183,7 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
     <p>选择岗位模板，查看交付示例，创建团队需要的 AI 员工。</p>
   </div>
   <div class="header-actions">
-    <NButton v-if="canCreate && !manage" type="primary" @click="emit('navigate', 'employees', 'create')">+ 快速创建员工</NButton>
+    <NButton v-if="canCreate && !manage && !assistantCards?.length" type="primary" @click="openQuickCreate">+ 快速创建员工</NButton>
     <NButton v-if="canManage" @click="manage=!manage">{{manage?'返回市场':'管理模板'}}</NButton>
     <NButton v-if="manage&&canManage" type="primary" @click="edit()">新建模板</NButton>
   </div>
@@ -176,12 +197,12 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
       </div>
       <p class="onboarding-subtitle">无需配置模型与业务账号，选择一个真实工作场景立即体验任务拆分、人工确认与主动回告。</p>
     </div>
-    <div v-if="canCreate || assistantAgentId" class="onboarding-actions">
-      <NButton v-if="assistantAgentId && canCreate" size="small" type="primary" secondary @click="emit('openAssistant')">让 KIKO 帮我创建员工</NButton>
-      <NButton v-if="canCreate" size="small" secondary @click="emit('navigate', 'employees', 'create')">从空白快速创建</NButton>
-    </div>
   </div>
   <AssistantDemoCards :cards="assistantCards" hide-note @choose="card => emit('assistantDemo', card)" />
+  <div v-if="canCreate" class="onboarding-actions onboarding-actions-bottom">
+    <NButton v-if="assistantAgentId" size="small" type="primary" secondary @click="emit('openAssistant')">让 KIKO 帮我创建员工</NButton>
+    <NButton size="small" secondary @click="openQuickCreate">从空白快速创建</NButton>
+  </div>
 </section>
 <section v-else-if="!manage && (assistantAgentId || canCreate)" class="market-onboarding is-compact" aria-label="快速创建 AI 员工">
   <div class="onboarding-header">
@@ -197,13 +218,13 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
     </div>
     <div class="onboarding-actions">
       <NButton v-if="assistantAgentId" size="small" type="primary" secondary @click="emit('openAssistant')">让 KIKO 帮我创建员工</NButton>
-      <NButton v-if="canCreate" size="small" secondary @click="emit('navigate', 'employees', 'create')">从空白快速创建</NButton>
+      <NButton v-if="canCreate" size="small" secondary @click="openQuickCreate">从空白快速创建</NButton>
     </div>
   </div>
 </section>
 <nav><NButton :type="official?'primary':'default'" @click="official=true;manage=false">官方精选</NButton><NButton :type="!official?'primary':'default'" @click="official=false;manage=false">工作区模板</NButton></nav>
 <div class="filters"><NInput v-model:value="q" placeholder="搜索岗位、职责或交付物" @keyup.enter="page=1;load()" /><NButton @click="page=1;load()">搜索</NButton><NSelect v-model:value="category" :options="categories"/><NSelect v-model:value="sort" :options="[{label:'推荐排序',value:'recommended'},{label:'最近发布',value:'published_at'}]"/></div>
-<NAlert v-if="error" type="error">{{error}}<NButton @click="load">重试</NButton></NAlert><p v-else-if="loading">正在读取模板…</p><div v-else-if="!items.length" class="empty"><h2>{{manage?'还没有模板':'暂无匹配的岗位'}}</h2><p>可以调整筛选，或由管理员制作工作区模板。</p><div v-if="!manage && canCreate" class="empty-actions"><NButton size="small" secondary @click="emit('navigate', 'employees', 'create')">从空白快速创建</NButton></div></div>
+<NAlert v-if="error" type="error">{{error}}<NButton @click="load">重试</NButton></NAlert><p v-else-if="loading">正在读取模板…</p><div v-else-if="!items.length" class="empty"><h2>{{manage?'还没有模板':'暂无匹配的岗位'}}</h2><p>可以调整筛选，或由管理员制作工作区模板。</p><div v-if="!manage && canCreate" class="empty-actions"><NButton size="small" secondary @click="openQuickCreate">从空白快速创建</NButton></div></div>
 <div v-else class="grid">
   <article v-for="t in items" :key="t.id" class="template-card">
     <TemplateIdentity :template="t" :category="categoryLabel(t.content.category)" />
@@ -227,7 +248,7 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
   </article>
 </div>
 <NPagination v-if="total>20" v-model:page="page" :item-count="total" :page-size="20"/>
-<NDrawer :show="!!panel" :width="'min(900px,96vw)'" :mask-closable="false" :close-on-esc="false"><NDrawerContent :title="panel==='edit'?'制作 AI 员工模板':panel==='create'?'创建 AI 员工':(selected?.content.name||'模板详情')"><template #header><strong>{{panel==='edit'?'制作模板':panel==='create'?'创建员工':'模板详情'}}</strong><NButton quaternary :disabled="busy" @click="close">关闭</NButton></template>
+<NDrawer :show="!!panel" :width="'min(900px,96vw)'" :mask-closable="!busy" :close-on-esc="!busy" @update:show="open=>{if(!open)close()}"><NDrawerContent :title="panel==='edit'?'制作 AI 员工模板':panel==='create'?'创建 AI 员工':(selected?.content.name||'模板详情')"><template #header><strong>{{panel==='edit'?'制作模板':panel==='create'?'创建员工':'模板详情'}}</strong><NButton quaternary :disabled="busy" @click="close">关闭</NButton></template>
 <NAlert v-if="formError" type="error">{{formError}}</NAlert>
 <template v-if="panel==='detail'&&selected">
   <TemplateIdentity class="detail-identity" :template="selected" :category="categoryLabel(selected.content.category)" />
@@ -262,6 +283,8 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
 </NForm><footer><NButton type="primary" :loading="busy" @click="save">保存草稿</NButton><NButton v-if="selected" :disabled="dirty||busy" @click="publish">{{selected.is_listed?'发布新版本':'发布并上架'}}</NButton><NButton v-if="selected?.published_version_id" :disabled="dirty||busy" @click="listing">{{selected.is_listed?'下架':'重新上架原发布版'}}</NButton><NPopconfirm v-if="selected&&!selected.published_version_id" @positive-click="remove"><template #trigger><NButton :disabled="busy">删除未发布模板</NButton></template>删除这个未发布模板及保存历史？</NPopconfirm></footer><details v-if="history.length"><summary>保存历史</summary><p v-for="v in history" :key="v.id">v{{v.sequence}} · {{v.published_at?'曾发布':'未发布'}} {{v.change_note}}</p></details></template>
 <template v-if="panel==='create'&&selected"><NSteps :current="step" size="small"><NStep title="岗位设定"/><NStep title="模型与接入"/><NStep title="确认创建"/></NSteps><NForm :disabled="busy" label-placement="top"><div v-if="step===1"><h3>{{selected.content.name}} · v{{selected.sequence}}</h3><NFormItem label="员工名称"><NInput v-model:value="name" maxlength="100"/></NFormItem><NFormItem v-for="p in selected.content.parameters" :key="p.key" :label="p.label||p.key" :required="p.required"><NSelect v-if="p.type.includes('select')" :value="params[p.key] as string|string[]" @update:value="v=>params[p.key]=v" :multiple="p.type==='multi_select'" :options="(p.options||[]).map(x=>({label:x,value:x}))"/><NInput v-else :value="String(params[p.key]??'')" @update:value="v=>params[p.key]=v" :type="p.type==='long_text'?'textarea':'text'" :placeholder="p.description"/></NFormItem><details><summary>查看岗位指令</summary><pre>{{rendered}}</pre><NCheckbox :checked="editedInstruction" @update:checked="v=>{editedInstruction=v;if(v)override=rendered}">自定义这位员工的岗位指令</NCheckbox><NInput v-if="editedInstruction" v-model:value="override" type="textarea" :autosize="{minRows:6}"/></details></div><div v-if="step===2"><h3>选择模型，了解接入要求</h3><NSelect v-model:value="model" :options="modelOptions(models)" placeholder="选择已验证并启用的模型"/><p>{{selected.content.model_requirements}}</p><p v-if="model.startsWith('platform:')">该员工使用官方模型产生的费用将从工作区所有者的积分账户扣除。</p><h3>模板已预设的能力</h3><article v-for="p in selected.content.packages" :key="p.package_key"><NTag>模板预设</NTag><h4>{{p.name}}</h4><p>{{p.description}}</p><p>{{p.plugins.length?'创建后连接相关业务系统':'无额外业务账号要求'}} · {{p.onboarding_requirement==='deferred'?'可稍后接入':'使用此能力前完成接入'}}</p></article><NAlert v-if="!models.some(m=>m.enabled&&m.validated)" type="warning">请先在资源库配置一个可用模型。表单内容会保留。</NAlert></div><div v-if="step===3"><h3>确认创建 {{name}}</h3><p>来源：{{selected.content.name}} v{{selected.sequence}}</p><p>模型：{{models.find(m=>choiceValue(m)===model)?.name}}</p><p>能力：{{selected.content.packages.map(p=>p.name).join('、')}}</p><NAlert type="info">使用范围默认全员可用，黑名单为空。创建后可在员工设置中调整范围和连接业务账号。</NAlert><pre>{{editedInstruction?override:rendered}}</pre></div></NForm><footer><NButton v-if="step>1" :disabled="busy" @click="step--">上一步</NButton><NButton v-if="step<3" type="primary" @click="next">下一步</NButton><NButton v-else type="primary" :loading="busy" :disabled="busy" @click="create()">创建员工</NButton></footer></template>
 </NDrawerContent></NDrawer>
+<EmployeeCreateModal v-model:show-create-modal="showQuickCreate" :models-catalog="quickCreateModels" :can-manage="canCreate"
+  @load-models="loadQuickCreateModels" @created="employee => emit('navigate', 'employees', 'channels', employee.id)" />
 </section>
 </template>
 <style scoped>
@@ -297,6 +320,7 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
 }
 .onboarding-subtitle { margin: 0; font-size: 13px; line-height: 1.5; color: var(--id-text-secondary, #526071); }
 .onboarding-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+.onboarding-actions-bottom { justify-content: flex-end; margin-top: 14px; }
 .empty-actions { display: flex; justify-content: center; gap: 10px; margin-top: 12px; }
 p { color: #526071; line-height: 1.65; }
 nav, .filters, footer { display: flex; gap: 12px; margin: 20px 0; }

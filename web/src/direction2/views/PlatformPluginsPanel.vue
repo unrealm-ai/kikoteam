@@ -30,7 +30,8 @@ const existing = ref<Plugin>();
 const fresh = (): PluginConfig => ({ name: '', description: '', endpoint: '', auth_type: 'none', header_name: '' });
 const form = ref(fresh());
 const baseline = ref('');
-const dirty = computed(() => JSON.stringify(form.value) !== baseline.value);
+const draftSnapshot = () => JSON.stringify([form.value, oauthFields.value]);
+const dirty = computed(() => draftSnapshot() !== baseline.value);
 let epoch = 0;
 const authOptions = [
   { label: '无需认证', value: 'none' },
@@ -43,7 +44,7 @@ function open(p?: Plugin) {
   existing.value = p;
   oauthFields.value={issuer:p?.oauth?.issuer??'',client_id:p?.oauth?.client_id??'',client_secret:'',scopes:p?.oauth?.scopes??'',resource:p?.oauth?.resource??''};
   form.value = p ? { name: p.name, description: p.description, endpoint: p.endpoint, auth_type: p.auth_type, header_name: p.header_name } : fresh();
-  baseline.value = JSON.stringify(form.value);
+  baseline.value = draftSnapshot();
   show.value = true;
 }
 const canSave = computed(() => canManage.value && !saving.value && !!form.value.name.trim() && /^https:\/\//i.test(form.value.endpoint.trim()) && (form.value.auth_type !== 'api_key' || !!form.value.header_name.trim()));
@@ -60,7 +61,7 @@ async function save() {
   } catch (e) { if (current === epoch) formError.value = e instanceof Error ? e.message : '保存失败'; return false; }
   finally { saving.value = false; }
 }
-const close = useDraftClose('插件定义', show, dirty, saving, discard, save);
+const close = useDraftClose('插件定义', show, dirty, saving, discard, save, () => canSave.value);
 const actionBusy = ref(false);
 async function toggle(p: Plugin) {
   if (!canManage.value || actionBusy.value) return;
@@ -137,7 +138,7 @@ onUnmounted(() => { ++epoch; ++historyEpoch; });
       </div>
     </template>
 
-    <NDrawer class="library-drawer" :show="show" :width="'min(600px,95vw)'" :mask-closable="false" :close-on-esc="false">
+    <NDrawer class="library-drawer" :show="show" :width="'min(600px,95vw)'" :mask-closable="!saving" :close-on-esc="!saving" @update:show="open => { if (!open) close(); }">
       <NDrawerContent>
         <template #header>
           <div class="resource-heading">

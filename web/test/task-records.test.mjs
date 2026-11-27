@@ -15,7 +15,7 @@ class Source { static all=[]; constructor(url){this.url=url;this.closed=false;th
 globalThis.EventSource=Source;
 const task = (id='one') => ({ task_id:id,session_id:`s-${id}`,conversation_id:'c',title:`任务 ${id}`,agent:{id:'a',name:'小析',avatar:''},source:{kind:'chat_delegation',chat_session_id:'chat',chat_input_id:'origin'},lifecycle:'active',execution:{state:'idle',active_turn_id:null,queued_input_count:0,background_process_count:0,block_reason:null},latest_input:null,latest_turn:{id:'turn-1',turn_no:'1',status:'completed',started_at:'2026-11-17T01:00:00Z',finished_at:'2026-11-17T01:00:42Z',has_unknown_tool_results:false},created_at:'2026-11-17T01:00:00Z',revision:'1',accepts_input:true,input_block_reason:null,actions:{rename:{allowed:true},archive:{allowed:true},stop:{allowed:true}},initial_input:{id:'i',text:'分析销售数据'},latest_result:null });
 const empty = () => Response.json({items:[],next_cursor:null});
-const button = text => [...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
+const button = text => [...document.querySelectorAll('button')].find(b=>(b.getAttribute('aria-label')||b.textContent.trim())===text);
 async function mount(component=Detail, override=()=>null, initial={}) {
   const calls=[], navigation=[], props=ref(component===Detail?{workspaceId:'w',taskId:'one',...initial}:initial); Source.all=[]; activeWorkspaceId.value='w';
   globalThis.fetch=async(url,init={})=>{calls.push({url,init});const custom=await override(url,init);if(custom)return custom;
@@ -327,8 +327,9 @@ test('authenticated task detail queues supplements but cannot stop during human 
       box.value = '挂起时的补充要求';
       box.dispatchEvent(new window.Event('input', {bubbles:true})); await nextTick();
       button('发送').click(); await wait();
-      const writes = m.calls.filter(c=>c.init.method==='POST').map(c=>c.url);
-      assert.deepEqual(writes, ['/api/v1/workspaces/w/sessions/s-one/inputs']);
+      const writes = m.calls.filter(c=>c.init.method==='POST');
+      assert.deepEqual(writes.map(c=>c.url), ['/api/v1/workspaces/w/sessions/s-one/inputs']);
+      assert.equal(JSON.parse(writes[0].init.body).delivery_mode,'steer');
     } finally { await m.cleanup(); }
   }
 });

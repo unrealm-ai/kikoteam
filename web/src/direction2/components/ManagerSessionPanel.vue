@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import ConversationControlIcon from './ConversationControlIcon.vue';
 import { computed, nextTick, onUnmounted, ref, toRef, watch } from 'vue';
-import { NButton, NInput, NSelect, NSkeleton } from 'naive-ui';
+import { NButton, NInput, NSkeleton } from 'naive-ui';
 import { managerApi, type ManagerSession, type SessionEvent } from '../api/manager';
 import type { PublicTaskDetailFlow } from '../composables/usePublicTaskDetail';
 import type { TaskArtifact } from '../api/public-task';
@@ -63,13 +64,11 @@ const continuing = computed(() => Boolean(shared.value?.can_continue));
 const held = computed(() => props.publicDetail
   ? ['waiting_for_action', 'waiting_for_confirmation', 'waiting_for_handoff'].includes(shared.value?.status || '')
   : !!(props.task && session.value?.execution.required_actions?.some(action => ['human_confirmation', 'work_item'].includes(action.type))));
-const visibleMode = computed(() => held.value ? 'queue' : deliveryMode.value);
 
 const text = ref(''), submitting = ref(false), actionError = ref(''), notice = ref(''), controlBusy = ref(false);
 function prefillTrial(){if(typeof sessionStorage==='undefined'||typeof location==='undefined')return;const agent=new URLSearchParams(location.hash.slice(1)).get('emp');if(!agent)return;const key='kiko:template-trial:'+props.workspace+':'+agent;const draft=sessionStorage.getItem(key);if(draft){text.value=draft;sessionStorage.removeItem(key)}}
 if (!props.taskCenter && !props.publicDetail) prefillTrial();
-const deliveryMode = ref<'steer' | 'queue'>('steer');
-const deliveryOptions = [{ label: '引导当前执行', value: 'steer' }, { label: '排队到下一轮', value: 'queue' }];
+const stopLabel = computed(() => props.task ? '停止此任务' : '停止主对话');
 const downloadError = ref('');
 const artifactBusy = ref('');
 const effectiveArtifacts = computed(() => props.artifacts?.length ? props.artifacts : shared.value?.artifacts || []);
@@ -118,7 +117,8 @@ async function downloadAttachment(file: SessionAttachment) {
   finally { if (!signal.aborted && file.id) readingAttachments.value.delete(file.id); }
 }
 watch(()=>rows.value.filter(e=>e.source_kind==='task_report').at(-1)?.seq,seq=>{if(seq)emit('report');});
-let pending: { paths:string[]; ids:string[]; text: string; key: string; mode: 'steer' | 'queue' } | null = null;
+let pending: { paths:string[]; ids:string[]; text: string; key: string } | null = null;
+const sendLabel = computed(() => continuing.value ? '提交并重新开始' : actionError.value && pending ? '重试发送' : '发送');
 watch(() => props.sessionId, () => { text.value = ''; pending = null; actionError.value = ''; notice.value = ''; });
 const messages = computed(() => {
   const pending = new Set(session.value?.execution.required_actions?.map(action => action.request_id));
@@ -134,9 +134,9 @@ async function send() {
   if (!canCompose.value || submitting.value || controlBusy.value || props.attachmentPending || (!text.value.trim() && !props.attachmentPaths?.length && !props.attachmentIds?.length)) return;
   if (props.publicDetail) { await sendShared(); return; }
   const w = props.workspace, id = props.sessionId;
-  if (!pending || pending.text !== text.value || pending.mode !== deliveryMode.value || JSON.stringify(pending.paths)!==JSON.stringify(props.attachmentPaths||[]) || JSON.stringify(pending.ids)!==JSON.stringify(props.attachmentIds||[])) pending = { paths:[...(props.attachmentPaths||[])],ids:[...(props.attachmentIds||[])],text: text.value, key: crypto.randomUUID(), mode: deliveryMode.value };
+  if (!pending || pending.text !== text.value || JSON.stringify(pending.paths)!==JSON.stringify(props.attachmentPaths||[]) || JSON.stringify(pending.ids)!==JSON.stringify(props.attachmentIds||[])) pending = { paths:[...(props.attachmentPaths||[])],ids:[...(props.attachmentIds||[])],text: text.value, key: crypto.randomUUID() };
   const request = pending; submitting.value = true; emit('sending',true); actionError.value = ''; notice.value = '';
-  try { await managerApi.input(w, id, request.text, request.key, undefined, request.mode,request.paths,request.ids); if (id !== props.sessionId || w !== props.workspace) return; text.value = ''; pending = null; emit('sent');notice.value = '输入已受理'; await flow.refresh(); }
+  try { await managerApi.input(w, id, request.text, request.key, undefined, 'steer',request.paths,request.ids); if (id !== props.sessionId || w !== props.workspace) return; text.value = ''; pending = null; emit('sent');notice.value = '输入已受理'; await flow.refresh(); }
   catch (e) { if (id === props.sessionId && w === props.workspace) actionError.value = e instanceof Error ? e.message : '发送失败，可原样重试'; }
   finally { submitting.value = false;emit('sending',false); }
 }
@@ -148,7 +148,7 @@ async function sendShared() {
   submitting.value = true; actionError.value = ''; notice.value = '';
   try {
     const state = await adapter.mutate(restart ? 'continue' : 'append',
-      restart ? { text: content, stop_version: snapshot.stop_version } : { text: content, delivery_mode: visibleMode.value });
+      restart ? { text: content, stop_version: snapshot.stop_version } : { text: content, delivery_mode: 'steer' });
     text.value = '';
     notice.value = restart ? '已受理，等待开始新一轮' : state === 'admitted' ? '当前轮已接收补充' : state === 'queued' ? '已记录，排队处理' : '补充已提交';
   } catch (e) { actionError.value = e instanceof Error ? e.message : '提交失败，可原样重试'; }
@@ -319,7 +319,15 @@ watch(rows, async (nextRows, prevRows) => {
       <div class="composer-card" :class="{ disabled: !canCompose, 'is-active': isActiveExecution }">
         <div v-if="$slots.attachments" class="composer-attachments"><slot name="attachments" /></div>
         <NInput v-model:value="text" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" :disabled="!canCompose || submitting || controlBusy" :placeholder="continuing ? '填写新一轮的要求' : task ? '给此任务补充要求，按顺序接续执行...' : '发送消息，任务执行期间仍可继续对话'" @keydown.enter.exact="onEnter" />
-        <div class="actions"><span class="composer-hint">Enter 发送 · Shift + Enter 换行</span><NSelect v-if="!continuing && (!held || !publicDetail)" v-model:value="deliveryMode" class="delivery-select" :class="{ muted: !isActiveExecution }" aria-label="输入处理方式" :options="deliveryOptions" size="small" style="width:144px" :disabled="!canCompose || submitting" /><NButton v-if="!publicDetail || shared?.can_stop" size="small" :secondary="!isActiveExecution" :type="isActiveExecution ? 'error' : 'default'" class="stop-exec-btn" :class="{ quiet: !isActiveExecution }" :loading="controlBusy" :disabled="stopUnavailable" @click="stop">{{ task ? '停止此任务' : '停止主对话' }}</NButton><NButton size="small" type="primary" :loading="submitting" :disabled="attachmentPending || (!text.trim() && !attachmentPaths?.length && !attachmentIds?.length) || !canCompose || submitting || controlBusy" @click="send">{{ continuing ? '提交并重新开始' : actionError && pending ? '重试发送' : '发送' }}</NButton></div>
+        <div class="actions">
+          <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
+          <NButton v-if="!publicDetail || shared?.can_stop" size="small" circle :secondary="!isActiveExecution" :type="isActiveExecution ? 'error' : 'default'" class="stop-exec-btn" :class="{ quiet: !isActiveExecution }" :loading="controlBusy" :disabled="stopUnavailable" :title="stopLabel" :aria-label="stopLabel" @click="stop">
+            <template #icon><ConversationControlIcon kind="stop" /></template>
+          </NButton>
+          <NButton size="small" type="primary" circle :loading="submitting" :disabled="attachmentPending || (!text.trim() && !attachmentPaths?.length && !attachmentIds?.length) || !canCompose || submitting || controlBusy" :title="sendLabel" :aria-label="sendLabel" @click="send">
+            <template #icon><ConversationControlIcon kind="send" /></template>
+          </NButton>
+        </div>
       </div>
     </footer>
   </section>
@@ -384,7 +392,6 @@ small,.muted{font-size:12px;color:var(--id-text-muted)}.empty{margin:auto;text-a
 .composer-card :deep(.n-input__textarea-el){padding:2px 4px}
 .actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--id-border-hairline);flex-wrap:wrap}
 .composer-hint{margin-right:auto;color:var(--id-text-muted);font-size:11px}
-.delivery-select.muted{opacity:0.78}
 .stop-exec-btn.quiet{opacity:0.72}
 @media(max-width:1200px){.composer-hint{display:none}}
 @media(max-width:640px){.messages{padding:16px 12px}.unified-session-header,.session-panel>footer{padding:12px}.connection{font-size:10px}.actions{gap:6px}.event.user{max-width:94%}}

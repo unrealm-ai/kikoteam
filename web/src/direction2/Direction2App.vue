@@ -40,7 +40,7 @@ interface RailNavItem {
 }
 
 const railNavItems: RailNavItem[] = [
-  {view:'market',label:'AI 员工市场',paths:['M3 10h18v11H3z','M2 3h20v7H2z','M10 14h4v7']},
+  {view:'market',label:'首页',paths:['M3 10h18v11H3z','M2 3h20v7H2z','M10 14h4v7']},
   {
     view: 'employees',
     label: 'AI 员工',

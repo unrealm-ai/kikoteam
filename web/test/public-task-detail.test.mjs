@@ -26,7 +26,7 @@ const built = await esbuild.build({
 });
 const { App, Settings, publicTaskToken, createApp, h, nextTick } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
 const pause = async (ms = 40) => { await new Promise(r => setTimeout(r, ms)); await nextTick(); };
-const button = (host, name) => [...host.querySelectorAll('button')].find(b => b.textContent.trim() === name);
+const button = (host, name) => [...host.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.textContent.trim()) === name);
 const token = 'synthetic-token';
 const path = '/api/v1/public/task-detail';
 function detail(overrides = {}) {
@@ -141,11 +141,17 @@ test('a confirmed public SSE cursor is used on resume, and revoke clears the sha
   } finally { m.cleanup(); }
 });
 
-test('public write submits steer normally, queues when held, and requires a click for explicit continue', async () => {
+test('public task controls are labelled icons, always send steer, and require a click for explicit continue', async () => {
   const initial = detail({permission:'write', can_append:true, can_stop:true});
   const m = await fixture({initial, write:() => Response.json({...initial, input_receipt:{state:'queued'}})});
   try {
-    assert.ok(button(m.host, '停止此任务'));
+    assert.equal(m.host.querySelector('.delivery-select'), null);
+    for (const [label, shape] of [['停止此任务', 'rect'], ['发送', 'path']]) {
+      const control = button(m.host, label);
+      assert.ok(control?.querySelector('svg '+shape));
+      assert.equal(control.textContent.trim(), '');
+      assert.equal(control.getAttribute('title'), label);
+    }
     enterText(m.host, '继续调查'); await nextTick();
     button(m.host, '发送').click(); await pause();
     assert.deepEqual(m.calls.find(c => c.url === path + '/append').body, {text:'继续调查', delivery_mode:'steer'});
@@ -159,7 +165,7 @@ test('public write submits steer normally, queues when held, and requires a clic
     assert.equal(button(m.host, '停止此任务'), undefined);
     enterText(m.host, '挂起时补充'); await nextTick();
     button(m.host, '发送').click(); await pause();
-    assert.deepEqual(m.calls.filter(c => c.url === path + '/append').at(-1).body, {text:'挂起时补充', delivery_mode:'queue'});
+    assert.deepEqual(m.calls.filter(c => c.url === path + '/append').at(-1).body, {text:'挂起时补充', delivery_mode:'steer'});
 
     const stopped = detail({cursor:'stopped', status:'stopped', permission:'write', can_continue:true, stop_version:'77'});
     m.setState(stopped); m.emit('task.updated', stopped, 'stopped'); await pause();

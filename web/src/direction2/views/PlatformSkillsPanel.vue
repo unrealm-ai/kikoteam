@@ -147,7 +147,7 @@ async function publish() {
   } catch (e) { if (current === generation) detailError.value = e instanceof Error ? e.message : '发布失败'; return false; }
   finally { saving.value = false; }
 }
-const close = useDraftClose('Skill 导入', show, dirty, busy, discard, publish);
+const close = useDraftClose('Skill 导入', show, dirty, busy, discard, publish, () => canPublish.value);
 const actionBusy = ref(false);
 async function toggle(item: Skill) {
   if (!canManage.value || actionBusy.value) return;
@@ -276,7 +276,7 @@ onUnmounted(() => { invalidate(); ++historyEpoch; clearInterval(timer); });
       </div>
     </template>
 
-    <NDrawer class="library-drawer" :show="show" :width="'min(620px,95vw)'" :mask-closable="false" :close-on-esc="false">
+    <NDrawer class="library-drawer" :show="show" :width="'min(620px,95vw)'" :mask-closable="!busy" :close-on-esc="!busy" @update:show="open => { if (!open) close(); }">
       <NDrawerContent>
         <template #header>
           <div class="resource-heading">

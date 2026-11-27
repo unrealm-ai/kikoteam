@@ -17,11 +17,12 @@ const button=text=>[...document.querySelectorAll('button')].find(b=>b.textConten
 async function mount(role='owner',create,template=fixture,extraProps={}){
  const calls=[],guards=[],navigations=[],demos=[];let assistantOpens=0;globalThis.fetch=async(url,init={})=>{
  calls.push({url,init,body:init.body?JSON.parse(init.body):null});
+ if(url.endsWith('/agents') && init.method==='POST')return Response.json({id:'quick-created',name:JSON.parse(init.body).name,role:JSON.parse(init.body).role,avatar:JSON.parse(init.body).avatar,enabled:true,model_profile_id:'model-one',harness:'pi'});
  if(url.endsWith('/agents/from-template'))return create?create():Response.json({id:'created-agent',name:'周报员'});
  if(url.includes('/capability-package-templates?'))return Response.json({items:[],total:0,page:1,page_size:20});
  if(url.includes('/skills?'))return Response.json({items:[{id:'skill',name:'分析数据',scope:'official',enabled:true,current_version_id:'sv1'}],total:1,page:1,page_size:20});
  if(url.includes('/plugins?'))return Response.json({items:[{id:'plugin',name:'内部系统',scope:'workspace',enabled:true,version_id:'pv2'}],total:1,page:1,page_size:20});
- if(url.includes('/model-profiles'))return Response.json({items:[{id:'model-one',name:'Test',enabled:true,validated:true,is_default:true}],total:1,page:1,page_size:20});
+ if(url.includes('/model-profiles'))return Response.json({items:[{id:'model-one',name:'Test',protocol:'chat_completions',enabled:true,validated:true,is_default:true}],total:1,page:1,page_size:20});
  if(url.includes('/official-agent-templates'))return Response.json({items:[template],total:1,page:1,page_size:20});
  if(url.endsWith('/agent-templates') && init.method==='POST')return Response.json({id:'workspace-copy',content:JSON.parse(init.body).content},{status:201});
  if(url.includes('/agent-templates?'))return Response.json({items:[],total:0,page:1,page_size:20});
@@ -118,9 +119,29 @@ test('market shows demo cards with quick-create actions and emits assistantDemo/
   button('让 KIKO 帮我创建员工').click();
   await pause();
   assert.equal(m.assistantOpens, 1);
-  button('+ 快速创建员工').click();
+  assert.equal(button('+ 快速创建员工'), undefined);
+  const actions = document.querySelector('.onboarding-actions-bottom');
+  assert.equal(cardBtn.compareDocumentPosition(actions) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(actions.contains(button('让 KIKO 帮我创建员工')));
+  const create = button('从空白快速创建');
+  assert.ok(actions.contains(create));
+  create.click();
   await pause();
-  assert.deepEqual(m.navigations, [['employees', 'create']]);
+  assert.ok(document.querySelector('.market'));
+  assert.ok(document.querySelector('.n-modal'));
+  assert.deepEqual(m.navigations, []);
+  const name = document.querySelector('.n-modal input[placeholder="例如：SRE 故障值班助手"]');
+  name.value = '市场新员工';
+  name.dispatchEvent(new window.Event('input', {bubbles:true}));
+  await pause();
+  const submit = button('创建并进入渠道配置');
+  assert.equal(submit.disabled, false);
+  submit.click();
+  await pause();
+  const request = m.calls.find(c=>c.url.endsWith('/agents') && c.init.method==='POST');
+  assert.equal(request.body.name, '市场新员工');
+  assert.equal(request.body.model_profile_id, 'model-one');
+  assert.deepEqual(m.navigations, [['employees', 'channels', 'quick-created']]);
  } finally {
   await m.cleanup();
  }
@@ -138,7 +159,12 @@ test('market keeps quick-create header button and compact banner when demo cards
   assert.ok(button('从空白快速创建'));
   button('+ 快速创建员工').click();
   await pause();
-  assert.deepEqual(withAssistant.navigations, [['employees', 'create']]);
+  assert.ok(document.querySelector('.n-modal'));
+  assert.deepEqual(withAssistant.navigations, []);
+  button('取消').click();
+  await pause();
+  assert.deepEqual(withAssistant.navigations, []);
+  assert.equal(withAssistant.calls.some(c=>c.url.endsWith('/agents') && c.init.method==='POST'), false);
  } finally {
   await withAssistant.cleanup();
  }
@@ -152,10 +178,24 @@ test('market keeps quick-create header button and compact banner when demo cards
   assert.ok(document.querySelector('.market-onboarding.is-compact'));
   assert.equal(button('让 KIKO 帮我创建员工'), undefined);
   button('从空白快速创建').click();
-  button('+ 快速创建员工').click();
   await pause();
-  assert.deepEqual(withoutAssistant.navigations, [['employees', 'create'], ['employees', 'create']]);
+  assert.ok(document.querySelector('.n-modal'));
+  assert.deepEqual(withoutAssistant.navigations, []);
  } finally {
   await withoutAssistant.cleanup();
  }
+});
+
+test('market template details close when the backdrop is clicked', async () => {
+ const m = await mount('member');
+ try {
+  button('查看详情').click();
+  await pause();
+  const mask = document.querySelector('.n-drawer-mask');
+  assert.ok(mask);
+  assert.ok(button('用此模板创建'));
+  mask.click();
+  await new Promise(r => setTimeout(r, 350));
+  assert.equal(button('用此模板创建'), undefined);
+ } finally { await m.cleanup(); }
 });

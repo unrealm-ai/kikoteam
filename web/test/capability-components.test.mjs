@@ -10,7 +10,7 @@ for(const name of ['window','document','navigator','HTMLElement','Element','SVGE
 }
 const built=await esbuild.build({stdin:{contents:"export {default as ResourceDirectory} from './src/direction2/views/ResourceDirectory.vue'; export {default as PlatformPluginAccount} from './src/direction2/views/PlatformPluginAccount.vue'; export {default as PlatformSkillsPanel} from './src/direction2/views/PlatformSkillsPanel.vue'; export {default as PlatformPluginsPanel} from './src/direction2/views/PlatformPluginsPanel.vue'; export {default as PlatformPackagesPanel} from './src/direction2/views/PlatformPackagesPanel.vue'; export {skillsApi,pluginsApi,packagesApi} from './src/direction2/api/capabilities'; export {activeWorkspaceId} from './src/direction2/api/client'; export {createApp,h,nextTick} from 'vue'; export {NMessageProvider,NDialogProvider} from 'naive-ui';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env.VITE_PLATFORM_REAL':'true','import.meta.env.DEV':'false'},plugins:[{name:'vue-test',setup(build){build.onLoad({filter:/\.css$/},()=>({contents:'',loader:'text'}));build.onLoad({filter:/\.vue$/},async({path})=>{const source=await fs.readFile(path,'utf8');const {descriptor}=parse(source);return {contents:compileScript(descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'};});}}]});
 const {ResourceDirectory,skillsApi,pluginsApi,packagesApi,PlatformPluginAccount,PlatformSkillsPanel,PlatformPluginsPanel,PlatformPackagesPanel,activeWorkspaceId,createApp,h,NMessageProvider,NDialogProvider,nextTick}=await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
-const pause=async()=>{await new Promise(r=>setTimeout(r,40));await nextTick()};
+const pause=async(ms=40)=>{await new Promise(r=>setTimeout(r,ms));await nextTick()};
 const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
 const manifest={format_version:1,files:[{path:'SKILL.md',size:40,sha256:'digest'},{path:'scripts/run.py',size:12,sha256:'script'}],digest:'bundle'};
 const version={id:'sv1',sequence:1,version_label:'',technical_name:'test-skill',description:'Test',manifest,source:{type:'zip'},created_at:'2026-11-16'};
@@ -569,4 +569,61 @@ test('unlisted employee plugin retains its name and connection and upgrades expl
   assert.equal(m.calls.filter(c=>c.url.endsWith('/capability-upgrades')).length,1);
   assert.match(document.body.textContent,/当前使用版本 2/);
  }finally{await m.cleanup()}
+});
+
+test('Drawer backdrop closes a clean editor, but preserves dirty data until discard or save', async () => {
+ const m = await mount(PlatformPluginsPanel, {
+  handle: (url, init, body) => init.method === 'POST' && url.endsWith('/plugins') ? Response.json({...plugin, ...body}) : undefined,
+ });
+ try {
+  const backdrop = () => {
+   const mask = document.querySelector('.n-drawer-mask');
+   assert.ok(mask);
+   mask.click();
+  };
+  button('+ 新增插件').click();
+  await pause();
+  backdrop();
+  await pause(320);
+  assert.equal(Boolean(button('关闭')), false, 'drawer should be closed');
+  button('+ 新增插件').click();
+  await pause();
+  const fields = [...document.querySelectorAll('.n-drawer input')];
+  const name = fields[0];
+  const endpoint = fields.find(field => field.placeholder.startsWith('https://'));
+  assert.ok(name && endpoint);
+  for (const [field, value] of [[name, 'Backdrop draft'], [endpoint, 'https://example.test/mcp']]) {
+   field.value = value;
+   field.dispatchEvent(new window.Event('input', {bubbles: true}));
+  }
+  await pause();
+  backdrop();
+  await pause();
+  assert.ok(button('继续编辑'));
+  assert.ok(button('放弃修改'));
+  assert.ok(button('保存并关闭'));
+  button('继续编辑').click();
+  await pause(320);
+  assert.equal(name.value, 'Backdrop draft');
+  assert.equal(m.calls.some(c => c.init.method === 'POST'), false);
+  backdrop();
+  await pause();
+  button('保存并关闭').click();
+  await pause(320);
+  assert.equal(m.calls.find(c => c.init.method === 'POST')?.body.name, 'Backdrop draft');
+  assert.equal(Boolean(button('关闭')), false, 'drawer should be closed');
+  button('+ 新增插件').click();
+  await pause();
+  const next = document.querySelector('.n-drawer input');
+  next.value = 'Discarded draft';
+  next.dispatchEvent(new window.Event('input', {bubbles: true}));
+  backdrop();
+  await pause();
+  button('放弃修改').click();
+  await pause(320);
+  assert.equal(Boolean(button('关闭')), false, 'drawer should be closed');
+  assert.equal(m.calls.filter(c => c.init.method === 'POST').length, 1);
+ } finally {
+  await m.cleanup();
+ }
 });

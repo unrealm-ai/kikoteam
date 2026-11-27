@@ -452,7 +452,7 @@ test('Directory renders when management lookup is unavailable and never enables 
 });
 
 test('Confirmed creation resets directory to page one; optional read failure cannot reclassify write',async()=>{
- let fail=false;const m=await mount({total:41,overrides:{listEmployees:async page=>{if(fail)throw new Error('名录刷新暂不可用');return [employee({name:`page${page}`})]},getEmployee:async()=>{throw new Error('配置刷新暂不可用')}}});
+ let fail=false;const m=await mount({total:41,overrides:{listEmployees:async page=>{if(fail)throw new Error('员工列表刷新暂不可用');return [employee({name:`page${page}`})]},getEmployee:async()=>{throw new Error('配置刷新暂不可用')}}});
  try{button('下一页').click();await pause();assert.match(document.body.textContent,/第 2 页/);fail=true;const directory=components(m.app._instance.subTree).find(c=>'filteredEmployees' in c.props);assert.ok(directory);directory.emit('created',employee({id:'confirmed-new',name:'已确认新员工'}));await pause();assert.match(document.body.textContent,/第 1 页/);assert.match(document.body.textContent,/刷新数据失败/);assert.match(document.body.textContent,/员工配置读取失败/);assert.doesNotMatch(document.body.textContent,/创建 AI 员工失败/);assert.equal(m.calls.filter(c=>c.name==='listEmployees').at(-1).args[0],1);assert.equal(m.calls.some(c=>c.name==='createEmployee'),false);assert.deepEqual(m.errors,[]);}finally{await m.cleanup()}
 });
 test('Accepted basic save arriving after workspace change does not overwrite new employee or show failure',async()=>{

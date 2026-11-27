@@ -5,6 +5,7 @@ import ProjectFileTree from '../components/ProjectFileTree.vue';
 import ProjectDraftFiles from '../components/ProjectDraftFiles.vue';
 import {useProjectDraft} from '../composables/useProjectDraft';
 import D2EmployeeAvatar from '../components/D2EmployeeAvatar.vue';
+import ConversationControlIcon from '../components/ConversationControlIcon.vue';
 import AssistantDemoCards from '../components/AssistantDemoCards.vue';
 import { assistantApi, type AssistantCard, type AssistantEntry } from '../api/assistant';
 import ManagerSessionPanel from '../components/ManagerSessionPanel.vue';
@@ -269,7 +270,7 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
         </button>
         <div v-if="!loading && !filtered.length" class="sidebar-empty">
           <p class="muted">暂无匹配会话</p>
-          <NButton v-if="unstartedCount > 0" size="tiny" secondary @click="newChatOpen = true">从员工名录发起</NButton>
+          <NButton v-if="unstartedCount > 0" size="tiny" secondary @click="newChatOpen = true">从员工列表发起</NButton>
         </div>
       </div>
     </aside>
@@ -350,7 +351,7 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
                 <NInput v-model:value="firstText" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" :disabled="sending || !employee?.enabled" placeholder="输入工作需求，任务执行期间仍可继续对话..." @keydown.enter.exact="onFirstEnter" />
                 <div class="composer-actions">
                   <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
-                  <NButton size="small" type="primary" :loading="sending" :disabled="draft.unreserved.value || (!firstText.trim() && !draft.paths.value.length && !draft.attachmentIds.value.length) || sending || !employee?.enabled" @click="firstSend">{{ error ? '重试发送' : '发送' }}</NButton>
+                  <NButton size="small" type="primary" circle :title="error ? '重试发送' : '发送'" :aria-label="error ? '重试发送' : '发送'" :loading="sending" :disabled="draft.unreserved.value || (!firstText.trim() && !draft.paths.value.length && !draft.attachmentIds.value.length) || sending || !employee?.enabled" @click="firstSend"><template #icon><ConversationControlIcon kind="send" /></template></NButton>
                 </div>
               </div>
             </footer>

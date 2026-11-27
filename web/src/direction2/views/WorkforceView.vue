@@ -212,7 +212,7 @@ function normalizeEmp(emp: DigitalEmployee): DigitalEmployee {
   return normalizeEmployeeAccessSelections(emp, directoryUsers.value, directoryDepartments.value);
 }
 
-// 将服务端返回的规范化字段同步回员工名录基线与快照
+// 将服务端返回的规范化字段同步回员工列表基线与快照
 function syncServerFieldIntoSnapshot<K extends keyof DigitalEmployee>(
   empId: string,
   savedRaw: DigitalEmployee,
@@ -849,7 +849,7 @@ function confirmDiscardDraft() {
   currentEditingEmp.value = null;
   originalEmpSnapshot.value = '';
   isDirty.value = false;
-  message.info('已放弃草稿修改，员工名录保持原配置生效状态。');
+  message.info('已放弃草稿修改，员工列表保持原配置生效状态。');
 }
 
 async function saveAndClose() {
@@ -1088,9 +1088,9 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
         <NButton size="tiny" secondary @click="loadWorkforceData()">重试</NButton>
       </div>
 
-      <NAlert v-if="detailError" type="warning">员工配置读取失败：{{ detailError }}。名录仍可使用，请重新点击员工重试。</NAlert>
+      <NAlert v-if="detailError" type="warning">员工配置读取失败：{{ detailError }}。员工列表仍可使用，请重新点击员工重试。</NAlert>
       <p v-if="detailLoading" role="status">正在加载所选员工配置…</p>
-      <!-- 1. 员工名录列表视图 -->
+      <!-- 1. 员工列表列表视图 -->
       <WorkforceDirectoryList
         :can-manage="canCreate"
         :page="employeePage" :total="employeeTotal" :status-counts="statusCounts" :loading="isLoading"
@@ -1132,7 +1132,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
 
       <div class="detail-top-bar">
         <div class="detail-hero-left">
-          <button class="back-link-btn" @click="handleBackToList">← 返回员工名录</button>
+          <button class="back-link-btn" @click="handleBackToList">← 返回员工列表</button>
           <div class="emp-profile-summary">
             <div class="profile-avatar-wrap" :class="{ 'avatar-clickable': canChangeAvatar }" :title="canChangeAvatar ? '点击更换员工头像' : undefined" @click="canChangeAvatar && (showAvatarPickerModal = true)">
               <D2EmployeeAvatar :name="currentEditingEmp.name" :preset="currentEditingEmp.avatar" :identity-key="currentEditingEmp.id" :assistant="currentEditingEmp.isAssistant" size="lg" />

@@ -23,7 +23,7 @@ const agent={id:'a',name:'测试员工',role:'工程',avatar:'cn-v2-01',enabled:
 const resource=id=>({id,task_id:id==='chat'?null:`business-${id}`,conversation_id:'c',title:id,mode:id==='chat'?'chat':'task',lifecycle:'active',accepts_input:true,execution:{state:'idle',active_turn_id:null,queued_input_count:0,background_process_count:0,block_reason:null}});
 const taskDetail=id=>({task_id:id,session_id:id.replace('business-',''),conversation_id:'c',title:id,agent:{id:'a',name:'测试员工',avatar:'cn-v2-01'},source:{kind:'chat_delegation',chat_session_id:'chat',chat_input_id:null},lifecycle:'active',execution:resource('chat').execution,latest_turn:null,latest_input:null,created_at:'2026-11-17T01:00:00Z',revision:'1',accepts_input:true,input_block_reason:null,initial_input:null,latest_result:null,actions:{rename:{allowed:true},archive:{allowed:true},stop:{allowed:true}}});
 const event=(seq,session='chat',text='内容')=>({type:'agent.message',seq:String(seq),session_id:session,message_id:`m${seq}`,content:[{type:'text',text}],status:'completed'});
-const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
+const button=text=>[...document.querySelectorAll('button')].find(b=>(b.getAttribute('aria-label') || b.textContent.trim())===text);
 async function mount({chat='chat',override,props={}}={}) {
  const calls=[];FakeSource.all=[];
  globalThis.fetch=async(url,init={})=>{
@@ -89,8 +89,8 @@ test('native confirmation is restored from the session and submits an explicit n
    assert.equal(button('是'),undefined);
  } finally { await m.cleanup(); }
 });
-test('main input can queue while running and stop is a request, not task completion',async()=>{
- const m=await mount({override:(url,init)=>!init.method&&url.endsWith('/sessions/chat')?Response.json({...resource('chat'),execution:{...resource('chat').execution,state:'running',active_turn_id:'turn'}}):null});try{const input=document.querySelector('textarea');assert.equal(input.disabled,false);input.value='next request';input.dispatchEvent(new window.Event('input',{bubbles:true}));await pause();button('发送').click();await pause();assert.equal(m.calls.filter(c=>c.url.endsWith('/chat/inputs')).length,1);button('停止主对话').click();await pause();assert.match(m.host.textContent,/停止请求已受理/);assert.ok(!m.calls.some(c=>c.url.includes('/task1/stop')));}finally{await m.cleanup()}
+test('main input steers while running and stop is a request, not task completion',async()=>{
+ const m=await mount({override:(url,init)=>!init.method&&url.endsWith('/sessions/chat')?Response.json({...resource('chat'),execution:{...resource('chat').execution,state:'running',active_turn_id:'turn'}}):null});try{const input=document.querySelector('textarea');assert.equal(input.disabled,false);assert.equal(m.host.querySelector('[aria-label="输入处理方式"]'),null);assert.ok(button('发送').querySelector('svg'));assert.ok(button('停止主对话').querySelector('svg'));input.value='next request';input.dispatchEvent(new window.Event('input',{bubbles:true}));await pause();button('发送').click();await pause();const [inputRequest]=m.calls.filter(c=>c.url.endsWith('/chat/inputs'));assert.equal(JSON.parse(inputRequest.init.body).delivery_mode,'steer');button('停止主对话').click();await pause();assert.match(m.host.textContent,/停止请求已受理/);assert.ok(!m.calls.some(c=>c.url.includes('/task1/stop')));}finally{await m.cleanup()}
 });
 test('transport reconnect resumes from last reliable ID rather than history cursor',async()=>{
  const m=await mount();try{const source=FakeSource.all[0];source.emit(event(11),'last-reliable');source.onerror();await new Promise(r=>setTimeout(r,2150));await pause();assert.equal(source.closed,true);assert.equal(FakeSource.all.length,2);assert.match(FakeSource.all[1].url,/after=last-reliable/);}finally{await m.cleanup()}
@@ -361,7 +361,7 @@ test('authenticated conversation task detail keeps its own write path and disabl
    button('会话任务 (2)').click(); await pause();
    [...document.querySelectorAll('button')].find(b=>b.textContent.includes('task1')).click(); await pause();
    const panel = m.host.querySelector('.task-detail-panel');
-   const action = label => [...panel.querySelectorAll('button')].find(b=>b.textContent.trim()===label);
+   const action = label => [...panel.querySelectorAll('button')].find(b=>(b.getAttribute('aria-label')||b.textContent.trim())===label);
    const stop = action('停止此任务');
    assert.ok(stop.disabled);
    const input = panel.querySelector('textarea');

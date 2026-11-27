@@ -6,6 +6,7 @@ on:
       - 'agent-engine/**'
       - 'sandbox-runner/**'
       - '.github/workflows/agent-engine.yml'
+      - '.github/scripts/install-runtime-packages.sh'
       - '.golangci.yml'
       - 'tools/**'
   push:
@@ -37,9 +38,7 @@ jobs:
             sandbox-runner/builtin-mcp/package-lock.json
       - name: Install runtime dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential python3 procps ripgrep fd-find
-          sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd
+          bash .github/scripts/install-runtime-packages.sh
           npm ci --no-audit --no-fund --prefix agent-engine
           npm ci --no-audit --no-fund --prefix sandbox-runner/builtin-mcp
           npm rebuild node-pty --prefix sandbox-runner/builtin-mcp

@@ -5,6 +5,7 @@ on:
     paths: &paths
       - 'sandbox-runner/builtin-mcp/**'
       - '.github/workflows/builtin-mcp.yml'
+      - '.github/scripts/install-runtime-packages.sh'
       - 'Makefile'
   push:
     branches: [main]
@@ -31,10 +32,7 @@ jobs:
           cache: npm
           cache-dependency-path: sandbox-runner/builtin-mcp/package-lock.json
       - name: Install Linux runtime dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential python3 procps ripgrep fd-find
-          sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/install-runtime-packages.sh"
       - run: npm ci --no-audit --no-fund
       - run: npm rebuild node-pty
       - name: Check and test under the inherited non-root account

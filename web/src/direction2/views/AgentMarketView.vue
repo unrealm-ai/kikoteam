@@ -7,9 +7,11 @@ import {templatesApi,emptyContent,renderInstruction,type AgentTemplate,type Cont
 import {allPages,packagesApi,skillsApi,pluginsApi,type Skill,type Plugin,type CapabilityPackage} from '../api/capabilities';
 import {modelProfilesApi,choiceValue,modelOptions,modelSelection,type ModelChoice} from '../api/models';
 import type {Agent} from '../api/agents';
+import AssistantDemoCards from '../components/AssistantDemoCards.vue';
+import type { AssistantCard } from '../api/assistant';
 import TemplateIdentity from '../components/TemplateIdentity.vue';
-const props=defineProps<{platformAdmin:boolean}>();
-const emit=defineEmits<{navigate:[target:string,param?:string,targetId?:string]}>();
+const props=defineProps<{platformAdmin:boolean;assistantCards?:AssistantCard[] | undefined}>();
+const emit=defineEmits<{navigate:[target:string,param?:string,targetId?:string]; assistantDemo:[card:AssistantCard]}>();
 const message=useMessage();
 const official=ref(true),manage=ref(false),q=ref(''),category=ref(''),sort=ref('recommended'),page=ref(1),total=ref(0),role=ref('');
 const items=ref<AgentTemplate[]>([]),selected=ref<AgentTemplate>(),content=ref<Content>(emptyContent()),history=ref<TemplateVersion[]>([]);
@@ -155,6 +157,10 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
 <template>
 <section class="market">
 <header><div><h1>AI 员工市场</h1><p>选择岗位模板，查看交付示例，创建团队需要的 AI 员工。</p></div><div><NButton v-if="canManage" @click="manage=!manage">{{manage?'返回市场':'管理模板'}}</NButton><NButton v-if="manage&&canManage" type="primary" @click="edit()">新建模板</NButton></div></header>
+<section v-if="assistantCards?.length && !manage" aria-label="体验 AI 员工">
+  <h2>体验 AI 员工</h2>
+  <AssistantDemoCards :cards="assistantCards" @choose="card => emit('assistantDemo', card)" />
+</section>
 <nav><NButton :type="official?'primary':'default'" @click="official=true;manage=false">官方精选</NButton><NButton :type="!official?'primary':'default'" @click="official=false;manage=false">工作区模板</NButton></nav>
 <div class="filters"><NInput v-model:value="q" placeholder="搜索岗位、职责或交付物" @keyup.enter="page=1;load()" /><NButton @click="page=1;load()">搜索</NButton><NSelect v-model:value="category" :options="categories"/><NSelect v-model:value="sort" :options="[{label:'推荐排序',value:'recommended'},{label:'最近发布',value:'published_at'}]"/></div>
 <NAlert v-if="error" type="error">{{error}}<NButton @click="load">重试</NButton></NAlert><p v-else-if="loading">正在读取模板…</p><div v-else-if="!items.length" class="empty"><h2>{{manage?'还没有模板':'暂无匹配的岗位'}}</h2><p>可以调整筛选，或由管理员制作工作区模板。</p></div>

@@ -20,6 +20,8 @@ type Backend struct {
 	HTTP                 *http.Client
 }
 type HarnessConfig struct {
+	AssistantToolSet      string       `json:"assistant_tool_set"`
+	AssistantMCPToken     string       `json:"assistant_mcp_token"`
 	TaskDetailCardEnabled bool         `json:"task_detail_card_enabled,omitempty"`
 	ReportOnly            bool         `json:"report_only,omitempty"`
 	WorkRole              string       `json:"work_role"`

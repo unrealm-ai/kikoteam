@@ -47,14 +47,15 @@ type Config struct {
 			ImplicitTLS bool      `json:"implicit_tls"`
 		} `json:"smtp"`
 	} `json:"mail"`
-	MCPPrivateCIDRs         []netip.Prefix `json:"-"`
-	GitHubOAuthClientID     string         `json:"-"`
-	GitHubOAuthClientSecret string         `json:"-"`
-	ModelProxyOrigin        string         `json:"-"`
-	AllowHTTPIPOrigin       bool           `json:"-"`
-	DSN                     string         `json:"-"`
-	AuthSecret              string         `json:"-"`
-	SMTPPassword            string         `json:"-"`
+	MCPPrivateCIDRs          []netip.Prefix `json:"-"`
+	GitHubOAuthClientID      string         `json:"-"`
+	GitHubOAuthClientSecret  string         `json:"-"`
+	HostedAssistantAvailable bool           `json:"-"`
+	ModelProxyOrigin         string         `json:"-"`
+	AllowHTTPIPOrigin        bool           `json:"-"`
+	DSN                      string         `json:"-"`
+	AuthSecret               string         `json:"-"`
+	SMTPPassword             string         `json:"-"`
 }
 
 // Load gives file policy precedence over legacy policy environment variables.
@@ -121,6 +122,9 @@ func Load() (Config, error) {
 	override(&c.Server.Address, "KIKO_HTTP_ADDRESS")
 	override(&c.Server.WebDir, "KIKO_WEB_DIR")
 	override(&c.Server.TrustedProxies, "KIKO_TRUSTED_PROXY_CIDRS")
+	if c.HostedAssistantAvailable, err = envBool("KIKO_HOSTED_ASSISTANT_AVAILABLE"); err != nil {
+		return c, err
+	}
 	c.ModelProxyOrigin = os.Getenv("KIKO_MODEL_PROXY_ORIGIN")
 	c.GitHubOAuthClientID = strings.TrimSpace(os.Getenv("KIKO_GITHUB_OAUTH_CLIENT_ID"))
 	c.GitHubOAuthClientSecret = strings.TrimSpace(os.Getenv("KIKO_GITHUB_OAUTH_CLIENT_SECRET"))

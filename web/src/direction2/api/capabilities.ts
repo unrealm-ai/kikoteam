@@ -54,7 +54,7 @@ export interface PackageSceneScope {enabled:boolean;mode:'inherit_with_blacklist
 export interface PackageConversationScope {private:PackageSceneScope;group:PackageSceneScope}
 export const defaultConversationScope=(enabled = false):PackageConversationScope=>({private:{enabled,mode:'inherit_with_blacklist',allow:[],deny:[]},group:{enabled,mode:'inherit_with_blacklist',allow:[],deny:[]}});
 export interface PackageInput {work_scope?:import("./work-items").WorkScope;conversation_scope?:PackageConversationScope|null;name:string;description:string;enabled:boolean;scope:PackageScope;trigger_scope:PackageTriggerScope;skills:PackageSkill[];plugins:PackagePlugin[]}
-export interface CapabilityPackage extends PackageInput {id:string;agent_id?:string;source_template_id?:string;version:number;created_at:string;updated_at:string}
+export interface CapabilityPackage extends PackageInput {assistant_tool_set?:"platform"|"demo";assistant_tools?:{name:string;description:string}[];id:string;agent_id?:string;source_template_id?:string;version:number;created_at:string;updated_at:string}
 const packagePath=(w:string,a:string,id?:string)=>`${workspacePath(w)}/${a?`agents/${segment(a)}/capability-packages`:'capability-package-templates'}${id?`/${segment(id)}`:''}`;
 export const packagesApi={
  get:(w:string,a:string,id:string)=>platformRequest<CapabilityPackage>(packagePath(w,a,id)),

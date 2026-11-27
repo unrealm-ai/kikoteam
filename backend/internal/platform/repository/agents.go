@@ -90,7 +90,7 @@ func (t *agentTx) List(ctx context.Context, q service.AgentListQuery) (service.A
 			page.Total = page.Counts.Disabled
 		}
 	}
-	const resources = `, platform_can_manage_agent(a.workspace_id,a.id,NULLIF($6,'')::uuid),
+	const resources = `, platform_can_manage_agent(a.workspace_id,a.id,NULLIF($6,'')::uuid), platform_agent_web_allowed(a.workspace_id,a.id,NULLIF($6,'')::uuid),
         (SELECT coalesce(json_agg(b.provider ORDER BY b.provider),'[]')
             FROM platform_channel_bindings b WHERE b.workspace_id=a.workspace_id AND b.agent_id=a.id),
         (SELECT count(*) FROM platform_capability_packages c WHERE c.workspace_id=a.workspace_id AND c.agent_id=a.id),
@@ -107,8 +107,8 @@ func (t *agentTx) List(ctx context.Context, q service.AgentListQuery) (service.A
 	for rows.Next() {
 		var resources service.AgentCardResources
 		var channels []byte
-		var canManage bool
-		agent, err := scanAgent(rows, &canManage, &channels, &resources.PackageCount, &resources.TriggerCount)
+		var canManage, canChat bool
+		agent, err := scanAgent(rows, &canManage, &canChat, &channels, &resources.PackageCount, &resources.TriggerCount)
 		if err != nil {
 			return page, err
 		}
@@ -116,7 +116,7 @@ func (t *agentTx) List(ctx context.Context, q service.AgentListQuery) (service.A
 			return page, err
 		}
 		agent.CardResources = &resources
-		agent.CanManage = canManage
+		agent.CanManage, agent.CanChat = canManage, canChat
 		page.Items = append(page.Items, agent)
 	}
 	return page, rows.Err()
@@ -191,4 +191,10 @@ func (t *agentTx) Update(ctx context.Context, a service.Agent, config bool) erro
 func (t *agentTx) saveVersion(ctx context.Context, a service.Agent) error {
 	_, err := t.model.tx.ExecContext(ctx, `INSERT INTO platform_agent_versions(workspace_id,agent_id,version,name,role,avatar,instruction,model_profile_id,platform_model_id) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::uuid,NULLIF($9,'')::uuid)`, t.model.workspace, a.ID, a.ConfigVersion, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.PlatformModelID)
 	return err
+}
+
+func (t *agentTx) CanChatEmployee(ctx context.Context, employee, actor string) (bool, error) {
+	var out bool
+	err := t.model.tx.QueryRowContext(ctx, "SELECT platform_agent_web_allowed($1,$2,$3)", t.model.workspace, employee, actor).Scan(&out)
+	return out, err
 }

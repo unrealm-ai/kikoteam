@@ -20,9 +20,10 @@ import PackageSceneRules from '../components/PackageSceneRules.vue';
 import type { UsageSelector } from '../api/agent-usage';
 import PlatformPluginAccount from './PlatformPluginAccount.vue';
 
-const props = withDefaults(defineProps<{ employeeId?: string }>(), { employeeId: '' });
+const props = withDefaults(defineProps<{ employeeId?: string; employeeCanManage?: boolean | undefined }>(), { employeeId: '', employeeCanManage: undefined });
 const message = useMessage();
-const { items, loading, error, page, total, canManage, load } = useResourcePanel('能力包', (w, p, s) => packagesApi.list(w, props.employeeId, p, s));
+const { items, loading, error, page, total, canManage: workspaceCanManage, load } = useResourcePanel('能力包', (w, p, s) => packagesApi.list(w, props.employeeId, p, s));
+const canManage = computed(() => props.employeeId && props.employeeCanManage !== undefined ? props.employeeCanManage : workspaceCanManage.value);
 const show = ref(false), saving = ref(false), busyAccounts = ref<Record<string, boolean>>({}), resourcesLoading = ref(false), formError = ref(''), resourcesError = ref('');
 const existing = ref<CapabilityPackage>();
 const dirtyAccounts = ref<Record<string, boolean>>({});
@@ -305,8 +306,8 @@ onUnmounted(discard);
         <NForm label-placement="top" :disabled="!canManage || busy || resourcesLoading">
           <PackageEditorSections :employee="!!employeeId">
             <template #basics>
-              <NFormItem label="能力包名称"><NInput v-model:value="form.name" :maxlength="100" /></NFormItem>
-              <NFormItem label="说明"><NInput v-model:value="form.description" :maxlength="2000" /></NFormItem>
+              <NFormItem label="能力包名称"><NInput v-model:value="form.name" :disabled="!!existing?.assistant_tool_set" :maxlength="100" /></NFormItem>
+              <NFormItem label="说明"><NInput v-model:value="form.description" :disabled="!!existing?.assistant_tool_set" :maxlength="2000" /></NFormItem>
               <div class="package-enabled">
                 <NCheckbox v-model:checked="form.enabled">启用能力包</NCheckbox>
               </div>
@@ -327,6 +328,13 @@ onUnmounted(discard);
             </template>
 
             <template #resources>
+              <NAlert v-if="existing?.assistant_tool_set" type="info">
+                内置工具随平台代码升级，只能修改启停和使用范围。
+                <ul v-if="existing.assistant_tools?.length">
+                  <li v-for="tool in existing.assistant_tools" :key="tool.name"><code>{{tool.name}}</code>：{{tool.description}}</li>
+                </ul>
+              </NAlert>
+              <template v-else>
               <fieldset class="resource-fieldset package-resource-set">
                 <legend>Skill 技能</legend>
                 <div v-for="(b, index) in form.skills" :key="b.skill_id" class="resource-fieldset">
@@ -372,6 +380,7 @@ onUnmounted(discard);
                 </div>
                 <NSelect v-if="canManage" v-model:value="addPluginID" :options="plugins.filter(p => p.enabled && p.listed !== false && !form.plugins.some(b => b.plugin_id === p.id)).map(p => ({ label: (p.scope === 'official' ? '官方 · ' : '空间 · ') + p.name, value: p.id }))" placeholder="添加插件" @update:value="addPlugin" />
               </fieldset>
+              </template>
             </template>
           </PackageEditorSections>
         </NForm>

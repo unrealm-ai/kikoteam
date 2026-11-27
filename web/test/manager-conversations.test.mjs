@@ -28,6 +28,7 @@ async function mount({chat='chat',override,props={}}={}) {
  const calls=[];FakeSource.all=[];
  globalThis.fetch=async(url,init={})=>{
   calls.push({url,init});const response=await override?.(url,init);if(response)return response;
+  if(url.endsWith('/assistant'))return Response.json(props.assistantEntry ?? {cards:[]});
   if(url.includes('/agents?'))return Response.json({items:[agent],total:1,page:1,page_size:20});
   if(url.endsWith('/web-direct')||url.endsWith('/conversations/c'))return Response.json({id:'c',agent_id:'a',chat_session_id:chat,lifecycle:'active'});
   if(url.includes('/sessions?'))return Response.json({items:[resource('task1'),resource('task2')],next_cursor:null});
@@ -600,4 +601,26 @@ test('default employee is not counted as history before a conversation is opened
   assert.equal(m.host.querySelectorAll('.sidebar-items .employee').length,0);
   assert.match(m.host.querySelector('.chat-area').textContent,/开始协作/);
  }finally{await m.cleanup()}
+});
+
+test('assistant navigation opens ordinary chat without sending, card click sends a single sample message',async()=>{
+ const card={key:'sample',title:'体验并行客诉',description:'核对两个订单',input:'请并行核对两笔订单'};
+ const m=await mount({chat:null,props:{selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[card]}}});
+ try {
+  const writes=()=>m.calls.filter(c=>c.url.endsWith('/sessions')&&c.init.method==='POST');
+  assert.equal(writes().length,0);
+  const action=[...m.host.querySelectorAll('button')].find(b=>b.textContent.includes(card.title));
+  assert.ok(action);action.click();action.click();await pause();
+  assert.equal(writes().length,1);
+  assert.deepEqual(JSON.parse(writes()[0].init.body).input,{text:card.input});
+  assert.equal(m.calls.filter(c=>c.url.endsWith('/web-direct')).length,1);
+ }finally{await m.cleanup()}
+});
+
+test('assistant denied Web demo access or already experienced does not auto-show sample cards',async()=>{
+ const card={key:'sample',title:'体验并行客诉',description:'核对两个订单',input:'请并行核对两笔订单'};
+ const unauthorized=await mount({chat:null,props:{selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[]}}});
+ try {assert.doesNotMatch(unauthorized.host.textContent,/体验场景|体验并行客诉/)}finally{await unauthorized.cleanup()}
+ const experienced=await mount({chat:null,props:{selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[card],experienced:true}}});
+ try {assert.doesNotMatch(experienced.host.textContent,/体验并行客诉/);button('体验场景').click();await pause();assert.match(experienced.host.textContent,/体验并行客诉/)}finally{await experienced.cleanup()}
 });

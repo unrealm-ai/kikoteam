@@ -9,6 +9,7 @@ import HomeDashboard from './views/HomeDashboard.vue';
 import ConversationsView from './views/ConversationsView.vue';
 import PlatformConversationsView from './views/PlatformConversationsView.vue';
 import WorkforceView from './views/WorkforceView.vue';
+import { assistantApi, type AssistantEntry, type AssistantCard } from './api/assistant';
 import AgentMarketView from './views/AgentMarketView.vue';
 import MyCreditsView from './views/MyCreditsView.vue';
 
@@ -30,7 +31,7 @@ import { d2ThemeOverrides } from './styles/theme-overrides';
 // 导航视图状态
 type RailView = 'home' | 'chat' | 'employees' | 'tasks' | 'resources' | 'settings' | 'market' | 'platform-admin' | 'credits';
 interface RailNavItem {
-  view: RailView;
+  view: RailView | 'assistant';
   label: string;
   paths?: string[];
   polylines?: string[];
@@ -40,6 +41,7 @@ interface RailNavItem {
 
 const railNavItems: RailNavItem[] = [
   {view:'market',label:'AI 员工市场',paths:['M3 10h18v11H3z','M2 3h20v7H2z','M10 14h4v7']},
+  {view:'assistant',label:'KIKO 助手',rects:[{width:18,height:14,x:3,y:5,rx:5}],paths:['M8 11h1','M15 11h1','M10 15h4']},
   {
     view: 'employees',
     label: 'AI 员工',
@@ -145,7 +147,29 @@ const shellStatus = ref<'loading' | 'unauthenticated' | 'ready' | 'error'>('load
 const shellError = ref('');
 const currentUser = ref<UserProfile | null>(null);
 const canOpenPlatformAdminTab = computed(() => realPlatform && currentUser.value?.isPlatformAdmin === true);
-const visibleRailNavItems=computed(()=>railNavItems.filter(item=>item.view!=='market'||realPlatform));
+const assistantEntry = ref<AssistantEntry>();
+const assistantDemo = ref<{card: AssistantCard; workspace: string; agent: string; key: string}>();
+const assistantNavActive = computed(() => !!assistantEntry.value?.agent_id && currentView.value === 'chat' && targetEmployeeId.value === assistantEntry.value.agent_id);
+const visibleRailNavItems = computed(() => railNavItems.filter(item =>
+  item.view === 'assistant' ? realPlatform && !!assistantEntry.value?.agent_id : item.view !== 'market' || realPlatform));
+watch([activeWorkspaceId, shellStatus, () => currentUser.value?.id, currentView], ([workspace, status], _old, onCleanup) => {
+  const controller = new AbortController();
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => { controller.abort(); if (retry) clearTimeout(retry); });
+  if (!realPlatform || !workspace || status !== 'ready') { assistantEntry.value = undefined; return; }
+  if (_old?.[0] !== workspace || _old?.[2] !== currentUser.value?.id) assistantEntry.value = undefined;
+  async function refresh() {
+    try {
+      const value = await assistantApi.entry(workspace, controller.signal);
+      if (controller.signal.aborted) return;
+      assistantEntry.value = value;
+      if (value.pending) retry = setTimeout(refresh, 2500);
+    } catch {
+      if (!controller.signal.aborted) assistantEntry.value = undefined;
+    }
+  }
+  void refresh();
+}, {immediate:true});
 const workspaces = ref<WorkspaceInfo[]>([]);
 const currentWorkspace = computed(() => workspaces.value.find(w => w.id === activeWorkspaceId.value) ?? workspaces.value[0] ?? null);
 const isLoggingOut = ref(false);
@@ -639,6 +663,16 @@ function applyNavigation(view: string, param?: string, targetId?: string, extraT
   }
 }
 
+function openAssistant(card?: AssistantCard) {
+  const agent = assistantEntry.value?.agent_id;
+  if (!agent || card && !assistantEntry.value?.cards.some(item => item.key === card.key)) return;
+  runWithUnsavedGuard(() => {
+    if (agent !== assistantEntry.value?.agent_id) return;
+    if (card) assistantDemo.value = {card, workspace: activeWorkspaceId.value, agent, key: crypto.randomUUID()};
+    applyNavigation('chat', undefined, agent);
+  });
+}
+
 function navigate(view: string, param?: string, targetId?: string, extraType?: string) {
   const isSameEmpDetailSwitch =
     currentView.value === 'employees' &&
@@ -827,10 +861,10 @@ function openApproval(id: string) {
                     <button
                       type="button"
                       class="rail-item"
-                      :class="{ active: currentView === item.view }"
+                      :class="{ active: item.view === 'assistant' ? assistantNavActive : currentView === item.view && !assistantNavActive }"
                       :aria-label="item.label"
-                      :aria-current="currentView === item.view ? 'page' : undefined"
-                      @click="navigate(item.view)"
+                      :aria-current="(item.view === 'assistant' ? assistantNavActive : currentView === item.view && !assistantNavActive) ? 'page' : undefined"
+                      @click="item.view === 'assistant' ? openAssistant() : navigate(item.view)"
                     >
                       <span class="rail-icon" aria-hidden="true">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1001,14 +1035,14 @@ function openApproval(id: string) {
                 @navigate="navigate"
                 @open-approval="openApproval"
               />
-              <PlatformConversationsView v-else-if="realPlatform && currentView === 'chat'" :key="'manager-chat-' + currentUser?.id + '-' + activeWorkspaceId" :account-id="currentUser?.id" :selected-employee-id="targetEmployeeId" :selected-conversation-id="subParam" />
+              <PlatformConversationsView v-else-if="realPlatform && currentView === 'chat'" :key="'manager-chat-' + currentUser?.id + '-' + activeWorkspaceId" :account-id="currentUser?.id" :selected-employee-id="targetEmployeeId" :selected-conversation-id="subParam" :assistant-entry="assistantEntry" :assistant-demo="assistantDemo" @demo-consumed="key => { if (assistantDemo?.key === key) assistantDemo = undefined }" />
               <ConversationsView
                 v-else-if="currentView === 'chat'"
                 :key="'chat-' + activeWorkspaceId"
                 :selected-employee-id="targetEmployeeId"
                 @navigate="navigate"
               />
-              <AgentMarketView v-else-if="realPlatform && currentView === 'market'" :key="'market-'+activeWorkspaceId" :platform-admin="currentUser?.isPlatformAdmin===true" @navigate="navigate"/>
+              <AgentMarketView v-else-if="realPlatform && currentView === 'market'" :key="'market-'+activeWorkspaceId" :platform-admin="currentUser?.isPlatformAdmin===true" :assistant-cards="assistantEntry?.cards" @assistant-demo="openAssistant" @navigate="navigate"/>
               <MyCreditsView v-else-if="realPlatform && currentView === 'credits' && currentUser" :key="currentUser.id" :account-id="currentUser.id" />
               <WorkforceView
                 v-else-if="currentView === 'employees'"

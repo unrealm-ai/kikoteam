@@ -19,6 +19,7 @@ import (
 )
 
 type Server struct {
+	AssistantToolAllowed func(context.Context, string, string, string, string, *platform.ExecutionCapabilities) (bool, error)
 	TrustedProxies       []netip.Prefix
 	Service              *service.Service
 	Authenticate         func(context.Context, string) (string, error)

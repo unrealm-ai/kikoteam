@@ -12,25 +12,30 @@ import PlatformReferralSettings from './PlatformReferralSettings.vue';
 import PlatformTaskLinkSettings from './PlatformTaskLinkSettings.vue';
 import PlatformChannelDownloadSettings from './PlatformChannelDownloadSettings.vue';
 
+import PlatformAssistantSettings from './PlatformAssistantSettings.vue';
+
 interface Account { id:string; name:string; email:string; is_platform_admin:boolean; platform_admin_version:number; credit_balance:string }
-type AdminSection = 'accounts' | 'models' | 'mail' | 'integrations' | 'downloads' | 'task-links';
+type AdminSection = 'accounts' | 'models' | 'mail' | 'integrations' | 'downloads' | 'task-links' | 'assistant';
 const tab = ref<AdminSection>('accounts');
 const mailOpened = ref(false), integrationsOpened = ref(false);
 const downloadsOpened = ref(false), taskLinksOpened = ref(false);
 const mailEditor = ref<InstanceType<typeof PlatformMailSettings>>();
 const githubEditor = ref<InstanceType<typeof PlatformGithubOAuthSettings>>();
 const downloadsEditor = ref<InstanceType<typeof PlatformChannelDownloadSettings>>();
+const assistantOpened = ref(false);
+const assistantEditor = ref<InstanceType<typeof PlatformAssistantSettings>>();
 const taskLinksEditor = ref<InstanceType<typeof PlatformTaskLinkSettings>>();
 function selectSection(section: AdminSection) {
   if (section === 'mail') mailOpened.value = true;
   if (section === 'integrations') integrationsOpened.value = true;
   if (section === 'downloads') downloadsOpened.value = true;
+  if (section === 'assistant') assistantOpened.value = true;
   if (section === 'task-links') taskLinksOpened.value = true;
   tab.value = section;
 }
-const hasUnsaved = () => mailEditor.value?.dirty === true || githubEditor.value?.dirty === true || downloadsEditor.value?.dirty === true || taskLinksEditor.value?.dirty === true;
+const hasUnsaved = () => mailEditor.value?.dirty === true || githubEditor.value?.dirty === true || downloadsEditor.value?.dirty === true || taskLinksEditor.value?.dirty === true || assistantEditor.value?.dirty === true;
 async function save() {
-  for (const editor of [mailEditor.value, githubEditor.value, downloadsEditor.value, taskLinksEditor.value]) {
+  for (const editor of [mailEditor.value, githubEditor.value, downloadsEditor.value, taskLinksEditor.value, assistantEditor.value]) {
     if (editor?.dirty && !await editor.save()) return false;
   }
   return true;
@@ -40,6 +45,7 @@ function discard() {
   githubEditor.value?.discard();
   downloadsEditor.value?.discard();
   taskLinksEditor.value?.discard();
+  assistantEditor.value?.discard();
 }
 defineExpose({ hasUnsaved, save, discard });
 const items = ref<Account[]>([]), page = ref(1), total = ref(0), q = ref('');
@@ -123,9 +129,11 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
         <NButton size="small" :quaternary="tab !== 'integrations'" :type="tab==='integrations'?'primary':'default'" :class="{ 'has-unsaved-dot': githubEditor?.dirty }" @click="selectSection('integrations')">集成设置</NButton>
         <NButton size="small" :quaternary="tab !== 'downloads'" :type="tab==='downloads'?'primary':'default'" :class="{ 'has-unsaved-dot': downloadsEditor?.dirty }" @click="selectSection('downloads')">附件下载</NButton>
         <NButton size="small" :quaternary="tab !== 'task-links'" :type="tab==='task-links'?'primary':'default'" :class="{ 'has-unsaved-dot': taskLinksEditor?.dirty }" @click="selectSection('task-links')">任务详情链接</NButton>
+        <NButton size="small" :quaternary="tab !== 'assistant'" :type="tab==='assistant'?'primary':'default'" :class="{ 'has-unsaved-dot': assistantEditor?.dirty }" @click="selectSection('assistant')">KIKO 助手</NButton>
       </nav>
     </header>
 
+    <PlatformAssistantSettings v-if="assistantOpened" v-show="tab==='assistant'" ref="assistantEditor" />
     <OfficialModelsView v-if="tab==='models'"/>
     <PlatformMailSettings v-if="mailOpened" v-show="tab==='mail'" ref="mailEditor" />
     <PlatformGithubOAuthSettings v-if="integrationsOpened" v-show="tab==='integrations'" ref="githubEditor" />

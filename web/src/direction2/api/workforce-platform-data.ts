@@ -83,7 +83,7 @@ export function triggerForWorkforce(t:Trigger,targets:TriggerTarget[]):EmployeeT
 export function projectWorkforceSnapshot(raw:Omit<WorkforcePlatformSnapshot,'employee'|'availability'|'errors'>):WorkforcePlatformSnapshot {
  const {agent,usage,bindings,rules,packages,triggers,targets}=raw;
  const channels=Object.values(bindings).map(binding=>{const value=bindingForWorkforce(binding,usage);if(binding.provider==='feishu'&&rules)value.capabilities.feishuRules=rules.rules.filter(r=>r.channels.includes('feishu')).map(({channels:_channels,...r})=>r);return value;});
- return {...structuredClone(raw),employee:{canManage:agent.can_manage,configVersion:agent.config_version,modelAvailable:agent.model_available,id:agent.id,code:agent.id,version:agent.version,resourceVersions:{...(usage ? {usageAccess:usage.version,usageHistory:usage.version} : {}),...(rules ? {triggerRules:rules.version} : {}),channels:Object.fromEntries(Object.values(bindings).map(b=>[b.provider,b.config_revision]))},name:agent.name,role:agent.role,avatar:agent.avatar,status:agent.enabled?'active':'disabled',executionEngine:agent.harness,modelId:agent.platform_model_id?`platform:${agent.platform_model_id}`:`workspace:${agent.model_profile_id}`,modelName:agent.model_name,thinkingLevel:null,prompt:agent.instruction,
+ return {...structuredClone(raw),employee:{canManage:agent.can_manage,canChat:agent.can_chat,configVersion:agent.config_version,modelAvailable:agent.model_available,id:agent.id,code:agent.id,version:agent.version,resourceVersions:{...(usage ? {usageAccess:usage.version,usageHistory:usage.version} : {}),...(rules ? {triggerRules:rules.version} : {}),channels:Object.fromEntries(Object.values(bindings).map(b=>[b.provider,b.config_revision]))},name:agent.name,role:agent.role,avatar:agent.avatar,status:agent.enabled?'active':'disabled',executionEngine:agent.harness,modelId:agent.platform_model_id?`platform:${agent.platform_model_id}`:`workspace:${agent.model_profile_id}`,modelName:agent.model_name,thinkingLevel:null,prompt:agent.instruction,
  ...projectWorkforceAccess(usage?.usage_config.access ?? unloadedAccess),channels,capabilityPackages:packages.map(packageForWorkforce),triggers:triggers.map(t=>triggerForWorkforce(t,targets)),humanConfirmationRules:[],
  handoffPolicy:{mode:'whitelist',allowEmployeeIds:[],denyEmployeeIds:[]},stats:{todayTasks:null,todayConversations:null,successRate:null}},
  availability:{model:agent.model_available,statistics:false,thinkingLevel:false,handoff:false,humanConfirmation:false,triggerLogs:false,sharing:false},errors:[]};
@@ -91,8 +91,11 @@ export function projectWorkforceSnapshot(raw:Omit<WorkforcePlatformSnapshot,'emp
 export async function getWorkforcePlatformEmployee(w:string,a:string,signal?:AbortSignal,policy?:Pick<WorkforcePlatformSnapshot,'usage'|'rules'>):Promise<DigitalEmployee> {
  const k=key(w,a),epoch=(generations.get(k)||0)+1;generations.set(k,epoch);cache.delete(k);
  const s=signal?AbortSignal.any([signal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000);
- const [agent,packages,triggers,targets,entries]=await Promise.all([
-  agentsApi.get(w,a,s),allPages(n=>packagesApi.list(w,a,n,s)),triggersApi.list(w,a,s),triggersApi.targets(w,a,s),
+ const agent = await agentsApi.get(w,a,s);
+ if(signal?.aborted||generations.get(k)!==epoch)throw new DOMException('员工读取已被新的请求取代','AbortError');
+ if(agent.can_manage===false) return workforceAgentSummary(agent);
+ const [packages,triggers,targets,entries]=await Promise.all([
+  allPages(n=>packagesApi.list(w,a,n,s)),triggersApi.list(w,a,s),triggersApi.targets(w,a,s),
   Promise.all(workforceChannelProviders.map(async provider => [provider, await readWorkforceChannel(w,a,provider,signal)] as const)),
  ]);
  if(signal?.aborted||generations.get(k)!==epoch)throw new DOMException('员工读取已被新的请求取代','AbortError');

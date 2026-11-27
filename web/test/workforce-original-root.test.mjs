@@ -516,3 +516,20 @@ test('Unavailable model cannot be enabled from employee detail',async()=>{
  const m=await mount({props:{selectedEmployeeId:'employee-1',initialTab:'overview'},overrides:{getEmployee:async()=>employee({status:'disabled',modelAvailable:false}),getEmployeeChannelStatuses:async()=>({status:'disabled',channels:[]})}});
  try{assert.ok(button('恢复在岗').disabled);button('恢复在岗').click();await pause();assert.equal(m.calls.some(c=>c.name==='updateEmployeeStatus'),false);assert.deepEqual(m.errors,[]);}finally{await m.cleanup()}
 });
+
+test('ordinary employee users open overview only; direct settings links do not expose other tabs', async () => {
+  const m = await mount({
+    props: {selectedEmployeeId:'employee-1', initialTab:'channels'},
+    overrides: {getEmployee: async () => employee({canManage:false, canChat:true, prompt:'hidden-in-test'})},
+    fetchExtra: url => /^\/api\/v1\/workspaces\?/.test(url)
+      ? Response.json({items:[{id:'workspace-1',role:'member'}],total:1})
+      : undefined,
+  });
+  try {
+    assert.deepEqual([...m.app._container.querySelectorAll('.detail-tabs .n-tabs-tab')].map(el=>el.textContent.trim()),['概览']);
+    assert.ok(button('开始对话'));
+    assert.doesNotMatch(document.body.textContent,/hidden-in-test|立即接入渠道|停用员工/);
+    assert.equal(m.requests.some(r=>r.url.includes('/channels/')||r.url.endsWith('/maintainers')), false);
+    assert.deepEqual(m.errors,[]);
+  }finally{await m.cleanup()}
+});

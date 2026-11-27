@@ -296,7 +296,7 @@ async function reloadLatestEditingEmployee() {
     originalEmpSnapshot.value = JSON.stringify(fresh);
     isDirty.value = false;
     versionConflictAlert.value = null;
-    startChannelStatusPolling();
+    if (canManage.value) startChannelStatusPolling();
     message.success('已同步最新配置');
   } catch (err) {
     if (isCurrent()) message.error(err instanceof Error ? err.message : '拉取最新配置失败');
@@ -815,7 +815,7 @@ watch(
     if (empId) {
       const normalizedTab = normalizeDetailTab(tab);
       if (currentEditingEmp.value?.id === empId) {
-        if (tab) activeDetailTab.value = normalizedTab;
+        if (tab) activeDetailTab.value = canManage.value ? normalizedTab : 'overview';
         return;
       }
       const target = employees.value.find(e => e.id === empId);
@@ -845,18 +845,24 @@ async function openEmployeeDetail(emp: DigitalEmployee, tab = 'overview') {
     try{emp=await workforceApi.getEmployee(emp.id);if(seq!==detailSequence||w!==activeWorkspaceId.value||workforceDisposed)return;}
     catch(e){if(seq===detailSequence&&w===activeWorkspaceId.value){detailError.value=e instanceof Error?e.message:'员工配置加载失败';}return;}
     finally{if(seq===detailSequence)detailLoading.value=false;}
-    void loadCreateModels();
+    if (emp.canManage !== false) void loadCreateModels();
   }
   channelsTabRef.value?.resetQrState();
   versionConflictAlert.value = null;
   const normalized = normalizeEmp(JSON.parse(JSON.stringify(emp)) as DigitalEmployee);
   currentEditingEmp.value = normalized;
   originalEmpSnapshot.value = JSON.stringify(normalized);
-  activeDetailTab.value = tab;
+  activeDetailTab.value = canManage.value ? tab : 'overview';
   isDirty.value = false;
-  startChannelStatusPolling();
+  if (canManage.value) startChannelStatusPolling();
 }
 
+watch(canManage, allowed => {
+  if (!allowed) {
+    activeDetailTab.value = 'overview';
+    stopChannelStatusPolling();
+  }
+});
 watch(() => currentEditingEmp.value?.id, (id, previous) => {
   if (realPlatform && previous && !id && hasLoadedOnce.value) void loadWorkforceData(false);
 });
@@ -1158,7 +1164,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
       </NAlert>
 
       <NAlert v-if="currentEditingEmp.status === 'disabled'" type="warning" class="status-alert-banner">
-        <strong>该 AI 员工已被管理员停用</strong>。停用期间无法在网页对话、群聊或自动触发器中响应。点击右上角「恢复在岗」可重新启用。
+        <strong>该 AI 员工已被管理员停用</strong>。停用期间无法在网页对话、群聊或自动触发器中响应。<template v-if="canManage">点击右上角「恢复在岗」可重新启用。</template>
       </NAlert>
 
       <div class="detail-top-bar">
@@ -1173,11 +1179,11 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
               <div class="pt-row">
                 <h2 class="pt-name">{{ currentEditingEmp.name }}</h2>
                 <span class="ai-label">AI</span>
-                <span class="engine-pill" :title="`底层执行引擎：${personaEngineMeta.label}`">
+                <span v-if="canManage" class="engine-pill" :title="`底层执行引擎：${personaEngineMeta.label}`">
                   {{ personaEngineMeta.shortLabel }}
                 </span>
-                <code class="pt-code">{{ currentEditingEmp.code }}</code>
-                <span v-if="realPlatform && currentEditingEmp.configVersion !== undefined" class="pt-code">v{{ currentEditingEmp.configVersion }}</span>
+                <code v-if="canManage" class="pt-code">{{ currentEditingEmp.code }}</code>
+                <span v-if="realPlatform && canManage && currentEditingEmp.configVersion !== undefined" class="pt-code">v{{ currentEditingEmp.configVersion }}</span>
                 <span
                   class="wf-status-pill"
                   :class="{
@@ -1189,7 +1195,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
                   <span class="wf-status-dot" />
                   {{ getEmployeeStatusMeta(currentEditingEmp.status).label }}
                 </span>
-                <div v-if="currentEditingEmp.channels.length" class="hero-channel-logos">
+                <div v-if="canManage && currentEditingEmp.channels.length" class="hero-channel-logos">
                   <D2ChannelLogo
                     v-for="ch in currentEditingEmp.channels"
                     :key="ch.platform"
@@ -1212,6 +1218,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
             size="small"
             secondary
             type="primary"
+            v-if="currentEditingEmp.status === 'disabled' || currentEditingEmp.canChat !== false"
             @click="startExternalChat(currentEditingEmp)"
           >
             <template #icon>
@@ -1225,6 +1232,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
             size="small"
             :type="currentEditingEmp.status === 'disabled' ? 'success' : 'error'"
             secondary
+            v-if="canManage"
             :loading="isTogglingEmpStatus"
             :disabled="!canManage || (currentEditingEmp.status === 'disabled' && currentEditingEmp.modelAvailable === false)"
             @click="handleToggleEmployeeStatusClick"
@@ -1234,12 +1242,15 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
         </div>
       </div>
 
-      <NAlert v-if="realPlatform && !canManage" type="info">当前仅可查看，你没有此员工的管理权限。</NAlert>
+
       <!-- 6 大深度配置 Tab -->
       <NTabs v-model:value="activeDetailTab" :on-before-leave="beforeDetailTabLeave" type="line" class="detail-tabs">
         <!-- Tab 1: 就绪检查概览 -->
-        <NTabPane name="overview" tab="概览与就绪检查">
-          <div class="tab-panel-inner">
+        <NTabPane name="overview" :tab="canManage ? '概览与就绪检查' : '概览'">
+          <div v-if="!canManage" class="tab-panel-inner">
+            <NAlert type="info">仅员工管理者可查看或修改详细配置。</NAlert>
+          </div>
+          <div v-else class="tab-panel-inner">
             <NAlert
               v-if="currentEditingEmp.channels.length === 0 && !channelReadIncomplete"
               type="warning"
@@ -1333,7 +1344,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
         </NTabPane>
 
         <!-- Tab 2: 设定与模型 -->
-        <NTabPane name="persona" tab="设定与模型">
+        <NTabPane v-if="canManage" name="persona" tab="设定与模型">
           <div class="tab-panel-inner">
             <div class="form-block" :class="{ 'is-dirty-card': personaDirty.basic }">
               <div class="card-edit-header">
@@ -1491,8 +1502,8 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
         </NTabPane>
 
         <!-- Tab 4: 能力包与授权 -->
-        <NTabPane name="packages" tab="能力包与授权">
-          <PlatformPackagesPanel v-if="realPlatform && activeDetailTab === 'packages'" ref="realPackagesRef" :employee-id="currentEditingEmp.id" />
+        <NTabPane v-if="canManage" name="packages" tab="能力包与授权">
+          <PlatformPackagesPanel v-if="realPlatform && activeDetailTab === 'packages'" ref="realPackagesRef" :employee-id="currentEditingEmp.id" :employee-can-manage="canManage" />
           <WorkforcePackagesTab v-else-if="!realPlatform"
             :employee="currentEditingEmp"
             :employees="employees"
@@ -1506,7 +1517,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
         </NTabPane>
 
         <!-- Tab 5: 渠道接入与群策略 -->
-        <NTabPane name="channels" tab="渠道接入与群策略">
+        <NTabPane v-if="canManage" name="channels" tab="渠道接入与群策略">
           <WorkforceChannelsTab
             :key="channelEditorVersion"
             ref="channelsTabRef"
@@ -1530,7 +1541,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
         </NTabPane>
 
         <!-- Tab 6: 自动触发器 -->
-        <NTabPane name="triggers" tab="自动触发器">
+        <NTabPane v-if="canManage" name="triggers" tab="自动触发器">
           <PlatformTriggersPanel v-if="realPlatform && activeDetailTab === 'triggers'" :workspace="activeWorkspaceId" :employee-id="currentEditingEmp.id" :can-manage="canManage" hide-back-button @close="closeFromChild" />
           <WorkforceTriggersTab v-else-if="!realPlatform"
             :employee="currentEditingEmp"
@@ -1542,7 +1553,7 @@ function handleUnifiedPickerPick(item: DirectoryPickItem) {
         </NTabPane>
 
         <!-- 权限和共享 -->
-        <NTabPane name="rules" :tab="realPlatform ? '权限和共享' : '权限与确认规则'">
+        <NTabPane v-if="canManage" name="rules" :tab="realPlatform ? '权限和共享' : '权限与确认规则'">
           <WorkforceRulesTab
             :key="channelEditorVersion"
             ref="rulesTabRef"

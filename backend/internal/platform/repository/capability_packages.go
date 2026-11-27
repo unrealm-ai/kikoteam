@@ -28,12 +28,12 @@ func (t *packageTx) Employee(ctx context.Context, id string) error {
 	return workspaceDBError(e)
 }
 
-const packageColumns = `id,COALESCE(agent_id::text,''),COALESCE(source_template_id::text,''),name,description,enabled,version,scope,trigger_scope,conversation_scope,work_scope,created_at,updated_at`
+const packageColumns = `id,COALESCE(agent_id::text,''),COALESCE(source_template_id::text,''),name,description,enabled,version,scope,trigger_scope,conversation_scope,work_scope,created_at,updated_at,COALESCE(assistant_tool_set,'')`
 
 func scanPackage(row scanner) (service.CapabilityPackage, error) {
 	var p service.CapabilityPackage
 	var scope, triggerScope, conversationScope, workScope []byte
-	e := row.Scan(&p.ID, &p.AgentID, &p.SourceTemplateID, &p.Name, &p.Description, &p.Enabled, &p.Version, &scope, &triggerScope, &conversationScope, &workScope, &p.CreatedAt, &p.UpdatedAt)
+	e := row.Scan(&p.ID, &p.AgentID, &p.SourceTemplateID, &p.Name, &p.Description, &p.Enabled, &p.Version, &scope, &triggerScope, &conversationScope, &workScope, &p.CreatedAt, &p.UpdatedAt, &p.AssistantToolSet)
 	if e != nil {
 		return p, workspaceDBError(e)
 	}
@@ -160,12 +160,12 @@ func (t *packageTx) Save(ctx context.Context, p service.CapabilityPackage, creat
 	if e != nil {
 		return e
 	}
-	args := []any{p.ID, t.model.workspace, p.AgentID, p.SourceTemplateID, p.Name, p.Description, p.Enabled, p.Version, scope, triggerScope, conversationScope, workScope}
+	args := []any{p.ID, t.model.workspace, p.AgentID, p.SourceTemplateID, p.Name, p.Description, p.Enabled, p.Version, scope, triggerScope, conversationScope, workScope, p.AssistantToolSet}
 	if create {
-		_, e = t.model.tx.ExecContext(ctx, `INSERT INTO platform_capability_packages(id,workspace_id,agent_id,source_template_id,name,description,enabled,version,scope,trigger_scope,conversation_scope,work_scope) VALUES($1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$10,NULLIF($11::jsonb,'null'::jsonb),NULLIF($12::jsonb,'null'::jsonb))`, args...)
+		_, e = t.model.tx.ExecContext(ctx, `INSERT INTO platform_capability_packages(id,workspace_id,agent_id,source_template_id,name,description,enabled,version,scope,trigger_scope,conversation_scope,work_scope,assistant_tool_set) VALUES($1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$10,NULLIF($11::jsonb,'null'::jsonb),NULLIF($12::jsonb,'null'::jsonb),NULLIF($13,''))`, args...)
 	} else {
 		var result sql.Result
-		result, e = t.model.tx.ExecContext(ctx, `UPDATE platform_capability_packages SET name=$5,description=$6,enabled=$7,version=$8,scope=$9,trigger_scope=$10,conversation_scope=NULLIF($11::jsonb,'null'::jsonb),work_scope=NULLIF($12::jsonb,'null'::jsonb),updated_at=now() WHERE id=$1 AND workspace_id=$2 AND agent_id IS NOT DISTINCT FROM NULLIF($3,'')::uuid AND source_template_id IS NOT DISTINCT FROM NULLIF($4,'')::uuid AND version=$8-1`, args...)
+		result, e = t.model.tx.ExecContext(ctx, `UPDATE platform_capability_packages SET name=$5,description=$6,enabled=$7,version=$8,scope=$9,trigger_scope=$10,conversation_scope=NULLIF($11::jsonb,'null'::jsonb),work_scope=NULLIF($12::jsonb,'null'::jsonb),updated_at=now() WHERE id=$1 AND workspace_id=$2 AND agent_id IS NOT DISTINCT FROM NULLIF($3,'')::uuid AND source_template_id IS NOT DISTINCT FROM NULLIF($4,'')::uuid AND version=$8-1`, args[:12]...)
 		if e == nil {
 			var n int64
 			n, e = result.RowsAffected()

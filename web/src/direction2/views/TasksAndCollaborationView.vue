@@ -25,9 +25,9 @@ const currentTab = computed(() => {
   if (props.selectedTaskId || props.selectedEmployeeId) return 'tasks';
   const tab = props.initialTab;
   if (tab === 'approvals-resolved' || tab === 'approvals-all') return 'approvals';
-  return tab === 'tasks' || tab === 'spaces' || tab === 'approvals'
+  return tab === 'work-items' || tab === 'spaces' || tab === 'approvals'
     ? tab
-    : 'work-items';
+    : 'tasks';
 });
 function handleModuleTabChange(tab: string) {
   emit('navigate', 'tasks', tab);
@@ -61,8 +61,8 @@ function openWork(id?: string) {
         class="module-tabs"
         @update:value="handleModuleTabChange"
       >
-        <NTab name="work-items">协作事项看板</NTab>
         <NTab name="tasks">任务记录</NTab>
+        <NTab name="work-items">协作事项看板</NTab>
         <NTab name="approvals">待人工确认</NTab>
         <NTab name="spaces">任务空间</NTab>
       </NTabs>

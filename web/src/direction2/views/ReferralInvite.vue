@@ -68,15 +68,20 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <NButton v-if="enabled" type="primary" size="small" aria-label="邀请得积分" @click="showInvite">
-    <template #icon>
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7.5v9m-4.5-4.5h9" />
-      </svg>
-    </template>
-    邀请得积分
-  </NButton>
+  <button
+    v-if="enabled"
+    type="button"
+    class="referral-trigger"
+    aria-label="邀请得积分"
+    aria-haspopup="dialog"
+    :aria-expanded="open"
+    title="邀请得积分"
+    @click="showInvite"
+  >
+    <span class="referral-trigger-icon" aria-hidden="true">🎁</span>
+    <span class="referral-trigger-label">邀请得积分</span>
+    <span class="referral-trigger-reward" aria-hidden="true">+100</span>
+  </button>
   <NModal v-model:show="open" preset="card" title="邀请得积分" class="referral-invite-dialog">
     <p>每成功邀请 1 位新用户注册并验证邮箱，你可获得 <strong>100 积分</strong>。</p>
     <p>链接长期有效。朋友会进入自己的工作区，不会加入你的工作区。</p>
@@ -90,6 +95,53 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.referral-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 5px 0 4px;
+  border: 1px solid #f5becb;
+  border-radius: var(--id-radius-pill);
+  background: #fff1f4;
+  color: #8c2141;
+  font: 600 13px/1 var(--id-font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.referral-trigger:hover {
+  background: #ffe4eb;
+  border-color: #df8099;
+}
+.referral-trigger:focus-visible {
+  outline: 2px solid #a62549;
+  outline-offset: 2px;
+}
+.referral-trigger-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #fff;
+  font-size: 17px;
+  line-height: 1;
+}
+.referral-trigger-reward {
+  padding: 4px 5px;
+  border-radius: var(--id-radius-pill);
+  background: #fbd6e0;
+  color: #8c2141;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 760px) {
+  .referral-trigger-label { display: none; }
+}
+
 .referral-invite-dialog { width: min(480px, calc(100vw - 32px)); }
 .referral-copy { display: flex; gap: 8px; align-items: center; }
 .referral-copy input { flex: 1; width: 0; border: 1px solid var(--n-border-color, #d9d9df); color: inherit; background: transparent; border-radius: 6px; padding: 6px 8px; }

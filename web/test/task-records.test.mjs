@@ -8,8 +8,8 @@ const window = new Window({ url: 'http://127.0.0.1:5173/' });
 for (const key of ['window','document','navigator','HTMLElement','Element','SVGElement','Node','Text','Comment','Image','InputEvent','MouseEvent','KeyboardEvent','HTMLInputElement','Document','MutationObserver','ResizeObserver','getComputedStyle','requestAnimationFrame','cancelAnimationFrame']) {
   const value = key === 'window' ? window : window[key]; if (value !== undefined) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: typeof value === 'function' && ['getComputedStyle','requestAnimationFrame','cancelAnimationFrame'].includes(key) ? value.bind(window) : value });
 }
-const built = await esbuild.build({ stdin: { contents: "export {default as Detail} from './src/direction2/components/TaskDetailPanel.vue'; export {default as Board} from './src/direction2/views/PlatformWorkItems.vue'; export {default as List} from './src/direction2/views/PlatformTasksView.vue'; export {activeWorkspaceId} from './src/direction2/api/client'; export {createApp,h,nextTick,ref} from 'vue';", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, format: 'esm', platform: 'node', define: { 'import.meta.env.VITE_PLATFORM_REAL':'true', 'import.meta.env.DEV':'false' }, plugins: [{name:'vue',setup(b){b.onLoad({filter:/\.vue$/},async({path})=>({contents:compileScript(parse(await fs.readFile(path,'utf8')).descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'}));}}] });
-const { Detail, Board, List, activeWorkspaceId, createApp, h, nextTick, ref } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
+const built = await esbuild.build({ stdin: { contents: "export {default as Detail} from './src/direction2/components/TaskDetailPanel.vue'; export {default as Board} from './src/direction2/views/PlatformWorkItems.vue'; export {default as Center} from './src/direction2/views/TasksAndCollaborationView.vue'; export {default as List} from './src/direction2/views/PlatformTasksView.vue'; export {activeWorkspaceId} from './src/direction2/api/client'; export {createApp,h,nextTick,ref} from 'vue';", resolveDir: process.cwd(), loader: 'ts' }, bundle: true, write: false, format: 'esm', platform: 'node', define: { 'import.meta.env.VITE_PLATFORM_REAL':'true', 'import.meta.env.DEV':'false' }, plugins: [{name:'vue',setup(b){b.onLoad({filter:/\.vue$/},async({path})=>({contents:compileScript(parse(await fs.readFile(path,'utf8')).descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'}));}}] });
+const { Detail, Board, Center, List, activeWorkspaceId, createApp, h, nextTick, ref } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
 const wait = async (ms=60) => { await new Promise(r=>setTimeout(r,ms)); await nextTick(); };
 class Source { static all=[]; constructor(url){this.url=url;this.closed=false;this.listeners=new Map();Source.all.push(this);} addEventListener(t,f){this.listeners.set(t,f);} close(){this.closed=true;} }
 globalThis.EventSource=Source;
@@ -30,6 +30,27 @@ async function mount(component=Detail, override=()=>null, initial={}) {
   const host=document.createElement('div');document.body.appendChild(host);const app=createApp({render:()=>h(component,{...props.value,onNavigate:(...args)=>navigation.push(args)})});app.mount(host);await wait();await wait();
   return {calls,props,host,navigation,async cleanup(){app.unmount();host.remove();await wait();}};
 }
+test('task navigation opens task records first and preserves explicit work board links', async () => {
+  const m = await mount(Center, url => url.includes('/work-items?') ? empty() : null, {workspace:'w'});
+  try {
+    const tabs = () => [...m.host.querySelectorAll('.module-tabs .n-tabs-tab')].filter(tab => tab.textContent.trim());
+    const selected = () => m.host.querySelector('.module-tabs .n-tabs-tab--active')?.textContent?.trim();
+    assert.deepEqual(tabs().map(tab => tab.textContent.trim()), ['任务记录','协作事项看板','待人工确认','任务空间']);
+    assert.equal(selected(), '任务记录');
+    assert.match(m.host.textContent, /任务 one/);
+    assert.ok(!m.calls.some(call => call.url.includes('/work-items?')));
+    tabs()[1].click();
+    await wait();
+    assert.deepEqual(m.navigation, [['tasks', 'work-items']]);
+    m.props.value = {workspace:'w', initialTab:'work-items'};
+    await wait();
+    assert.equal(selected(), '协作事项看板');
+    assert.ok(m.calls.some(call => call.url.includes('/work-items?')));
+    m.props.value = {workspace:'w'};
+    await wait();
+    assert.equal(selected(), '任务记录');
+  } finally { await m.cleanup(); }
+});
 test('task list reads Manager data with server search, paging and no legacy approval dependencies',async()=>{
   const m=await mount(List,url=>url.includes('/tasks?')?Response.json({items:[task(url.includes('cursor=next')?'two':'one')],next_cursor:url.includes('cursor=next')?null:'next'}):null);
   try {assert.match(m.host.textContent,/任务 one/);button('下一页').click();await wait();assert.match(m.host.textContent,/任务 two/);const input=m.host.querySelector('input');input.value='销售';input.dispatchEvent(new window.Event('input',{bubbles:true}));await wait(380);assert.ok(m.calls.some(c=>c.url.includes('q=%E9%94%80%E5%94%AE')&&!c.url.includes('cursor=next')));assert.ok(!m.calls.some(c=>/approvals|work-items|\/api\/workspaces/.test(c.url)));}finally{await m.cleanup();}

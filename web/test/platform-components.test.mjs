@@ -5,11 +5,11 @@ import {Window} from 'happy-dom';
 import {parse,compileScript} from '@vue/compiler-sfc';
 import esbuild from 'esbuild';
 const window=new Window({url:'http://127.0.0.1:5173/'});
-for(const name of ['window','document','navigator','HTMLElement','Element','SVGElement','Node','Text','Comment','Image','InputEvent','MouseEvent','KeyboardEvent','HTMLInputElement','Document','MutationObserver','ResizeObserver','getComputedStyle','requestAnimationFrame','cancelAnimationFrame']){
+for(const name of ['window','document','navigator','location','HTMLElement','Element','SVGElement','Node','Text','Comment','Image','InputEvent','MouseEvent','KeyboardEvent','HTMLInputElement','Document','MutationObserver','ResizeObserver','getComputedStyle','requestAnimationFrame','cancelAnimationFrame']){
  if(name==='window')globalThis.window=window;else if(window[name]!==undefined)Object.defineProperty(globalThis,name,{configurable:true,writable:true,value:typeof window[name]==='function'&&['getComputedStyle','requestAnimationFrame','cancelAnimationFrame'].includes(name)?window[name].bind(window):window[name]});
 }
-const built=await esbuild.build({stdin:{contents:"export {default as SettingsView} from './src/direction2/views/SettingsView.vue'; export {default as AuthView} from './src/direction2/views/AuthView.vue'; export {default as InvitationView} from './src/direction2/views/InvitationView.vue'; export {createApp,h,nextTick} from 'vue'; export {NMessageProvider} from 'naive-ui';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env.VITE_PLATFORM_REAL':'true','import.meta.env.DEV':'false'},plugins:[{name:'vue-test',setup(build){build.onLoad({filter:/\.vue$/},async({path})=>{const source=await fs.readFile(path,'utf8');const {descriptor}=parse(source);return {contents:compileScript(descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'};});}}]});
-const {SettingsView,AuthView,InvitationView,createApp,h,NMessageProvider,nextTick}=await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
+const built=await esbuild.build({stdin:{contents:"export {default as SettingsView} from './src/direction2/views/SettingsView.vue'; export {default as AuthView} from './src/direction2/views/AuthView.vue'; export {default as InvitationView} from './src/direction2/views/InvitationView.vue'; export {default as ReferralInvite} from './src/direction2/views/ReferralInvite.vue'; export {createApp,h,nextTick} from 'vue'; export {NMessageProvider} from 'naive-ui';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env.VITE_PLATFORM_REAL':'true','import.meta.env.DEV':'false'},plugins:[{name:'vue-test',setup(build){build.onLoad({filter:/\.vue$/},async({path})=>{const source=await fs.readFile(path,'utf8');const {descriptor}=parse(source);return {contents:compileScript(descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'};});}}]});
+const {SettingsView,AuthView,InvitationView,ReferralInvite,createApp,h,NMessageProvider,nextTick}=await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
 async function render(inspection){
  globalThis.fetch=async()=>Response.json(inspection);
  const host=document.createElement('div');document.body.appendChild(host);
@@ -353,6 +353,40 @@ test('Password login shows the automatically issued email code field only after 
     assert.deepEqual(requests.at(-1),{email,password,code:'042681',challenge_id:'verify-id',method:'password'});
     assert.equal(sessions.length,1);
     assert.equal(sessions[0].user.emailVerified,true);
+  } finally {
+    app.unmount();
+    host.remove();
+  }
+});
+
+test('referral reward trigger has a gift icon and reward badge and still opens the invitation dialog', async () => {
+  const calls = [];
+  let enabled = false;
+  const code = 'caab2b4c-4c4a-45fe-8fc1-e26b2c715753';
+  globalThis.fetch = async (url, init) => {
+    assert.equal(url, '/api/v1/referrals/me');
+    calls.push(init.method || 'GET');
+    return Response.json({enabled, ...(init.method === 'POST' ? {code} : {})});
+  };
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const app = createApp({render:()=>h(ReferralInvite)});
+  const tick = async () => { await new Promise(resolve => setTimeout(resolve, 50)); await nextTick(); };
+  app.mount(host);
+  try {
+    await tick();
+    assert.equal(host.querySelector('.referral-trigger'), null);
+    enabled = true;
+    document.dispatchEvent(new window.Event('visibilitychange'));
+    await tick();
+    const trigger = host.querySelector('button[aria-label="邀请得积分"]');
+    assert.equal(trigger?.querySelector('.referral-trigger-icon').textContent, '🎁');
+    assert.equal(trigger.querySelector('.referral-trigger-reward').textContent, '+100');
+    trigger.click();
+    await tick();
+    assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+    assert.equal(document.querySelector('[aria-label="你的邀请链接"]').value, new URL('/r/'+code, window.location.origin).href);
+    assert.deepEqual(calls, ['GET', 'GET', 'POST']);
   } finally {
     app.unmount();
     host.remove();

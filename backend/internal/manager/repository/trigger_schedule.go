@@ -108,6 +108,10 @@ func (s *Store) TickTriggerSchedule(ctx context.Context, id string, q service.Tr
 	}
 	defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit owns success.
 	b, err := s.lockSchedule(ctx, tx, id)
+	var missing *service.Error
+	if errors.Is(err, sql.ErrNoRows) || (errors.As(err, &missing) && missing.Status == 404) {
+		return out, nil
+	}
 	if err != nil {
 		return out, err
 	}
@@ -133,38 +137,81 @@ func (s *Store) TickTriggerSchedule(ctx context.Context, id string, q service.Tr
 	if err != nil {
 		return out, err
 	}
-	eventID := scheduleEventID(id, b.Version, *b.NextDue)
-	var recorded bool
-	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM manager_trigger_events WHERE trigger_id=$1 AND event_id=$2)`, id, eventID).Scan(&recorded); err != nil {
+	out, err = s.admitTriggerSchedule(ctx, tx, b, cfg, q.RecoveryStartedAt)
+	if err != nil {
 		return out, err
-	}
-	out.Status = "skipped"
-	if !b.NextDue.Before(q.RecoveryStartedAt) || recorded {
-		key, e := service.TriggerScheduleKey(cfg.BusinessKey, *b.NextDue, cfg.Timezone)
-		if e != nil {
-			return out, e
-		}
-		command := service.TriggerCommand{Version: 1, EventID: eventID, Action: cfg.Action, Description: cfg.Description, BusinessKey: key}
-		raw, e := json.Marshal(command)
-		if e != nil {
-			return out, e
-		}
-		hash := sha256.Sum256(raw)
-		acceptance := service.TriggerAcceptance{TriggerID: id, BindingVersion: b.Version, EventID: eventID, BodyHash: hex.EncodeToString(hash[:]), Command: command, OccurredAt: *b.NextDue}
-		var receipt service.TriggerReceipt
-		if cfg.Action == "send_message" {
-			receipt, e = s.acceptScheduledReminderTx(ctx, tx, b, acceptance)
-		} else {
-			receipt, e = s.acceptTriggerTx(ctx, tx, b, acceptance)
-		}
-		if e != nil {
-			return out, e
-		}
-		out.Status = "accepted"
-		out.Receipt = &receipt
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE manager_triggers SET next_due=$2 WHERE id=$1`, id, next); err != nil {
 		return out, err
 	}
 	return out, tx.Commit()
+}
+
+func (s *Store) admitTriggerSchedule(ctx context.Context, tx *sql.Tx, b service.Trigger, cfg service.TriggerScheduleConfig, recovery time.Time) (service.TriggerScheduleResult, error) {
+	out := service.TriggerScheduleResult{Status: "skipped"}
+	eventID := scheduleEventID(b.ID, b.Version, *b.NextDue)
+	var status string
+	var prior []byte
+	err := tx.QueryRowContext(ctx, `SELECT status,receipt FROM manager_trigger_events WHERE trigger_id=$1 AND event_id=$2`, b.ID, eventID).Scan(&status, &prior)
+	if err == nil {
+		if status == "accepted" {
+			var receipt service.TriggerReceipt
+			if err = json.Unmarshal(prior, &receipt); err != nil {
+				return out, err
+			}
+			receipt.Duplicate = true
+			return service.TriggerScheduleResult{Status: "accepted", Receipt: &receipt}, nil
+		}
+		return out, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return out, err
+	}
+	if b.NextDue.Before(recovery) {
+		return out, recordSkippedTriggerSchedule(ctx, tx, b, eventID, cfg.Action, "missed_while_offline")
+	}
+	key, err := service.TriggerScheduleKey(cfg.BusinessKey, *b.NextDue, cfg.Timezone)
+	if err != nil {
+		return out, err
+	}
+	command := service.TriggerCommand{Version: 1, EventID: eventID, Action: cfg.Action, Description: cfg.Description, BusinessKey: key}
+	raw, err := json.Marshal(command)
+	if err != nil {
+		return out, err
+	}
+	hash := sha256.Sum256(raw)
+	q := service.TriggerAcceptance{TriggerID: b.ID, BindingVersion: b.Version, EventID: eventID, BodyHash: hex.EncodeToString(hash[:]), Command: command, OccurredAt: *b.NextDue}
+	// An admission may write an event or task before a domain denial. Roll
+	// those partial writes back before atomically recording the skipped slot.
+	if _, err = tx.ExecContext(ctx, `SAVEPOINT schedule_admission`); err != nil {
+		return out, err
+	}
+	var receipt service.TriggerReceipt
+	if cfg.Action == "send_message" {
+		receipt, err = s.acceptScheduledReminderTx(ctx, tx, b, q)
+	} else {
+		receipt, err = s.acceptTriggerTx(ctx, tx, b, q)
+	}
+	if err == nil {
+		return service.TriggerScheduleResult{Status: "accepted", Receipt: &receipt}, nil
+	}
+	reason := service.ScheduleAdmissionSkip(err)
+	if reason == "" {
+		return out, err
+	}
+	if _, err = tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT schedule_admission`); err != nil {
+		return out, err
+	}
+	return out, recordSkippedTriggerSchedule(ctx, tx, b, eventID, cfg.Action, reason)
+}
+
+func recordSkippedTriggerSchedule(ctx context.Context, tx *sql.Tx, b service.Trigger, eventID, action, reason string) error {
+	payload, err := json.Marshal(map[string]string{"schedule_skip_reason": reason})
+	if err != nil {
+		return err
+	}
+	hash := sha256.Sum256(payload)
+	_, err = tx.ExecContext(ctx, `INSERT INTO manager_trigger_events(id,trigger_id,workspace_id,agent_id,binding_version,event_id,body_hash,action,payload,occurred_at,status)
+ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'rejected')`, service.NewID(), b.ID, b.WorkspaceID, b.AgentID, b.Version, eventID, hex.EncodeToString(hash[:]), action, payload, *b.NextDue)
+	return err
 }

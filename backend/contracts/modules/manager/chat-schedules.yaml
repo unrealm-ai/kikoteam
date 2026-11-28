@@ -150,7 +150,7 @@
             },
             "timezone": {
               "type": "string",
-              "description": "IANA timezone, e.g. Asia/Shanghai. Default Asia/Shanghai."
+              "description": "IANA timezone, e.g. Asia/Shanghai. Defaults to the existing schedule timezone when omitted for an edit."
             },
             "at": {
               "type": "string",
@@ -233,6 +233,22 @@
         "chat_type": {
           "type": "string"
         },
+        "recent_runs": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["due", "status"],
+            "properties": {
+              "due": {"type": "string", "format": "date-time"},
+              "status": {"enum": ["accepted", "skipped"]},
+              "task_id": {"type": "string", "format": "uuid"},
+              "reason": {"type": "string"},
+              "execution_status": {"type": "string", "description": "Execution state of the first task input, distinct from schedule admission."}
+            }
+          }
+        },
         "source_label": {
           "type": "string"
         }
@@ -274,7 +290,7 @@
             },
             "timezone": {
               "type": "string",
-              "description": "IANA timezone, e.g. Asia/Shanghai. Default Asia/Shanghai."
+              "description": "IANA timezone, e.g. Asia/Shanghai. Defaults to the existing schedule timezone when omitted for an edit."
             },
             "at": {
               "type": "string",

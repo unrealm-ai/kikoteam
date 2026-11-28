@@ -77,4 +77,71 @@ func TestTriggerScheduleAtomicOccurrenceAndRecovery(t *testing.T) {
 	if err = db.QueryRow(`SELECT count(*) FROM manager_tasks`).Scan(&tasks); err != nil || tasks != 1 {
 		t.Fatal("offline skip created task", tasks, err)
 	}
+	history, err := s.TriggerEvents(ctx, w, actor, agent, b.ID, time.Time{}, "", 20)
+	if err != nil || len(history) != 2 || history[0].Status != "rejected" || history[0].Reason != "missed_while_offline" ||
+		history[0].ScheduledFor == nil || !history[0].ScheduledFor.Equal(q.ExpectedDue) || history[0].Receipt != nil ||
+		history[1].Status != "accepted" || history[1].Receipt == nil || history[1].Receipt.TaskID == "" {
+		t.Fatal(history, err)
+	}
+
+}
+
+func TestBusinessScheduleEditPauseAndDeniedOccurrence(t *testing.T) {
+	db, m, _, w, actor, agent, _ := managerFixture(t)
+	store := m.Store.(*managerrepo.Store)
+	ctx := t.Context()
+	config := func(cron string) json.RawMessage {
+		raw, err := json.Marshal(map[string]any{"cron": cron, "description": "test work"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	write := manager.TriggerWrite{Kind: "schedule", Enabled: true, Config: config("0 9 * * *"), AllowedActions: []string{"create_task"}}
+	trigger, err := store.SaveTrigger(ctx, w, actor, agent, "", write)
+	if err != nil {
+		t.Fatal(err)
+	}
+	due := time.Now().UTC().Truncate(time.Minute).Add(-time.Minute)
+	tick := manager.TriggerScheduleTick{Version: trigger.Version, ExpectedDue: due, RecoveryStartedAt: due.Add(-time.Minute)}
+	reviewExec(t, db, `UPDATE manager_triggers SET next_due=$2 WHERE id=$1`, trigger.ID, due)
+	write.Version, write.Enabled = trigger.Version, false
+	paused, err := store.SaveTrigger(ctx, w, actor, agent, trigger.ID, write)
+	if err != nil || paused.Enabled || paused.NextDue != nil {
+		t.Fatal(paused, err)
+	}
+	result, err := store.TickTriggerSchedule(ctx, trigger.ID, tick)
+	if err != nil || result.Status != "stale" {
+		t.Fatal(result, err)
+	}
+	write.Version, write.Enabled, write.Config = paused.Version, true, config("30 16 * * *")
+	resumed, err := store.SaveTrigger(ctx, w, actor, agent, trigger.ID, write)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poll, err := store.PollTriggerSchedules(ctx, 100)
+	if err != nil || len(poll.Items) != 1 || !poll.Items[0].NextDue.After(resumed.UpdatedAt) {
+		t.Fatal(poll, err)
+	}
+	result, err = store.TickTriggerSchedule(ctx, trigger.ID, tick)
+	if err != nil || result.Status != "stale" {
+		t.Fatal(result, err)
+	}
+	// A disabled employee must not leave a permanently denied tick at the head of the queue.
+	reviewExec(t, db, `UPDATE platform_agents SET enabled=false WHERE id=$1`, agent)
+	reviewExec(t, db, `UPDATE manager_triggers SET next_due=$2 WHERE id=$1`, trigger.ID, due)
+	tick.Version = resumed.Version
+	result, err = store.TickTriggerSchedule(ctx, trigger.ID, tick)
+	if err != nil || result.Status != "skipped" || result.Receipt != nil {
+		t.Fatal(result, err)
+	}
+	history, err := store.TriggerEvents(ctx, w, actor, agent, trigger.ID, time.Time{}, "", 20)
+	if err != nil || len(history) != 1 || history[0].Reason != "agent_disabled" {
+		t.Fatal(history, err)
+	}
+	var tasks int
+	var next time.Time
+	if err = db.QueryRow(`SELECT next_due,(SELECT count(*) FROM manager_tasks) FROM manager_triggers WHERE id=$1`, trigger.ID).Scan(&next, &tasks); err != nil || tasks != 0 || !next.After(due) {
+		t.Fatal(next, tasks, err)
+	}
 }

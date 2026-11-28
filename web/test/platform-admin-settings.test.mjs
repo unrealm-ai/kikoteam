@@ -577,7 +577,7 @@ test('Grouped settings use independent APIs and no longer show the assistant pro
   });
   try {
     const labels = [...m.host.querySelectorAll('.admin-subnav button')].map(n=>n.textContent.trim());
-    assert.deepEqual(labels,['账户与注册','官方模型','任务分享与附件','插件集成','默认插件']);
+    assert.deepEqual(labels,['账户与注册','官方模型','任务分享与附件','插件集成','默认插件','定时设置']);
     m.button('官方模型').click(); await wait();
     assert.match(m.host.textContent,/新模型/);
     assert.equal(m.host.querySelector('.assistant-settings'),null);
@@ -590,6 +590,26 @@ test('Grouped settings use independent APIs and no longer show the assistant pro
     m.button('插件集成').click(); await wait();
     assert.ok(m.requests.some(r=>r.url===github));
     assert.ok(!m.requests.some(r=>r.method==='PATCH'));
+    assert.deepEqual(m.errors,[]);
+  } finally { await m.close(); }
+});
+
+test('Platform timezone uses the database setting and submits the current version', async () => {
+  const path=root+'/timezone-settings';
+  let saved={version:0,timezone:'Asia/Shanghai'};
+  const m=await mount(request=>{
+    if(request.url!==path)throw Error('Unexpected URL: '+request.url);
+    if(request.method==='PATCH') saved={version:1,timezone:request.body.timezone};
+    return Response.json(saved);
+  });
+  try {
+    m.button('定时设置').click(); await wait();
+    assert.equal(m.input('platform-schedule-timezone').value,'Asia/Shanghai');
+    assert.match(m.host.textContent,/不改已有会话定时/);
+    await m.edit('platform-schedule-timezone','America/New_York');
+    await m.submit('[aria-label="平台定时时区"]');
+    assert.deepEqual(m.requests.find(r=>r.method==='PATCH').body,{expected_version:0,timezone:'America/New_York'});
+    assert.equal(m.input('platform-schedule-timezone').value,'America/New_York');
     assert.deepEqual(m.errors,[]);
   } finally { await m.close(); }
 });

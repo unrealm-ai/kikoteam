@@ -20,6 +20,7 @@ type Backend struct {
 	HTTP                 *http.Client
 }
 type HarnessConfig struct {
+	ScheduleTimezone        string       `json:"schedule_timezone,omitempty"`
 	EmployeeManagementToken string       `json:"employee_management_token"`
 	AssistantToolSet        string       `json:"assistant_tool_set"`
 	AssistantMCPToken       string       `json:"assistant_mcp_token"`

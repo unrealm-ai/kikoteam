@@ -4287,6 +4287,22 @@ CREATE TABLE public.platform_template_catalog_state (
 
 
 --
+-- Name: platform_timezone_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_timezone_settings (
+    singleton boolean DEFAULT true NOT NULL,
+    timezone text NOT NULL,
+    version bigint DEFAULT 0 NOT NULL,
+    updated_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_timezone_settings_singleton_check CHECK (singleton),
+    CONSTRAINT platform_timezone_settings_timezone_check CHECK (((length(timezone) >= 1) AND (length(timezone) <= 128))),
+    CONSTRAINT platform_timezone_settings_version_check CHECK ((version >= 0))
+);
+
+
+--
 -- Name: platform_web_group_agents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6398,6 +6414,14 @@ ALTER TABLE ONLY public.platform_task_link_settings
 
 ALTER TABLE ONLY public.platform_template_catalog_state
     ADD CONSTRAINT platform_template_catalog_state_pkey PRIMARY KEY (singleton);
+
+
+--
+-- Name: platform_timezone_settings platform_timezone_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_timezone_settings
+    ADD CONSTRAINT platform_timezone_settings_pkey PRIMARY KEY (singleton);
 
 
 --
@@ -10289,6 +10313,14 @@ ALTER TABLE ONLY public.platform_skills
 
 ALTER TABLE ONLY public.platform_task_link_settings
     ADD CONSTRAINT platform_task_link_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.platform_accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: platform_timezone_settings platform_timezone_settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_timezone_settings
+    ADD CONSTRAINT platform_timezone_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.platform_accounts(id) ON DELETE SET NULL;
 
 
 --

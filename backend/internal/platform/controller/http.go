@@ -40,6 +40,7 @@ type Server struct {
 	MailSettings              *service.MailSettingsService
 	OAuthApps                 *service.OAuthAppService
 	ChannelDownloads          *service.ChannelDownloadSettingsService
+	Timezone                  *service.TimezoneSettingsService
 	Assistants                hostedAssistantSettings
 	AssistantToolDescriptions func(string) []service.AssistantToolDescription
 	TaskLinks                 *service.TaskLinkSettingsService
@@ -71,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 	s.mailSettingsRoutes(m)
 	s.oauthAppRoutes(m)
 	s.channelDownloadSettingsRoutes(m)
+	s.timezoneSettingsRoutes(m)
 	s.taskLinkSettingsRoutes(m)
 	s.hostedAssistantRoutes(m)
 	s.referralRoutes(m)

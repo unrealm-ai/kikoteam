@@ -321,6 +321,8 @@ paths:
     $ref: ./modules/platform/mail-settings.yaml#/settings
   /api/v1/platform/mail-settings/test:
     $ref: ./modules/platform/mail-settings.yaml#/test
+  /api/v1/platform/timezone-settings:
+    $ref: ./modules/platform/timezone-settings.yaml#/settings
   /api/v1/platform/channel-download-settings:
     $ref: ./modules/platform/channel-download-settings.yaml#/settings
   /api/v1/platform/oauth-apps/github:

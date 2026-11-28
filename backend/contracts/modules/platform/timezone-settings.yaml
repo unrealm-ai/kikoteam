@@ -1,0 +1,55 @@
+settings:
+  get:
+    operationId: getPlatformTimezoneSettings
+    summary: Read platform scheduling timezone as a platform administrator
+    security:
+    - sessionCookie: []
+    responses:
+      '200':
+        $ref: '#/settingsResponse'
+      default:
+        $ref: '#/error'
+  patch:
+    operationId: updatePlatformTimezoneSettings
+    summary: Save platform scheduling timezone as a platform administrator
+    description: Reschedules business Cron triggers in the new timezone. A stale expected version returns 409.
+    security:
+    - sessionCookie: []
+    parameters:
+    - name: X-CSRF-Protection
+      in: header
+      required: true
+      schema: { type: string, const: '1' }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [expected_version, timezone]
+            properties:
+              expected_version: { type: integer, minimum: 0 }
+              timezone: { type: string, minLength: 1, maxLength: 128 }
+    responses:
+      '200':
+        $ref: '#/settingsResponse'
+      default:
+        $ref: '#/error'
+settingsResponse:
+  description: Effective instance settings. Version zero means the default is in effect.
+  content:
+    application/json:
+      schema:
+        type: object
+        additionalProperties: false
+        required: [version, timezone]
+        properties:
+          version: { type: integer, minimum: 0 }
+          timezone: { type: string, default: Asia/Shanghai }
+error:
+  description: Structured error
+  content:
+    application/json:
+      schema:
+        $ref: ../../openapi.yaml#/components/schemas/Error

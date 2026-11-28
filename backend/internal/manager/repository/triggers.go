@@ -95,7 +95,7 @@ func (s *Store) SaveTrigger(ctx context.Context, w, actor, agent, id string, q s
 	if !service.ValidID(w) || !service.ValidID(agent) || (id != "" && !service.ValidID(id)) {
 		return b, service.Fail("invalid_argument", 400, "标识无效")
 	}
-	if err := validateTriggerWrite(q); err != nil {
+	if err := validateTriggerWrite(q); q.Kind != "schedule" && err != nil {
 		return b, err
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
@@ -115,6 +115,15 @@ func (s *Store) SaveTrigger(ctx context.Context, w, actor, agent, id string, q s
 	actions, err := json.Marshal(q.AllowedActions)
 	if err != nil {
 		return b, err
+	}
+	if q.Kind == "schedule" {
+		q.Config, err = platformTriggerConfig(ctx, tx, q.Config)
+		if err != nil {
+			return b, err
+		}
+		if err = validateTriggerWrite(q); err != nil {
+			return b, err
+		}
 	}
 	var first *service.TriggerCredential
 	if id == "" {
@@ -191,7 +200,7 @@ func (s *Store) updateTrigger(ctx context.Context, tx *sql.Tx, w, agent, id stri
 			return service.Fail("trigger_credential_required", 409, "缺少有效凭据")
 		}
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE manager_triggers SET enabled=$2,config=$3,allowed_actions=$4,notification_targets=$5,name=$6,version=version+1,next_due=NULL,updated_at=now() WHERE id=$1`, id, q.Enabled, q.Config, actions, q.NotificationTargets, q.Name)
+	_, err = tx.ExecContext(ctx, `UPDATE manager_triggers SET enabled=$2,config=$3,allowed_actions=$4,notification_targets=$5,name=$6,version=version+1,next_due=NULL,updated_at=clock_timestamp() WHERE id=$1`, id, q.Enabled, q.Config, actions, q.NotificationTargets, q.Name)
 	if err != nil {
 		return err
 	}
@@ -241,4 +250,23 @@ func (s *Store) ListTriggers(ctx context.Context, w, actor, agent string) ([]ser
 		return errors.Join(rows.Err(), rows.Close())
 	})
 	return out, err
+}
+
+// Only the platform administrator owns business schedule timezone. Older
+// clients may still send a field; overwrite it rather than accepting it.
+func platformTriggerConfig(ctx context.Context, tx *sql.Tx, raw json.RawMessage) (json.RawMessage, error) {
+	var zone string
+	if err := tx.QueryRowContext(ctx, `SELECT timezone FROM platform_timezone_settings WHERE singleton FOR SHARE`).Scan(&zone); err != nil {
+		return nil, err
+	}
+	var cfg map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &cfg); err != nil || cfg == nil {
+		return nil, service.Fail("invalid_trigger_configuration", 400, "定时配置无效")
+	}
+	value, err := json.Marshal(zone)
+	if err != nil {
+		return nil, err
+	}
+	cfg["timezone"] = value
+	return json.Marshal(cfg)
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onUnmounted, ref, watch } from 'vue';
 import { NAlert, NButton, NCard, NEmpty, NForm, NFormItem, NInput, NInputNumber, NModal, NSelect, NSkeleton, NTag } from 'naive-ui';
+import { scheduleRunReason, scheduleExecutionStatus } from './schedule-run-labels';
 import { D2ApiError } from '../api/client';
 import { chatSchedulesApi, type ChatScheduleFrequency, type ChatScheduleRule, type ManagedChatSchedule } from '../api/chat-schedules';
 
@@ -116,6 +117,18 @@ onUnmounted(() => controller.abort());
         </div>
       </div>
       <details class="schedule-instruction"><summary>任务说明</summary><p>{{ row.instruction }}</p></details>
+      <details class="schedule-instruction">
+        <summary>最近触发记录</summary>
+        <p v-if="!row.recent_runs?.length">暂无触发记录。</p>
+        <ol v-else>
+          <li v-for="run in row.recent_runs" :key="run.due">
+            {{ timeText(run.due, row.schedule.timezone) }} · {{ run.status === 'accepted' ? '已创建任务' : '已跳过' }}
+            <template v-if="run.reason"> · {{ scheduleRunReason(run.reason) }}</template>
+            <template v-if="run.execution_status"> · {{ scheduleExecutionStatus(run.execution_status) }}</template>
+            <small v-if="run.task_id"> · 任务 {{ run.task_id }}</small>
+          </li>
+        </ol>
+      </details>
     </NCard>
     <NModal :show="!!editing" preset="card" title="修改定时时间" style="width: min(480px, 92vw)" :mask-closable="!busy" :closable="!busy" @update:show="v => { if (!v && !busy) editing = undefined }">
       <NAlert v-if="editorError" type="error">{{ editorError }}</NAlert>

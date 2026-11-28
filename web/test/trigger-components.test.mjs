@@ -157,7 +157,7 @@ const button=t=>[...document.querySelectorAll('button')].find(b=>b.textContent.t
 async function mount({handle,canManage=true}={}){const calls=[],guards=[],workspace=ref('w');globalThis.fetch=async(url,init={})=>{const body=init.body?JSON.parse(init.body):null;calls.push({url,init,body});const v=handle?.(url,init,body);if(v)return v;if(init.method&&url.endsWith('/selectors/groups/resolve'))return Response.json({items:body.refs.map(ref=>({ref,name:'已核验群',selectable:true,status:'active'}))});if(url.includes('/selectors/groups?'))return Response.json({items:[],next_cursor:null});if(init.method&&url.endsWith('/trigger-group-candidates/resolve'))return Response.json({conversation_id:'resolved-conversation'});if(init.method)return Response.json(trigger);if(url.includes('/trigger-group-candidates?'))return Response.json({items:[],truncated:false});if(url.includes('/trigger-notification-targets?'))return Response.json({items:[],truncated:false});if(url.includes('/notifications?'))return Response.json({items:[],truncated:false});if(url.endsWith('/triggers'))return Response.json({items:[trigger]});if(url.endsWith('/credentials'))return Response.json({items:[{key_id:'k',status:'active',created_at:trigger.created_at}]});if(url.includes('/events?'))return Response.json({items:[],next_cursor:null});return Response.json(trigger)};const host=document.createElement('div');document.body.append(host);const app=createApp({render:()=>h(NDialogProvider,null,{default:()=>h(View,{workspace:workspace.value,employeeId:'a',canManage})})});app.provide('d2DraftGuard',{register:v=>guards.push(v),unregister:()=>{}});app.mount(host);await pause();return{calls,guards,workspace,async cleanup(){app.unmount();host.remove();await pause()}}}
 function fill(placeholder,value){const input=document.querySelector(`[placeholder="${placeholder}"]`);assert.ok(input);input.value=value;input.dispatchEvent(new window.Event('input',{bubbles:true}))}
 test('Trigger manager uses real list and cursor events, no webhook execution',async()=>{const m=await mount();try{await openTriggerRecord();await pause();assert.ok(m.calls.some(c=>c.url.endsWith('/triggers/tr-1/credentials')));assert.ok(m.calls.some(c=>c.url.endsWith('/events?limit=20')));assert.equal(m.calls.filter(c=>c.init.method).length,0);assert.match(document.body.textContent,/已受理不等于执行完成/)}finally{await m.cleanup()}});
-test('Schedule creation defaults enabled and sends real complete body',async()=>{const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','汇总客户日报');button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST');assert.ok(c.url.endsWith('/triggers'));assert.deepEqual(c.body,{name:'自动化任务',notification_targets:[],kind:'schedule',enabled:true,config:{cron:'0 9 * * *',timezone:'Asia/Shanghai',description:'汇总客户日报',businessKey:{mode:'empty'}},allowed_actions:['create_task']});assert.ok(c.init.headers.get('X-CSRF-Protection'));}finally{await m.cleanup()}});
+test('Schedule creation defaults enabled and sends real complete body',async()=>{const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','汇总客户日报');button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST');assert.ok(c.url.endsWith('/triggers'));assert.deepEqual(c.body,{name:'自动化任务',notification_targets:[],kind:'schedule',enabled:true,config:{cron:'0 9 * * *',description:'汇总客户日报',businessKey:{mode:'empty'}},allowed_actions:['create_task']});assert.ok(c.init.headers.get('X-CSRF-Protection'));}finally{await m.cleanup()}});
 test('Trigger edit sends version CAS and conflict preserves draft without auto retry',async()=>{const m=await mount({handle:(url,init)=>init.method==='PUT'?Response.json({error:{code:'version_conflict',message:'配置冲突'}},{status:409}):null});try{await typeTab('事件触发');button('编辑配置').click();await pause();button('保存触发器').click();await pause();assert.equal(m.calls.filter(c=>c.init.method==='PUT').length,1);assert.equal(m.calls.find(c=>c.init.method==='PUT').body.version,'3');assert.match(document.body.textContent,/配置冲突/);assert.ok(button('保存触发器'));assert.doesNotMatch(document.body.textContent,/配置已保存/)}finally{await m.cleanup()}});
 test('Member has no trigger requests or write controls',async()=>{const m=await mount({canManage:false});try{assert.equal(m.calls.length,0);assert.equal(button('新增自动化任务'),undefined);assert.match(document.body.textContent,/管理员权限/)}finally{await m.cleanup()}});
 test('Credential confirmation is bound to workspace and cannot write after navigation',async()=>{const m=await mount();try{await openTriggerRecord();await pause();button('生成新签名密钥').click();await pause();m.workspace.value='w2';await pause();button('确认生成').click();await pause();assert.equal(m.calls.filter(c=>c.init.method).length,0)}finally{await m.cleanup()}});
@@ -184,8 +184,8 @@ test('Existing fixed reminders and new reminder entry are both hidden',async()=>
   }finally{await m.cleanup()}
 });
 test('GitHub Issue adapter uses real dedicated config and signature instructions',async()=>{const gh={...trigger,config:{adapter:'github_issue',repositoryId:123,installationId:456}};const m=await mount({handle:(url,init)=>!init.method&&url.endsWith('/tr-1')?Response.json(gh):null});try{button('新增自动化任务').click();await pause();await choose(0,'GitHub 新建 Issue');const nums=document.querySelectorAll('.n-input-number input');for(const [i,n] of [123,456].entries()){nums[i].value=String(n);nums[i].dispatchEvent(new window.Event('input',{bubbles:true}));nums[i].dispatchEvent(new window.Event('blur',{bubbles:true}));}await pause();button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST');assert.equal(c.body.kind,'webhook');assert.equal(c.body.config.adapter,'github_issue');assert.deepEqual(c.body.allowed_actions,['create_task']);assert.match(document.body.textContent,/\/api\/triggers\/github\/tr-1/);assert.match(document.body.textContent,/X-Hub-Signature-256/);assert.doesNotMatch(document.body.textContent,/X-Timestamp 的原值/)}finally{await m.cleanup()}});
-test('All six calendar key periods are selectable and submitted with IANA timezone',async()=>{for(const [period,label] of [['minute','分钟'],['hour','小时'],['day','日'],['week','周（周一开始）'],['month','月'],['year','年']]){const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','周期汇总');fill('Asia/Shanghai','America/New_York');await choose(1,'按日历周期');await choose(2,label);assert.match(document.body.textContent,/周从周一开始/);assert.match(document.body.textContent,/UTC 起止时刻/);button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST');assert.deepEqual(c.body.config.businessKey,{mode:'period',period});assert.equal(c.body.config.timezone,'America/New_York');assert.equal(c.body.config.business_key,undefined)}finally{await m.cleanup()}}});
-test('Fixed calendar key uses unchanged user value',async()=>{const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','业务汇总');await choose(1,'固定业务键');fill('固定业务键','customer-42');button('创建并启用').click();await pause();assert.deepEqual(m.calls.find(c=>c.init.method==='POST').body.config.businessKey,{mode:'fixed',value:'customer-42'})}finally{await m.cleanup()}});
+test('All six calendar key periods are selectable and inherit the platform timezone',async()=>{for(const [period,label] of [['minute','分钟'],['hour','小时'],['day','日'],['week','周（周一开始）'],['month','月'],['year','年']]){const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','周期汇总');assert.equal(document.querySelector('input[placeholder="Asia/Shanghai"]'),null);await choose(2,'按日历周期');await choose(3,label);assert.match(document.body.textContent,/周从周一开始/);assert.match(document.body.textContent,/UTC 起止时刻/);button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST');assert.deepEqual(c.body.config.businessKey,{mode:'period',period});assert.equal(c.body.config.timezone,undefined);assert.equal(c.body.config.business_key,undefined)}finally{await m.cleanup()}}});
+test('Fixed calendar key uses unchanged user value',async()=>{const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','业务汇总');await choose(2,'固定业务键');fill('固定业务键','customer-42');button('创建并启用').click();await pause();assert.deepEqual(m.calls.find(c=>c.init.method==='POST').body.config.businessKey,{mode:'fixed',value:'customer-42'})}finally{await m.cleanup()}});
 test('Candidate resolution uses provider evidence and does not select pending or late results',async()=>{let finish;const m=await mount({handle:(url,init)=>url.includes('/selectors/groups?')?Response.json({items:[candidate('observed','wecom')],next_cursor:null}):url.endsWith('/trigger-group-candidates/resolve')?new Promise(r=>finish=r):null});try{button('新增自动化任务').click();await pause();button('选择').click();await pause();const c=m.calls.find(c=>c.url.endsWith('/trigger-group-candidates/resolve'));assert.deepEqual(c.body,{provider:'wecom',candidate_id:'observed'});assert.equal(button('移除此群'),undefined);assert.equal(button('创建并启用').disabled,true);m.workspace.value='w2';await pause();finish(Response.json({conversation_id:'late-conversation'}));await pause();assert.equal(button('移除此群'),undefined);assert.doesNotMatch(document.body.textContent,/late-conversation/)}finally{await m.cleanup()}});
 test('Failed candidate resolution never forges a group ID into notification targets',async()=>{const m=await mount({handle:url=>url.includes('/selectors/groups?')?Response.json({items:[candidate('external-group-id','dingtalk')],next_cursor:null}):url.endsWith('/trigger-group-candidates/resolve')?Response.json({error:{code:'candidate_stale',message:'候选已失效'}},{status:409}):null});try{button('新增自动化任务').click();await pause();button('选择').click();await pause();assert.match(document.body.textContent,/候选已失效/);assert.equal(button('移除此群'),undefined);fill('让员工完成什么工作','汇总');button('创建并启用').click();await pause();assert.deepEqual(m.calls.find(c=>c.init.method==='POST'&&c.url.endsWith('/triggers')).body.notification_targets,[])}finally{await m.cleanup()}});
 test('Double-click credential creation opens one dialog and submits only one request',async()=>{let finish;const m=await mount({handle:(url,init)=>init.method==='POST'&&url.endsWith('/credentials')?new Promise(r=>finish=r):null});try{await openTriggerRecord();await pause();const create=button('生成新签名密钥');create.click();create.click();await pause();const confirms=[...document.querySelectorAll('button')].filter(b=>b.textContent.trim()==='确认生成');assert.equal(confirms.length,1);confirms[0].click();confirms[0].click();await pause();assert.equal(m.calls.filter(c=>c.init.method==='POST'&&c.url.endsWith('/credentials')).length,1);finish(Response.json({key_id:'single',secret:'one-secret',status:'active',created_at:trigger.created_at}));await pause();assert.equal(document.querySelector('.trigger-detail .n-alert textarea[readonly]').value,'one-secret')}finally{await m.cleanup()}});
@@ -249,7 +249,10 @@ test('Closing trigger records discards late detail data and permits reopening', 
 });
 
 test('Dialog scheduling is under triggers, indicates its source, and allows only update and enable/disable', async () => {
-  let plan = {schedule_id:'plan', version:'1', instruction:'更新项目周报', status:'active', channel:'feishu', chat_type:'group', source_label:'项目群', next_due:'2026-12-02T01:00:00Z', schedule:{frequency:'weekly',times:['09:00'],weekdays:[3],timezone:'Asia/Shanghai'}};
+  let plan = {schedule_id:'plan', version:'1', instruction:'更新项目周报', status:'active', channel:'feishu', chat_type:'group', source_label:'项目群', next_due:'2026-12-02T01:00:00Z', schedule:{frequency:'weekly',times:['09:00'],weekdays:[3],timezone:'Asia/Shanghai'}, recent_runs:[
+    {due:'2026-11-25T01:00:00Z',status:'skipped',reason:'missed_while_offline'},
+    {due:'2026-11-18T01:00:00Z',status:'accepted',task_id:'task-123',execution_status:'failed'}
+  ]};
   const m = await mount({handle:(url,init,body)=>{
     if (url.endsWith('/chat-schedules')) return Response.json({items:[plan]});
     if (url.endsWith('/chat-schedules/plan') && init.method==='PATCH') {
@@ -266,6 +269,9 @@ test('Dialog scheduling is under triggers, indicates its source, and allows only
     await typeTab('会话定时任务');
     assert.match(document.body.textContent,/飞书 · 群聊 · 项目群/);
     assert.match(document.body.textContent,/只在原对话创建和取消/);
+    assert.match(document.body.textContent,/已跳过\s*·\s*调度中断期间错过/);
+    assert.match(document.body.textContent,/已创建任务\s*·\s*执行失败/);
+    assert.match(document.body.textContent,/task-123/);
     assert.equal(button('新增自动化任务'),undefined);
     assert.equal(button('删除'),undefined);
     button('改时间').click(); await pause();
@@ -287,4 +293,61 @@ test('Ordinary user cannot load dialog schedule configuration from the trigger p
     assert.doesNotMatch(document.body.textContent,/会话定时任务/);
     assert.equal(m.calls.some(v=>v.url.includes('/chat-schedules')),false);
   } finally { await m.cleanup() }
+});
+
+test('Business schedule shows the original due time and reason for a skipped occurrence', async () => {
+  const scheduled = {...trigger,kind:'schedule',config:{cron:'0 9 * * *',timezone:'Asia/Shanghai',description:'汇总日报'}};
+  const m = await mount({handle:url => {
+    if (url.endsWith('/triggers')) return Response.json({items:[scheduled]});
+    if (url.endsWith('/triggers/tr-1')) return Response.json(scheduled);
+    if (url.includes('/events?')) return Response.json({items:[{id:'event-1',event_id:'schedule-1',action:'create_task',binding_version:'1',received_at:'2026-11-28T01:03:00Z',scheduled_for:'2026-11-28T01:00:00Z',status:'rejected',reason:'missed_while_offline',receipt:null}],next_cursor:null});
+    return null;
+  }});
+  try {
+    await openTriggerRecord();
+    await pause();
+    assert.match(document.body.textContent,/已跳过/);
+    assert.match(document.body.textContent,/计划时刻/);
+    assert.match(document.body.textContent,/调度中断期间错过/);
+  } finally { await m.cleanup(); }
+});
+
+test('Common Cron form updates the human-readable schedule and Advanced is collapsed by default', async () => {
+  const m = await mount();
+  try {
+    button('新增自动化任务').click(); await pause();
+    const advanced = document.querySelector('.cron-advanced');
+    assert.ok(advanced);
+    assert.equal(advanced.open,false);
+    assert.match(document.body.textContent,/每天 09:00 执行/);
+    await choose(1,'每小时');
+    assert.match(document.body.textContent,/每小时第 00 分执行/);
+    await choose(1,'每天');
+    const clock = document.querySelector('#trigger-cron-time');
+    clock.value = '16:30';
+    clock.dispatchEvent(new window.Event('change',{bubbles:true}));
+    await pause();
+    assert.match(document.body.textContent,/每天 16:30 执行/);
+    fill('让员工完成什么工作','汇总客户日报');
+    button('创建并启用').click(); await pause();
+    assert.equal(m.calls.find(c=>c.init.method==='POST').body.config.cron,'30 16 * * *');
+  } finally { await m.cleanup(); }
+});
+
+test('An existing advanced Cron is preserved unless the schedule is explicitly changed', async () => {
+  const cron = '*/15 9-17 * * 1-5';
+  const scheduled = {...trigger,kind:'schedule',config:{cron,timezone:'America/New_York',description:'汇总日报'}};
+  const m = await mount({handle:url=>url.endsWith('/triggers') ? Response.json({items:[scheduled]}) : null});
+  try {
+    assert.match(document.body.textContent,/高级规则/);
+    assert.match(document.body.textContent,/America\/New_York/);
+    button('编辑配置').click(); await pause();
+    const advanced = document.querySelector('.cron-advanced');
+    assert.equal(advanced.open,false);
+    assert.equal(advanced.querySelector('input').value,cron);
+    button('保存触发器').click(); await pause();
+    const write = m.calls.find(c=>c.init.method==='PUT');
+    assert.equal(write.body.config.cron,cron);
+    assert.equal(write.body.config.timezone,undefined);
+  } finally { await m.cleanup(); }
 });

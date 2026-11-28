@@ -75,6 +75,8 @@ type TriggerCredential struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type TriggerEvent struct {
+	ScheduledFor    *time.Time      `json:"scheduled_for,omitempty"`
+	Reason          string          `json:"reason,omitempty"`
 	EventName       string          `json:"event_name,omitempty"`
 	ExecutionStatus string          `json:"execution_status,omitempty"`
 	ID              string          `json:"id"`

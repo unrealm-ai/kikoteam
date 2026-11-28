@@ -11,7 +11,9 @@ import (
 const managedChatScheduleColumns = `p.id,p.status,p.instruction,p.title,p.rule,p.next_due,p.version,
  COALESCE(b.provider,'web'),CASE WHEN c.web_group_id IS NOT NULL THEN 'group' ELSE COALESCE(c.channel_chat_type,'direct') END,
  CASE WHEN c.web_group_id IS NOT NULL OR c.channel_chat_type='group' THEN COALESCE(g.title,NULLIF(o.display_name,''),NULLIF(v.display_name,''),NULLIF(c.title,''),RIGHT(c.id::text,8))
- ELSE COALESCE(NULLIF(u.name,''),RIGHT(c.id::text,8)) END`
+ ELSE COALESCE(NULLIF(u.name,''),RIGHT(c.id::text,8)) END,
+ (SELECT COALESCE(jsonb_agg(jsonb_strip_nulls(to_jsonb(run)) ORDER BY run.due DESC),'[]'::jsonb) FROM (` +
+	chatScheduleRunsProjection + `p.id ORDER BY r.due DESC LIMIT 20) run)`
 const managedChatScheduleFrom = ` FROM manager_chat_schedules p JOIN manager_sessions s ON s.id=p.source_session_id AND s.workspace_id=p.workspace_id
  JOIN manager_conversations c ON c.id=s.conversation_id AND c.workspace_id=p.workspace_id
  LEFT JOIN platform_accounts u ON u.id=p.actor_id
@@ -23,10 +25,13 @@ const managedChatScheduleFrom = ` FROM manager_chat_schedules p JOIN manager_ses
 
 func scanManagedChatSchedule(row interface{ Scan(...any) error }) (service.ManagedChatSchedule, error) {
 	var v service.ManagedChatSchedule
-	var raw []byte
-	err := row.Scan(&v.ID, &v.Status, &v.Instruction, &v.Title, &raw, &v.NextDue, &v.Version, &v.Channel, &v.ChatType, &v.SourceLabel)
+	var raw, runs []byte
+	err := row.Scan(&v.ID, &v.Status, &v.Instruction, &v.Title, &raw, &v.NextDue, &v.Version, &v.Channel, &v.ChatType, &v.SourceLabel, &runs)
 	if err == nil {
 		err = json.Unmarshal(raw, &v.Rule)
+	}
+	if err == nil {
+		err = json.Unmarshal(runs, &v.Runs)
 	}
 	return v, visibleError(err)
 }
@@ -99,7 +104,11 @@ func chatScheduleChange(status string, rule service.ChatScheduleRule, currentDue
 	currentStatus := status
 	if replacement != nil {
 		var err error
-		rule, err = replacement.Normalize(now)
+		requested := *replacement
+		if requested.Timezone == "" {
+			requested.Timezone = rule.Timezone
+		}
+		rule, err = requested.Normalize(now)
 		if err != nil {
 			return nil, nil, "", err
 		}

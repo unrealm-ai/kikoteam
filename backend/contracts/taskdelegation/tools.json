@@ -538,7 +538,7 @@
             },
             "timezone": {
               "type": "string",
-              "description": "IANA timezone, e.g. Asia/Shanghai. Default Asia/Shanghai."
+              "description": "Optional IANA timezone only when the user explicitly names one. New schedules default to the platform timezone; edits preserve the current schedule timezone unless specified."
             },
             "at": {
               "type": "string",
@@ -663,7 +663,7 @@
             },
             "timezone": {
               "type": "string",
-              "description": "IANA timezone, e.g. Asia/Shanghai. Default Asia/Shanghai."
+              "description": "Optional IANA timezone only when the user explicitly names one. New schedules default to the platform timezone; edits preserve the current schedule timezone unless specified."
             },
             "at": {
               "type": "string",

@@ -11,6 +11,13 @@ export interface ChatScheduleRule {
   weekdays?: number[];
   month_days?: number[];
 }
+export interface ScheduleRun {
+  due: string;
+  status: 'accepted' | 'skipped';
+  task_id?: string;
+  reason?: string;
+  execution_status?: string;
+}
 export interface ManagedChatSchedule {
   schedule_id: string;
   version: string;
@@ -22,6 +29,7 @@ export interface ManagedChatSchedule {
   source_label?: string;
   schedule: ChatScheduleRule;
   next_due?: string;
+  recent_runs?: ScheduleRun[];
 }
 type Patch = { schedule?: ChatScheduleRule; enabled?: boolean };
 const base = (workspace: string, employee: string) =>

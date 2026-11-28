@@ -745,7 +745,7 @@
                 },
                 "timezone": {
                   "type": "string",
-                  "default": "Asia/Shanghai"
+                  "description": "Effective platform timezone; legacy write values are ignored."
                 },
                 "description": {
                   "type": "string"
@@ -941,7 +941,7 @@
                 },
                 "timezone": {
                   "type": "string",
-                  "default": "Asia/Shanghai"
+                  "description": "Effective platform timezone; legacy write values are ignored."
                 },
                 "description": {
                   "type": "string"
@@ -1186,6 +1186,15 @@
             "accepted",
             "rejected"
           ]
+        },
+        "scheduled_for": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Original due instant for a scheduled trigger, not the processing time."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Stable reason for a skipped scheduled occurrence."
         },
         "received_at": {
           "type": "string",

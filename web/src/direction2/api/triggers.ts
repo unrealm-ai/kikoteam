@@ -8,7 +8,7 @@ export interface TriggerNotification {source_input_id:string|null;source_turn_id
 export interface TriggerWrite {name:string;notification_targets:{conversation_id:string}[];kind:'schedule'|'webhook';enabled:boolean;config:TriggerConfig;allowed_actions:string[]}
 export interface Trigger extends TriggerWrite {endpoint?:string;last_verified_at?:string;id:string;workspace_id:string;agent_id:string;version:string;created_at:string;updated_at:string;next_due:string|null}
 export interface TriggerCredential {key_id:string;status:string;created_at:string;secret?:string}
-export interface TriggerEvent {id:string;event_id:string;event_name?:string;execution_status?:string;action:string;binding_version:string;status:string;received_at:string;receipt:{event_id:string;status:string;task_id?:string;session_id?:string;task_space_id?:string;input_id?:string;duplicate:boolean}|null}
+export interface TriggerEvent {id:string;event_id:string;event_name?:string;execution_status?:string;action:string;binding_version:string;status:string;received_at:string;scheduled_for?:string;reason?:string;receipt:{event_id:string;status:string;task_id?:string;session_id?:string;task_space_id?:string;input_id?:string;duplicate:boolean}|null}
 const base=(w:string,a:string)=>`/workspaces/${encodeURIComponent(w)}/agents/${encodeURIComponent(a)}/triggers`;
 const path=(w:string,a:string,id:string)=>`${base(w,a)}/${encodeURIComponent(id)}`;
 export const triggerLabel=(t:Trigger)=>`${t.name?t.name+' · ':''}${t.kind==='schedule'?'定时':'Webhook'} · ${t.config.description?.slice(0,45)||t.id}${t.enabled?'':'（已停用）'}`;

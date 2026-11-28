@@ -66,7 +66,13 @@ func readChatSchedule(ctx context.Context, tx *sql.Tx, scope service.DelegationS
 }
 
 func (s *Store) insertChatSchedule(ctx context.Context, t *sessionTx, scope service.DelegationScope, q service.ChatScheduleMutation, now time.Time) (string, error) {
-	rule, due, err := normalizedChatSchedule(q.Rule, now)
+	requested := *q.Rule
+	if requested.Timezone == "" {
+		if err := t.tx.QueryRowContext(ctx, `SELECT timezone FROM platform_timezone_settings WHERE singleton`).Scan(&requested.Timezone); err != nil {
+			return "", err
+		}
+	}
+	rule, due, err := normalizedChatSchedule(&requested, now)
 	if err != nil {
 		return "", err
 	}
@@ -168,8 +174,17 @@ func (s *Store) ListChatSchedules(ctx context.Context, scope service.DelegationS
 	return out, err
 }
 
+// Report dispatch acceptance separately from the first task input's execution.
+const chatScheduleRunsProjection = `SELECT r.due,r.status,r.task_id,r.reason,
+ NULLIF(COALESCE(t.status,i.status,''),'') AS execution_status
+ FROM manager_chat_schedule_runs r
+ LEFT JOIN manager_sessions s ON s.task_id=r.task_id
+ LEFT JOIN manager_inputs i ON i.id=s.initial_input_id
+ LEFT JOIN manager_turns t ON t.id=i.turn_id
+ WHERE r.schedule_id=`
+
 func listChatScheduleRuns(ctx context.Context, tx *sql.Tx, id string) ([]service.ChatScheduleOccurrence, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT due,status,task_id,reason FROM manager_chat_schedule_runs WHERE schedule_id=$1 ORDER BY due DESC LIMIT 20`, id)
+	rows, err := tx.QueryContext(ctx, chatScheduleRunsProjection+`$1 ORDER BY r.due DESC LIMIT 20`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -177,9 +192,11 @@ func listChatScheduleRuns(ctx context.Context, tx *sql.Tx, id string) ([]service
 	out := []service.ChatScheduleOccurrence{}
 	for rows.Next() {
 		var v service.ChatScheduleOccurrence
-		if err = rows.Scan(&v.Due, &v.Status, &v.TaskID, &v.Reason); err != nil {
+		var status sql.NullString
+		if err = rows.Scan(&v.Due, &v.Status, &v.TaskID, &v.Reason, &status); err != nil {
 			return nil, err
 		}
+		v.ExecutionStatus = status.String
 		out = append(out, v)
 	}
 	return out, rows.Err()

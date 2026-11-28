@@ -107,6 +107,11 @@ func TestChatScheduleIdleOccurrenceAndOrdinaryReport(t *testing.T) {
 	turn := reviewStartTurn(t, db, scope.WorkspaceID, receipt.SessionID, receipt.InputID, manager.NewID(), 1)
 	reviewFinishTurn(t, db, receipt.SessionID, receipt.InputID, turn)
 	reviewExec(t, db, `UPDATE manager_turns SET result_summary='该喝水了。' WHERE id=$1`, turn)
+	managed, err := m.ManagedChatSchedules(ctx, scope.WorkspaceID, scope.ActorID, scope.AgentID)
+	if err != nil || len(managed) != 1 || len(managed[0].Runs) != 1 || managed[0].Runs[0].Status != "accepted" ||
+		managed[0].Runs[0].TaskID == nil || *managed[0].Runs[0].TaskID != receipt.TaskID || managed[0].Runs[0].ExecutionStatus != "completed" {
+		t.Fatal(managed, err)
+	}
 	report, err := d.Store.(*repo.Store).ReportTaskResult(ctx, manager.TaskResult{TurnID: turn})
 	if err != nil || report.TargetInputID == nil {
 		t.Fatal(report, err)
@@ -224,5 +229,82 @@ func TestChatScheduleManagementPermissionAndPause(t *testing.T) {
 	var actor, source string
 	if err = db.QueryRow(`SELECT actor_id,source_session_id FROM manager_chat_schedules WHERE id=$1`, id).Scan(&actor, &source); err != nil || actor != scope.ActorID || source != scope.Identity.SessionID {
 		t.Fatal(actor, source, err)
+	}
+}
+
+func TestChatScheduleRecoveryAndStaleTicks(t *testing.T) {
+	db, m, d, scope := plannedFixture(t)
+	ctx := t.Context()
+	raw, err := d.Call(ctx, scope, "create_scheduled_task", manager.DelegationArgs{Instruction: "recover scheduled work", Schedule: &manager.ChatScheduleRule{Frequency: "daily", Times: []string{"09:00"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := raw.(manager.ChatSchedule)
+	due := time.Now().UTC().Truncate(time.Minute).Add(-2 * time.Minute)
+	reviewExec(t, db, `UPDATE manager_chat_schedules SET next_due=$2 WHERE id=$1`, plan.ID, due)
+	tick := manager.TriggerScheduleTick{Kind: "chat", Version: 1, ExpectedDue: due, RecoveryStartedAt: due.Add(time.Minute)}
+	result, err := m.TickChatSchedule(ctx, plan.ID, tick)
+	if err != nil || result.Status != "skipped" || result.Receipt != nil {
+		t.Fatal(result, err)
+	}
+	rows, err := m.ManagedChatSchedules(ctx, scope.WorkspaceID, scope.ActorID, scope.AgentID)
+	if err != nil || len(rows) != 1 || len(rows[0].Runs) != 1 || rows[0].Runs[0].Reason != "missed_while_offline" ||
+		!rows[0].Runs[0].Due.Equal(due) || rows[0].Runs[0].TaskID != nil || rows[0].NextDue == nil || !rows[0].NextDue.After(tick.RecoveryStartedAt) {
+		t.Fatal(rows, err)
+	}
+	reviewExec(t, db, `UPDATE manager_chat_schedules SET next_due=$2 WHERE id=$1`, plan.ID, due.Add(time.Minute))
+	tick.ExpectedDue = due.Add(time.Minute)
+	paused := false
+	updated, err := m.UpdateManagedChatSchedule(ctx, scope.WorkspaceID, scope.ActorID, scope.AgentID, plan.ID, manager.ManagedChatSchedulePatch{Version: 1, Enabled: &paused})
+	if err != nil || updated.Status != "paused" || len(updated.Runs) != 1 {
+		t.Fatal(updated, err)
+	}
+	result, err = m.TickChatSchedule(ctx, plan.ID, tick)
+	if err != nil || result.Status != "stale" {
+		t.Fatal(result, err)
+	}
+	active := true
+	updated, err = m.UpdateManagedChatSchedule(ctx, scope.WorkspaceID, scope.ActorID, scope.AgentID, plan.ID, manager.ManagedChatSchedulePatch{Version: 2, Enabled: &active, Rule: &manager.ChatScheduleRule{Frequency: "daily", Times: []string{"16:30"}}})
+	if err != nil || updated.Status != "active" || updated.NextDue == nil || !updated.NextDue.After(tick.ExpectedDue) || len(updated.Runs) != 1 {
+		t.Fatal(updated, err)
+	}
+	result, err = m.TickChatSchedule(ctx, plan.ID, tick)
+	if err != nil || result.Status != "stale" {
+		t.Fatal(result, err)
+	}
+}
+
+func TestChatSchedulePlatformDefaultAndExplicitTimezone(t *testing.T) {
+	db, m, d, scope := plannedFixture(t)
+	ctx := t.Context()
+	store := m.Store.(*repo.Store)
+	reviewExec(t, db, `UPDATE platform_accounts SET is_platform_admin=true WHERE id=$1`, scope.ActorID)
+	settings := &TimezoneSettingsStore{DB: db}
+	if _, err := settings.SaveAdmin(ctx, scope.ActorID, 0, "America/New_York"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := store.HarnessConfig(ctx, scope.Identity.EngineID, scope.Identity.SessionID, scope.Identity.AssignmentID, scope.Identity.Generation, scope.InputID)
+	if err != nil || cfg.ScheduleTimezone != "America/New_York" {
+		t.Fatal(cfg.ScheduleTimezone, err)
+	}
+	for _, testcase := range []struct{ zone, want string }{{"", "America/New_York"}, {"Asia/Tokyo", "Asia/Tokyo"}} {
+		raw, e := d.Call(ctx, scope, "create_scheduled_task", manager.DelegationArgs{Instruction: "run daily", Schedule: &manager.ChatScheduleRule{Frequency: "daily", Times: []string{"09:00"}, Timezone: testcase.zone}})
+		if e != nil || raw.(manager.ChatSchedule).Rule.Timezone != testcase.want {
+			t.Fatal(raw, e)
+		}
+	}
+	if _, err = settings.SaveAdmin(ctx, scope.ActorID, 1, "UTC"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := m.ManagedChatSchedules(ctx, scope.WorkspaceID, scope.ActorID, scope.AgentID)
+	if err != nil || len(rows) != 2 {
+		t.Fatal(rows, err)
+	}
+	seen := map[string]bool{}
+	for _, row := range rows {
+		seen[row.Rule.Timezone] = true
+	}
+	if !seen["America/New_York"] || !seen["Asia/Tokyo"] {
+		t.Fatal(rows)
 	}
 }

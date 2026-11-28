@@ -55,3 +55,18 @@ func TestScheduleClockRefreshesOnNewMainChatTurns(t *testing.T) {
 		t.Fatal("task body was rewritten")
 	}
 }
+
+func TestScheduleClockUsesTrustedPlatformTimezone(t *testing.T) {
+	cfg := integration.HarnessConfig{DelegationToken: "trusted", ScheduleTimezone: "America/New_York"}
+	chat := repository.Work{Mode: "chat"}
+	cases := []struct {
+		month time.Month
+		want  string
+	}{{time.January, "2026-01-01T23:00:00-05:00"}, {time.July, "2026-07-02T00:00:00-04:00"}}
+	for _, tc := range cases {
+		got := renderPromptInput(chat, cfg, "明早提醒我", time.Date(2026, tc.month, 2, 4, 0, 0, 0, time.UTC))
+		if !strings.Contains(got, tc.want) || !strings.Contains(got, "默认时区 America/New_York") {
+			t.Fatal(got)
+		}
+	}
+}

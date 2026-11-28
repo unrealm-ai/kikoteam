@@ -405,6 +405,7 @@ paths:
                   task_detail_card_enabled: {type: boolean, description: Advertise the task detail card tool for the next authorized external-channel chat or task-report turn. Runtime calls must still revalidate authority and settings.}
                   chat_delegation_catalog_token: {type: string, description: Sensitive chat-only schema-discovery grant for the delegation family. Does not authorize any tool execution.}
                   chat_human_catalog_token: {type: string, description: Sensitive schema-discovery grant for the confirmation family in supported private chats. Does not authorize any tool execution.}
+                  schedule_timezone: {type: string, description: Trusted platform IANA timezone for interpreting relative chat schedule times.}
                   delegation_token: {type: string, description: Sensitive chat-only assignment-bound MCP credential. Source actor is resolved from the current started Input for every call; no task recursion.}
                   group_history_token: {type: string, description: Sensitive task-only purpose-bound group-history MCP credential; current input and direct sharing grants are revalidated per call. No TaskSpace or system result authority.}
                   task_progress_token: {type: string, description: Input-scoped credential for task progress.}

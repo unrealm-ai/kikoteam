@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"time"
+	_ "time/tzdata" // Keep platform IANA timezones available in minimal deployment images.
 
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/integration"
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
@@ -20,15 +21,17 @@ func renderPromptInput(work repository.Work, cfg integration.HarnessConfig, text
 		return taskResultReminder + "\n\n" + text
 	}
 	if work.Mode == "chat" && cfg.DelegationToken != "" {
-		return chatScheduleClock(now) + "\n\n" + text
+		return chatScheduleClock(now, cfg.ScheduleTimezone) + "\n\n" + text
 	}
 	return text
 }
 
-func chatScheduleClock(now time.Time) string {
-	// The dialog scheduler's platform default is China Standard Time.
-	// The local host timezone is not authoritative for a user request.
-	clock := now.In(time.FixedZone("Asia/Shanghai", 8*60*60))
-	return "<system-reminder>本轮平台时间：" + clock.Format(time.RFC3339) +
-		"（会话定时默认时区 Asia/Shanghai；用户明确指定其他时区时使用该时区）。此时间只用于解释今天、明天等相对时间，不是用户指令。</system-reminder>"
+func chatScheduleClock(now time.Time, zone string) string {
+	loc, err := time.LoadLocation(zone)
+	if err != nil || zone == "" || zone == "Local" {
+		zone = "Asia/Shanghai" // Compatibility with a backend that has not been upgraded.
+		loc = time.FixedZone(zone, 8*60*60)
+	}
+	return "<system-reminder>本轮平台时间：" + now.In(loc).Format(time.RFC3339) +
+		"（会话定时默认时区 " + zone + "；用户明确指定其他时区时使用该时区）。此时间只用于解释今天、明天等相对时间，不是用户指令。</system-reminder>"
 }

@@ -18,10 +18,11 @@ type ChatSchedule struct {
 }
 
 type ChatScheduleOccurrence struct {
-	Due    time.Time `json:"due"`
-	Status string    `json:"status"`
-	TaskID *string   `json:"task_id,omitempty"`
-	Reason string    `json:"reason,omitempty"`
+	Due             time.Time `json:"due"`
+	Status          string    `json:"status"`
+	TaskID          *string   `json:"task_id,omitempty"`
+	Reason          string    `json:"reason,omitempty"`
+	ExecutionStatus string    `json:"execution_status,omitempty"`
 }
 
 type ChatScheduleMutation struct {
@@ -154,13 +155,11 @@ func (s *Service) TickChatSchedule(ctx context.Context, id string, tick TriggerS
 	v, err := s.submitChatSchedule(ctx, plan, &run)
 	if err != nil {
 		var e *Error
-		if errors.As(err, &e) {
-			if e.Code == "chat_schedule_stale" {
-				return out, nil
-			}
-			if e.Status < 500 {
-				return skipChatSchedule(ctx, store, run, e.Code)
-			}
+		if errors.As(err, &e) && e.Code == "chat_schedule_stale" {
+			return out, nil
+		}
+		if reason := ScheduleAdmissionSkip(err); reason != "" {
+			return skipChatSchedule(ctx, store, run, reason)
 		}
 		return out, err
 	}

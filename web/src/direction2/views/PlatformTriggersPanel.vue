@@ -2,6 +2,9 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { NAlert, NButton, NCheckbox, NCheckboxGroup, NDrawer, NDrawerContent, NForm, NFormItem, NInput, NInputNumber, NModal, NSelect, NSkeleton, NTab, NTabs, NTag, useDialog } from 'naive-ui';
 import { D2ApiError } from '../api/client';
+import TriggerCronEditor from './TriggerCronEditor.vue';
+import { describeCron } from './trigger-cron';
+import { scheduleRunReason, scheduleExecutionStatus } from './schedule-run-labels';
 import { triggersApi, triggerLabel, type Trigger, type TriggerWrite, type TriggerCredential, type TriggerEvent, type TriggerTarget, type TriggerNotification } from '../api/triggers';
 import PlatformChatSchedulesPanel from './PlatformChatSchedulesPanel.vue';
 import PlatformIdentityPicker from '../components/PlatformIdentityPicker.vue';
@@ -19,7 +22,7 @@ const fresh = (): TriggerWrite => ({
   notification_targets: [],
   kind: 'schedule',
   enabled: true,
-  config: { cron: '0 9 * * *', timezone: 'Asia/Shanghai', description: '', businessKey: { mode: 'empty' } },
+  config: { cron: '0 9 * * *', description: '', businessKey: { mode: 'empty' } },
   allowed_actions: ['create_task']
 });
 const form = ref<TriggerWrite>(fresh());
@@ -222,7 +225,9 @@ async function save() {
   const g = generation, w = props.workspace, a = props.employeeId, row = existing.value;
   busy.value = true; error.value = ''; notice.value = '';
   try {
-    const { initial_credential, ...result } = await triggersApi.save(w, a, { ...form.value, enabled: saveEnabled.value, name: form.value.name.trim() }, controller.signal, row);
+    const config = { ...form.value.config };
+    if (form.value.kind === 'schedule') delete config.timezone;
+    const { initial_credential, ...result } = await triggersApi.save(w, a, { ...form.value, config, enabled: saveEnabled.value, name: form.value.name.trim() }, controller.signal, row);
     if (g !== generation) return false;
     scheduleTab.value = form.value.kind;
     discard();
@@ -394,7 +399,7 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller.abort(); detail
             </div>
           </div>
           <div class="trigger-summary">
-            <span v-if="t.kind === 'schedule'">Cron 计划：<code>{{ t.config.cron }}</code>（{{ t.config.timezone || 'Asia/Shanghai' }}）</span>
+            <span v-if="t.kind === 'schedule'">{{ describeCron(t.config.cron) }}（{{ t.config.timezone || '平台时区' }}）</span>
             <span v-else-if="t.config.adapter === 'github_issue'">关联仓库 ID：<code>{{ t.config.repositoryId }}</code></span>
             <WebhookCopyField v-else-if="t.endpoint" :key="t.endpoint" :value="t.endpoint" label="接收地址" copy-label="复制地址" compact />
             <span v-else>调用端点：<code>/api/triggers/webhook/{{ t.id }}</code></span>
@@ -430,8 +435,8 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller.abort(); detail
             </div>
 
             <template v-if="form.kind === 'schedule'">
-              <NFormItem label="Cron（分 时 日 月 周）"><NInput :value="form.config.cron || ''" @update:value="v => form.config.cron = v" placeholder="0 9 * * *" /></NFormItem>
-              <NFormItem label="IANA 时区"><NInput :value="form.config.timezone || ''" @update:value="v => form.config.timezone = v" placeholder="Asia/Shanghai" /></NFormItem>
+              <TriggerCronEditor :value="form.config.cron || ''" @update:value="v => form.config.cron = v" />
+              <p class="field-note">执行时间使用平台管理里的统一时区。</p>
               <NFormItem :label="form.config.action === 'send_message' ? '固定提醒正文' : '每次任务说明'">
                 <NInput :value="form.config.description || ''" @update:value="v => form.config.description = v" type="textarea" placeholder="让员工完成什么工作" />
               </NFormItem>
@@ -441,7 +446,7 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller.abort(); detail
                     <NSelect :virtual-scroll="false" :value="form.config.businessKey?.mode || 'empty'" :options="modes" @update:value="keyMode" />
                     <NInput v-if="form.config.businessKey?.mode === 'fixed'" :value="form.config.businessKey.value || ''" @update:value="v => { if (form.config.businessKey) form.config.businessKey.value = v; }" placeholder="固定业务键" />
                     <NSelect v-if="form.config.businessKey?.mode === 'period'" :virtual-scroll="false" :value="form.config.businessKey.period || 'day'" @update:value="v => { if (form.config.businessKey) form.config.businessKey.period = v; }" :options="periods" />
-                    <p class="field-note">空键每次独立；固定键让同键任务归入同一空间；周期键按计划应触发时刻与所选 IANA 时区计算周期起止，周从周一开始，日/月/年按当地日历边界。服务器用周期类型和 UTC 起止时刻生成稳定业务键，重试不改变该键。分组不改变 Cron 频率，也不授予资料或能力包权限。</p>
+                    <p class="field-note">空键每次独立；固定键让同键任务归入同一空间；周期键按计划应触发时刻与平台时区计算周期起止，周从周一开始，日/月/年按当地日历边界。服务器用周期类型和 UTC 起止时刻生成稳定业务键，重试不改变该键。分组不改变 Cron 频率，也不授予资料或能力包权限。</p>
                   </div>
                 </NFormItem>
               </template>
@@ -554,11 +559,13 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller.abort(); detail
             <p v-if="!detailLoading && !events.length && !eventError" class="field-note">暂无触发记录。</p>
             <div v-if="events.length" class="history-records">
               <article v-for="e in events" :key="e.id" class="detail-record-card">
-                <strong>{{ actionLabels[e.action] || e.action }} · {{ e.status }}</strong>
+                <strong>{{ actionLabels[e.action] || e.action }} · {{ e.scheduled_for && e.status === 'rejected' ? '已跳过' : e.scheduled_for && e.status === 'accepted' ? '已受理' : e.status }}</strong>
                 <p class="field-note">{{ new Date(e.received_at).toLocaleString('zh-CN') }} · 配置 v{{ e.binding_version }}</p>
+                <p v-if="e.scheduled_for" class="field-note">计划时刻：{{ new Date(e.scheduled_for).toLocaleString('zh-CN') }}</p>
+                <p v-if="e.reason" class="field-note">{{ scheduleRunReason(e.reason) }}</p>
                 <small class="mono-sub">事件 {{ e.event_id }}</small>
                 <p v-if="e.receipt" class="field-note" style="margin-top: 4px;">
-                  <span v-if="e.event_name">{{ e.event_name }} · </span><span v-if="e.execution_status">执行 {{ e.execution_status }}<br /></span>
+                  <span v-if="e.event_name">{{ e.event_name }} · </span><span v-if="e.execution_status">执行 {{ e.scheduled_for ? scheduleExecutionStatus(e.execution_status) : e.execution_status }}<br /></span>
                   受理状态 {{ e.receipt.status }} · {{ e.receipt.duplicate ? '重复请求回执' : '首次受理' }}<br />
                   任务 {{ e.action === 'send_message' ? '固定提醒不创建任务' : e.receipt.task_id || '未创建' }}<br />
                   空间 {{ e.action === 'send_message' ? '固定提醒不创建空间' : e.receipt.task_space_id || '未创建' }}

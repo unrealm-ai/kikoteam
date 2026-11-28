@@ -40,6 +40,9 @@ export interface ChannelDownloadSettings {
 }
 type ChannelDownloadSettingsWrite = Omit<ChannelDownloadSettings, 'version'> & { expected_version: number };
 
+export interface TimezoneSettings { version: number; timezone: string }
+const timezonePath = '/platform/timezone-settings';
+
 export interface TaskLinkSettings { version: number; origin: string; enabled: boolean }
 type TaskLinkSettingsWrite = Omit<TaskLinkSettings, 'version'> & { expected_version: number };
 const taskLinkPath = '/platform/task-link-settings';
@@ -51,6 +54,9 @@ const update = <T>(path: string, data: unknown, signal: AbortSignal) =>
   platformRequest<T>(path, { method: 'PATCH', body: JSON.stringify(data), signal: bounded(signal) });
 
 export const platformSettings = {
+  timezone: (signal: AbortSignal) => platformRequest<TimezoneSettings>(timezonePath, {signal: bounded(signal)}),
+  saveTimezone: (data: {expected_version: number; timezone: string}, signal: AbortSignal) =>
+    update<TimezoneSettings>(timezonePath, data, signal),
   mail: (signal: AbortSignal) => platformRequest<MailSettings>(mailPath, { signal: bounded(signal) }),
   saveMail: (data: MailSettingsWrite & { test_receipt?: string }, signal: AbortSignal) => update<MailSettings>(mailPath, data, signal),
   testMail: (data: MailSettingsWrite, signal: AbortSignal) =>

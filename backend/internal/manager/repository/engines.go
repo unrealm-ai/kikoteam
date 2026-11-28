@@ -193,14 +193,15 @@ func (s *Store) HarnessConfig(ctx context.Context, engine, session, assignment s
  s.mode='task' AND EXISTS(SELECT 1 FROM manager_tasks k JOIN manager_task_plan_operations o
  ON o.workspace_id=k.workspace_id AND o.source_session_id=k.source_chat_session_id AND o.task_id=k.id AND o.action='start_todo'
  WHERE k.id=s.task_id AND k.planning_state='started' AND k.planned_instruction IS NOT NULL),
- COALESCE(wf.event_id::text,''),COALESCE(we.body_hash,''),wf.body
+ COALESCE(wf.event_id::text,''),COALESCE(we.body_hash,''),wf.body,
+ COALESCE((SELECT tz.timezone FROM platform_timezone_settings tz WHERE tz.singleton AND s.mode='chat'),'')
  FROM manager_sessions s JOIN manager_inputs i ON i.session_id=s.id LEFT JOIN manager_conversations c ON c.id=s.conversation_id
  LEFT JOIN manager_task_spaces p ON p.id=s.task_space_id JOIN platform_agents a ON a.id=s.agent_id
  LEFT JOIN manager_trigger_events we ON we.id=i.trigger_event_id AND we.input_id=i.id AND we.session_id=s.id
  LEFT JOIN manager_webhook_payloads wf ON wf.event_id=we.id AND wf.as_file
  LEFT JOIN platform_agent_versions av ON s.mode='task' AND av.workspace_id=s.workspace_id AND av.agent_id=s.agent_id AND av.version=(s.configuration->>'agent_version')::bigint
  WHERE (manager_input_actor_allowed(i.id) OR manager_human_chat_input_allowed(i.id)) AND s.engine_id=$1 AND s.id=$2 AND s.assignment_id=$3 AND s.generation=$4 AND i.id=$5 AND i.status='started' AND i.turn_id=s.active_turn_id AND s.stop_revision=s.applied_stop_revision AND COALESCE(c.lifecycle,p.lifecycle)='active' AND s.lifecycle='active' AND a.enabled AND i.admission_epoch=a.admission_epoch`, engine, session, assignment, generation, input).
-		Scan(&cfg.SessionID, &cfg.WorkspaceID, &cfg.AgentID, &cfg.ConversationID, &cfg.TaskSpaceID, &cfg.TaskID, &cfg.Mode, &data, &actor, &cfg.TriggerID, &cfg.TriggerVersion, &cfg.TriggerEventID, &cfg.ChannelPrincipalID, &cfg.ChannelGeneration, &cfg.WebGroup, &cfg.ReportOnly, &cfg.EmployeeManagementEligible, &cfg.KikoAssistant, &cfg.ChatCatalogChannel, &cfg.ChatCatalogPrivate, &cfg.ChatCatalogGroup, &cfg.HumanTools, &cfg.ConfirmationOnly, &cfg.Employee.Name, &cfg.Employee.Role, &cfg.Employee.Instruction, &cfg.TodoStarted, &file.EventID, &file.SHA256, &file.Body)
+		Scan(&cfg.SessionID, &cfg.WorkspaceID, &cfg.AgentID, &cfg.ConversationID, &cfg.TaskSpaceID, &cfg.TaskID, &cfg.Mode, &data, &actor, &cfg.TriggerID, &cfg.TriggerVersion, &cfg.TriggerEventID, &cfg.ChannelPrincipalID, &cfg.ChannelGeneration, &cfg.WebGroup, &cfg.ReportOnly, &cfg.EmployeeManagementEligible, &cfg.KikoAssistant, &cfg.ChatCatalogChannel, &cfg.ChatCatalogPrivate, &cfg.ChatCatalogGroup, &cfg.HumanTools, &cfg.ConfirmationOnly, &cfg.Employee.Name, &cfg.Employee.Role, &cfg.Employee.Instruction, &cfg.TodoStarted, &file.EventID, &file.SHA256, &file.Body, &cfg.ScheduleTimezone)
 	if err != nil {
 		return cfg, "", visibleError(err)
 	}

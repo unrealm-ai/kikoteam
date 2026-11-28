@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -34,4 +35,14 @@ type TriggerScheduleStore interface {
 func ValidateScheduleConfig(raw json.RawMessage) error {
 	_, err := ParseTriggerSchedule(raw)
 	return err
+}
+
+// ScheduleAdmissionSkip marks a deterministic denial. Temporary backend
+// failures must leave the occurrence due for a retry, not consume it.
+func ScheduleAdmissionSkip(err error) string {
+	var e *Error
+	if errors.As(err, &e) && e.Status >= 400 && e.Status < 500 && e.Status != 408 && e.Status != 429 {
+		return e.Code
+	}
+	return ""
 }

@@ -150,7 +150,7 @@ docker pull ghcr.io/unrealm-ai/kikoteam/backend:latest
 | 类别 | 内置清单 |
 | --- | --- |
 | **AI 员工模板（7 个）** | 经营数据分析师 · 会议跟进专员 · 客户跟进助理 · 内容运营编辑 · 用户反馈分析师 · 研发交付助理 · 行情简报员 |
-| **官方 Skill（11 个）** | 项目周报与风险汇总 · Excel 合并与公式校验 · 账表对账 · 用户反馈归纳 · 客服 FAQ 整理 · 竞品与行业简报 · 多渠道内容初稿 · 汇报 PPT 制作 · GitHub PR 评审 · Tavily 资讯检索与核实 · A 股收盘简报 |
+| **官方 Skill（12 个）** | 项目周报与风险汇总 · Excel 合并与公式校验 · 账表对账 · 用户反馈归纳 · 客服 FAQ 整理 · 竞品与行业简报 · 多渠道内容初稿 · 汇报 PPT 制作 · GitHub PR 评审 · Tavily 资讯检索与核实 · A 股收盘简报 · 视频剪辑与素材合成 |
 | **官方 MCP 插件（11 个）** | 免认证：A 股行情快查、Exa 公开资料检索<br>API Key / Bearer：GitHub、Tavily 联网搜索、智谱联网搜索、同花顺 A 股行情、飞书云文档、腾讯会议纪要、钉钉待办、高德地图<br>OAuth：纷享销客 CRM（GitHub 同时支持 OAuth 与 PAT） |
 | **沙箱内置工具（11 个）** | 文件工具：`read`、`write`、`edit`、`grep`、`find`、`ls`<br>受管进程工具：`bash_start`、`bash_poll`、`bash_write`、`bash_terminate`、`bash_list` |
 

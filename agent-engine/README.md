@@ -64,3 +64,5 @@ chat 的后台压缩与仅追加 assistant 而不触发回复属于待评估设�
 `turn.prompt_failed` 记录请求失败时最早已知的本地中止阶段或 Pi 错误类型，可用 session、turn 和 input ID 与投递日志关联；不记录原始错误正文，也不把用户主动停止或正常等待人工确认记为执行故障。
 
 裸 Sandbox 执行内置表格和演示文稿 Skill 时，发布镜像提供 `openpyxl`、pandas、LibreOffice、`markitdown[pptx]`、`pptxgenjs` 和中文字体。直接在宿主机启动 Engine 时，应在其 PATH 上安装相同的 Python 和 LibreOffice 依赖，并将 NODE_PATH 指向运行过 `npm ci` 的 agent-engine/node_modules 绝对路径。
+
+视频剪辑与素材合成通过受管 Bash 调用运行镜像中的 FFmpeg 和 ffprobe。原生启动时，Engine 的 PATH 也需要包含 `ffmpeg` 和 `ffprobe`，并支持 libx264 编码和 AAC 编码。员工配置及下载方式见[官方 Skill 一览](../docs/guides/employees-and-capabilities.md#32-内置官方-skill-一览)。

@@ -104,6 +104,10 @@ func testManagerRuntime(t *testing.T, mode string) {
 			imageRuntimeReply(t, w, body)
 			return
 		}
+		if mode == "video" {
+			videoEditingReply(t, w, body)
+			return
+		}
 		if mode == "report" {
 			reportCalls.capture(body)
 		}
@@ -325,7 +329,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	if mode == "events" {
 		eventCommitTool = installEventTestPlugin(t, ctx, db, capabilities, workspace, actor, agent.ID, eventRepo)
 	}
-	if workMode || mode == "files" {
+	if workMode || mode == "files" || mode == "video" {
 		assets, e := skillasset.NewStore(ctx, skillasset.Config{LocalRoot: store.RuntimeRoot})
 		if e != nil {
 			t.Fatal(e)
@@ -433,7 +437,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	}
 	base := "/api/v1/workspaces/" + workspace
 	var conversation, session string
-	if mode != "events" && !imageMode {
+	if mode != "events" && mode != "video" && !imageMode {
 		conversationPath := base + "/conversations"
 		if mode == "report" {
 			conversationPath += "/web-direct"
@@ -456,7 +460,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	q.Set("search_path", schema)
 	dsn.RawQuery = q.Encode()
 	fixtureRoot := root
-	if mode != "events" && mode != "report" && !imageMode {
+	if mode != "events" && mode != "report" && mode != "video" && !imageMode {
 		fixtureRoot = confirmationRuntimeRoot(t, root, temp)
 	}
 	binary := os.Getenv("KIKO_TEST_ENGINE_BINARY")
@@ -527,7 +531,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	wait := func(test func() bool) {
 		t.Helper()
 		timeout := 25 * time.Second
-		if workMode || liveEventModel {
+		if workMode || liveEventModel || mode == "video" {
 			timeout = 100 * time.Second
 		}
 		until := time.Now().Add(timeout)
@@ -559,6 +563,10 @@ func testManagerRuntime(t *testing.T, mode string) {
 	}
 	if imageMode {
 		imageFixture.verify(t, call, backend.URL, token, workspace, actor, agent)
+		return
+	}
+	if mode == "video" {
+		verifyVideoEditing(t, db, capabilities, workspace, actor, model.ID, base, backend.URL, token, call, wait)
 		return
 	}
 	if mode == "events" {

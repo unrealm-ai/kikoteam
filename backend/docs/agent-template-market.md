@@ -313,7 +313,7 @@ Platform 依据有效成员、员工启用状态和统一使用范围裁决网�
 - 失败：模型/资源失效保留表单，重复点击被阻止，网络未知不自动重发，201 后页面失败只刷新已有员工。
 ## 内置官方模板的发布与维护
 
-Backend 编译时嵌入 `internal/platform/service/catalog/` 的三类资源。`skills/manifest.json` 记录 11 个 Skill 的来源、许可和 SHA-256，`plugins/manifest.json` 固定 11 个 MCP 的地址、认证和授权操作，`templates/` 保存 7 个岗位的发布内容。根清单维护模板顺序和整个目录的发布修订号。更新任一清单或资产时递增修订号，以 `listed: false` 下架模板并保留历史版本。
+Backend 编译时嵌入 `internal/platform/service/catalog/` 的三类资源。`skills/manifest.json` 记录 Skill 的来源、许可和 SHA-256，`plugins/manifest.json` 固定 MCP 的地址、认证和授权操作，`templates/` 保存 7 个岗位的发布内容。根清单维护模板顺序和整个目录的发布修订号。更新任一清单或资产时递增修订号，以 `listed: false` 下架模板并保留历史版本。
 
 Event Hub 完成迁移 79 后，Compose 使用 `backend sync-catalog` 发布目录。`sync-templates` 继续兼容已有部署脚本。维护任务和 Backend 需使用同一个 DATABASE_URL、资产卷、UID/GID 或 S3 配置。同步先写入并校验固定版本的 Skill 文件，再在一个数据库事务中切换官方资源、模板和能力引用。并发部署使用同一把目录行锁。中途失败可重跑。
 

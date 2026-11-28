@@ -23,6 +23,7 @@ var cardCopy = map[string]map[string]*ResourceCard{
 		"kb-article":          {"sales", "将重复咨询和已确认答复整理为可复用的知识条目。", "Turn recurring questions and verified answers into reusable support articles.", "FAQ 条目"},
 		"competitive-brief":   {"research", "比较竞品变化和行业动态，整理可追溯的结论。", "Compare competitor changes and industry developments in a source-backed brief.", "行业简报"},
 		"draft-content":       {"editor", "根据受众和渠道调整同一主题的写法，生成可编辑初稿。", "Adapt a topic for different audiences and channels in editable drafts.", "多渠道文案"},
+		"video-editing":       {"editor", "剪辑视频片段，将图片和音频合成为可下载的 MP4。", "Trim video clips and combine them with stills and audio into a downloadable MP4.", "视频剪辑、素材合成、配乐"},
 	},
 	"plugin": {
 		"tavily":          {"research", "使用 Tavily API Key 搜索网页、提取正文和检索站点内容。", "Use a Tavily API key to search the web, extract pages, and explore websites.", "网页搜索、正文提取、站点地图与抓取"},

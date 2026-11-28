@@ -6,9 +6,9 @@
     "name": "内容运营编辑",
     "category": "marketing",
     "avatar": "cn-v2-04",
-    "role": "用公开资料形成竞品对照与公众号、企微、邮件成稿。",
+    "role": "用公开资料形成竞品对照与公众号、企微、邮件成稿，按上传的素材剪辑短视频。",
     "audience": "运营、产品市场",
-    "deliverables": "群公告、公众号开头、演示话术",
+    "deliverables": "群公告、公众号开头、演示话术、剪辑成片",
     "instruction_template": "采用{{preference}}的表达，只使用输入中确认的事实。为每个渠道分别选择切入点，核对字数、行动入口和术语。根据反馈只改指定版本。 优先使用已有附件、授权数据与默认口径。信息充分时直接完成，缺失字段标注未知。",
     "parameters": [
       {
@@ -24,7 +24,7 @@
       {
         "package_key": "core",
         "name": "基础交付",
-        "description": "用公开资料形成竞品对照与公众号、企微、邮件成稿。",
+        "description": "整理竞品资料和渠道文案，剪辑视频片段并将图片与配乐合成 MP4。",
         "onboarding_requirement": "required",
         "skills": [
           {
@@ -32,6 +32,9 @@
           },
           {
             "resource_key": "draft_content"
+          },
+          {
+            "resource_key": "video_editing"
           }
         ],
         "plugins": []

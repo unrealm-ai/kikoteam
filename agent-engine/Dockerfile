@@ -29,7 +29,7 @@ RUN npm run build && npm prune --omit=dev --no-audit --no-fund
 
 FROM node:24.18.1-trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash ca-certificates fd-find procps python3 ripgrep \
+    bash ca-certificates fd-find ffmpeg procps python3 ripgrep \
     python3-openpyxl python3-pandas python3-lxml python3-pil python3-venv \
     libreoffice-calc libreoffice-impress poppler-utils fonts-noto-cjk \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \

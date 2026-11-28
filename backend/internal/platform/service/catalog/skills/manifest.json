@@ -86,5 +86,13 @@
     "source": "KikoTeam",
     "license": "repository",
     "sha256": "86e6b540053ba2bde561bc97dbecdca3c20784addefff2ff0b029dcb3c576f37"
+  },
+  {
+    "key": "video-editing",
+    "name": "视频剪辑与素材合成",
+    "file": "video-editing.md",
+    "source": "KikoTeam",
+    "license": "repository",
+    "sha256": "fbe8c4d4b776f4dc139251e235d56c6daea794789c1ed91d258e4f0f9a1cb2dc"
   }
 ]

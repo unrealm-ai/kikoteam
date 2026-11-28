@@ -31,7 +31,7 @@ cd kikoteam
 3. **启动与自动迁移**：
    - 启动 `postgres:16.6` 与 `backend`；
    - 启动 `event-hub`，通过 PostgreSQL Advisory Lock 自动执行数据库 schema 迁移；
-   - 运行 `template-catalog` 同步内置的 7 个官方 AI 员工模板、11 个官方 Skill 与 11 个官方 MCP 插件；
+   - 运行 `template-catalog` 同步内置的 7 个官方 AI 员工模板、12 个官方 Skill 与 11 个官方 MCP 插件；
    - 启动 `agent-engine` 并向 `backend` 完成注册与心跳确认。
 
 同一个 Docker 引擎默认只管理一套本地实例；已有实例从原目录运行。启动器不会替另一个克隆创建或接管同名数据卷。

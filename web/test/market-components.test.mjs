@@ -8,15 +8,16 @@ const window=new Window({url:'http://127.0.0.1:5173/'});
 for(const name of ['window','document','navigator','HTMLElement','Element','SVGElement','Node','Text','Comment','Image','InputEvent','MouseEvent','KeyboardEvent','HTMLInputElement','Document','MutationObserver','ResizeObserver','getComputedStyle','requestAnimationFrame','cancelAnimationFrame']){
  if(name==='window')globalThis.window=window;else if(window[name]!==undefined)Object.defineProperty(globalThis,name,{configurable:true,writable:true,value:typeof window[name]==='function'&&['getComputedStyle','requestAnimationFrame','cancelAnimationFrame'].includes(name)?window[name].bind(window):window[name]});
 }
-const built=await esbuild.build({stdin:{contents:"export {default as AgentMarketView} from './src/direction2/views/AgentMarketView.vue'; export {activeWorkspaceId} from './src/direction2/api/client'; export {createApp,h,nextTick} from 'vue'; export {NMessageProvider,NDialogProvider} from 'naive-ui';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env.VITE_PLATFORM_REAL':'true','import.meta.env.DEV':'false'},plugins:[{name:'vue-test',setup(build){build.onLoad({filter:/\.vue$/},async({path})=>{const source=await fs.readFile(path,'utf8');const {descriptor}=parse(source);return {contents:compileScript(descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'};});}}]});
-const {AgentMarketView,activeWorkspaceId,createApp,h,NMessageProvider,NDialogProvider,nextTick}=await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
+const built=await esbuild.build({stdin:{contents:"export {default as Setup} from './src/direction2/views/AgentSetupPanel.vue'; export {default as AgentMarketView} from './src/direction2/views/AgentMarketView.vue'; export {activeWorkspaceId} from './src/direction2/api/client'; export {createApp,h,nextTick,ref} from 'vue'; export {NMessageProvider,NDialogProvider} from 'naive-ui';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env.VITE_PLATFORM_REAL':'true','import.meta.env.DEV':'false'},plugins:[{name:'vue-test',setup(build){build.onLoad({filter:/\.vue$/},async({path})=>{const source=await fs.readFile(path,'utf8');const {descriptor}=parse(source);return {contents:compileScript(descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'};});}}]});
+const {Setup,AgentMarketView,activeWorkspaceId,createApp,h,NMessageProvider,NDialogProvider,nextTick,ref}=await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
 const pause=async()=>{await new Promise(r=>setTimeout(r,40));await nextTick()};
 
 const fixture={id:'template-one',scope:'official',version:2,sequence:1,template_version_id:'fixed-version',latest_version_id:'fixed-version',published_version_id:'fixed-version',is_listed:true,status:'published',has_unpublished_changes:false,content:{schema_version:1,name:'周报员',role:'整理工单与代码',avatar:'',category:'engineering',instruction_template:'整理周报',parameters:[],resource_refs:[],examples:[],packages:[{package_key:'weekly',name:'整理工单',description:'业务进展',onboarding_requirement:'required',skills:[],plugins:[]},{package_key:'code',name:'补充代码变更',description:'代码提交摘要',onboarding_requirement:'deferred',skills:[],plugins:[]}]}};
 const button=(text,root=document)=>[...root.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
 const drawerButton=text=>button(text,document.querySelector('.n-drawer')??document.createElement('div'));
-async function mount(role='owner',create,template=fixture,extraProps={}){
- const calls=[],guards=[],navigations=[],demos=[];let assistantOpens=0;globalThis.fetch=async(url,init={})=>{
+async function mount(role='owner',create,template=fixture,extraProps={},scenario={}){
+ const calls=[],guards=[],navigations=[],demos=[];let assistantOpens=0,workspaceTemplate;
+ const list=items=>Response.json({items,total:items.length,page:1,page_size:20});globalThis.fetch=async(url,init={})=>{
  calls.push({url,init,body:init.body?JSON.parse(init.body):null});
  if(url.endsWith('/agents') && init.method==='POST')return Response.json({id:'quick-created',name:JSON.parse(init.body).name,role:JSON.parse(init.body).role,avatar:JSON.parse(init.body).avatar,enabled:true,model_profile_id:'model-one',harness:'pi'});
  if(url.endsWith('/agents/from-template'))return create?create():Response.json({id:'created-agent',name:'周报员'});
@@ -24,13 +25,40 @@ async function mount(role='owner',create,template=fixture,extraProps={}){
  if(url.includes('/skills?'))return Response.json({items:[{id:'skill',name:'分析数据',scope:'official',enabled:true,current_version_id:'sv1'}],total:1,page:1,page_size:20});
  if(url.includes('/plugins?'))return Response.json({items:[{id:'plugin',name:'内部系统',scope:'workspace',enabled:true,version_id:'pv2'}],total:1,page:1,page_size:20});
  if(url.includes('/model-profiles'))return Response.json({items:[{id:'model-one',name:'Test',protocol:'chat_completions',enabled:true,validated:true,is_default:true}],total:1,page:1,page_size:20});
- if(url.includes('/official-agent-templates'))return Response.json({items:[template],total:1,page:1,page_size:20});
- if(url.endsWith('/agent-templates') && init.method==='POST')return Response.json({id:'workspace-copy',content:JSON.parse(init.body).content},{status:201});
- if(url.includes('/agent-templates?'))return Response.json({items:[],total:0,page:1,page_size:20});
+ if(url.endsWith('/agents/employee-one/setup-status'))return Response.json({conversation_model:{available:true},task_model:{available:true},access_allowed:true,packages:[],issues:[],examples:[]});
+ if(url.endsWith('/agents/employee-one/agent-templates')&&init.method==='POST'){
+  workspaceTemplate={...fixture,id:'workspace-copy',scope:'workspace',content:{...fixture.content,name:'另存的员工'},status:'draft',is_listed:false,published_version_id:''};
+  return Response.json(workspaceTemplate,{status:201});
+ }
+ if(url.includes('/official-agent-templates?'))return list([template]);
+ if(url.includes('/official-agent-templates/template-one/versions?'))return list([]);
+ if(url.endsWith('/official-agent-templates/template-one?view=manage'))return Response.json(scenario.draft??template);
+ if(url.endsWith('/agent-templates') && init.method==='POST'){
+  workspaceTemplate={...fixture,id:'workspace-copy',scope:'workspace',content:JSON.parse(init.body).content,status:'draft',is_listed:false,template_version_id:'draft-version',latest_version_id:'draft-version',published_version_id:''};
+  return Response.json(workspaceTemplate,{status:201});
+ }
+ if(url.includes('/agent-templates?')){
+  const requested=new URL(url,'https://test.invalid').searchParams.get('status')||'published';
+  return list(workspaceTemplate?.status===requested?[workspaceTemplate]:[]);
+ }
+ if(url.includes('/agent-templates/workspace-copy/versions?'))return list([]);
+ if(url.endsWith('/agent-templates/workspace-copy?view=manage'))return Response.json(workspaceTemplate);
+ if(url.endsWith('/agent-templates/workspace-copy/publish') && init.method==='POST'){
+  workspaceTemplate={...workspaceTemplate,status:'published',is_listed:true,published_version_id:'draft-version'};
+  return Response.json(workspaceTemplate);
+ }
+ if(url.endsWith('/agent-templates/workspace-copy') && init.method==='PATCH'){
+  const {is_listed,content}=JSON.parse(init.body);
+  workspaceTemplate={...workspaceTemplate,is_listed,status:is_listed?'published':'unlisted',content:content??workspaceTemplate.content};
+  return Response.json(workspaceTemplate);
+ }
  return Response.json({role});
  };
  activeWorkspaceId.value='workspace-one';const host=document.createElement('div');document.body.append(host);
- const app=createApp({render:()=>h(NMessageProvider,null,{default:()=>h(AgentMarketView,{platformAdmin:false,...extraProps,onNavigate:(...a)=>navigations.push(a),onAssistantDemo:c=>demos.push(c),onOpenAssistant:()=>{assistantOpens+=1}})})});app.provide('d2DraftGuard',{register:g=>guards.push(g),unregister:()=>{}});app.mount(host);await pause();
+ const setup=ref(scenario.fromEmployee===true),initialTab=ref(extraProps.initialTab);
+ const app=createApp({render:()=>h(NMessageProvider,null,{default:()=>setup.value
+  ? h(Setup,{agent:{id:'employee-one',name:'另存的员工',version:3,config_version:7},canManage:true,canManageTemplates:true,onNavigate:(...a)=>{navigations.push(a);initialTab.value=a[1];setup.value=false;}})
+  : h(AgentMarketView,{platformAdmin:false,...extraProps,initialTab:initialTab.value,onNavigate:(...a)=>navigations.push(a),onAssistantDemo:c=>demos.push(c),onOpenAssistant:()=>{assistantOpens+=1}})})});app.provide('d2DraftGuard',{register:g=>guards.push(g),unregister:()=>{}});app.mount(host);await pause();
  return {calls,guards,navigations,demos,get assistantOpens(){return assistantOpens},async cleanup(){app.unmount();host.remove();await pause()}};
 }
 test('market card and detail display the portrait saved in the template', async () => {
@@ -61,7 +89,22 @@ test('market keeps decision-making copy while hiding version metadata in browse 
  } finally {await m.cleanup()}
 });
 
-test('market member can create from a published template without gaining template management',async()=>{const m=await mount('member');try{assert.equal(button('管理模板'),undefined);button('查看详情').click();await pause();assert.equal(drawerButton('用此模板创建').disabled,false);assert.equal(button('复制为工作区模板'),undefined);assert.equal(m.calls.some(c=>c.init.method),false)}finally{await m.cleanup()}});
+test('market member can create from a published template without gaining template management',async()=>{const m=await mount('member');try{assert.equal(button('管理模板'),undefined);assert.equal(button('新建模板'),undefined);assert.equal(button('编辑模板'),undefined);button('工作区模板').click();await pause();assert.equal(button('新建模板'),undefined);assert.ok(!m.calls.some(c=>c.url.includes('view=manage')));button('官方精选').click();await pause();button('查看详情').click();await pause();assert.equal(drawerButton('用此模板创建').disabled,false);assert.equal(button('复制为工作区模板'),undefined);assert.equal(m.calls.some(c=>c.init.method),false)}finally{await m.cleanup()}});
+test('template creation follows the selected scope and existing roles', async()=>{
+ const m=await mount('member',undefined,fixture,{platformAdmin:true});
+ try {
+  const toolbar=document.querySelector('.template-toolbar');
+  assert.ok(button('新建模板',toolbar));
+  assert.ok(button('编辑模板'));
+  button('工作区模板',toolbar).click();await pause();
+  assert.equal(button('新建模板',toolbar),undefined);
+  assert.equal(m.calls.some(c=>c.url.includes('view=manage')),false);
+  button('官方精选',toolbar).click();await pause();
+  button('新建模板',toolbar).click();await pause();
+  assert.ok(drawerButton('保存草稿'));
+  assert.equal(m.calls.some(c=>c.init.method),false);
+ }finally{await m.cleanup()}
+});
 test('workspace owner copies a built-in role as an independent workspace draft',async()=>{
  const m=await mount('owner',undefined,{...fixture,builtin_key:'business-analyst'});
  try{
@@ -71,9 +114,51 @@ test('workspace owner copies a built-in role as an independent workspace draft',
   assert.equal(writes.length,1);
   assert.match(writes[0].url,/workspaces\/workspace-one\/agent-templates$/);
   assert.deepEqual(writes[0].body,{content:fixture.content});
-  assert.ok(button('新建模板'));
+  assert.ok(button('新建模板',document.querySelector('.template-toolbar')));
+  assert.ok(button('编辑模板'));
+  assert.ok(m.calls.some(c=>c.url.includes('view=manage&status=draft')));
  }finally{await m.cleanup()}
 });
+test('saving an existing employee lands directly in the workspace draft list', async()=>{
+ const m=await mount('owner',undefined,fixture,{}, {fromEmployee:true});
+ try {
+  button('另存为工作区模板').click();await pause();await pause();
+  assert.deepEqual(m.navigations[0],['market','workspace-drafts']);
+  assert.equal(button('工作区模板').getAttribute('aria-pressed'),'true');
+  assert.match(document.querySelector('.template-card').textContent,/另存的员工.*未发布/s);
+  assert.ok(button('编辑模板'));
+  assert.equal(button('用此模板创建'),undefined);
+  assert.equal(m.calls.filter(c=>c.init.method==='POST').length,1);
+ }finally{await m.cleanup()}
+});
+
+test('a member opening a draft link only reads published workspace templates', async()=>{
+ const m=await mount('member',undefined,fixture,{initialTab:'workspace-drafts'});
+ try {
+  assert.equal(button('工作区模板').getAttribute('aria-pressed'),'true');
+  assert.ok(m.calls.some(c=>c.url.includes('/agent-templates?')));
+  assert.equal(m.calls.some(c=>c.url.includes('view=manage')),false);
+  assert.equal(button('新建模板'),undefined);
+ }finally{await m.cleanup()}
+});
+
+test('one published card edits the saved draft but creates from the published version', async()=>{
+ const draft={...fixture,template_version_id:'unpublished-version',latest_version_id:'unpublished-version',has_unpublished_changes:true,content:{...fixture.content,name:'未发布改名',instruction_template:'草稿指令'}};
+ const m=await mount('owner',undefined,fixture,{platformAdmin:true},{draft});
+ try {
+  assert.match(document.querySelector('.template-card').textContent,/周报员/);
+  button('编辑模板').click();await pause();
+  assert.ok([...document.querySelectorAll('.n-drawer input')].some(i=>i.value==='未发布改名'));
+  assert.ok([...document.querySelectorAll('.n-drawer textarea')].some(i=>i.value==='草稿指令'));
+  drawerButton('关闭').click();await pause();
+  button('用此模板创建',document.querySelector('.template-card')).click();await pause();
+  assert.ok([...document.querySelectorAll('.n-drawer input')].some(i=>i.value==='周报员'));
+  assert.equal(document.querySelector('.n-drawer').textContent.includes('草稿指令'),false);
+  drawerButton('下一步').click();await pause();drawerButton('下一步').click();await pause();drawerButton('创建员工').click();await pause();
+  assert.equal(m.calls.find(c=>c.url.endsWith('/agents/from-template')).body.template_version_id,'fixed-version');
+ }finally{await m.cleanup()}
+});
+
 test('template creation preserves every preset ability and submits once without a request key',async()=>{
  let resolve;const m=await mount('owner',()=>new Promise(r=>{resolve=r}));try{
  button('用此模板创建',document.querySelector('.template-card')).click();await pause();assert.equal(drawerButton('查看详情'),undefined);assert.match(document.querySelector('.n-drawer').textContent,/岗位设定/);button('下一步').click();await pause();
@@ -89,8 +174,10 @@ test('create a market preset directly without a workspace package template',asyn
  const m=await mount();
  try {
   button('工作区模板').click();await pause();
-  button('管理模板').click();await pause();
-  button('新建模板').click();await pause();
+  assert.equal(button('管理模板'),undefined);
+  button('新建模板',document.querySelector('.template-toolbar')).click();await pause();
+  assert.equal(button('返回市场'),undefined);
+  assert.ok(drawerButton('保存草稿'));
   button('新建能力包').click();await pause();
   const field=document.querySelector('input[placeholder="能力名称"]');
   field.value='业务分析';field.dispatchEvent(new window.Event('input',{bubbles:true}));
@@ -109,6 +196,19 @@ test('create a market preset directly without a workspace package template',asyn
   assert.equal(plugin.workspace_id,'workspace-one');
   assert.deepEqual(c.packages[0].skills,[{resource_key:skill.resource_key}]);
   assert.deepEqual(c.packages[0].plugins,[{resource_key:plugin.resource_key}]);
+  drawerButton('关闭').click();await pause();
+  assert.ok(button('编辑模板'));
+  assert.equal(button('用此模板创建'),undefined);
+  button('编辑模板').click();await pause();
+  drawerButton('发布并上架').click();await pause();
+  drawerButton('关闭').click();await pause();
+  assert.ok(button('查看详情'));assert.ok(button('用此模板创建'));
+  assert.doesNotMatch(m.calls.filter(c=>c.url.includes('/agent-templates?')).at(-1).url,/view=manage/);
+  button('编辑模板').click();await pause();
+  drawerButton('下架').click();await pause();
+  drawerButton('关闭').click();await pause();
+  assert.ok(button('编辑模板'));assert.equal(button('用此模板创建'),undefined);
+  assert.match(m.calls.filter(c=>c.url.includes('/agent-templates?')).at(-1).url,/view=manage&status=unlisted/);
  }finally{await m.cleanup()}
 });
 

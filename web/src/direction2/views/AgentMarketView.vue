@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {computed,inject,onUnmounted,ref,watch} from 'vue';
-import {NAlert,NButton,NInput,NSelect,NForm,NFormItem,NDrawer,NDrawerContent,NSteps,NStep,NPagination,NTag,NCheckbox,NPopconfirm,useMessage} from 'naive-ui';
+import {NAlert,NButton,NInput,NSelect,NForm,NFormItem,NDrawer,NDrawerContent,NSteps,NStep,NPagination,NCheckbox,NPopconfirm,useMessage} from 'naive-ui';
 import {activeWorkspaceId,D2ApiError} from '../api/client';
 import {platformRequest} from '../api/platform';
 import {templatesApi,emptyContent,renderInstruction,type AgentTemplate,type Content,type TemplateVersion} from '../api/templates';
@@ -10,10 +10,12 @@ import type {Agent} from '../api/agents';
 import AssistantDemoCards from '../components/AssistantDemoCards.vue';
 import type { AssistantCard } from '../api/assistant';
 import TemplateIdentity from '../components/TemplateIdentity.vue';
-const props=defineProps<{platformAdmin:boolean;assistantAgentId?:string | undefined;assistantCards?:AssistantCard[] | undefined}>();
+const props=defineProps<{platformAdmin:boolean;initialTab?:string | undefined;assistantAgentId?:string | undefined;assistantCards?:AssistantCard[] | undefined}>();
 const emit=defineEmits<{navigate:[target:string,param?:string,targetId?:string]; assistantDemo:[card:AssistantCard]; openAssistant:[]}>();
 const message=useMessage();
-const official=ref(true),manage=ref(false),q=ref(''),category=ref(''),sort=ref('recommended'),page=ref(1),total=ref(0),role=ref('');
+type TemplateStatus = 'published' | 'draft' | 'unlisted';
+const startsInDrafts=props.initialTab==='workspace-drafts';
+const official=ref(!startsInDrafts),status=ref<TemplateStatus>(startsInDrafts?'draft':'published'),q=ref(''),search=ref(''),category=ref(''),sort=ref('recommended'),page=ref(1),total=ref(0),role=ref('');
 const items=ref<AgentTemplate[]>([]),selected=ref<AgentTemplate>(),content=ref<Content>(emptyContent()),history=ref<TemplateVersion[]>([]);
 const loading=ref(false),busy=ref(false),error=ref(''),panel=ref<'detail'|'edit'|'create'|''>(''),step=ref(1);
 const models=ref<ModelChoice[]>([]),packages=ref<CapabilityPackage[]>([]),packageChoice=ref<string|null>(null);
@@ -23,6 +25,7 @@ let epoch=0;let abort:AbortController|undefined;
 const canManage=computed(()=>official.value?props.platformAdmin:['owner','admin'].includes(role.value));
 const canCreate=computed(()=>['owner','admin','member'].includes(role.value));
 const canManageWorkspaceTemplates=computed(()=>['owner','admin'].includes(role.value));
+const statusOptions=[{label:'已发布',value:'published'},{label:'未发布',value:'draft'},{label:'已下架',value:'unlisted'}];
 const categories=[{label:'全部分类',value:''},{label:'研发协作',value:'engineering'},{label:'运营营销',value:'marketing'},{label:'销售服务',value:'sales'},{label:'业务分析',value:'analytics'},{label:'通用办公',value:'office'}];
 function categoryLabel(value: string) { return value ? categories.find(c => c.value === value)?.label : undefined; }
 const rendered=computed(()=>selected.value?renderInstruction(selected.value.content,params.value):'');
@@ -32,15 +35,36 @@ const draft={hasUnsaved:()=>dirty.value||busy.value,getLabel:()=> 'AI 员工模�
 function close(){if(busy.value)return;if(dirty.value&&!confirm('离开会丢弃尚未提交的内容，确定离开？'))return;panel.value='';formError.value=''}
 async function load(){
  const current=++epoch;abort?.abort();abort=new AbortController();loading.value=true;error.value='';items.value=[];
- const w=activeWorkspaceId.value;
+ const w=activeWorkspaceId.value, source=official.value, requestedStatus=status.value, signal=abort.signal;
  try{
-  const [ws,result]=await Promise.all([platformRequest<{role:string}>(`/workspaces/${w}`,{signal:abort.signal}),templatesApi.list(w,official.value,new URLSearchParams({q:q.value,category:category.value,sort_by:sort.value,page:String(page.value),page_size:'20',...(manage.value?{view:'manage'}:{})}),abort.signal)]);
-  if(current!==epoch)return;role.value=ws.role;items.value=result.items;total.value=result.total;
+  const workspace=platformRequest<{role:string}>(`/workspaces/${w}`,{signal});
+  const list=async()=>{
+   if(requestedStatus!=='published'){
+    const allowed=source?props.platformAdmin:['owner','admin'].includes((await workspace).role);
+    if(current!==epoch)return;
+    if(!allowed){status.value='published';return;}
+   }
+   return templatesApi.list(w,source,new URLSearchParams({q:search.value,category:category.value,sort_by:sort.value,page:String(page.value),page_size:'20',...(requestedStatus!=='published'?{view:'manage',status:requestedStatus}:{})}),signal);
+  };
+  const [ws,result]=await Promise.all([workspace,list()]);
+  if(current!==epoch||!result)return;role.value=ws.role;items.value=result.items;total.value=result.total;
  }catch(e){if(current===epoch)error.value=e instanceof Error?e.message:'读取失败'}finally{if(current===epoch)loading.value=false}
 }
 async function action(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;formError.value='';const context=activeWorkspaceId.value+':'+official.value;try{await fn()}catch(e){if(context===activeWorkspaceId.value+':'+official.value)formError.value=e instanceof Error?e.message:'操作失败'}finally{if(context===activeWorkspaceId.value+':'+official.value)busy.value=false}}
+function setScope(nextOfficial:boolean){
+ if(official.value===nextOfficial)return;
+ status.value='published';official.value=nextOfficial;formError.value='';
+}
+function applySearch(){if(search.value===q.value&&page.value===1){void load();return;}search.value=q.value;page.value=1;}
+async function showTemplateStatus(next:TemplateStatus,{resetFilters=false}={}){
+ const reload=status.value===next&&page.value===1&&(!resetFilters||(!search.value&&!category.value));
+ if(resetFilters){q.value='';search.value='';category.value='';}
+ status.value=next;page.value=1;
+ if(reload)await load();
+}
 function detail(t:AgentTemplate){selected.value=t;panel.value='detail';formError.value=''}
 async function edit(t?:AgentTemplate){
+ if(!canManage.value||t?.builtin_key)return;
  await action(async()=>{const current=epoch,w=activeWorkspaceId.value;
  const [v,p,s,m]=await Promise.all([t?templatesApi.get(w,official.value,t.id,true):Promise.resolve(undefined),allPages(n=>packagesApi.list(w,'',n)),allPages(n=>skillsApi.list(w,n)),allPages(n=>pluginsApi.list(w,n))]);
  if(current!==epoch)return;skills.value=s;plugins.value=m;packageChoice.value=null;selected.value=v;content.value=v?structuredClone(v.content):emptyContent();baseline.value=JSON.stringify(content.value);packages.value=p;history.value=v?(await templatesApi.versions(w,official.value,v.id)).items:[];if(current!==epoch)return;panel.value='edit';
@@ -48,7 +72,7 @@ async function edit(t?:AgentTemplate){
 }
 async function copyToWorkspace() {
  const source = selected.value;
- if (!source?.builtin_key || !canCreate.value) return;
+ if (!source?.builtin_key || !canManageWorkspaceTemplates.value) return;
  await action(async () => {
   const current = epoch;
   const workspace = activeWorkspaceId.value;
@@ -56,13 +80,13 @@ async function copyToWorkspace() {
   if (current !== epoch) return;
   panel.value = '';
   official.value = false;
-  manage.value = true;
-  q.value = '';
+  q.value = ''; search.value = '';
   category.value = '';
+  status.value = 'draft';
   message.success('已复制到工作区草稿，可编辑后发布');
  });
 }
-async function save(){await action(async()=>{const current=epoch;const v=selected.value?await templatesApi.update(activeWorkspaceId.value,official.value,selected.value,{content:content.value}):await templatesApi.create(activeWorkspaceId.value,official.value,content.value);if(current!==epoch)return;selected.value=v;content.value=structuredClone(v.content);baseline.value=JSON.stringify(content.value);message.success('已保存草稿，市场仍展示已发布版本');await load()})}
+async function save(){await action(async()=>{const current=epoch, isNew=!selected.value;const v=selected.value?await templatesApi.update(activeWorkspaceId.value,official.value,selected.value,{content:content.value}):await templatesApi.create(activeWorkspaceId.value,official.value,content.value);if(current!==epoch)return;selected.value=v;content.value=structuredClone(v.content);baseline.value=JSON.stringify(content.value);message.success('已保存草稿，市场仍展示已发布版本');if(isNew)await showTemplateStatus('draft',{resetFilters:true});else await load()})}
 type Preset = Content['packages'][number];
 type ResourceKind = 'skill'|'plugin';
 function addResource(kind:ResourceKind,id:string,version:string) {
@@ -142,8 +166,8 @@ function next(){
  if(step.value===2&&!models.value.some(m=>choiceValue(m)===model.value&&m.enabled&&m.validated)){formError.value='请选择可用模型';return}
  step.value++;
 }
-async function publish(){await action(async()=>{if(!selected.value)return;const current=epoch;const v=await templatesApi.publish(activeWorkspaceId.value,official.value,selected.value);if(current!==epoch)return;selected.value=v;content.value=structuredClone(v.content);baseline.value=JSON.stringify(content.value);message.success('已发布');await load()})}
-async function listing(){await action(async()=>{if(!selected.value)return;const current=epoch;const v=await templatesApi.update(activeWorkspaceId.value,official.value,selected.value,{is_listed:!selected.value.is_listed});if(current!==epoch)return;selected.value=v;await load()})}
+async function publish(){await action(async()=>{if(!selected.value)return;const current=epoch;const v=await templatesApi.publish(activeWorkspaceId.value,official.value,selected.value);if(current!==epoch)return;selected.value=v;content.value=structuredClone(v.content);baseline.value=JSON.stringify(content.value);message.success('已发布');await showTemplateStatus('published')})}
+async function listing(){await action(async()=>{if(!selected.value)return;const current=epoch;const v=await templatesApi.update(activeWorkspaceId.value,official.value,selected.value,{is_listed:!selected.value.is_listed});if(current!==epoch)return;selected.value=v;await showTemplateStatus(v.is_listed?'published':'unlisted')})}
 async function remove(){await action(async()=>{if(!selected.value)return;const current=epoch;await templatesApi.remove(activeWorkspaceId.value,official.value,selected.value);if(current!==epoch)return;panel.value='';await load()})}
 async function tryMarket(){
  const workspace=activeWorkspaceId.value, template=selected.value?.id;
@@ -161,21 +185,18 @@ async function create(requiredPackagesOnly=false){
  if(current!==epoch)return;panel.value='';busy.value=false;message.success('员工已创建，请完成账号接入并试用');emit('navigate','employees',undefined,employee.id)
  })
 }
-watch([official,manage,category,sort],()=>{page.value=1;panel.value='';void load()});
-watch(page,()=>void load());
-watch(activeWorkspaceId,()=>{++epoch;panel.value='';manage.value=false;role.value='';busy.value=false;page.value=1;void load()},{immediate:true});
+watch([official,status,search,category,sort],()=>{page.value=1},{flush:'sync'});
+watch([activeWorkspaceId,official,status,search,category,sort,page],()=>void load(),{immediate:true});
+watch(activeWorkspaceId,()=>{++epoch;panel.value='';formError.value='';status.value='published';q.value='';search.value='';category.value='';role.value='';busy.value=false;page.value=1;},{flush:'sync'});
+watch(canManage,allowed=>{if(!allowed&&status.value!=='published')status.value='published';});
 onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
 </script>
 <template>
 <section class="market">
 <header>
   <h1>AI 员工市场</h1>
-  <div class="header-actions">
-    <NButton v-if="canManage" @click="manage=!manage">{{manage?'返回市场':'管理模板'}}</NButton>
-    <NButton v-if="manage&&canManage" type="primary" @click="edit()">新建模板</NButton>
-  </div>
 </header>
-<section v-if="assistantCards?.length && !manage" class="market-onboarding" aria-label="体验 AI 员工">
+<section v-if="assistantCards?.length" class="market-onboarding" aria-label="体验 AI 员工">
   <div class="onboarding-header">
     <div class="onboarding-heading">
       <div class="onboarding-title-row">
@@ -189,7 +210,7 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
   </div>
   <AssistantDemoCards :cards="assistantCards" hide-note illustrated @choose="card => emit('assistantDemo', card)" />
 </section>
-<section v-else-if="!manage && assistantAgentId && canCreate" class="market-onboarding is-compact" aria-label="用 KIKO 创建 AI 员工">
+<section v-else-if="assistantAgentId && canCreate" class="market-onboarding is-compact" aria-label="用 KIKO 创建 AI 员工">
   <div class="onboarding-header">
     <div class="onboarding-heading">
       <div class="onboarding-title-row"><h2>没有合适的岗位模板？</h2></div>
@@ -199,9 +220,22 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
     </div>
   </div>
 </section>
-<nav><NButton :type="official?'primary':'default'" @click="official=true;manage=false">官方精选</NButton><NButton :type="!official?'primary':'default'" @click="official=false;manage=false">工作区模板</NButton></nav>
-<div class="filters"><NInput v-model:value="q" placeholder="搜索岗位、职责或交付物" @keyup.enter="page=1;load()" /><NButton @click="page=1;load()">搜索</NButton><NSelect v-model:value="category" :options="categories"/><NSelect v-model:value="sort" :options="[{label:'推荐排序',value:'recommended'},{label:'最近发布',value:'published_at'}]"/></div>
-<NAlert v-if="error" type="error">{{error}}<NButton @click="load">重试</NButton></NAlert><p v-else-if="loading">正在读取模板…</p><div v-else-if="!items.length" class="empty"><h2>{{ q.trim() || category ? '没有匹配的模板' : '暂无模板' }}</h2></div>
+<div class="template-toolbar">
+  <nav aria-label="模板来源">
+    <NButton :type="official?'primary':'default'" :aria-pressed="official" :disabled="busy" @click="setScope(true)">官方精选</NButton>
+    <NButton :type="!official?'primary':'default'" :aria-pressed="!official" :disabled="busy" @click="setScope(false)">工作区模板</NButton>
+  </nav>
+  <NButton v-if="canManage" type="primary" :loading="busy && !panel" @click="edit()">新建模板</NButton>
+</div>
+<div class="filters">
+  <NInput v-model:value="q" :disabled="busy" placeholder="搜索岗位、职责或交付物" @keyup.enter="applySearch" />
+  <NButton :disabled="busy" @click="applySearch">搜索</NButton>
+  <NSelect v-model:value="category" :disabled="busy" :options="categories"/>
+  <NSelect v-if="status==='published'" v-model:value="sort" :disabled="busy" :options="[{label:'推荐排序',value:'recommended'},{label:'最近发布',value:'published_at'}]"/>
+  <NSelect v-if="canManage" v-model:value="status" :disabled="busy" :options="statusOptions" :input-props="{ 'aria-label':'模板状态' }"/>
+</div>
+<NAlert v-if="formError && !panel" type="error">{{formError}}</NAlert>
+<NAlert v-if="error" type="error">{{error}}<NButton @click="load">重试</NButton></NAlert><p v-else-if="loading">正在读取模板…</p><div v-else-if="!items.length" class="empty"><h2>{{ search.trim() || category ? '没有匹配的模板' : '暂无模板' }}</h2></div>
 <div v-else class="grid">
   <article v-for="t in items" :key="t.id" class="template-card">
     <TemplateIdentity :template="t" :category="categoryLabel(t.content.category)" />
@@ -211,23 +245,18 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
         <h3>主要交付物</h3>
         <p>{{ t.content.deliverables }}</p>
       </div>
-      <div v-if="manage && t.content.packages.length" class="chips">
-        <NTag v-for="p in t.content.packages" :key="p.package_key" size="small">{{ p.name }}</NTag>
-      </div>
-      <div v-if="manage" class="status">
-        <span v-if="t.builtin_key">随 KIKO 版本维护 · </span>{{ t.status==='draft'?'未发布':t.is_listed?'已发布':'已下架' }}<span v-if="t.has_unpublished_changes"> · 有未发布修改</span>
-      </div>
+      <div v-if="status!=='published'" class="status">{{ t.status==='draft'?'未发布':'已下架' }}</div>
     </div>
     <div class="card-actions">
-      <span v-if="manage">v{{ t.sequence }}</span>
       <div class="template-action-buttons">
-        <NButton secondary size="small" :disabled="busy" @click="manage && !t.builtin_key ? edit(t) : detail(t)">{{ manage && !t.builtin_key ? '编辑模板' : '查看详情' }}</NButton>
-        <NButton v-if="!manage && canCreate && t.is_listed && t.template_version_id" type="primary" secondary size="small" :disabled="busy" @click="start(t)">用此模板创建</NButton>
+        <NButton v-if="status==='published'" secondary size="small" :disabled="busy" @click="detail(t)">查看详情</NButton>
+        <NButton v-if="canManage && !t.builtin_key" secondary size="small" :disabled="busy" @click="edit(t)">编辑模板</NButton>
+        <NButton v-if="status==='published' && canCreate && t.is_listed && t.template_version_id" type="primary" secondary size="small" :disabled="busy" @click="start(t)">用此模板创建</NButton>
       </div>
     </div>
   </article>
 </div>
-<NPagination v-if="total>20" v-model:page="page" :item-count="total" :page-size="20"/>
+<NPagination v-if="!loading && !error && total>20" :disabled="busy" v-model:page="page" :item-count="total" :page-size="20"/>
 <NDrawer :show="!!panel" :width="'min(900px,96vw)'" :mask-closable="!busy" :close-on-esc="!busy" @update:show="open=>{if(!open)close()}"><NDrawerContent :title="panel==='edit'?'制作 AI 员工模板':panel==='create'?'创建 AI 员工':(selected?.content.name||'模板详情')"><template #header><strong>{{panel==='edit'?'制作模板':panel==='create'?'创建员工':'模板详情'}}</strong><NButton quaternary :disabled="busy" @click="close">关闭</NButton></template>
 <NAlert v-if="formError" type="error">{{formError}}</NAlert>
 <template v-if="panel==='detail'&&selected">
@@ -269,7 +298,9 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
 .market { padding: 28px; max-width: 1350px; margin: auto; }
 .market header, .card-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .market header h1 { margin: 0; font-size: 28px; }
-.header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
+.template-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 20px 0; flex-wrap: wrap; }
+.template-toolbar > nav { display: flex; gap: 8px; }
+.template-toolbar > .n-button { margin-inline-start: auto; }
 .market-onboarding {
   margin-top: 18px;
   padding: 18px 20px;
@@ -297,7 +328,7 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
 }
 .onboarding-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
 p { color: #526071; line-height: 1.65; }
-nav, .filters, footer { display: flex; gap: 12px; margin: 20px 0; }
+.filters, footer { display: flex; gap: 12px; margin: 20px 0; }
 .filters .n-select { min-width: 150px; max-width: 230px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 18px; }
 article { border: 1px solid #dfe5ec; border-radius: 14px; background: white; padding: 20px; margin: 12px 0; }
@@ -307,7 +338,6 @@ article { border: 1px solid #dfe5ec; border-radius: 14px; background: white; pad
 .deliverables { border-left: 2px solid #bbcbd3; padding-left: 11px; margin: 14px 0 0; overflow-wrap: anywhere; }
 .deliverables h3 { margin: 0 0 3px; font-size: 12px; color: #576576; }
 .deliverables p { color: #28394a; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .status, .card-actions { color: #596575; font-size: 12px; }
 .status { margin-top: 12px; }
 .template-action-buttons { margin-inline-start: auto; display: flex; gap: 6px; flex-wrap: wrap; }

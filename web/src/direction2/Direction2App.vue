@@ -1035,7 +1035,7 @@ function openApproval(id: string) {
                 :selected-employee-id="targetEmployeeId"
                 @navigate="navigate"
               />
-              <AgentMarketView v-else-if="realPlatform && currentView === 'market'" :key="'market-'+activeWorkspaceId" :platform-admin="currentUser?.isPlatformAdmin===true" :assistant-agent-id="assistantEntry?.agent_id" :assistant-cards="assistantEntry?.cards" @assistant-demo="openAssistant" @open-assistant="openAssistant()" @navigate="navigate"/>
+              <AgentMarketView v-else-if="realPlatform && currentView === 'market'" :key="'market-'+activeWorkspaceId" :initial-tab="subParam" :platform-admin="currentUser?.isPlatformAdmin===true" :assistant-agent-id="assistantEntry?.agent_id" :assistant-cards="assistantEntry?.cards" @assistant-demo="openAssistant" @open-assistant="openAssistant()" @navigate="navigate"/>
               <MyCreditsView v-else-if="realPlatform && currentView === 'credits' && currentUser" :key="currentUser.id" :account-id="currentUser.id" />
               <WorkforceView
                 v-else-if="currentView === 'employees'"

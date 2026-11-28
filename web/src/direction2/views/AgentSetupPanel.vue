@@ -51,7 +51,7 @@ async function saveAs() {
     await templatesApi.fromAgent(activeWorkspaceId.value, props.agent);
     if (current !== epoch) return;
     message.success('已另存为工作区模板草稿');
-    busy.value = false; emit('busy', false); emit('navigate', 'market');
+    busy.value = false; emit('busy', false); emit('navigate', 'market', 'workspace-drafts');
   } catch (e) { if (current === epoch) error.value = e instanceof Error ? e.message : '保存失败'; }
   finally { if(current === epoch) busy.value = false; }
 }

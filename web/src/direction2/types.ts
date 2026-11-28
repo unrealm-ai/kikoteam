@@ -1082,14 +1082,16 @@ export interface SkillZipParseResult {
 
 export interface GlobalSearchResultItem {
   id: string;
-  kind: 'employee' | 'work_item' | 'task' | 'skill' | 'mcp';
+  kind: 'employee' | 'work_item' | 'task' | 'skill' | 'mcp' | 'conversation';
   title: string;
   subtitle: string;
-  targetMenu: string;
+  agent_id?: string;
+  targetMenu?: string;
   targetId?: string | undefined;
 }
 
 export interface GlobalSearchResult {
   query: string;
   items: GlobalSearchResultItem[];
+  unavailable?: GlobalSearchResultItem['kind'][];
 }

@@ -435,7 +435,7 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller.abort(); detail
             </div>
 
             <template v-if="form.kind === 'schedule'">
-              <TriggerCronEditor :value="form.config.cron || ''" @update:value="v => form.config.cron = v" />
+              <TriggerCronEditor :disabled="busy" :value="form.config.cron || ''" @update:value="v => form.config.cron = v" />
               <p class="field-note">执行时间使用平台管理里的统一时区。</p>
               <NFormItem :label="form.config.action === 'send_message' ? '固定提醒正文' : '每次任务说明'">
                 <NInput :value="form.config.description || ''" @update:value="v => form.config.description = v" type="textarea" placeholder="让员工完成什么工作" />

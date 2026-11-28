@@ -161,10 +161,21 @@ function workspaceRoleLabel(role?: string) {
   return role.replace(/\s*\(.*?\)\s*/g, '').trim() || '成员';
 }
 
-// 全域搜索状态 (调用 /api/workspaces/:wsId/search)
+// 全域搜索：请求与结果都绑定当前工作区。
 const globalSearchInputRef = ref<InputInst | null>(null);
 const globalSearchQuery = ref('');
 const searchResults = ref<GlobalSearchResultItem[]>([]);
+type SearchKind = GlobalSearchResultItem['kind'];
+const searchKindLabels: Record<SearchKind, string> = {
+  employee: 'AI 员工', task: '任务', conversation: '对话', work_item: '事项', skill: '技能', mcp: '插件',
+};
+const searchGroups = computed(() => (Object.keys(searchKindLabels) as SearchKind[])
+  .map(kind => ({ kind, items: searchResults.value.filter(item => item.kind === kind) }))
+  .filter(group => group.items.length));
+const searchLoading = ref(false);
+const searchError = ref('');
+const searchUnavailable = ref<SearchKind[]>([]);
+let searchRequest: AbortController | undefined;
 const showSearchPopover = ref(false);
 let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 let searchReqSeq = 0;
@@ -172,6 +183,9 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 function cancelPendingSearch() {
   searchReqSeq += 1;
+  searchRequest?.abort();
+  searchRequest = undefined;
+  searchLoading.value = false;
   if (searchDebounce) {
     clearTimeout(searchDebounce);
     searchDebounce = null;
@@ -184,6 +198,8 @@ function closeSearchPopover(clearQuery = false) {
   if (clearQuery) {
     globalSearchQuery.value = '';
     searchResults.value = [];
+    searchError.value = '';
+    searchUnavailable.value = [];
   }
 }
 
@@ -191,9 +207,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     globalSearchInputRef.value?.focus();
-    if (globalSearchQuery.value.trim() && searchResults.value.length > 0) {
-      showSearchPopover.value = true;
-    }
+    if (!showSearchPopover.value && globalSearchInputRef.value) onSearchInput(globalSearchQuery.value);
   } else if (e.key === 'Escape') {
     if (showSearchPopover.value) {
       closeSearchPopover(false);
@@ -306,45 +320,53 @@ function requestLogout() {
 function onSearchInput(val: string) {
   globalSearchQuery.value = val;
   cancelPendingSearch();
+  searchResults.value = [];
+  searchError.value = '';
+  searchUnavailable.value = [];
+  showSearchPopover.value = true;
   const q = val.trim();
-  if (!q) {
-    searchResults.value = [];
-    showSearchPopover.value = false;
-    return;
-  }
+  if (!q) return;
   const seq = searchReqSeq;
   const wsId = activeWorkspaceId.value;
+  const request = searchRequest = new AbortController();
+  searchLoading.value = true;
+  const current = () => seq === searchReqSeq && !request.signal.aborted && activeWorkspaceId.value === wsId;
   searchDebounce = setTimeout(async () => {
+    searchDebounce = null;
     try {
-      const res = await dashboardApi.search(q, wsId);
-      if (seq !== searchReqSeq || globalSearchQuery.value.trim() !== q || activeWorkspaceId.value !== wsId) {
-        return;
-      }
+      const res = await dashboardApi.search(q, wsId, request.signal);
+      if (!current()) return;
       searchResults.value = res.items;
-      showSearchPopover.value = true;
-    } catch {
-      if (seq === searchReqSeq) {
-        searchResults.value = [];
-      }
+      searchUnavailable.value = res.unavailable ?? [];
+    } catch (error) {
+      if (current()) searchError.value = error instanceof D2ApiError && [401,403,404].includes(error.status)
+        ? '当前无法搜索这个工作区' : '搜索失败，请稍后重试';
+    } finally {
+      if (current()) searchLoading.value = false;
     }
   }, 180);
+}
+
+function openSearch() {
+  if (!showSearchPopover.value) onSearchInput(globalSearchQuery.value);
 }
 
 function selectSearchItem(item: GlobalSearchResultItem) {
   closeSearchPopover(true);
   globalSearchInputRef.value?.blur();
-  if (item.kind === 'work_item') navigate('tasks', 'work-items', item.targetId, 'work-item');
-  else if (item.kind === 'task') navigate('tasks', 'tasks', item.targetId, 'task');
-  else if (item.kind === 'skill') navigate('resources', 'skills', item.targetId);
-  else if (item.kind === 'mcp') navigate('resources', 'mcp', item.targetId);
-  else navigate(item.targetMenu, undefined, item.targetId);
+  if (item.kind === 'work_item') navigate('tasks', 'work-items', item.targetId || item.id, 'work-item');
+  else if (item.kind === 'task') navigate('tasks', 'tasks', item.targetId || item.id, 'task');
+  else if (item.kind === 'conversation' && item.agent_id) navigate('chat', item.id, item.agent_id);
+  else if (item.kind === 'employee') navigate('employees', undefined, item.targetId || item.id);
+  else if (item.kind === 'skill') navigate('resources', 'skills', item.targetId || item.id);
+  else if (item.kind === 'mcp') navigate('resources', 'mcp', item.targetId || item.id);
 }
 
 const d2ViewTitleMap: Record<string, string> = {
   home: '首页',
   chat: '对话',
   employees: 'AI 员工',
-  market: 'AI 员工市场',
+  market: '首页',
   tasks: '任务',
   resources: '资源库',
   credits: '我的积分',
@@ -718,25 +740,26 @@ function openApproval(id: string) {
           <div class="topbar-center">
             <div class="omnibar-shell">
               <NPopover
-                :show="showSearchPopover && Boolean(globalSearchQuery.trim())"
+                :show="showSearchPopover"
                 trigger="manual"
                 placement="bottom-start"
                 :show-arrow="false"
                 style="width: min(440px, 92vw);"
-                @update:show="(v: boolean) => { if (!v) showSearchPopover = false; }"
-                @clickoutside="showSearchPopover = false"
+                @update:show="(v: boolean) => { if (!v) closeSearchPopover(); }"
+                @clickoutside="closeSearchPopover()"
               >
                 <template #trigger>
                   <div class="global-search">
                     <NInput
                       ref="globalSearchInputRef"
                       :value="globalSearchQuery"
-                      placeholder="搜索：员工名称、飞书/钉钉群、任务或事项..."
+                      placeholder="搜索员工、任务或对话…"
+                      :maxlength="120"
                       size="small"
                       clearable
                       @update:value="onSearchInput"
-                      @focus="() => { if (globalSearchQuery.trim() && searchResults.length > 0) showSearchPopover = true; }"
-                      @keydown.esc="showSearchPopover = false"
+                      @focus="openSearch"
+                      @click="openSearch"
                     >
                       <template #prefix>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-prefix-icon">
@@ -750,21 +773,26 @@ function openApproval(id: string) {
                   </div>
                 </template>
                 <div class="search-popover-list">
-                  <div v-if="globalSearchQuery.trim() && searchResults.length === 0" class="search-empty-hint">
-                    未找到与「{{ globalSearchQuery }}」匹配的记录
-                  </div>
-                  <button
-                    v-for="item in searchResults"
-                    :key="item.kind + ':' + item.id"
-                    type="button"
-                    class="ws-item-choice ws-item-choice--btn"
-                    @click="selectSearchItem(item)"
-                  >
-                    <div class="ws-item-info">
-                      <strong>{{ item.title }}</strong>
-                      <span>{{ item.subtitle }}</span>
+                  <div v-if="!globalSearchQuery.trim()" class="search-empty-hint">输入员工名称、任务标题或对话名称</div>
+                  <div v-else-if="searchLoading" class="search-empty-hint" role="status">正在搜索…</div>
+                  <div v-else-if="searchError" class="search-empty-hint" role="alert">{{ searchError }}</div>
+                  <template v-else>
+                    <div v-if="searchUnavailable.length" class="search-empty-hint" role="status">
+                      {{ searchUnavailable.map(kind => searchKindLabels[kind]).join('、') }}暂时无法搜索
                     </div>
-                  </button>
+                    <div v-if="searchResults.length === 0 && !searchUnavailable.length" class="search-empty-hint" role="status">
+                      未找到与「{{ globalSearchQuery }}」匹配的记录
+                    </div>
+                    <section v-for="group in searchGroups" :key="group.kind" :aria-label="searchKindLabels[group.kind]">
+                      <div class="search-group-label">{{ searchKindLabels[group.kind] }}</div>
+                      <button
+                        v-for="item in group.items" :key="item.id" type="button"
+                        class="ws-item-choice ws-item-choice--btn" @click="selectSearchItem(item)"
+                      >
+                        <div class="ws-item-info"><strong>{{ item.title }}</strong><span v-if="item.subtitle">{{ item.subtitle }}</span></div>
+                      </button>
+                    </section>
+                  </template>
                 </div>
               </NPopover>
 
@@ -1270,6 +1298,7 @@ function openApproval(id: string) {
   background: var(--id-border-subtle);
   flex-shrink: 0;
 }
+.search-group-label { padding: 6px 8px; font-size: 12px; font-weight: 600; color: var(--id-text-secondary); }
 .search-popover-list {
   display: flex;
   flex-direction: column;

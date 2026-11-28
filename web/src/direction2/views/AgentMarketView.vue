@@ -193,9 +193,7 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
 </script>
 <template>
 <section class="market">
-<header>
-  <h1>AI 员工市场</h1>
-</header>
+<h1 class="market-page-label">首页</h1>
 <section v-if="assistantCards?.length" class="market-onboarding" aria-label="体验 AI 员工">
   <div class="onboarding-header">
     <div class="onboarding-heading">
@@ -210,7 +208,8 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
   </div>
   <AssistantDemoCards :cards="assistantCards" hide-note illustrated @choose="card => emit('assistantDemo', card)" />
 </section>
-<section v-else-if="assistantAgentId && canCreate" class="market-onboarding is-compact" aria-label="用 KIKO 创建 AI 员工">
+<h2 class="market-section-title">AI 员工市场</h2>
+<section v-if="!assistantCards?.length && assistantAgentId && canCreate" class="market-onboarding is-compact" aria-label="用 KIKO 创建 AI 员工">
   <div class="onboarding-header">
     <div class="onboarding-heading">
       <div class="onboarding-title-row"><h2>没有合适的岗位模板？</h2></div>
@@ -296,20 +295,31 @@ onUnmounted(()=>{++epoch;abort?.abort();guard?.unregister(draft)});
 </template>
 <style scoped>
 .market { padding: 28px; max-width: 1350px; margin: auto; }
-.market header, .card-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.market header h1 { margin: 0; font-size: 28px; }
-.template-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 20px 0; flex-wrap: wrap; }
+.card-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.market-page-label {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.market-section-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--id-text-primary);
+}
+.market-onboarding + .market-section-title { margin-top: 20px; }
+.template-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; margin: 12px 0; flex-wrap: wrap; }
 .template-toolbar > nav { display: flex; gap: 8px; }
 .template-toolbar > .n-button { margin-inline-start: auto; }
 .market-onboarding {
-  margin-top: 18px;
+  margin-top: 0;
   padding: 18px 20px;
   border: 1px solid var(--id-border-subtle, #dfe5ec);
   border-radius: 14px;
   background: linear-gradient(135deg, #f8faff 0%, #ffffff 55%, #f6fbf9 100%);
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
 }
-.market-onboarding.is-compact { padding: 14px 18px; }
+.market-onboarding.is-compact { margin-top: 12px; padding: 14px 18px; }
 .onboarding-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .market-onboarding.is-compact .onboarding-header { align-items: center; }
 .market-onboarding:not(.is-compact) .onboarding-header { margin-bottom: 14px; }
@@ -351,7 +361,6 @@ footer { flex-wrap: wrap; position: sticky; bottom: 0; background: white; paddin
 .n-drawer-content article .n-input, .n-drawer-content article .n-select { margin-bottom: 10px; }
 @media (max-width: 700px) {
   .market { padding: 16px; }
-  .market header { flex-wrap: wrap; }
   .market-onboarding { padding: 14px; }
   .market > .filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .market > .filters .n-select { min-width: 0; max-width: none; }

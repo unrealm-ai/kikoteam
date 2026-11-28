@@ -15,21 +15,21 @@ interface CardMeta {
 
 const CARD_META_MAP: Record<string, CardMeta> = {
   complaints: {
-    tag: '并行推进两单',
+    tag: '并行推进任务',
     badge: '推荐',
     badgeType: 'recommend',
     cta: '同时跟进两单',
     tone: 'blue',
   },
   meeting: {
-    tag: '人工确认续跑',
+    tag: '主动找人确认',
     badge: '',
     badgeType: '',
     cta: '开始跟进',
     tone: 'emerald',
   },
   incident: {
-    tag: '自主排查恢复',
+    tag: '自主排障恢复',
     badge: '演练',
     badgeType: 'drill',
     cta: '开始恢复',
@@ -112,7 +112,7 @@ function meta(key: string): CardMeta {
         </div>
 
         <div class="demo-card-footer">
-          <span v-if="art" class="demo-card-capability">{{ card.key === 'complaints' ? '并行推荐任务' : meta(card.key).tag }}</span>
+          <span v-if="art" class="demo-card-capability">{{ meta(card.key).tag }}</span>
           <span class="demo-card-cta">
             {{ meta(card.key).cta }}
             <span class="demo-card-arrow" aria-hidden="true">→</span>

@@ -20,6 +20,7 @@ import (
 )
 
 type Server struct {
+	SearchAgents         *platform.AgentService
 	Images               *imagegen.Service
 	AssistantToolAllowed func(context.Context, string, string, string, string, *platform.ExecutionCapabilities) (bool, error)
 	TrustedProxies       []netip.Prefix
@@ -42,6 +43,9 @@ type receipt struct {
 }
 
 func (s *Server) Routes(mux *http.ServeMux) {
+	if s.SearchAgents != nil {
+		mux.HandleFunc("GET /api/v1/workspaces/{workspace_id}/search", s.wrap("searchWorkspace", s.workspaceSearch))
+	}
 	s.WebGroupRoutes(mux)
 	s.humanRoutes(mux)
 	s.workRoutes(mux)

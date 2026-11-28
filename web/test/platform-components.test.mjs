@@ -385,6 +385,8 @@ test('referral reward trigger has a gift icon and reward badge and still opens t
     trigger.click();
     await tick();
     assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+    assert.equal(document.querySelector('.referral-invite-dialog').style.width,'380px');
+    assert.match(document.querySelector('.referral-invite-dialog').style.maxWidth,/100vw - 32px/);
     assert.equal(document.querySelector('[aria-label="你的邀请链接"]').value, new URL('/r/'+code, window.location.origin).href);
     assert.deepEqual(calls, ['GET', 'GET', 'POST']);
   } finally {

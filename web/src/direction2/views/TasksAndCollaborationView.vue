@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import D2PageHeader from '../components/D2PageHeader.vue';
 import { computed, ref } from 'vue';
 import { NButton, NTab, NTabs } from 'naive-ui';
 import PlatformTasksView from './PlatformTasksView.vue';
@@ -42,17 +43,11 @@ function openWork(id?: string) {
 <template>
   <div class="d2-tasks-collab">
     <div class="collab-header">
-      <div class="header-top-row">
-        <div class="header-titles">
-          <h2 class="view-title">任务与协同中心</h2>
-          <p class="view-subtitle">
-            跟踪业务协作事项进展、查看员工任务执行记录与待人工确认事项。
-          </p>
-        </div>
-        <NButton size="small" secondary @click="page?.refresh()">
-          刷新
-        </NButton>
-      </div>
+      <D2PageHeader title="任务">
+        <template #actions>
+          <NButton size="small" secondary @click="page?.refresh()">刷新</NButton>
+        </template>
+      </D2PageHeader>
 
       <NTabs
         :value="currentTab"
@@ -113,27 +108,7 @@ function openWork(id?: string) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 4px 0 4px 0;
 }
-.header-top-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-.view-title {
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--id-text-primary);
-  margin: 0 0 4px 0;
-}
-.view-subtitle {
-  font-size: 13px;
-  color: var(--id-text-secondary);
-  margin: 0;
-}
-
 /* Segmented Tabs (Neutral Zinc track + elevated surface active pill) */
 :deep(.module-tabs.n-tabs) {
   width: fit-content;
@@ -199,9 +174,6 @@ function openWork(id?: string) {
   :deep(.module-tabs .n-tabs-tab--active) {
     background: var(--id-bg-surface);
     box-shadow: var(--id-shadow-sm);
-  }
-  .header-top-row {
-    align-items: center;
   }
 }
 </style>

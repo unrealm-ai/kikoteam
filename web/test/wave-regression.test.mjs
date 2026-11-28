@@ -90,8 +90,8 @@ test('Wave 1: cross-view navigation, deep-links, and same-view prop watchers are
   const shell = readRel('src/direction2/Direction2App.vue');
   assert.match(shell, /<ResourcesView[\s\S]*?:initial-tab="subParam"[\s\S]*?:target-id="targetResourceId"/);
   assert.match(shell, /<TasksAndCollaborationView[\s\S]*?:selected-employee-id="targetEmployeeId"/);
-  assert.match(shell, /@clickoutside="showSearchPopover = false"/);
-  assert.match(shell, /@keydown\.esc="showSearchPopover = false"/);
+  assert.match(shell, /@clickoutside="closeSearchPopover\(\)"/);
+  assert.match(shell, /e\.key === 'Escape'[\s\S]{0,120}closeSearchPopover\(false\)/);
   assert.match(shell, /workspaceRoleLabel\(currentWorkspace\.role\)/);
   assert.doesNotMatch(shell, /演示态已禁用|暂未开放|旧版切换/);
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { NButton, NEmpty, NInput, NSpace, useMessage } from 'naive-ui';
+import D2PageHeader from '../D2PageHeader.vue';
 import D2EmployeeAvatar from '../D2EmployeeAvatar.vue';
 import D2ChannelLogo from '../D2ChannelLogo.vue';
 import EmployeeCreateModal from './EmployeeCreateModal.vue';
@@ -77,16 +78,14 @@ defineExpose({ openCreateModal });
 
 <template>
   <div class="workforce-list-container">
-    <div class="list-header">
-      <div class="header-titles">
-        <h2 class="view-title">AI 员工</h2>
-        <p class="view-subtitle">集中配置 AI 员工人设、绑定飞书/钉钉/企微渠道与群策略、授权技能包与自动触发器。</p>
-      </div>
-      <NSpace align="center" :size="8">
-        <NButton v-if="realPlatform" size="small" secondary @click="emit('from-template')">从模板创建</NButton>
-        <NButton type="primary" size="small" @click="openCreateModal">+ 新建 AI 员工</NButton>
-      </NSpace>
-    </div>
+    <D2PageHeader title="AI 员工">
+      <template #actions>
+        <NSpace align="center" :size="8">
+          <NButton v-if="realPlatform" size="small" secondary @click="emit('from-template')">从模板创建</NButton>
+          <NButton type="primary" size="small" @click="openCreateModal">+ 新建 AI 员工</NButton>
+        </NSpace>
+      </template>
+    </D2PageHeader>
 
     <!-- 筛选与搜索 -->
     <div class="list-filter-bar">
@@ -271,35 +270,6 @@ defineExpose({ openCreateModal });
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.list-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 8px 0;
-}
-
-.header-titles {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.view-title {
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--id-text-primary);
-  margin: 0 0 4px 0;
-}
-
-.view-subtitle {
-  font-size: 13px;
-  color: var(--id-text-secondary);
-  margin: 0;
 }
 
 .list-filter-bar {

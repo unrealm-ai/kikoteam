@@ -33,6 +33,7 @@ async function mount(component=Detail, override=()=>null, initial={}) {
 test('task navigation opens task records first and preserves explicit work board links', async () => {
   const m = await mount(Center, url => url.includes('/work-items?') ? empty() : null, {workspace:'w'});
   try {
+    assert.equal(m.host.querySelector('.d2-page-header h1')?.textContent,'任务');
     const tabs = () => [...m.host.querySelectorAll('.module-tabs .n-tabs-tab')].filter(tab => tab.textContent.trim());
     const selected = () => m.host.querySelector('.module-tabs .n-tabs-tab--active')?.textContent?.trim();
     assert.deepEqual(tabs().map(tab => tab.textContent.trim()), ['任务记录','协作事项看板','待人工确认','任务空间']);

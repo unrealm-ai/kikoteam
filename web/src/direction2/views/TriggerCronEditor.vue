@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { NFormItem, NInput, NInputNumber, NSelect } from 'naive-ui';
+import { NInput, NInputNumber, NSelect } from 'naive-ui';
 import { cronClock, describeCron, readBasicCron, writeBasicCron, type BasicCron, type CronMode } from './trigger-cron';
 
-const props = defineProps<{ value: string }>();
+const props = defineProps<{ value: string; disabled?: boolean }>();
 const emit = defineEmits<{ 'update:value': [string] }>();
 const parsed = computed(() => readBasicCron(props.value));
 const choices = [
@@ -31,39 +31,46 @@ function setTime(event: Event) {
 
 <template>
   <div class="cron-fields">
-    <NFormItem label="重复方式">
-      <NSelect :value="parsed?.mode ?? null" :options="choices" :virtual-scroll="false"
+    <div class="cron-field">
+      <span>重复方式</span>
+      <NSelect aria-label="重复方式" :value="parsed?.mode ?? null" :disabled="disabled" :options="choices" :virtual-scroll="false"
         :placeholder="value ? '当前使用高级规则' : '请选择重复方式'" @update:value="setMode" />
-    </NFormItem>
-    <NFormItem v-if="parsed?.mode === 'hourly'" label="每小时第几分">
-      <NInputNumber :value="parsed.minute" :min="0" :max="59" :precision="0"
+    </div>
+    <div v-if="parsed?.mode === 'hourly'" class="cron-field">
+      <span>每小时第几分</span>
+      <NInputNumber :input-props="{ 'aria-label': '每小时第几分' }" :value="parsed.minute" :disabled="disabled" :min="0" :max="59" :precision="0"
         @update:value="v => { if (v !== null) update({minute:v}) }" />
-    </NFormItem>
-    <NFormItem v-else-if="parsed" label="执行时间">
-      <input id="trigger-cron-time" class="cron-time-input" type="time" step="60" aria-label="执行时间"
+    </div>
+    <div v-else-if="parsed" class="cron-field">
+      <label for="trigger-cron-time">执行时间</label>
+      <input id="trigger-cron-time" class="cron-time-input" type="time" step="60" :disabled="disabled"
         :value="cronClock(parsed)" @change="setTime" />
-    </NFormItem>
-    <NFormItem v-if="parsed?.mode === 'weekly'" label="选择星期">
-      <NSelect multiple :value="parsed.days" :options="weekdays" :virtual-scroll="false"
+    </div>
+    <div v-if="parsed?.mode === 'weekly'" class="cron-field">
+      <span>选择星期</span>
+      <NSelect multiple aria-label="选择星期" :value="parsed.days" :options="weekdays" :disabled="disabled" :virtual-scroll="false"
         @update:value="setDays" />
-    </NFormItem>
-    <NFormItem v-if="parsed?.mode === 'monthly'" label="选择日期">
-      <NSelect multiple :value="parsed.days" :options="dates" :virtual-scroll="false"
+    </div>
+    <div v-if="parsed?.mode === 'monthly'" class="cron-field">
+      <span>选择日期</span>
+      <NSelect multiple aria-label="选择日期" :value="parsed.days" :options="dates" :disabled="disabled" :virtual-scroll="false"
         @update:value="setDays" />
-    </NFormItem>
+    </div>
     <p class="cron-meaning" aria-live="polite">{{ describeCron(value) }}</p>
     <details class="cron-advanced">
       <summary>高级 Cron 表达式</summary>
-      <NFormItem label="Cron（分 时 日 月 周）">
-        <NInput :value="value" maxlength="200" placeholder="0 9 * * *" @update:value="v => emit('update:value',v)" />
-      </NFormItem>
+      <div class="cron-field">
+        <label for="trigger-cron-expression">Cron（分 时 日 月 周）</label>
+        <NInput :value="value" :disabled="disabled" :input-props="{ id: 'trigger-cron-expression' }" maxlength="200" placeholder="0 9 * * *" @update:value="v => emit('update:value',v)" />
+      </div>
       <p>保存时由后端校验；同时限制日期和星期时，满足任一条件即可。</p>
     </details>
   </div>
 </template>
 
 <style scoped>
-.cron-fields { display: grid; gap: 6px; }
+.cron-fields, .cron-field { display: grid; gap: 6px; }
+.cron-field { margin-bottom: 8px; }
 .cron-time-input { width: 100%; min-height: 34px; padding: 4px 12px; border: 1px solid var(--id-border, #d9d9df); border-radius: 6px; background: transparent; color: inherit; }
 .cron-meaning, .cron-advanced p { margin: 0; color: var(--id-text-secondary); }
 .cron-advanced { padding: 8px 0; }

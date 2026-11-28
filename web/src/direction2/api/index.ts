@@ -1,4 +1,4 @@
-import { platformAuth, realPlatform } from './platform';
+import { platformAuth, platformRequest, realPlatform } from './platform';
 import { apiRequest, activeWorkspaceId, D2ApiError } from './client';
 import { normalizeTriggerAllowedActions } from '../utils/workforce';
 import type {
@@ -230,8 +230,11 @@ export const authApi = realPlatform ? { ...mockAuthApi, ...platformAuth } : mock
 export const dashboardApi = {
   getOverview: (wsId = activeWorkspaceId.value) =>
     apiRequest<DashboardOverview>(`${wsBase(wsId)}/dashboard/overview`),
-  search: (query: string, wsId = activeWorkspaceId.value) =>
-    apiRequest<GlobalSearchResult>(`${wsBase(wsId)}/search?q=${encodeURIComponent(query)}`)
+  search: (query: string, wsId = activeWorkspaceId.value, signal?: AbortSignal) => {
+    const path = `${wsBase(wsId)}/search?q=${encodeURIComponent(query)}`;
+    const init = signal ? { signal } : {};
+    return realPlatform ? platformRequest<GlobalSearchResult>(path, init) : apiRequest<GlobalSearchResult>(path, init);
+  }
 };
 
 export const resourcesApi = {

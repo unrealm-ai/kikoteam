@@ -43,7 +43,7 @@ test('Actual root app provides dialog context and employee page remains mounted 
   assert.equal(document.querySelector('.brand-logo').title,'KIKO 企业级AI员工云平台');
   assert.equal(document.querySelector('.brand-logo .platform-tag').textContent,'企业级AI员工云平台');
   assert.equal(document.querySelector('.brand-logo img').getAttribute('src'),'/brand/mark.svg');
-  assert.equal(document.querySelector('.view-title').textContent,'AI 员工');
+  assert.equal(document.querySelector('.d2-page-header h1').textContent,'AI 员工');
   button('管理配置').click();await pause();
   const persona=[...document.querySelectorAll('.n-tabs-tab')].find(t=>t.textContent.trim()==='设定与模型');assert.ok(persona);persona.click();await pause();
   const input=document.querySelector('.emp-name-input input');assert.ok(input);input.value='Draft';input.dispatchEvent(new window.Event('input',{bubbles:true}));await pause();
@@ -64,8 +64,8 @@ test('Market is the first and default destination, but explicit links still open
  };
  window.localStorage.setItem('kiko:d2:sidebar-collapsed','0'); // An old expanded preference must not carry over.
  for(const [initial,expected,view] of [
-  ['/','AI 员工市场','market'],
-  ['/#/?ws=w','AI 员工市场','market'],
+  ['/','首页','market'],
+  ['/#/?ws=w','首页','market'],
   ['/#/?ws=w&view=settings','设置','settings'],
   ['/#/?ws=w&view=home','首页','home']
  ]) {
@@ -85,11 +85,11 @@ test('Market is the first and default destination, but explicit links still open
    assert.ok(rail.some(button=>button.getAttribute('aria-label')==='AI 员工'));
    assert.equal(document.title,`${expected} · Workspace · KIKO 企业级AI员工云平台`);
    assert.equal(window.location.hash,`#/?ws=w&view=${view}`);
-   if(view==='market')assert.equal(host.querySelector('h1')?.textContent,'AI 员工市场');
+   if(view==='market')assert.equal(host.querySelector('.market-section-title')?.textContent,'AI 员工市场');
    if(view==='home'){
     host.querySelector('.brand-logo').click();await pause();
     assert.equal(window.location.hash,'#/?ws=w&view=market');
-    assert.equal(host.querySelector('h1')?.textContent,'AI 员工市场');
+    assert.equal(host.querySelector('.market-section-title')?.textContent,'AI 员工市场');
     assert.ok(sidebar.classList.contains('collapsed')); // Desktop rail remains fixed collapsed across navigation.
    }
    assert.deepEqual(errors,[]);
@@ -165,7 +165,8 @@ test('Platform administration is the third settings tab for real platform admini
      tabs[2].click();await pause();
      assert.equal(window.location.hash,'#/?ws=w&view=settings&sub=platform-admin');
     }
-    assert.equal(host.querySelector('.accounts h1')?.textContent,'平台管理');
+    assert.equal(host.querySelector('.d2-page-header h1')?.textContent,'设置');
+    assert.equal(host.querySelector('.accounts h2')?.textContent,'平台管理');
     assert.ok(host.querySelector('.accounts nav')?.textContent.includes('官方模型'));
     assert.equal(adminRequests().length,2);
     if(scenario.link==='view=settings'&&!scenario.failWorkspace){
@@ -383,4 +384,40 @@ test('topbar highlight switches exclusively between referral invite and pending 
   host.remove();
   await pause();
  }
+});
+
+test('Top search opens on focus, uses the real workspace endpoint, and labels partial failure',async()=>{
+ const ws={id:'w',name:'Workspace',role:'owner',version:1};
+ const requests=[];
+ const waitSearch=async()=>{await new Promise(r=>setTimeout(r,230));await nextTick();await pause()};
+ globalThis.fetch=async (url,init={})=>{
+  requests.push({url,init});
+  if(url==='/api/v1/me')return Response.json({user:{id:'u',name:'Owner',email:'owner@example.test'}});
+  if(url.includes('/api/v1/workspaces?'))return Response.json({items:[ws],total:1});
+  if(url==='/api/v1/workspaces/w')return Response.json(ws);
+  if(url.includes('agent-templates'))return Response.json({items:[],total:0,page:1,page_size:20});
+  if(url.startsWith('/api/v1/workspaces/w/search?')) {
+   if(url.endsWith('q=unavailable')) return Response.json({error:{code:'dependency_unavailable'}},{status:503});
+   return Response.json({query:'report',items:[{id:'task-1',kind:'task',title:'Report task',subtitle:'AI 员工'}],unavailable:['conversation']});
+  }
+  return Response.json({error:{code:'not_found',message:'接口不存在'}},{status:404});
+ };
+ window.history.replaceState(null,'','/#/?ws=w');
+ const host=document.createElement('div');document.body.appendChild(host);
+ const app=createApp(RootApp);app.mount(host);
+ try {
+  await pause();await pause();
+  const input=host.querySelector('.global-search input');
+  assert.match(input.placeholder,/员工、任务或对话/);
+  assert.doesNotMatch(input.placeholder,/飞书|钉钉|群/);
+  input.focus();await pause();
+  assert.match(document.body.textContent,/输入员工名称、任务标题或对话名称/);
+  input.value='report';input.dispatchEvent(new window.Event('input',{bubbles:true}));await waitSearch();
+  assert.ok(requests.some(r=>r.url==='/api/v1/workspaces/w/search?q=report'));
+  assert.match(document.body.textContent,/Report task/);
+  assert.match(document.body.textContent,/对话暂时无法搜索/);
+  input.value='unavailable';input.dispatchEvent(new window.Event('input',{bubbles:true}));await waitSearch();
+  assert.match(document.body.textContent,/搜索失败/);
+  assert.doesNotMatch(document.body.textContent,/Report task/);
+ } finally {app.unmount();host.remove();await pause()}
 });

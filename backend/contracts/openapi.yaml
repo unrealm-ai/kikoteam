@@ -7,6 +7,8 @@ info:
     atomically creates an account, a personal workspace and a session; invitation acceptance is a separate authenticated step.
     Unexpected database errors fail only the current request.'
 paths:
+  /api/v1/workspaces/{workspace_id}/search:
+    $ref: ./modules/manager/workspace-search.yaml#/search
   /api/v1/public/task-detail:
     $ref: ./modules/manager/public-task-detail.yaml#/snapshot
   /api/v1/public/task-detail/events:

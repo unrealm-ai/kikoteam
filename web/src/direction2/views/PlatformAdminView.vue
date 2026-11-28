@@ -124,7 +124,7 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
   <section class="accounts">
     <header class="platform-admin-banner">
       <div class="admin-banner-copy">
-        <h1>平台管理</h1>
+        <h2>平台管理</h2>
         <p class="sub-desc">管理平台账户、官方模型、任务分享与插件集成。</p>
       </div>
       <nav class="admin-subnav" aria-label="平台管理分区">
@@ -281,7 +281,7 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
   flex-direction: column;
   gap: 4px;
 }
-.admin-banner-copy h1 {
+.admin-banner-copy h2 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;

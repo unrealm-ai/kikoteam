@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import D2PageHeader from '../components/D2PageHeader.vue';
 import { copyText } from '../utils/clipboard';
 import { ref, computed, watch, inject, markRaw, onMounted, onUnmounted } from 'vue';
 import {
@@ -310,15 +311,8 @@ async function confirmMemberAction() {
 
 <template>
   <div class="d2-settings">
-    <div class="settings-header">
-      <div class="settings-header-copy">
-        <h2 class="view-title">{{ activeTab === 'platform-admin' ? '系统与平台设置' : '工作区设置' }}</h2>
-        <p class="view-subtitle">
-          {{ activeTab === 'platform-admin'
-            ? '管理平台全局用户、官方托管模型、系统发信与安全集成配置。'
-            : '管理当前工作区的基本信息、团队成员和邀请。' }}
-        </p>
-      </div>
+    <D2PageHeader title="设置">
+      <template #actions>
       <div class="settings-context-pills">
         <span v-if="activeTab === 'platform-admin'" class="role-badge role-badge--admin">平台管理员 · 全局配置</span>
         <template v-else-if="workspace">
@@ -331,7 +325,8 @@ async function confirmMemberAction() {
           <span class="mono-pill tabular-num">版本 v{{ workspace.version }}</span>
         </template>
       </div>
-    </div>
+      </template>
+    </D2PageHeader>
 
     <!-- 1. 首次加载骨架屏 -->
     <div v-if="activeTab !== 'platform-admin' && isLoading && !hasLoadedOnce" class="settings-skeleton">
@@ -646,39 +641,12 @@ async function confirmMemberAction() {
   flex-direction: column;
   gap: 16px;
 }
-.settings-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-  padding: 4px 0 8px 0;
-}
-.settings-header-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
 .settings-context-pills {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
-.view-title {
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--id-text-primary);
-  margin: 0;
-}
-.view-subtitle {
-  font-size: 13px;
-  color: var(--id-text-muted);
-  margin: 0;
-}
-
 /* 骨架屏与错误恢复态 */
 .settings-skeleton {
   display: flex;

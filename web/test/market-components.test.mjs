@@ -214,16 +214,22 @@ test('create a market preset directly without a workspace package template',asyn
 
 test('market puts assistant creation in the demo header and keeps demo clicks unchanged', async () => {
  const card = {key:'complaints',title:'客诉太多，处理不过来？',description:'同时查两单，分别给出处理方案。',input:'demo-input'};
- const m = await mount('member', undefined, fixture, {assistantAgentId:'assistant-1',assistantCards:[card]});
+ const m = await mount('member', undefined, fixture, {assistantAgentId:'assistant-1',assistantCards:[
+  card, {key:'meeting',title:'会议跟进',description:'',input:'meeting-input'},
+  {key:'incident',title:'支付告警',description:'',input:'incident-input'},
+ ]});
  try {
   const section = document.querySelector('.market-onboarding');
+  assert.equal(document.querySelector('.market > h1.market-page-label').textContent,'首页');
+  assert.equal(section.nextElementSibling.textContent,'AI 员工市场');
+  assert.ok(section.nextElementSibling.nextElementSibling.matches('.template-toolbar'));
   const action = button('让 KIKO 帮我创建员工', section.querySelector('.onboarding-header'));
   const cardBtn = section.querySelector('.demo-card');
   assert.ok(action && cardBtn);
   assert.equal(section.querySelector('.onboarding-pill').textContent,'体验场景使用样例数据');
   assert.doesNotMatch(cardBtn.textContent,/并行推进两单|同时查两单，分别给出处理方案/);
   assert.equal(cardBtn.querySelector('.demo-card-art').getAttribute('src'),'/brand/assistant-experiences/complaints.webp');
-  assert.equal(cardBtn.querySelector('.demo-card-capability').textContent,'并行推荐任务');
+  assert.deepEqual([...section.querySelectorAll('.demo-card-capability')].map(x=>x.textContent),['并行推进任务','主动找人确认','自主排障恢复']);
   assert.equal(action.compareDocumentPosition(cardBtn) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING);
   assert.notEqual(cardBtn.textContent.indexOf(card.title),-1);
   cardBtn.click();
@@ -242,6 +248,7 @@ test('without demo access the assistant remains optional and blank creation stay
   const m = await mount(role,undefined,fixture,{assistantAgentId,assistantCards:[]});
   try {
    assert.equal(Boolean(document.querySelector('.market-onboarding.is-compact')),expectAction);
+   assert.equal(document.querySelector('.market > .market-page-label').nextElementSibling.textContent,'AI 员工市场');
    assert.equal(Boolean(button('让 KIKO 帮我创建员工')),expectAction);
    assert.equal(Boolean(button('用此模板创建')),role==='member');
    assert.doesNotMatch(document.querySelector('.market').textContent,/快速创建员工|空白快速创建/);

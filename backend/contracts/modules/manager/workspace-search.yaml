@@ -1,0 +1,45 @@
+search:
+  get:
+    operationId: searchWorkspace
+    summary: Search workspace employees, tasks and the signed-in user's Web conversations
+    description: Returns at most five permission-filtered hits per supported kind. Searches visible metadata, not message bodies, task content, credentials, or external groups.
+    security:
+    - sessionCookie: []
+    parameters:
+    - name: workspace_id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    - name: q
+      in: query
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 120}
+    responses:
+      '200':
+        description: Search hits and optional temporarily unavailable sources
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [query, items]
+              properties:
+                query: {type: string}
+                items:
+                  type: array
+                  maxItems: 15
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [id, kind, title, subtitle]
+                    properties:
+                      id: {type: string, format: uuid}
+                      kind: {enum: [employee, task, conversation]}
+                      title: {type: string}
+                      subtitle: {type: string}
+                      agent_id: {type: string, format: uuid, description: Employee ID used only to open the matched conversation.}
+                unavailable:
+                  type: array
+                  items: {enum: [task, conversation]}
+      default:
+        $ref: ./sessions.yaml#/responses/Error

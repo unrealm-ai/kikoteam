@@ -7,7 +7,7 @@ defineProps<{ muted?: boolean }>();
 
 const enabled = ref(false), open = ref(false), loading = ref(false);
 const code = ref(''), error = ref(''), notice = ref('');
-const linkInput = ref<HTMLInputElement>();
+const linkInput = ref<HTMLTextAreaElement>();
 const url = computed(() => code.value ? new URL(`/r/${code.value}`, location.origin).href : '');
 let active = true;
 let refreshRequest: AbortController | undefined;
@@ -85,15 +85,20 @@ onUnmounted(() => {
     <span class="referral-trigger-label">邀请得积分</span>
     <span class="referral-trigger-reward" aria-hidden="true">+100</span>
   </button>
-  <NModal v-model:show="open" preset="card" title="邀请得积分" class="referral-invite-dialog">
-    <p>每成功邀请 1 位新用户注册并验证邮箱，你可获得 <strong>100 积分</strong>。</p>
-    <p>链接长期有效。朋友会进入自己的工作区，不会加入你的工作区。</p>
-    <NAlert v-if="error" type="error">{{ error }} <NButton text @click="showInvite">重试</NButton></NAlert>
-    <div v-else class="referral-copy">
-      <input ref="linkInput" :value="url" readonly aria-label="你的邀请链接" placeholder="正在生成邀请链接…" />
-      <NButton type="primary" :loading="loading" :disabled="!url" @click="copyInvite">复制链接</NButton>
+  <NModal v-model:show="open" preset="card" title="邀请得积分" class="referral-invite-dialog"
+    style="width: 380px; max-width: calc(100vw - 32px)"
+    :header-style="{ padding: '14px 16px 0' }" :content-style="{ padding: '8px 16px 14px' }">
+    <div class="referral-details">
+      <p>每成功邀请 1 位新用户注册并验证邮箱，你可获得 <strong>100 积分</strong>。</p>
+      <p>链接长期有效，朋友会进入自己的工作区。</p>
+      <NAlert v-if="error" type="error">{{ error }} <NButton text @click="showInvite">重试</NButton></NAlert>
+      <div v-else class="referral-copy">
+        <textarea ref="linkInput" :value="url" rows="2" readonly spellcheck="false"
+          aria-label="你的邀请链接" placeholder="正在生成邀请链接…" />
+        <NButton size="small" type="primary" :loading="loading" :disabled="!url" @click="copyInvite">复制链接</NButton>
+      </div>
+      <p v-if="notice" role="status">{{ notice }}</p>
     </div>
-    <p v-if="notice" role="status">{{ notice }}</p>
   </NModal>
 </template>
 
@@ -167,7 +172,21 @@ onUnmounted(() => {
   .referral-trigger-label { display: none; }
 }
 
-.referral-invite-dialog { width: min(480px, calc(100vw - 32px)); }
-.referral-copy { display: flex; gap: 8px; align-items: center; }
-.referral-copy input { flex: 1; width: 0; border: 1px solid var(--n-border-color, #d9d9df); color: inherit; background: transparent; border-radius: 6px; padding: 6px 8px; }
+.referral-details, .referral-copy { display: grid; gap: 6px; }
+.referral-details p { margin: 0; }
+.referral-copy .n-button { justify-self: end; }
+.referral-copy textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  resize: none;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.3;
+  border: 1px solid var(--n-border-color, #d9d9df);
+  color: inherit;
+  background: transparent;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
 </style>

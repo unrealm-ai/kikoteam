@@ -173,7 +173,7 @@ func Run(stderr io.Writer, version string) int {
 
 	assistantAllow := assistantStore.ToolAllowed
 	assistantmcp.Mount(mux, managerStore, assistantAllow, engineToken, "demo", "task", demomcp.Server(engineToken))
-	(&managercontroller.Server{Images: images, AssistantToolAllowed: assistantAllow, TrustedProxies: proxies, Runtime: &service.RuntimeService{Packages: packages, Skills: skills, Plugins: plugins}, Service: managerService, Engines: managerStore, EngineToken: engineToken, ResolveModelKey: func(ctx context.Context, w, actor string, c manager.Configuration) (string, error) {
+	(&managercontroller.Server{SearchAgents: agents, Images: images, AssistantToolAllowed: assistantAllow, TrustedProxies: proxies, Runtime: &service.RuntimeService{Packages: packages, Skills: skills, Plugins: plugins}, Service: managerService, Engines: managerStore, EngineToken: engineToken, ResolveModelKey: func(ctx context.Context, w, actor string, c manager.Configuration) (string, error) {
 		return models.RuntimeModelKey(ctx, w, actor, c.ModelProfileID, c.Protocol, c.BaseURL, c.ModelID)
 	}, ResolveOfficialModel: func(ctx context.Context, w, actor, agent string, c *manager.Configuration) (string, error) {
 		if err := models.AuthorizeOfficialRuntime(ctx, w, actor, agent); err != nil {

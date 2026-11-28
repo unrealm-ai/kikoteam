@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import D2PageHeader from '../components/D2PageHeader.vue';
 import { ref, watch } from 'vue';
 import { NTabs, NTabPane } from 'naive-ui';
 import PlatformModelsPanel from './PlatformModelsPanel.vue';
@@ -23,12 +24,7 @@ watch(() => [props.initialTab, props.targetId], () => { activeTab.value = normal
 
 <template>
   <div class="d2-resources">
-    <div class="resources-header">
-      <div>
-        <h2 class="view-title">工作区资源库</h2>
-        <p class="view-subtitle">浏览官方与空间自建资源，为 AI 员工配备工作所需的技能和插件。</p>
-      </div>
-    </div>
+    <D2PageHeader title="资源库" />
 
     <NTabs v-model:value="activeTab" type="line" class="resources-main-tabs">
       <NTabPane name="models" tab="共享模型池"><PlatformModelsPanel /></NTabPane>
@@ -45,21 +41,5 @@ watch(() => [props.initialTab, props.targetId], () => { activeTab.value = normal
   flex-direction: column;
   gap: 16px;
 }
-.resources-header {
-  padding: 4px 0 8px 0;
-}
-.view-title {
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--id-text-primary);
-  margin: 0 0 4px 0;
-}
-.view-subtitle {
-  font-size: 13px;
-  color: var(--id-text-muted);
-  margin: 0;
-}
-
 </style>
 <style src="../styles/resource-library.css"></style>

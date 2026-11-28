@@ -15,10 +15,15 @@ import PlatformTimezoneSettings from './PlatformTimezoneSettings.vue';
 
 
 interface Account { id:string; name:string; email:string; is_platform_admin:boolean; platform_admin_version:number; credit_balance:string }
-import PlatformImageSettings from './PlatformImageSettings.vue';
-import PlatformVideoSettings from './PlatformVideoSettings.vue';
-const videoEditor=ref<InstanceType<typeof PlatformVideoSettings>>();
-const imagesOpened = ref(false), imageEditor = ref<InstanceType<typeof PlatformImageSettings>>();
+import PlatformGenerationSettings from './PlatformGenerationSettings.vue';
+const imageEditor = ref<InstanceType<typeof PlatformGenerationSettings>>();
+const videoEditor = ref<InstanceType<typeof PlatformGenerationSettings>>();
+const imagesOpened = ref(false), videosOpened = ref(false);
+const generationTab = ref<'image' | 'video'>('image');
+function selectGeneration(kind: 'image' | 'video') {
+  generationTab.value = kind;
+  if (kind === 'video') videosOpened.value = true;
+}
 type AdminSection = 'images' | 'accounts' | 'models' | 'sharing' | 'integrations' | 'scheduling';
 const tab = ref<AdminSection>('accounts');
 const accountTab = ref<'users' | 'registration'>('users');
@@ -41,8 +46,14 @@ function selectSection(section: AdminSection) {
 }
 const hasUnsaved = () => mailEditor.value?.dirty === true || githubEditor.value?.dirty === true || downloadsEditor.value?.dirty === true || taskLinksEditor.value?.dirty === true || videoEditor.value?.dirty === true || imageEditor.value?.dirty === true || timezoneEditor.value?.dirty === true;
 async function save() {
-  for (const editor of [mailEditor.value, githubEditor.value, downloadsEditor.value, taskLinksEditor.value, imageEditor.value,videoEditor.value, timezoneEditor.value]) {
-    if (editor?.dirty && !await editor.save()) return false;
+  for (const editor of [mailEditor.value, githubEditor.value, downloadsEditor.value, taskLinksEditor.value, imageEditor.value, videoEditor.value, timezoneEditor.value]) {
+    if (editor?.dirty && !await editor.save()) {
+      if (editor === imageEditor.value || editor === videoEditor.value) {
+        selectSection('images');
+        selectGeneration(editor === imageEditor.value ? 'image' : 'video');
+      }
+      return false;
+    }
   }
   return true;
 }
@@ -52,7 +63,7 @@ function discard() {
   downloadsEditor.value?.discard();
   taskLinksEditor.value?.discard();
   imageEditor.value?.discard();
- videoEditor.value?.discard();
+  videoEditor.value?.discard();
   timezoneEditor.value?.discard();
 }
 defineExpose({ hasUnsaved, save, discard });
@@ -142,8 +153,12 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
 
     <PlatformTimezoneSettings v-if="schedulingOpened" v-show="tab==='scheduling'" ref="timezoneEditor" />
     <OfficialModelsView v-if="tab==='models'"/>
-    <PlatformImageSettings v-if="imagesOpened" v-show="tab==='images'" ref="imageEditor" />
-    <PlatformVideoSettings v-if="imagesOpened" v-show="tab==='images'" ref="videoEditor" />
+    <nav v-if="tab==='images'" class="account-subnav" aria-label="默认插件类型">
+      <NButton size="small" :aria-pressed="generationTab==='image'" :type="generationTab==='image'?'primary':'default'" :class="{ 'has-unsaved-dot': imageEditor?.dirty }" @click="selectGeneration('image')">文生图</NButton>
+      <NButton size="small" :aria-pressed="generationTab==='video'" :type="generationTab==='video'?'primary':'default'" :class="{ 'has-unsaved-dot': videoEditor?.dirty }" @click="selectGeneration('video')">文生视频</NButton>
+    </nav>
+    <PlatformGenerationSettings v-if="imagesOpened" v-show="tab==='images' && generationTab==='image'" kind="image" ref="imageEditor" />
+    <PlatformGenerationSettings v-if="videosOpened" v-show="tab==='images' && generationTab==='video'" kind="video" ref="videoEditor" />
     <div v-if="sharingOpened" v-show="tab==='sharing'" class="accounts-panel-stack">
       <PlatformTaskLinkSettings ref="taskLinksEditor" />
       <PlatformChannelDownloadSettings ref="downloadsEditor" />

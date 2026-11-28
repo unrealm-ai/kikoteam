@@ -58,7 +58,7 @@
 
 首版适配 OpenAI Images 兼容协议。Backend 发送 `POST /images/generations`，请求 PNG、张数 1，正方形为 1024 × 1024，横版和竖版为 1536 × 1024 与 1024 × 1536。支持 `b64_json` 和供应商同源 HTTPS 临时地址。未知结果可以核对共享持久卷中按生成 ID 保存的原图；该协议没有通用的上游任务找回接口。日额度以 UTC 零点重置。[供应商适配器](../../backend/internal/platform/imagegen/provider.go) · [原图与工作副本](../../backend/internal/manager/service/generated_image.go)
 
-服务地址包含网关的 API 版本前缀（例如 `/v1`）。对默认返回 CDN 链接、支持内嵌图片的兼容网关，管理员可勾选「要求网关直接返回图片（Base64）」。测试和员工调用都会携带 `response_format=b64_json`。修改此选项须重新测试。
+文生图与文生视频使用相同的双栏设置页，分别保存草稿。文生图接受手输的图片模型 ID，更换连接参数后通过真实供应商返回的 PNG 样图验证；浏览器成功显示样图后可保存。单价、限额和超时沿用已验证的连接。服务地址包含网关的 API 版本前缀（例如 `/v1`）。对默认返回 CDN 链接、支持内嵌图片的兼容网关，管理员可勾选「要求网关直接返回图片（Base64）」。测试和员工调用都会携带 `response_format=b64_json`。修改此选项须重新测试。
 
 火山方舟北京节点的服务地址填写 `https://ark.cn-beijing.volces.com/api/v3`，Backend 会拼接生成接口的路径。向 Seedream 请求 `output_format=png` 和 `response_format=b64_json`，从生成响应中读取原图。
 

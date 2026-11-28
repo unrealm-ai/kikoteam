@@ -181,6 +181,9 @@ func (s *Service) Test(ctx context.Context, actor string, p Patch) (any, error) 
 	if e != nil {
 		return nil, e
 	}
+	if p.Version != nil && *p.Version != old.Version {
+		return nil, service.Fail("version_conflict", 409, "配置已变化，请刷新后测试")
+	}
 	x, key, e := s.candidate(old, p)
 	if e != nil {
 		return nil, e

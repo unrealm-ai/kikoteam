@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	proxy "github.com/unrealm-ai/kikoteam/backend/internal/platform/modelproxy"
 	repo "github.com/unrealm-ai/kikoteam/backend/internal/platform/modelproxy/repository"
@@ -97,7 +99,9 @@ func (s *Service) candidate(v Settings, p Patch) (Settings, string, error) {
 	}
 	u, e := url.Parse(v.BaseURL)
 	price, pe := proxy.ParseAmount(v.Price)
-	if e != nil || u.Scheme != "https" || u.Hostname() == "" || u.Path != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || v.Model != "MiniMax-H3" || pe != nil || price < 1 || price > math.MaxInt64/15 || v.Daily < 1 || v.Daily > 1000000 || v.Concurrent < 1 || v.Concurrent > 1000 {
+	if e != nil || u.Scheme != "https" || u.Hostname() == "" || u.Path != "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		v.Model == "" || utf8.RuneCountInString(v.Model) > 200 || strings.IndexFunc(v.Model, unicode.IsControl) >= 0 ||
+		pe != nil || price < 1 || price > math.MaxInt64/15 || v.Daily < 1 || v.Daily > 1000000 || v.Concurrent < 1 || v.Concurrent > 1000 {
 		return v, "", service.Fail("invalid_video_configuration", 400, "请检查 HTTPS 服务根地址、型号、积分和限额")
 	}
 	v.Price = proxy.Amount(price)
@@ -125,6 +129,9 @@ func (s *Service) Test(ctx context.Context, actor string, p Patch) (any, error) 
 	old, err := s.Settings(ctx, actor)
 	if err != nil {
 		return nil, err
+	}
+	if p.Version != nil && *p.Version != old.Version {
+		return nil, service.Fail("version_conflict", 409, "配置已变化，请刷新后测试")
 	}
 	v, key, err := s.candidate(old, p)
 	if err != nil {
@@ -158,7 +165,10 @@ func (s *Service) Test(ctx context.Context, actor string, p Patch) (any, error) 
 					return nil, e
 				}
 				expiry := time.Now().Add(10 * time.Minute)
-				return map[string]any{"receipt": s.receipt(actor, v, key, strconv.FormatInt(expiry.Unix(), 10)), "expires_at": expiry, "size_bytes": len(b)}, nil
+				return map[string]any{
+					"receipt":    s.receipt(actor, v, key, strconv.FormatInt(expiry.Unix(), 10)),
+					"expires_at": expiry, "size_bytes": len(b), "preview_mp4": b,
+				}, nil
 			}
 		}
 	}

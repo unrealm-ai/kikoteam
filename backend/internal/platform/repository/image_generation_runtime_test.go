@@ -74,7 +74,7 @@ func (tr imageTestTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 	return res, nil
 }
 
-func (f *imageRuntimeFixture) setup(t *testing.T, db *sql.DB, rt *service.RuntimeService, store *mr.Store, mux *http.ServeMux, auth *service.AuthService, actor string) {
+func (f *imageRuntimeFixture) setup(t *testing.T, db *sql.DB, rt *service.RuntimeService, store *mr.Store, mux *http.ServeMux, auth *service.AuthService, actor, origin string) {
 	t.Helper()
 	catalog, err := service.BuiltinCatalog()
 	if err != nil {
@@ -118,7 +118,7 @@ func (f *imageRuntimeFixture) setup(t *testing.T, db *sql.DB, rt *service.Runtim
 		t.Fatal(err)
 	}
 	agents := &service.AgentService{Store: &AgentStore{DB: db, EnsureKey: f.service.Secrets.EnsureKey}}
-	mux.Handle("/api/", (&controller.Server{Images: f.service, Auth: auth, Agents: agents, Workspaces: &service.WorkspaceService{Store: NewWorkspaceStore(db)}, Official: &ps.Models{Store: f.service.Store}}).Handler())
+	mux.Handle("/api/", (&controller.Server{Origin: origin, Images: f.service, Auth: auth, Agents: agents, Workspaces: &service.WorkspaceService{Store: NewWorkspaceStore(db)}, Official: &ps.Models{Store: f.service.Store}}).Handler())
 	if dir := os.Getenv("KIKO_PROXY_WEB_DIST"); dir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(dir)))
 	}
@@ -178,18 +178,23 @@ func (f *imageRuntimeFixture) verify(t *testing.T, call func(string, string, any
 	const config = "/api/v1/platform/default-plugins/image-generation"
 	base := "/api/v1/workspaces/" + workspace
 	call("PUT", base+"/agents/"+agent.ID+"/payer-binding", map[string]any{"version": agent.Version, "confirm_self": true}, "")
-	body := map[string]any{"version": call("GET", config, nil, "")["version"], "enabled": true, "base_url": f.base, "upstream_model_id": f.model, "api_key": f.key, "credits_per_image": "5", "timeout_seconds": 300}
-	probe := call("POST", config+"/test", body, "")
-	thumb, err := base64.StdEncoding.DecodeString(fmt.Sprint(probe["preview_png"]))
-	if err != nil {
-		t.Fatal(err)
+	var saved map[string]any
+	if os.Getenv("KIKO_TEST_ARK_MODEL") == "" && browserTestGeneration(t, server, token, workspace, "image", f.base, f.model) {
+		saved = call("GET", config, nil, "")
+	} else {
+		body := map[string]any{"version": call("GET", config, nil, "")["version"], "enabled": true, "base_url": f.base, "upstream_model_id": f.model, "api_key": f.key, "credits_per_image": "5", "timeout_seconds": 300}
+		probe := call("POST", config+"/test", body, "")
+		thumb, err := base64.StdEncoding.DecodeString(fmt.Sprint(probe["preview_png"]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		size, err := png.DecodeConfig(bytes.NewReader(thumb))
+		if err != nil || size.Width != 192 || size.Height != 192 {
+			t.Fatal("invalid admin preview", size, err)
+		}
+		body["receipt"] = probe["receipt"]
+		saved = call("PATCH", config, body, "")
 	}
-	size, err := png.DecodeConfig(bytes.NewReader(thumb))
-	if err != nil || size.Width != 192 || size.Height != 192 {
-		t.Fatal("invalid admin preview", size, err)
-	}
-	body["receipt"] = probe["receipt"]
-	saved := call("PATCH", config, body, "")
 	if saved["credential_configured"] != true || saved["enabled"] != true || saved["api_key"] != nil {
 		t.Fatal("admin configuration not enabled or key exposed")
 	}

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,7 +84,7 @@ func (tr videoTestTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 	}
 	return res, e
 }
-func (f *videoRuntimeFixture) setup(t *testing.T, db *sql.DB, rt *service.RuntimeService, store *mr.Store, mux *http.ServeMux, auth *service.AuthService, actor string) {
+func (f *videoRuntimeFixture) setup(t *testing.T, db *sql.DB, rt *service.RuntimeService, store *mr.Store, mux *http.ServeMux, auth *service.AuthService, actor, origin string) {
 	t.Helper()
 	catalog, e := service.BuiltinCatalog()
 	if e != nil {
@@ -124,11 +125,15 @@ func (f *videoRuntimeFixture) setup(t *testing.T, db *sql.DB, rt *service.Runtim
 			}
 			if r.Method == "POST" {
 				var a struct {
+					Model    string
 					Duration int
 					Ratio    string
 				}
 				if json.NewDecoder(r.Body).Decode(&a) != nil {
 					t.Error("invalid submit")
+				}
+				if a.Model != "fixture/video-v2" {
+					t.Errorf("unexpected upstream model %q", a.Model)
 				}
 				id := "probe"
 				if a.Duration == 4 && a.Ratio == "9:16" {
@@ -155,7 +160,7 @@ func (f *videoRuntimeFixture) setup(t *testing.T, db *sql.DB, rt *service.Runtim
 		t.Fatal(e)
 	}
 	agents := &service.AgentService{Store: &AgentStore{DB: db, EnsureKey: f.service.Secrets.EnsureKey}}
-	mux.Handle("/api/", (&controller.Server{Videos: f.service, Auth: auth, Agents: agents, Workspaces: &service.WorkspaceService{Store: NewWorkspaceStore(db)}, Official: &ps.Models{Store: f.service.Store}}).Handler())
+	mux.Handle("/api/", (&controller.Server{Origin: origin, Videos: f.service, Auth: auth, Agents: agents, Workspaces: &service.WorkspaceService{Store: NewWorkspaceStore(db)}, Official: &ps.Models{Store: f.service.Store}}).Handler())
 	if dir := os.Getenv("KIKO_PROXY_WEB_DIST"); dir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(dir)))
 	}
@@ -214,9 +219,21 @@ func (f *videoRuntimeFixture) verify(t *testing.T, call func(string, string, any
 		reviewExec(t, f.service.DB, `INSERT INTO platform_video_generation_configs(plugin_id,version,base_url,upstream_model_id,credential_ciphertext,unit_price_units,max_concurrent_generations,workspace_daily_seconds,created_by) VALUES($1,1,$2,'MiniMax-H3',$3,2000000,1,10,$4)`, plugin, f.base, secret, actor)
 		reviewExec(t, f.service.DB, "UPDATE platform_default_plugin_settings SET enabled=true,active_config_version=1,version=1 WHERE plugin_id=$1", plugin)
 	} else {
-		p := map[string]any{"version": call("GET", config, nil, "")["version"], "base_url": f.base, "api_key": "fixture-key", "enabled": true, "credits_per_second": "2"}
-		p["receipt"] = call("POST", config+"/test", p, "")["receipt"]
-		call("PATCH", config, p, "")
+		initial := call("GET", config, nil, "")
+		if initial["upstream_model_id"] != "MiniMax-H3" {
+			t.Fatal("unexpected video default", initial["upstream_model_id"])
+		}
+		if !browserTestGeneration(t, server, token, w, "video", f.base, "fixture/video-v2") {
+			p := map[string]any{"version": initial["version"], "base_url": f.base, "upstream_model_id": "fixture/video-v2", "api_key": "fixture-key", "enabled": true, "credits_per_second": "2"}
+			tested := call("POST", config+"/test", p, "")
+			encoded, _ := tested["preview_mp4"].(string)
+			clip, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil || http.DetectContentType(clip) != "video/mp4" || tested["size_bytes"] != float64(len(clip)) {
+				t.Fatal("invalid video test preview")
+			}
+			p["receipt"] = tested["receipt"]
+			call("PATCH", config, p, "")
+		}
 	}
 	conv := call("POST", base+"/conversations", map[string]any{"agent_id": agent.ID}, "")["id"].(string)
 	task := call("POST", base+"/sessions", map[string]any{"conversation_id": conv, "mode": "task", "input": map[string]string{"text": "生成一条 4 秒竖屏茶杯短片并发布 MP4。"}}, "tea-video")["task_id"].(string)

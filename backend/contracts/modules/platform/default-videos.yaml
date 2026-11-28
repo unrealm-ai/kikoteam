@@ -24,7 +24,7 @@ test:
     responses:
       '200':
         description: A platform-funded one-second test produced a validated clip
-        content: {application/json: {schema: {type: object, required: [receipt,expires_at,size_bytes], properties: {receipt: {type: string}, expires_at: {type: string, format: date-time}, size_bytes: {type: integer}}}}}
+        content: {application/json: {schema: {type: object, required: [receipt,expires_at,size_bytes,preview_mp4], properties: {preview_mp4: {type: string, contentEncoding: base64, contentMediaType: video/mp4, description: Validated H.264 test clip}, receipt: {type: string}, expires_at: {type: string, format: date-time}, size_bytes: {type: integer}}}}}
       default: *error
 reviews:
   get:
@@ -51,7 +51,7 @@ schemas:
       enabled: &bool {type: boolean}
       credential_configured: *bool
       base_url: &url {type: string, format: uri}
-      upstream_model_id: &model {const: MiniMax-H3}
+      upstream_model_id: &model {type: string, minLength: 1, maxLength: 200, default: MiniMax-H3, description: Upstream model ID for the compatible video protocol}
       credits_per_second: &price {type: string}
       workspace_daily_seconds: &daily {type: integer, minimum: 1, maximum: 1000000}
       max_concurrent_generations: &running {type: integer, minimum: 1, maximum: 1000}

@@ -6,7 +6,7 @@ import { parse, compileScript } from '@vue/compiler-sfc';
 import esbuild from 'esbuild';
 
 const window = new Window({url: 'http://127.0.0.1:5173/'});
-for (const name of ['window','document','navigator','HTMLElement','Element','SVGElement','Node','Text','Comment','Image','InputEvent','MouseEvent','KeyboardEvent','HTMLInputElement','Document','MutationObserver','ResizeObserver','getComputedStyle','requestAnimationFrame','cancelAnimationFrame']) {
+for (const name of ['window','document','navigator','HTMLElement','Element','SVGElement','ShadowRoot','Node','Text','Comment','Image','InputEvent','MouseEvent','KeyboardEvent','HTMLInputElement','Document','MutationObserver','ResizeObserver','getComputedStyle','requestAnimationFrame','cancelAnimationFrame']) {
   if (name === 'window') globalThis.window = window;
   else if (window[name] !== undefined) Object.defineProperty(globalThis, name, {
     configurable:true, writable:true,
@@ -93,6 +93,43 @@ async function mount(handle) {
   };
 }
 
+test('video drafts require a playable preview for the current model and survive switching plugins', async()=>{
+  const path=root+'/default-plugins/video-generation';
+  let config={version:2,enabled:true,credential_configured:true,base_url:'https://video.example',
+    upstream_model_id:'MiniMax-H3',credits_per_second:'5.000000',workspace_daily_seconds:300,max_concurrent_generations:4};
+  const m=await mount(r=>{
+    if(r.url===path+'/reviews'||r.url.includes('/image-generations?'))return Response.json({items:[]});
+    if(r.url.endsWith('/image-generation'))return Response.json({version:0,enabled:false,credential_configured:false,base_url:'https://image.example/v1',upstream_model_id:'',credits_per_image:'5',workspace_daily_image_limit:20,max_concurrent_generations:4});
+    if(r.url===path+'/test')return Response.json({receipt:'video-receipt',preview_mp4:'AAAA',expires_at:new Date(Date.now()+600000).toISOString()});
+    if(r.url===path&&r.method==='PATCH')config={...config,...r.body,version:config.version+1};
+    if(r.url===path)return Response.json(config);
+    throw Error('unexpected '+r.url);
+  });
+  try{
+    m.button('默认插件').click(); await wait(); m.button('文生视频').click(); await wait();
+    const card=m.host.querySelector('.video-settings'), save=card.querySelector('button[type="submit"]');
+    assert.equal(m.input('video-model-id').value,'MiniMax-H3');
+    await m.edit('video-model-id','compatible/v2'); assert.equal(save.disabled,true);
+    m.button('文生图').click(); await wait(); m.button('文生视频').click(); await wait();
+    assert.equal(m.input('video-model-id').value,'compatible/v2');
+    await m.submit('.video-settings'); assert.equal(m.requests.filter(r=>r.method==='PATCH').length,0);
+    m.button('测试视频生成').click(); await wait();
+    let player=card.querySelector('video[controls]'); assert.match(player.src,/^data:video\/mp4;base64,/);
+    assert.equal(save.disabled,true); player.dispatchEvent(new window.Event('loadeddata')); await wait();
+    assert.equal(save.disabled,false);
+    await m.edit('video-model-id','compatible/v3'); assert.equal(card.querySelector('video'),null); assert.equal(save.disabled,true);
+    m.button('测试视频生成').click(); await wait(); player=card.querySelector('video');
+    player.dispatchEvent(new window.Event('error')); await wait(); assert.equal(save.disabled,true);
+    m.button('重新测试').click(); await wait(); card.querySelector('video').dispatchEvent(new window.Event('loadeddata')); await wait();
+    await m.submit('.video-settings');
+    const patch=m.requests.filter(r=>r.method==='PATCH').at(-1); assert.deepEqual(patch.body,{version:2,upstream_model_id:'compatible/v3',receipt:'video-receipt'});
+    await m.edit('video-unit-price','8'); assert.equal(save.disabled,false);
+    await m.submit('.video-settings');
+    assert.deepEqual(m.requests.filter(r=>r.method==='PATCH').at(-1).body,{version:3,credits_per_second:'8'});
+    assert.deepEqual(m.errors,[]);
+  }finally{await m.close();}
+});
+
 test('image settings test the candidate, save its receipt, and change price without rereading the secret', async()=>{
   const path=root+'/default-plugins/image-generation';
   let config={name:'官方文生图',release_version:1,version:0,enabled:false,provider:'openai_images',base_url:'https://fixture.example/v1',upstream_model_id:'',credential_configured:false,credits_per_image:'5.000000',workspace_daily_image_limit:100,max_concurrent_generations:8,timeout_seconds:120};
@@ -109,6 +146,8 @@ test('image settings test the candidate, save its receipt, and change price with
     const inline=[...m.host.querySelectorAll('[role="checkbox"]')].find(node=>node.textContent.includes('Base64'));
     assert.ok(inline);inline.click();await wait();assert.equal(m.host.querySelector('img[alt="供应商测试样图"]'),null);
     m.button('测试出图').click();await wait();assert.equal(m.requests.filter(r=>r.url===path+'/test').at(-1).body.provider,'openai_images_b64_json');
+    await m.submit('.image-settings'); assert.equal(m.requests.some(r=>r.method==='PATCH'),false);
+    m.host.querySelector('img[alt="供应商测试样图"]').dispatchEvent(new window.Event('load')); await wait();
     await m.submit('.image-settings');
     const first=m.requests.find(r=>r.method==='PATCH');assert.equal(first.body.receipt,'tested');assert.equal(first.body.version,0);assert.equal(first.body.provider,'openai_images_b64_json');
     assert.equal(m.input('image-api-key').value,'');

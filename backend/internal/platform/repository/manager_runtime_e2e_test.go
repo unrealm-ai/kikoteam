@@ -365,13 +365,16 @@ func testManagerRuntime(t *testing.T, mode string) {
 	svc := &manager.Service{ProjectRoot: filepath.Join(temp, "state"), Store: store, CursorSecret: []byte(strings.Repeat("s", 32))}
 	auth := &service.AuthService{Store: &AuthStore{DB: db}}
 	mux := http.NewServeMux()
+	backend := httptest.NewUnstartedServer(mux)
+	defer backend.Close()
+	origin := "http://" + backend.Listener.Addr().String()
 	videoFixture := videoRuntimeFixture{}
 	if videoGenMode {
-		videoFixture.setup(t, db, capabilities, store, mux, auth, actor)
+		videoFixture.setup(t, db, capabilities, store, mux, auth, actor, origin)
 	}
 	imageFixture := imageRuntimeFixture{}
 	if imageMode {
-		imageFixture.setup(t, db, capabilities, store, mux, auth, actor)
+		imageFixture.setup(t, db, capabilities, store, mux, auth, actor, origin)
 	}
 	mux.Handle("POST /api/v1/workspaces/{workspace_id}/agents/{agent_id}/capability-upgrades", (&platformcontroller.Server{Auth: auth, Packages: capabilities.Packages}).Handler())
 	(&managercontroller.Server{Videos: videoFixture.service, Images: imageFixture.service, Runtime: capabilities, Service: svc, Engines: store, EngineToken: engineToken, Origin: "http://localhost", Authenticate: func(ctx context.Context, raw string) (string, error) { v, err := auth.Me(ctx, raw); return v.ID, err }, ResolveModelKey: func(ctx context.Context, w, a string, c manager.Configuration) (string, error) {
@@ -401,8 +404,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	}
 	hubToken := strings.Repeat("h", 40)
 	(&managercontroller.ChannelServer{Store: store, Manager: svc, Token: hubToken}).Routes(mux)
-	backend := httptest.NewServer(mux)
-	defer backend.Close()
+	backend.Start()
 	dispatchCtx, stopDispatch := context.WithCancel(ctx)
 	dispatchDone := make(chan struct{})
 	go func() {

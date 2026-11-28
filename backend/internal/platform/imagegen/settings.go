@@ -24,6 +24,7 @@ import (
 )
 
 const Key = "image-generation"
+const base64Provider = "openai_images_b64_json"
 
 var pluginID = service.CatalogID("plugin", Key)
 
@@ -144,7 +145,7 @@ func (s *Service) candidate(old Settings, p Patch) (Settings, string, error) {
 	}
 	u, e := url.Parse(x.BaseURL)
 	price, pe := proxy.ParseAmount(x.Price)
-	if e != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(x.BaseURL) > 2048 || x.Provider != "openai_images" || x.Model == "" || len(x.Model) > 200 || pe != nil || price <= 0 || x.Concurrent < 1 || x.Limit < 1 || x.Limit > 1000000 || x.Concurrent > 1000 || x.Timeout < 1 || x.Timeout > 300 {
+	if e != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(x.BaseURL) > 2048 || (x.Provider != "openai_images" && x.Provider != base64Provider) || x.Model == "" || len(x.Model) > 200 || pe != nil || price <= 0 || x.Concurrent < 1 || x.Limit < 1 || x.Limit > 1000000 || x.Concurrent > 1000 || x.Timeout < 1 || x.Timeout > 300 {
 		return x, "", invalid()
 	}
 	x.Price = proxy.Amount(price)
@@ -215,7 +216,7 @@ func (s *Service) Save(ctx context.Context, actor string, p Patch) (Settings, er
 			if e != nil {
 				return e
 			}
-			changed := !old.Configured || x.BaseURL != old.BaseURL || x.Model != old.Model || p.APIKey != nil
+			changed := !old.Configured || x.Provider != old.Provider || x.BaseURL != old.BaseURL || x.Model != old.Model || p.APIKey != nil
 			if changed && !s.verified(actor, x, key, p.Receipt) {
 				return service.Fail("image_test_required", 409, "请先测试当前模型和凭据")
 			}

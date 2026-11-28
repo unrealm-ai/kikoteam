@@ -33,6 +33,13 @@ func TestGenerationPayload(t *testing.T) {
 	}
 }
 
+func TestCompatibleGatewayRequestsInlineImage(t *testing.T) {
+	p := generationPayload(Settings{Provider: base64Provider, BaseURL: "https://gateway.example/v1", Model: "fixture", sizes: imageSizes}, "a leaf", "square")
+	if p["response_format"] != "b64_json" || p["n"] != 1 || p["output_format"] != "png" {
+		t.Fatal(p)
+	}
+}
+
 func TestProviderDownloadAndImageValidation(t *testing.T) {
 	var raw bytes.Buffer
 	if err := png.Encode(&raw, image.NewGray(image.Rect(0, 0, 1536, 1024))); err != nil {

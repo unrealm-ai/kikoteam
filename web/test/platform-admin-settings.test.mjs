@@ -99,15 +99,18 @@ test('image settings test the candidate, save its receipt, and change price with
   const m=await mount(r=>{
     if(r.url.includes('/image-generations?'))return Response.json({items:[],next_cursor:''});
     if(r.url===path+'/test')return Response.json({receipt:'tested',preview_png:'AA==',expires_at:new Date(Date.now()+600000).toISOString()});
-    if(r.url===path&&r.method==='PATCH'){config={...config,upstream_model_id:'fixture',credential_configured:true,version:config.version+1,credits_per_image:r.body.credits_per_image??config.credits_per_image};}
+    if(r.url===path&&r.method==='PATCH'){config={...config,provider:r.body.provider??config.provider,upstream_model_id:'fixture',credential_configured:true,version:config.version+1,credits_per_image:r.body.credits_per_image??config.credits_per_image};}
     if(r.url===path)return Response.json(config);
     throw Error('unexpected URL');
   });
   try{
     m.button('默认插件').click();await wait();await m.edit('image-model-id','fixture');await m.edit('image-api-key','test-secret');
     m.button('测试出图').click();await wait();assert.ok(m.host.querySelector('img[alt="供应商测试样图"]'));
+    const inline=[...m.host.querySelectorAll('[role="checkbox"]')].find(node=>node.textContent.includes('Base64'));
+    assert.ok(inline);inline.click();await wait();assert.equal(m.host.querySelector('img[alt="供应商测试样图"]'),null);
+    m.button('测试出图').click();await wait();assert.equal(m.requests.filter(r=>r.url===path+'/test').at(-1).body.provider,'openai_images_b64_json');
     await m.submit('.image-settings');
-    const first=m.requests.find(r=>r.method==='PATCH');assert.equal(first.body.receipt,'tested');assert.equal(first.body.version,0);
+    const first=m.requests.find(r=>r.method==='PATCH');assert.equal(first.body.receipt,'tested');assert.equal(first.body.version,0);assert.equal(first.body.provider,'openai_images_b64_json');
     assert.equal(m.input('image-api-key').value,'');
     await m.edit('image-unit-price','8.000000');await m.submit('.image-settings');
     const last=m.requests.filter(r=>r.method==='PATCH').at(-1);assert.equal(last.body.version,1);assert.equal(last.body.credits_per_image,'8.000000');assert.equal(last.body.api_key,undefined);

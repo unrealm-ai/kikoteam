@@ -99,6 +99,9 @@ func generationPayload(c Settings, prompt, ratio string) map[string]any {
 		payload["response_format"] = "b64_json"
 	} else {
 		payload["n"] = 1
+		if c.Provider == base64Provider {
+			payload["response_format"] = "b64_json"
+		}
 	}
 	return payload
 }

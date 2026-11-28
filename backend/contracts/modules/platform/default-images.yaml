@@ -133,7 +133,7 @@ schemas:
       enabled: &flag {type: boolean}
       active_config_version: {type: integer, minimum: 0}
       credential_configured: *flag
-      provider: &provider {const: openai_images}
+      provider: &provider {type: string, enum: [openai_images, openai_images_b64_json], description: The Base64 variant explicitly requests inline image bytes from a compatible gateway.}
       base_url: &url {type: string, format: uri}
       upstream_model_id: {type: string}
       credits_per_image: &price {type: string, pattern: '^[0-9]+(\.[0-9]{1,6})?$'}

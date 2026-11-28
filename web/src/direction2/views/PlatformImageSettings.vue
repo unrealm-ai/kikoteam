@@ -70,7 +70,7 @@ async function load() {
   }
 }
 watch(
-  () => [key.value, draft.value?.base_url, draft.value?.upstream_model_id],
+  () => [key.value, draft.value?.base_url, draft.value?.upstream_model_id, draft.value?.provider],
   () => {
     receipt.value = preview.value = '';
   },
@@ -186,6 +186,10 @@ defineExpose({ dirty, save, discard });
     <NForm v-if="draft" :disabled="busy" @submit.prevent="save">
       <NFormItem label="供应商协议"><span>OpenAI Images 兼容接口</span></NFormItem>
       <NFormItem label="服务地址"><NInput v-model:value="draft.base_url" /></NFormItem>
+      <NCheckbox
+        :checked="draft.provider === 'openai_images_b64_json'"
+        @update:checked="(v) => (draft!.provider = v ? 'openai_images_b64_json' : 'openai_images')"
+      >要求网关直接返回图片（Base64）</NCheckbox>
       <NFormItem label="模型 ID"
         ><NInput v-model:value="draft.upstream_model_id" :input-props="{ id: 'image-model-id' }"
       /></NFormItem>

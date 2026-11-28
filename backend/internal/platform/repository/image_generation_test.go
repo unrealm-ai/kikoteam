@@ -65,6 +65,12 @@ func TestImageGenerationTaskBillingAndReplay(t *testing.T) {
 			http.Error(out, "denied", http.StatusUnauthorized)
 			return
 		}
+		var body struct {
+			ResponseFormat string `json:"response_format"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ResponseFormat != "b64_json" {
+			t.Error("expected inline image request", err)
+		}
 		n := calls.Add(1)
 		if n == 2 {
 			close(started)
@@ -94,8 +100,8 @@ func TestImageGenerationTaskBillingAndReplay(t *testing.T) {
 		t.Fatal(old, e)
 	}
 	on := true
-	model, key := "fixture", "test-only"
-	p := imagegen.Patch{Version: &old.Version, Enabled: &on, BaseURL: &provider.URL, Model: &model, APIKey: &key}
+	model, key, protocol := "fixture", "test-only", "openai_images_b64_json"
+	p := imagegen.Patch{Version: &old.Version, Enabled: &on, BaseURL: &provider.URL, Model: &model, APIKey: &key, Provider: &protocol}
 	if _, e = s.Save(ctx, actor, p); e == nil {
 		t.Fatal("untested provider enabled")
 	}
@@ -105,8 +111,12 @@ func TestImageGenerationTaskBillingAndReplay(t *testing.T) {
 	}
 	p.Receipt = result.(map[string]any)["receipt"].(string)
 	cfg, e := s.Save(ctx, actor, p)
-	if e != nil {
-		t.Fatal(e)
+	if e != nil || cfg.Provider != protocol {
+		t.Fatal(cfg.Provider, e)
+	}
+	defaultProtocol := "openai_images"
+	if _, e = s.Save(ctx, actor, imagegen.Patch{Version: &cfg.Version, Provider: &defaultProtocol}); e == nil {
+		t.Fatal("untested response format change accepted")
 	}
 	store := sessions.Store.(*managerrepo.Store)
 	store.SnapshotCapabilities = SnapshotCapabilities

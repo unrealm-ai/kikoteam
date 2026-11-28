@@ -4,7 +4,13 @@ import type { TaskArtifact } from './public-task';
 export interface TaskInput { confirmation_request_id?: string; id: string; seq: string; text: string; status: string; delivery_mode: 'steer' | 'queue'; turn_id: string | null; created_at: string; rejection_reason?: string | null; cancel_reason?: string | null }
 export interface TaskTurn { id: string; turn_no: string; status: string; started_at: string; finished_at: string | null; has_unknown_tool_results: boolean }
 type TaskAction = { allowed: boolean; reason: string | null };
+export interface ReportedProgress {
+  turn_id: string; seq: string; occurred_at: string; plan_version: string; summary: string;
+  steps: { id: string; label: string; status: 'pending' | 'in_progress' | 'done' | 'skipped' }[];
+  metric: { step_id: string; done: number; total: number; unit: string } | null;
+}
 export interface TaskRecord {
+  reported_progress?: ReportedProgress | null;
   work_item_id?: string;
   planning_state?: 'planned' | 'started' | 'canceled'; planning_version?: string;
   task_id: string; session_id: string; conversation_id?: string; task_space_id?: string | null; title: string | null;

@@ -396,6 +396,7 @@ paths:
                   chat_human_catalog_token: {type: string, description: Sensitive schema-discovery grant for the confirmation family in supported private chats. Does not authorize any tool execution.}
                   delegation_token: {type: string, description: Sensitive chat-only assignment-bound MCP credential. Source actor is resolved from the current started Input for every call; no task recursion.}
                   group_history_token: {type: string, description: Sensitive task-only purpose-bound group-history MCP credential; current input and direct sharing grants are revalidated per call. No TaskSpace or system result authority.}
+                  task_progress_token: {type: string, description: Input-scoped credential for task progress.}
                   task_space_history_token: {type: string, description: Sensitive TaskSpace summary MCP credential bound to the current execution assignment and Input. Issued only for TaskSpace task sessions.}
                   webhook_file:
                     type: object

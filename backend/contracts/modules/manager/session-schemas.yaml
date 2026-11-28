@@ -119,7 +119,7 @@ Event:
   description: Flat reliable event; event-specific fields follow session-events.md. No data/payload wrapper. Only enabled types are emitted.
   required: [type, schema_version, seq, session_id, input_id, turn_id, occurred_at]
   properties:
-    type: {enum: [work_item.notice, user.message, input.updated, turn.updated, session.updated, session.requires_action, agent.message, agent.thinking, agent.tool_use, agent.tool_result, session.error]}
+    type: {enum: [task.progress_updated, work_item.notice, user.message, input.updated, turn.updated, session.updated, session.requires_action, agent.message, agent.thinking, agent.tool_use, agent.tool_result, session.error]}
     schema_version: {const: 1}
     seq: {type: string, pattern: '^[1-9][0-9]*$'}
     session_id: {type: string, format: uuid}
@@ -129,6 +129,11 @@ Event:
     content: {type: array, items: {type: object}}
   additionalProperties: true
   allOf:
+    - if: {properties: {type: {const: task.progress_updated}}}
+      then:
+        allOf:
+          - {$ref: './tasks.yaml#/schemas/ReportedProgress'}
+          - {required: [source], properties: {source: {enum: [agent, executor]}}}
     - if: {properties: {type: {const: session.requires_action}}}
       then:
         required: [required_actions]

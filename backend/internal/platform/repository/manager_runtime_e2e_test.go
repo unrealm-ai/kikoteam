@@ -347,6 +347,9 @@ func testManagerRuntime(t *testing.T, mode string) {
 	if err := humanconfirmation.Register(mux, store, engineToken); err != nil {
 		t.Fatal(err)
 	}
+	if err := workitems.RegisterProgress(mux, store, engineToken); err != nil {
+		t.Fatal(err)
+	}
 	if err := workitems.Register(mux, store, engineToken); err != nil {
 		t.Fatal(err)
 	}

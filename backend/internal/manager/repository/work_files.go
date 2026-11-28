@@ -122,6 +122,13 @@ func (s *Store) readAssignedFile(ctx context.Context, tx *sql.Tx, src workSource
 		if utf8.Valid(part) {
 			result["text"] = string(part)
 		}
+		if a.ProgressStepID != "" {
+			observation := metricObservation{planVersion: a.ProgressPlanVersion, executionID: f.ID, from: &a.Offset,
+				metric: service.StepMetric{StepID: a.ProgressStepID, Done: end, Total: f.Size, Unit: "字节"}}
+			if err := recordStepMetric(ctx, tx, src, observation); err != nil {
+				return nil, err
+			}
+		}
 		return result, nil
 	}
 	return nil, service.Fail("work_file_forbidden", 403, "当前环节未获准读取此文件版本")

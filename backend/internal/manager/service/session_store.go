@@ -55,11 +55,12 @@ type SessionFilter struct {
 	Limit                                           int
 }
 type EventFilter struct {
-	Turn, Type  string
-	After, High int64
-	Before      int64
-	Backward    bool
-	Limit       int
+	SharedDetail bool
+	Turn, Type   string
+	After, High  int64
+	Before       int64
+	Backward     bool
+	Limit        int
 }
 
 func PublicSession(v Session) Session {

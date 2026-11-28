@@ -42,6 +42,7 @@ flowchart LR
 | `/api/internal/v1/` | Engine 注册心跳、Session 分配、Runner 运行时配置领取、Event Hub 内部回调 |
 | `/mcp/task-delegation` | 主对话（`chat`）委派、查询、追加、停止后台任务的内部 MCP |
 | `/mcp/task-space-history` | TaskSpace 执行任务读取同空间任务历史的内部 MCP |
+| `/mcp/task-progress` | 后台任务上报本轮进展的内部 MCP |
 | `/mcp/human-confirmations/` | 对话与后台任务发起或处理人工确认的内部 MCP |
 | `/mcp/work-items/` | 跨员工事项交接与验收的内部 MCP |
 
@@ -59,7 +60,7 @@ server {
     # SSL 证书配置略...
 
     # 严禁从公网访问内部协作 API 与内部 MCP 端点
-    location ~ ^/(api/internal/v1/|mcp/(task-delegation|task-space-history|human-confirmations|work-items))(/|$) {
+    location ~ ^/(api/internal/v1/|mcp/(task-delegation|task-space-history|task-progress|human-confirmations|work-items))(/|$) {
         return 403;
     }
 

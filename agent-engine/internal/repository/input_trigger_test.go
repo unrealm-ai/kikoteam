@@ -16,7 +16,7 @@ func triggerFixture(t *testing.T) (*sql.DB, Store, Work) {
 	claimExec(t, db, `INSERT INTO platform_workspaces(id,name)VALUES($1,'fixture')`, ws)
 	claimExec(t, db, `INSERT INTO platform_members(workspace_id,user_id,role)VALUES($1,$2,'owner')`, ws, user)
 	claimExec(t, db, `INSERT INTO platform_model_profiles(id,workspace_id,name,protocol,base_url,model_id,version,has_key,validated,credential,credential_revision,vision_status,tested_at)VALUES($1,$2,'fixture','chat_completions','http://localhost','fixture',1,false,true,''::bytea,1,'unknown',now())`, model, ws)
-	claimExec(t, db, `INSERT INTO platform_agents(id,workspace_id,name,model_profile_id,version,config_version,admission_epoch)VALUES($1,$2,'fixture',$3,1,1,1)`, agent, ws, model)
+	claimExec(t, db, `INSERT INTO platform_agents(id,workspace_id,name,model_profile_id,creator_account_id,version,config_version,admission_epoch)VALUES($1,$2,'fixture',$3,$4,1,1,1)`, agent, ws, model, user)
 	// This fixture models one explicitly admitted Web actor, not the product default.
 	claimExec(t, db, `UPDATE platform_agents SET usage_config=jsonb_set(usage_config,'{access,allow}',jsonb_build_array(jsonb_build_object('channel','web','kind','user','id',$2::text))) WHERE id=$1`, agent, user)
 	claimExec(t, db, `INSERT INTO manager_conversations(id,workspace_id,agent_id,created_by)VALUES($1,$2,$3,$4)`, conv, ws, agent, user)

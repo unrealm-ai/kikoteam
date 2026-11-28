@@ -2,19 +2,21 @@
 import ConversationControlIcon from './ConversationControlIcon.vue';
 import { computed, nextTick, onUnmounted, ref, toRef, watch } from 'vue';
 import { NButton, NInput, NSkeleton } from 'naive-ui';
-import { managerApi, type ManagerSession, type SessionEvent } from '../api/manager';
+import { managerApi, type SessionEvent } from '../api/manager';
 import type { PublicTaskDetailFlow } from '../composables/usePublicTaskDetail';
 import type { TaskArtifact } from '../api/public-task';
 import { useSessionEvents } from '../composables/useSessionEvents';
 import {downloadProjectFile,getChatAttachment,type ProjectAttachment,type SessionAttachment} from '../api/project-files';
 import SessionMarkdown from './SessionMarkdown.vue';
 import SessionToolCall from './SessionToolCall.vue';
+import TaskStepProgress from './TaskStepProgress.vue';
+import type { TaskRecord, ReportedProgress } from '../api/tasks';
 import SessionTaskReport from './SessionTaskReport.vue';
 import D2EmployeeAvatar from './D2EmployeeAvatar.vue';
 import { clockTime, eventText, presentationRows, sessionStatus as status, taskReport, toolTaskTarget, type TaskNavigationTarget } from '../utils/session-presentation';
 import { classifyArtifact, formatArtifactSize } from '../utils/artifact-preview';
-const props = withDefaults(defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; subtitle?: string | undefined; agentAvatar?: string | undefined; assistantAvatar?: boolean | undefined; assistantAvatarBusy?: boolean | undefined; agentId?: string | undefined; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: ManagerSession[]; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined; artifacts?: TaskArtifact[] | undefined; initialInputText?: string | undefined; initialInputTime?: string | undefined; selectedArtifactId?: string | undefined }>(), { assistantAvatarBusy: undefined });
-const emit = defineEmits<{ changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [target: TaskNavigationTarget, turn?: string]; selectArtifact: [file: TaskArtifact]; downloadArtifact: [file: TaskArtifact] }>();
+const props = withDefaults(defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; subtitle?: string | undefined; agentAvatar?: string | undefined; assistantAvatar?: boolean | undefined; assistantAvatarBusy?: boolean | undefined; agentId?: string | undefined; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: TaskRecord[]; initialProgress?: ReportedProgress | null | undefined; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined; artifacts?: TaskArtifact[] | undefined; initialInputText?: string | undefined; initialInputTime?: string | undefined; selectedArtifactId?: string | undefined }>(), { assistantAvatarBusy: undefined });
+const emit = defineEmits<{ taskTargets: [targets: TaskNavigationTarget[]]; changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [target: TaskNavigationTarget, turn?: string]; selectArtifact: [file: TaskArtifact]; downloadArtifact: [file: TaskArtifact] }>();
 const flow = useSessionEvents(toRef(props, 'workspace'), toRef(props, 'sessionId'), () => emit('changed'), toRef(props, 'turnId'));
 const { session } = flow;
 const loading = computed(() => props.publicDetail?.loading.value ?? flow.loading.value);
@@ -24,6 +26,18 @@ const error = computed(() => props.publicDetail?.executionError.value ?? flow.er
 const connection = computed(() => props.publicDetail?.connection.value ?? flow.connection.value);
 const shared = computed(() => props.publicDetail?.task.value);
 const rows = computed(() => props.publicDetail?.rows.value ?? flow.rows.value);
+const currentProgress = computed(() => {
+  const execution = session.value?.execution;
+  if (!props.task || props.publicDetail || execution?.state !== 'running' || execution.required_actions?.length) return null;
+  const initial = props.initialProgress?.turn_id === execution.active_turn_id ? props.initialProgress : null;
+  // The HTTP snapshot can be newer than the first history page, or older than a live event.
+  for (let i = flow.events.value.length - 1; i >= 0; i--) {
+    const event = flow.events.value[i]!;
+    if (initial && BigInt(event.seq) <= BigInt(initial.seq)) break;
+    if (event.type === 'task.progress_updated' && event.turn_id === execution.active_turn_id) return event as unknown as ReportedProgress;
+  }
+  return initial;
+});
 const scroll = ref<HTMLElement | null>(null);
 const stickToBottom = ref(true);
 const initialBottomPending = ref(true);
@@ -124,9 +138,26 @@ const messages = computed(() => {
   const pending = new Set(session.value?.execution.required_actions?.map(action => action.request_id));
   return presentationRows(rows.value).filter(({ event }) => !event.action || !pending.has(event.action.request_id));
 });
+watch(() => messages.value.flatMap(({event})=>{
+  const target = event.name==='task_delegation_create_session' && toolTaskTarget(event);
+  return target ? [target] : [];
+}), targets=>{if (!props.task && !props.publicDetail) emit('taskTargets', targets)}, {immediate:true});
+// A report refers to the turn that produced it. A later queued input must not
+// inherit its result, even when both inputs belong to the same task.
+const reportedResults = computed(() => {
+  const results = new Map<string, string>();
+  for (const row of rows.value) {
+    const report = taskReport(row);
+    if (report?.turnID && report.outcome === 'completed' && !report.unknown) {
+      const text = report.result.trim();
+      results.set(report.turnID, text.length > 160 ? text.slice(0, 160) + '…' : text);
+    }
+  }
+  return results;
+});
 function linkedTask(event: SessionEvent) {
   const target = taskReport(event)?.task || toolTaskTarget(event);
-  return target && props.tasks?.find(task => (target.kind === 'task' ? task.task_id : task.id) === target.id);
+  return target && props.tasks?.find(task => (target.kind === 'task' ? task.task_id : task.session_id) === target.id);
 }
 function isUser(event: SessionEvent) { return event.source_kind !== 'task_report' && event.source_kind !== 'work_item_amendment' && (event.type === 'user.message' || event.type === 'input.updated'); }
 function onEnter(event: KeyboardEvent) { if (event.isComposing || event.keyCode === 229 || continuing.value) return; event.preventDefault(); void send(); }
@@ -267,9 +298,11 @@ watch(rows, async (nextRows, prevRows) => {
     </header>
     <p v-if="session?.execution.block_reason" class="warning">{{ status(session.execution.block_reason) }}</p>
     <div v-if="error" class="error" role="alert">{{ error }} <NButton size="small" @click="reload">重新加载</NButton></div>
+    <TaskStepProgress v-if="currentProgress" :progress="currentProgress" />
     <div class="session-content"><div ref="scroll" class="messages" @scroll="onMessagesScroll">
       <NSkeleton v-if="loading" text :repeat="4" />
       <NButton v-if="olderCursor" size="small" :loading="loadingOlder" @click="older">加载更早历史消息</NButton>
+
       <article v-if="task && initialInputText && !hasUserMessage && !turnId" class="event user initial-prompt">
         <div class="message-meta"><strong>{{ publicDetail ? '任务输入' : '你' }}</strong><time v-if="initialInputTime" :datetime="initialInputTime">{{ clockTime(initialInputTime) }}</time></div>
         <p class="body">{{ initialInputText }}</p>
@@ -277,7 +310,7 @@ watch(rows, async (nextRows, prevRows) => {
       <p v-if="!loading && !rows.length && !initialInputText" class="empty muted">{{ taskCenter || task ? '暂无执行记录。' : '暂无消息，发送工作需求开始协作。' }}</p>
       <article v-for="{ event: row, replies } in messages" :key="messageKey(row)" :data-history-key="messageKey(row)" :class="['event', { user: isUser(row), tool: !!row.tool_use_id, thinking: row.type === 'agent.thinking', report: row.source_kind === 'task_report', 'turn-event': row.type === 'turn.updated', 'error-event': row.type === 'session.error' }]">
         <template v-if="row.action"><strong>{{ row.action.title }}</strong><p class="body">{{ row.action.message }}</p></template>
-        <SessionToolCall v-else-if="row.tool_use_id" :event="row" :task-title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!toolTaskTarget(row)" @open-task="emit('openTask', $event)" />
+        <SessionToolCall v-else-if="row.tool_use_id" :event="row" :task="linkedTask(row) || undefined" :results="reportedResults" :task-title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!toolTaskTarget(row)" @open-task="emit('openTask', $event)" />
         <SessionTaskReport v-else-if="row.source_kind === 'task_report'" :event="row" :reply="replies" :title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!taskReport(row)?.task" @open-task="emit('openTask', $event, taskReport(row)?.turnID)" />
         <template v-else-if="row.type === 'turn.updated'"><div class="turn-divider"><span class="muted">{{ status(row.status) }}</span></div><p v-if="row.error" class="error">{{ row.error.message }}</p></template>
         <template v-else>

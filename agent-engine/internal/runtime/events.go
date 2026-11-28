@@ -107,6 +107,14 @@ func (e *eventWriter) update(u pi.Update) {
 		state.Output = output
 		state.OutputKnown = true
 	}
+	if state.Name != nil && (*state.Name == "mcp__task_progress__update_task_progress" || *state.Name == "update_task_progress") {
+		// The authorized task event carries the committed plan. Tool diagnostics
+		// (also visible on scoped share links) must not duplicate its contents.
+		state.Input, state.Output = nil, nil
+		state.InputKnown, state.OutputKnown = false, false
+		e.publishTool(state)
+		return
+	}
 	if state.Name != nil && (e.privateHumanTool(*state.Name, u, state) || e.privateWorkTool(*state.Name, u, state)) {
 		e.publishTool(state)
 		return

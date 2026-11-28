@@ -13,7 +13,7 @@ import TaskDetailPanel from '../components/TaskDetailPanel.vue';
 import { activeWorkspaceId, D2ApiError } from '../api/client';
 import { agentsApi, type Agent } from '../api/agents';
 import { managerApi, type Conversation, type ManagerSession } from '../api/manager';
-import { taskApi } from '../api/tasks';
+import { taskApi, type TaskRecord } from '../api/tasks';
 import { sessionStatus, workItemProgress, type TaskNavigationTarget } from '../utils/session-presentation';
 const props = defineProps<{ accountId?: string | undefined; selectedEmployeeId?: string | undefined; selectedConversationId?: string | undefined; assistantEntry?: AssistantEntry | undefined; assistantOpenRequest?: number | undefined;
  assistantDemo?: {card: AssistantCard; workspace: string; agent: string; key: string} | undefined }>();
@@ -22,7 +22,7 @@ const demoOpen = ref(false);
 const demoCards = computed(() => props.assistantEntry?.agent_id === selected.value && !props.selectedConversationId ? props.assistantEntry?.cards || [] : []);
 const agents = ref<Agent[]>([]), startedIds = ref<string[]>([]), selected = ref(''), search = ref(''), listError = ref(''), loading = ref(false);
 const newChatOpen = ref(false), modalSearch = ref('');
-const conversation = ref<Conversation | null>(null), chatID = ref(''), taskID = ref(''), tasks = ref<ManagerSession[]>([]), taskCursor = ref<string | null>(null);
+const conversation = ref<Conversation | null>(null), chatID = ref(''), taskID = ref(''), tasks = ref<TaskRecord[]>([]), taskCursor = ref<string | null>(null);
 const error = ref(''), tasksError = ref(''), firstText = ref(''), sending = ref(false), opening = ref(false);
 const showFiles=ref(false),treeMounted=ref(false),tree=ref<InstanceType<typeof ProjectFileTree>>(),dragDepth=ref(0),chatSending=ref(false);
 const filesAvailable=computed(()=>!!conversation.value&&(!!conversation.value.web_user_id||!props.selectedConversationId));
@@ -60,7 +60,30 @@ function toggleRightDrawer() {
 function dragFiles(e:DragEvent){return !!e.dataTransfer?.types.includes('Files')&&filesAvailable.value&&!locked.value;}
 function dragEnter(e:DragEvent){if(dragFiles(e)){e.preventDefault();dragDepth.value++;}}
 function dropFiles(e:DragEvent){dragDepth.value=0;if(!dragFiles(e))return;e.preventDefault();void draft.enqueue(Array.from(e.dataTransfer!.files));}
-let lastTaskRefresh = 0, tasksLoaded = false;
+let lastTaskRefresh = 0, loadedTaskPages = 1;
+let cardTargets: TaskNavigationTarget[] = [];
+const olderCards = ref<TaskRecord[]>([]);
+const cardTasks = computed(()=>[...tasks.value,...olderCards.value]);
+
+async function loadOlderCard(w: string, conversationID: string, target: TaskNavigationTarget, signal: AbortSignal): Promise<TaskRecord | undefined> {
+  try {
+    let id = target.id;
+    if (target.kind === 'session') {
+      const known = olderCards.value.find(task => task.session_id === id);
+      if (known) {
+        id = known.task_id;
+      } else {
+        const session = await managerApi.session(w, id, signal);
+        if (session.conversation_id !== conversationID || session.mode !== 'task' || !session.task_id) return;
+        id = session.task_id;
+      }
+    }
+    const record = await taskApi.detail(w, id, signal);
+    if (record.conversation_id === conversationID) return record;
+  } catch (e) {
+    if (!(e instanceof D2ApiError && [403, 404].includes(e.status))) throw e;
+  }
+}
 let taskOpenGeneration = 0;
 let generation = 0, controller = new AbortController(), listController = new AbortController(), timer: ReturnType<typeof setInterval> | null = null, taskBusy = false;
 let firstRequest: { paths:string[]; ids:string[]; text: string; key: string; inputKey: string } | null = null;
@@ -151,23 +174,54 @@ async function refreshTasks(more = false) {
   if (taskBusy || !conversation.value || document.hidden) return;
   if (!more && Date.now() - lastTaskRefresh < 1000) return;
   lastTaskRefresh = Date.now();
-  const g = generation, w = activeWorkspaceId.value, c = conversation.value.id, cursor = more ? taskCursor.value || '' : '';
+  const g = generation, w = activeWorkspaceId.value, c = conversation.value.id, signal = controller.signal;
   taskBusy = true;
   try {
-    const page = await managerApi.tasks(w, c, cursor, controller.signal); if (g !== generation) return;
-    if (cursor && page.next_cursor === cursor) throw new Error('任务分页游标重复');
-    const overlapsKnownPage = page.items.some(t => tasks.value.some(known => known.id === t.id));
-    const previous = more ? tasks.value : await Promise.all(tasks.value.filter(t => !page.items.some(fresh => fresh.id === t.id)).map(t => managerApi.session(w, t.id, controller.signal)));
+    const items: TaskRecord[] = [];
+    const cursors = new Set<string>();
+    const requestedPages = loadedTaskPages + (more ? 1 : 0);
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const page = await taskApi.list(w, { conversation_id: c }, cursor || '', signal);
+      if (g !== generation) return;
+      items.push(...page.items);
+      pages++;
+      cursor = page.next_cursor;
+      if (cursor && cursors.has(cursor)) throw new Error('任务分页游标重复');
+      if (cursor) cursors.add(cursor);
+    } while (cursor && pages < requestedPages);
+
+    const missing = new Map<string, TaskNavigationTarget>();
+    if (cursor) {
+      const known = new Set(items.flatMap(task => ['task:' + task.task_id, 'session:' + task.session_id]));
+      for (const target of cardTargets) {
+        const key = target.kind + ':' + target.id;
+        if (!known.has(key)) missing.set(key, target);
+      }
+    }
+    const other = await Promise.all([...missing.values()].map(target => loadOlderCard(w, c, target, signal)));
     if (g !== generation) return;
-    const map = new Map(previous.map(t => [t.id, t])); page.items.forEach(t => map.set(t.id, t)); tasks.value = [...map.values()].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '') || b.id.localeCompare(a.id));
-    if (more || !tasksLoaded || (page.next_cursor && !overlapsKnownPage)) taskCursor.value = page.next_cursor; tasksLoaded = true; tasksError.value = '';
-  } catch (e) { if (g === generation) tasksError.value = e instanceof Error ? e.message : '任务列表加载失败'; }
-  finally { if (g === generation) taskBusy = false; }
+    olderCards.value = other.filter((item): item is TaskRecord => !!item);
+    tasks.value = [...new Map(items.map(task => [task.task_id, task])).values()];
+    taskCursor.value = cursor;
+    loadedTaskPages = pages;
+    tasksError.value = '';
+  } catch (e) {
+    if (g !== generation) return;
+    if (e instanceof D2ApiError && [401, 403, 404].includes(e.status)) {
+      tasks.value = [];
+      olderCards.value = [];
+    }
+    tasksError.value = e instanceof Error ? e.message : '任务列表加载失败';
+  } finally {
+    if (g === generation) taskBusy = false;
+  }
 }
 async function open() {
   demoOpen.value=false;draft.reset();showFiles.value=false;treeMounted.value=false;rightTab.value=showTasks.value?'tasks':'files';dragDepth.value=0;chatSending.value=false;
   const g = ++generation; controller.abort(); controller = new AbortController();
-  conversation.value = null; chatID.value = ''; taskID.value = ''; taskFullscreen.value = false; tasks.value = []; taskCursor.value = null; taskBusy = false; lastTaskRefresh = 0; tasksLoaded = false;
+  conversation.value = null; chatID.value = ''; taskID.value = ''; taskFullscreen.value = false; tasks.value = []; taskCursor.value = null; taskBusy = false; lastTaskRefresh = 0; loadedTaskPages = 1; cardTargets=[]; olderCards.value=[];
   opening.value = false; firstText.value = ''; firstRequest = null; error.value = ''; tasksError.value = ''; sending.value = false;
   if (!selected.value || !activeWorkspaceId.value) return;
   opening.value = true;
@@ -239,8 +293,8 @@ watch([() => props.assistantDemo, conversation, selected, demoCards, locked], ([
 
 function visibility() { if (!document.hidden) void refreshTasks(); }
 async function locateTask(target: TaskNavigationTarget, w: string, signal: AbortSignal) {
-  const known = tasks.value.find(task => (target.kind === 'task' ? task.task_id : task.id) === target.id);
-  if (known) return { taskID: known.task_id, sessionID: known.id, conversationID: known.conversation_id, taskMode: known.mode === 'task' };
+  const known = cardTasks.value.find(task => (target.kind === 'task' ? task.task_id : task.session_id) === target.id);
+  if (known) return { taskID: known.task_id, sessionID: known.session_id, conversationID: known.conversation_id, taskMode: true };
   if (target.kind === 'task') {
     const v = await taskApi.detail(w, target.id, signal);
     return { taskID: v.task_id, sessionID: v.session_id, conversationID: v.conversation_id, taskMode: v.task_id === target.id };
@@ -344,7 +398,8 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
             :agent-id="employee?.id"
             :assistant-avatar="employee?.is_assistant || assistantChat"
             :assistant-avatar-busy="assistantChat ? assistantBusy : undefined"
-            :tasks="tasks"
+            :tasks="cardTasks"
+            @task-targets="cardTargets = $event"
             :attachment-paths="draft.paths.value"
             :attachment-ids="draft.attachmentIds.value"
             :attachment-pending="draft.unreserved.value"
@@ -467,7 +522,7 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
               <p v-if="tasksError" class="error">{{ tasksError }}</p>
             </div>
             <div class="task-list">
-              <button v-for="task in tasks" :key="task.id" :class="['task', { selected: taskID === task.id }]" @click="openTask(task.task_id ? {kind:'task',id:task.task_id} : {kind:'session',id:task.id})">
+              <button v-for="task in tasks" :key="task.task_id" :class="['task', { selected: taskID === task.session_id }]" @click="openTask({kind:'task',id:task.task_id})">
                 <strong>{{ task.title || '任务' }}</strong>
                 <small>{{ workItemProgress(task.execution) || (task.execution.required_actions?.length ? '待确认' : sessionStatus(task.execution.state)) }} · {{ sessionStatus(task.lifecycle) }}</small>
               </button>

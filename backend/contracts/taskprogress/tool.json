@@ -1,0 +1,55 @@
+{
+  "name": "update_task_progress",
+  "description": "更新当前任务本轮向用户展示的进展。首次版本为 0，之后使用回执 plan_version。提供简明摘要，计划变化时传完整步骤。只记录可公开的进展，不包含凭据、原文或工具输出。",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "base_plan_version",
+      "summary"
+    ],
+    "properties": {
+      "base_plan_version": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)$"
+      },
+      "summary": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "steps": {
+        "type": "array",
+        "maxItems": 12,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "label",
+            "status"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "in_progress",
+                "done",
+                "skipped"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

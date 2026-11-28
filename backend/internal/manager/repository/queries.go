@@ -105,7 +105,11 @@ func readSessionEvents(ctx context.Context, tx *sql.Tx, w, session string, f ser
 			return nil, 0, err
 		}
 	}
-	query := `SELECT event FROM manager_session_events WHERE workspace_id=$1 AND session_id=$2 AND seq>$3 AND seq<=$4 AND ($5='' OR event->>'turn_id'=$5) AND ($6='' OR event->>'type'=ANY(string_to_array($6,','))) AND ($8=0 OR seq<$8) ORDER BY seq`
+	query := `SELECT CASE WHEN event->>'type'='task.progress_updated' THEN event-'request_digest'-'metric_key' ELSE event END FROM manager_session_events WHERE workspace_id=$1 AND session_id=$2 AND seq>$3 AND seq<=$4 AND ($5='' OR event->>'turn_id'=$5) AND ($6='' OR event->>'type'=ANY(string_to_array($6,','))) AND ($8=0 OR seq<$8)`
+	if f.SharedDetail {
+		query += " AND event->>'type' <> 'task.progress_updated'"
+	}
+	query += " ORDER BY seq"
 	if f.Backward {
 		query += " DESC"
 	}

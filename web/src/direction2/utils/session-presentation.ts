@@ -1,4 +1,32 @@
 import type { SessionEvent } from '../api/manager';
+import type { TaskRecord } from '../api/tasks';
+
+export function taskCardState(task: TaskRecord) {
+  const { execution, latest_turn: turn, reported_progress: progress } = task;
+  const pending = execution.required_actions?.[0];
+  let state = execution.state;
+  if (task.lifecycle === 'archived') state = 'archived';
+  else if (task.planning_state === 'planned') state = 'planned';
+  else if (task.planning_state === 'canceled') state = 'todo_canceled';
+  else if (pending && state !== 'stopping') state = 'waiting_confirmation';
+  else if (state === 'idle') {
+    state = execution.background_process_count ? 'background_active' : turn?.status || 'idle';
+    if (turn?.has_unknown_tool_results) state = 'unknown';
+  }
+
+  let label = taskPhases[state] || sessionStatus(state);
+  let message = '';
+  if (state === 'waiting_confirmation') {
+    if (pending?.type === 'work_item') label = '等待事项处理';
+    message = pending?.message || '';
+  } else if (state === 'completed') label = '本轮已完成';
+  else if (state === 'blocked' && execution.block_reason) message = sessionStatus(execution.block_reason);
+
+  const showProgress = !!progress && progress.turn_id === (execution.active_turn_id || turn?.id)
+    && ['running', 'completed', 'background_active'].includes(state);
+  if (state === 'running' && !showProgress) message = '任务已开始，等待步骤更新。';
+  return { label, state, showProgress, message };
+}
 
 export function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};

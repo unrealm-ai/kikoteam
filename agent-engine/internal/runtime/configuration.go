@@ -165,6 +165,11 @@ func (w *Worker) configureTaskResources(ctx context.Context, out *pi.Config, cur
 		out.Skills = []string{dir}
 	}
 	w.configureRemotePlugins(out, current, cfg)
+	if cfg.TaskProgressToken != "" && !cfg.ReportOnly {
+		out.RelayServers["task_progress"] = pi.RelayServer{URL: w.Backend.URL + "/mcp/task-progress", ToolExposure: map[string]string{"update_task_progress": "direct"}}
+		out.RelayHeaders["task_progress"] = map[string]string{"Authorization": "Bearer " + cfg.TaskProgressToken, "X-Kiko-Progress-Input": out.HumanTools.Input}
+		out.Instruction += "\n在开工、步骤变化或取得阶段成果时，用 update_task_progress 给用户更新一句当前进展。多步骤任务提供计划，简单任务只写摘要。首次 base_plan_version 为 0，后续沿用回执。仅上报面向用户的业务事实，隐藏私有材料、日志与凭据。进展上报失败时继续业务执行。"
+	}
 	problems := append(cfg.Resources.Problems, missing...)
 	if len(problems) != 0 {
 		data, err := json.Marshal(problems)

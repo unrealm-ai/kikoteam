@@ -31,7 +31,7 @@ async function mount({chat='chat',override,props={}}={}) {
   if(url.endsWith('/assistant'))return Response.json(props.assistantEntry ?? {cards:[]});
   if(url.includes('/agents?'))return Response.json({items:[agent],total:1,page:1,page_size:20});
   if(url.endsWith('/web-direct')||url.endsWith('/conversations/c'))return Response.json({id:'c',agent_id:'a',chat_session_id:chat,lifecycle:'active'});
-  if(url.includes('/sessions?'))return Response.json({items:[resource('task1'),resource('task2')],next_cursor:null});
+  if(url.includes('/tasks?'))return Response.json({items:[taskDetail('business-task1'),taskDetail('business-task2')],next_cursor:null});
   if(/\/tasks\/[^/]+\/reports/.test(url)||/\/(inputs|turns)\?/.test(url))return Response.json({items:[],next_cursor:null});
   if(/\/tasks\/[^/?]+$/.test(url))return Response.json(taskDetail(url.split('/').pop()));
   if(url.includes('/events?')){const id=url.match(/sessions\/([^/]+)/)[1];return Response.json({items:[event(10,id,'最近消息')],next_cursor:null,resume_cursor:`resume-${id}`})}
@@ -99,7 +99,7 @@ test('invalid stream cursor stops with reload action rather than reconnect loop'
  const m=await mount();try{const source=FakeSource.all[0];source.emit({type:'stream.error',code:'invalid_cursor',message:'游标失效'},'');await pause();assert.equal(source.closed,true);assert.match(m.host.textContent,/游标失效/);assert.equal(FakeSource.all.length,1);}finally{await m.cleanup()}
 });
 test('task pagination becomes available after initial empty list grows beyond one page',async()=>{
- let many=false;const m=await mount({override:url=>url.includes('/sessions?')?Response.json(many?{items:Array.from({length:50},(_,i)=>resource(`task${i}`)),next_cursor:'older-tasks'}:{items:[],next_cursor:null}):null});try{button('任务与文件').click();await pause();button('会话任务 (0)').click();await pause();assert.equal(button('加载更多任务'),undefined);many=true;await new Promise(r=>setTimeout(r,1050));document.dispatchEvent(new window.Event('visibilitychange'));await pause();assert.ok(button('加载更多任务'));}finally{await m.cleanup()}
+ let many=false;const m=await mount({override:url=>url.includes('/tasks?')?Response.json(many?{items:Array.from({length:50},(_,i)=>taskDetail(`business-task${i}`)),next_cursor:'older-tasks'}:{items:[],next_cursor:null}):null});try{button('任务与文件').click();await pause();button('会话任务 (0)').click();await pause();assert.equal(button('加载更多任务'),undefined);many=true;await new Promise(r=>setTimeout(r,1050));document.dispatchEvent(new window.Event('visibilitychange'));await pause();assert.ok(button('加载更多任务'));}finally{await m.cleanup()}
 });
 test('late conflict lookup never submits input after switching workspace',async()=>{
  let finish;const m=await mount({chat:null,override:(url,init)=>{
@@ -130,10 +130,56 @@ test('archived main chat remains readable and disabled inside active conversatio
 
 const toolEvent = (changes = {}) => ({type:'agent.tool_result',session_id:'chat',seq:'11',tool_use_id:'tool-1',name:'task_delegation_create_session',status:'completed',input_state:'available',input:{title:'销售分析',instruction:'分析销售明细'},output_state:'available',output:{structuredContent:{structuredContent:{session_id:'task1',execution:{state:'queued'}}}},...changes});
 const reportEvent = (changes = {}) => ({type:'input.updated',session_id:'chat',seq:'12',message_id:'report',input_id:'report-input',turn_id:'report-turn',source_kind:'task_report',status:'processed',content:[{type:'text',text:'平台任务回报\n'+JSON.stringify({session_id:'task1',outcome:'completed',result:'# 原始分析\n总额 **3375**',background_process_count:0,queued_input_count:0,has_unknown_tool_results:false})}],...changes});
+test('closed task drawer shows only the linked active turn progress and measured counts', async()=>{
+ let state='running';
+ const progress={turn_id:'turn-a',seq:'32',occurred_at:'2026-11-20T08:00:00Z',plan_version:'1',summary:'核对第四段素材',steps:[{id:'read',label:'核对素材',status:'in_progress'}],metric:{step_id:'read',done:3,total:6,unit:'个'}};
+ const m=await mount({override:url=>{
+  if(url.includes('/tasks?'))return Response.json({items:[{...taskDetail('business-task1'),execution:{...resource('task1').execution,state,active_turn_id:'turn-a',required_actions:state==='blocked'?[{type:'confirmation',message:'请选择配音'}]:[]},reported_progress:progress}],next_cursor:null});
+  if(url.includes('/sessions/chat/events?'))return Response.json({items:[toolEvent()],resume_cursor:'H',next_cursor:null});
+  return null;
+ }});
+ try{
+  const card=m.host.querySelector('.task-action');
+  assert.equal(card.querySelector('header .tool-status').textContent,'执行中');
+  assert.match(card.textContent,/核对第四段素材/);
+  assert.equal(card.querySelector('progress').value,3);
+  assert.equal(card.querySelector('.step-progress details').open,false);
+  assert.equal(FakeSource.all.length,1);
+  state='blocked';
+  await new Promise(r=>setTimeout(r,1050));document.dispatchEvent(new window.Event('visibilitychange'));await pause();
+  assert.match(card.textContent,/请选择配音/);
+  assert.equal(card.querySelector('progress'),null);
+ }finally{await m.cleanup()}
+});
+
 test('Markdown renders headings, tables and code without executing HTML or loading embedded media',async()=>{
  const markdown = '# 销售报告\n\n**合计**：3375\n\n| 商品 | 金额 |\n| --- | ---: |\n| A | 100 |\n\n```json\n{"total":3375}\n```\n\n<script>alert(1)</script>\n<img src=x onerror=alert(1)>\n\n[危险](javascript:alert%281%29) [本地](file:///etc/passwd) [远程](https://example.com/report) ![跟踪图片](https://example.com/track.png)';
  const m=await mount({override:url=>url.includes('/events?')?Response.json({items:[event(10,'chat',markdown)],next_cursor:null,resume_cursor:'H'}):null});
  try{const content=m.host.querySelector('.session-markdown');assert.equal(content.querySelector('h1').textContent,'销售报告');assert.equal(content.querySelectorAll('table tbody tr').length,1);assert.equal(content.querySelector('pre code').textContent.trim(),'{"total":3375}');assert.equal(content.querySelectorAll('script,img,iframe').length,0);assert.equal(content.querySelectorAll('a').length,1);const link=content.querySelector('a');assert.equal(link.getAttribute('rel'),'noopener noreferrer');assert.equal(link.getAttribute('target'),'_blank');assert.match(content.textContent,/跟踪图片/);}finally{await m.cleanup()}
+});
+test('task detail consumes SSE progress without fetching the task again or rolling back to an old plan',async()=>{
+ const execution={...resource('task1').execution,state:'running',active_turn_id:'turn-a'};
+ const snapshot={turn_id:'turn-a',seq:'22',occurred_at:'2026-11-28T01:00:00Z',plan_version:'1',summary:'正在整理脚本',steps:[],metric:null};
+ const record={...taskDetail('business-task1'),execution,reported_progress:snapshot};
+ const m=await mount({override:(url,init)=>{
+  if(url.includes('/tasks?'))return Response.json({items:[record],next_cursor:null});
+  if(url.endsWith('/tasks/business-task1'))return Response.json(record);
+  if(url.endsWith('/sessions/task1')&&!init.method)return Response.json({...resource('task1'),execution});
+  if(url.includes('/chat/events?'))return Response.json({items:[toolEvent()],resume_cursor:'H',next_cursor:null});
+  return null;
+ }});
+ try{
+  button('查看任务 ↗').click();await pause();await pause();
+  const panel=m.host.querySelector('.task-detail');
+  assert.match(panel.textContent,/正在整理脚本/);
+  const stream=FakeSource.all.find(s=>!s.closed&&s.url.includes('/sessions/task1/'));
+  const before=m.calls.filter(c=>c.url.endsWith('/tasks/business-task1')).length;
+  const event={...snapshot,type:'task.progress_updated',session_id:'task1',source:'agent'};
+  stream.emit({...event,seq:'25',summary:'正在校对字幕'},'cursor25');await pause();
+  stream.emit({...event,seq:'24',summary:'旧步骤'},'cursor24');await pause();
+  assert.match(panel.textContent,/正在校对字幕/);assert.doesNotMatch(panel.textContent,/旧步骤/);
+  assert.equal(m.calls.filter(c=>c.url.endsWith('/tasks/business-task1')).length,before);
+ }finally{await m.cleanup()}
 });
 test('trigger card opens only a known task; input and output details use separate tabs',async()=>{
  const m=await mount({override:url=>url.includes('/chat/events?')?Response.json({items:[toolEvent()],next_cursor:null,resume_cursor:'H'}):null});

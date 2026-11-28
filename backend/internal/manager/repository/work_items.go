@@ -110,7 +110,11 @@ func (s *Store) WorkTool(ctx context.Context, scope service.WorkScope, op string
 		return nil, visibleError(err)
 	}
 	if op == "file" {
-		return s.readAssignedFile(ctx, tx, src, w, arg)
+		result, err := s.readAssignedFile(ctx, tx, src, w, arg)
+		if err != nil {
+			return nil, err
+		}
+		return result, tx.Commit()
 	}
 	if op == "get" {
 		if w.id == "" {

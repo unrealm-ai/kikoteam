@@ -21,6 +21,7 @@ func (s *Store) TaskDetailEvents(ctx context.Context, grant service.TaskDetailGr
 		return nil, 0, err
 	}
 	filter.Turn = ""
+	filter.SharedDetail = true
 	items, high, err := readSessionEvents(ctx, tx, g.WorkspaceID, g.SessionID, filter)
 	if err != nil {
 		return nil, 0, err

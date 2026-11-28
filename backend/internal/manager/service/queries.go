@@ -146,7 +146,7 @@ func normalizeTypes(types string) (string, error) {
 	sort.Strings(parts)
 	result := []string{}
 	for _, p := range parts {
-		if !slices.Contains([]string{"work_item.notice", "user.message", "agent.message", "agent.thinking", "agent.tool_use", "agent.tool_result", "input.updated", "turn.updated", "session.updated", "session.requires_action", "session.error"}, p) {
+		if !slices.Contains([]string{ProgressEvent, "work_item.notice", "user.message", "agent.message", "agent.thinking", "agent.tool_use", "agent.tool_result", "input.updated", "turn.updated", "session.updated", "session.requires_action", "session.error"}, p) {
 			return "", Fail("invalid_argument", 400, "事件类型无效")
 		}
 		if len(result) == 0 || result[len(result)-1] != p {

@@ -12,6 +12,7 @@ import (
 // Tasks are read projections of existing Task/Session facts. All commands still
 // enter the Session use cases; this projection owns no execution state.
 type Task struct {
+	ReportedProgress *ReportedProgress     `json:"reported_progress"`
 	WorkItemID       *string               `json:"work_item_id,omitempty"`
 	PlanningState    string                `json:"planning_state"`
 	PlanningVersion  int64                 `json:"planning_version,string"`

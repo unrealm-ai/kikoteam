@@ -22,11 +22,13 @@ type WorkAssets interface {
 	GetWorkFile(context.Context, string, string, int64) ([]byte, error)
 }
 type WorkArguments struct {
-	Path      string   `json:"path,omitempty"`
-	FilePaths []string `json:"file_paths,omitempty"`
-	FileIDs   []string `json:"file_ids,omitempty"`
-	FileID    string   `json:"file_id,omitempty"`
-	Offset    int64    `json:"offset,omitempty"`
+	ProgressStepID      string   `json:"progress_step_id,omitempty"`
+	ProgressPlanVersion string   `json:"progress_plan_version,omitempty"`
+	Path                string   `json:"path,omitempty"`
+	FilePaths           []string `json:"file_paths,omitempty"`
+	FileIDs             []string `json:"file_ids,omitempty"`
+	FileID              string   `json:"file_id,omitempty"`
+	Offset              int64    `json:"offset,omitempty"`
 
 	OperationID          string `json:"operation_id,omitempty"`
 	BoundaryID           string `json:"boundary_id,omitempty"`

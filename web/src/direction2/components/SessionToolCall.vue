@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { SessionEvent } from '../api/manager';
+import type { TaskRecord } from '../api/tasks';
+import TaskStepProgress from './TaskStepProgress.vue';
+import { taskCardState } from '../utils/session-presentation';
 import { isTaskDetailLinkTool, availability, duration, jsonText, outputText, record, taskAction, toolTaskTarget, text, toolFailed, toolName, toolOutput, toolStatus, toolTarget, type TaskNavigationTarget } from '../utils/session-presentation';
-const props = defineProps<{ event: SessionEvent; taskTitle?: string | undefined; canOpenTask?: boolean | undefined }>();
+const props = defineProps<{ event: SessionEvent; results?: Map<string, string>; task?: TaskRecord | undefined; taskTitle?: string | undefined; canOpenTask?: boolean | undefined }>();
 const emit = defineEmits<{ openTask: [target: TaskNavigationTarget] }>();
 const tab = ref<'input' | 'output'>('output');
 const action = computed(() => taskAction(props.event));
@@ -11,6 +14,7 @@ const input = computed(() => props.event.input_state === 'available' ? record(pr
 const target = computed(() => toolTaskTarget(props.event));
 const status = computed(() => toolStatus(props.event));
 const failed = computed(() => toolFailed(props.event));
+const live = computed(() => status.value === '已触发' && props.task ? taskCardState(props.task) : undefined);
 const isBash = computed(() => !action.value && ['bash_start', 'bash_poll', 'bash_write', 'bash_stop', 'bash_terminate'].includes(props.event.name || ''));
 const instruction = computed(() => text(input.value.instruction) || text(input.value.text));
 const error = computed(() => props.event.error?.message || text(record(output.value.error).message));
@@ -28,11 +32,16 @@ function moveTab(event: KeyboardEvent) {
     <header v-if="action" class="task-action-header">
       <span class="tool-symbol" aria-hidden="true">↗</span>
       <div class="action-title"><span>{{ action }}</span><strong>{{ taskTitle || text(input.title) || '会话任务' }}</strong></div>
-      <span class="tool-status">{{ status }}</span>
+      <span class="tool-status" :data-task-state="live?.state">{{ live?.label || status }}</span>
     </header>
     <div v-if="action" class="task-action-body">
       <p v-if="error" class="tool-error">{{ error }}</p>
       <p v-else-if="failed" class="tool-error">操作未成功，请展开调用详情查看原因。</p>
+      <template v-else-if="live">
+        <p v-if="live.message">{{ live.message }}</p>
+        <p v-else-if="live.state === 'completed' && task?.latest_turn && results?.get(task.latest_turn.id)">{{ results.get(task.latest_turn.id) }}</p>
+        <TaskStepProgress v-if="task?.reported_progress && live.showProgress" :progress="task.reported_progress" :previous="!task.execution.active_turn_id" />
+      </template>
       <p v-else-if="event.name === 'task_delegation_create_session'">{{ status === '已触发' ? '任务已受理，执行进展与结果可在任务中查看。' : event.status === 'completed' ? '调用已结束，尚无法确认任务受理结果。' : '正在向员工发起任务，以实际受理结果为准。' }}</p>
       <p v-else-if="event.name === 'task_delegation_stop_session'">停止请求与实际停止状态分别确认。</p>
       <p v-else-if="isTaskDetailLinkTool(event.name) && status === '已提交投递'">发送请求已受理，尚未确认送达。</p>
@@ -64,6 +73,10 @@ function moveTab(event: KeyboardEvent) {
   </section>
 </template>
 <style scoped>
+.tool-status[data-task-state]{color:var(--id-text-secondary);background:var(--id-bg-muted)}
+.tool-status[data-task-state="running"]{color:var(--id-accent-primary);background:var(--id-accent-primary-soft)}
+.tool-status[data-task-state="failed"],.tool-status[data-task-state="blocked"]{color:var(--id-status-danger);background:var(--id-status-danger-soft)}
+.tool-status[data-task-state="completed"]{color:var(--id-status-success);background:var(--id-status-success-soft)}
 .tool-card{border:1px solid var(--id-border-subtle);border-radius:var(--id-radius-lg);background:var(--id-bg-surface);overflow:hidden;font-size:12px;min-width:0;transition:border-color var(--id-transition-fast)}
 .tool-card:not(.task-action):hover{border-color:var(--id-border-strong)}
 .tool-details>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:7px 11px;min-height:34px;cursor:pointer;transition:background-color var(--id-transition-fast)}

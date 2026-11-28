@@ -6469,6 +6469,20 @@ CREATE INDEX manager_task_detail_grants_session_idx ON public.manager_task_detai
 
 
 --
+-- Name: manager_task_progress_latest_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_task_progress_latest_idx ON public.manager_session_events USING btree (session_id, ((event ->> 'turn_id'::text)), seq DESC) WHERE ((event ->> 'type'::text) = 'task.progress_updated'::text);
+
+
+--
+-- Name: manager_task_progress_plan_version_ux; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX manager_task_progress_plan_version_ux ON public.manager_session_events USING btree (session_id, ((event ->> 'turn_id'::text)), ((event ->> 'plan_version'::text))) WHERE (((event ->> 'type'::text) = 'task.progress_updated'::text) AND ((event ->> 'source'::text) = 'agent'::text));
+
+
+--
 -- Name: manager_task_space_sessions; Type: INDEX; Schema: public; Owner: -
 --
 

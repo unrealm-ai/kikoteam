@@ -656,6 +656,7 @@ onUnmounted(() => {
             :key="detail?.session_id || 'shared'"
             :workspace="workspaceId"
             :session-id="detail?.session_id || ''"
+            :initial-progress="detail?.reported_progress"
             :title="detail?.agent.name || '执行 Agent'"
             :read-only="!guest && !canSupplement"
             :task-center="taskCenter"

@@ -325,6 +325,9 @@ func registerManagerMCP(mux *http.ServeMux, store *managerrepo.Store, mgr *manag
 	if err := humanconfirmation.Register(mux, store, engineToken); err != nil {
 		return err
 	}
+	if err := workitems.RegisterProgress(mux, store, engineToken); err != nil {
+		return err
+	}
 	return workitems.Register(mux, store, engineToken)
 }
 func webFiles(dir string) http.Handler {

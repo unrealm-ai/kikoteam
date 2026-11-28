@@ -223,6 +223,9 @@ func (s *Server) signTaskContextCredentials(v *service.HarnessConfig, id service
 			v.GroupHistoryToken, err = service.SignGroupHistory(s.EngineToken, id)
 		}
 	}
+	if err == nil && !v.ReportOnly && !v.ConfirmationOnly {
+		v.TaskProgressToken, err = service.SignWorkTool(s.EngineToken, service.ProgressAudience, v.InputID, id)
+	}
 	if err == nil && v.TaskSpaceID != "" {
 		v.TaskSpaceHistoryToken, err = service.SignTaskSpaceHistory(s.EngineToken, service.TaskSpaceHistoryIdentity{DelegationIdentity: id, InputID: v.InputID})
 	}

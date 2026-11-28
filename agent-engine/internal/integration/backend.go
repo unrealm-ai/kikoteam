@@ -32,6 +32,7 @@ type HarnessConfig struct {
 	HumanMCPToken           string       `json:"human_mcp_token"`
 	GroupHistoryToken       string       `json:"group_history_token"`
 	TaskSpaceHistoryToken   string       `json:"task_space_history_token"`
+	TaskProgressToken       string       `json:"task_progress_token,omitempty"`
 	AttachmentToken         string       `json:"attachment_token"`
 	CapabilityToken         string       `json:"capability_token"`
 	Resources               Resources    `json:"resources"`

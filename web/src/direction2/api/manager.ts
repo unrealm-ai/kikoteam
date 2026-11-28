@@ -22,7 +22,7 @@ export const managerApi = {
   confirm: (w: string, id: string, requestID: string, confirmed: boolean) => platformRequest(`${sessionPath(w, id)}/inputs`, { ...post({ confirmation: { request_id: requestID, confirmed } }), headers: { 'Idempotency-Key': requestID } }),
   stop: (w: string, id: string) => platformRequest<ManagerSession>(`${sessionPath(w, id)}/stop`, post({}))
 };
-export const eventTypes = ['work_item.notice', 'user.message', 'agent.message', 'agent.thinking', 'agent.tool_use', 'agent.tool_result', 'input.updated', 'turn.updated', 'session.updated', 'session.requires_action', 'session.error'];
+export const eventTypes = ['task.progress_updated', 'work_item.notice', 'user.message', 'agent.message', 'agent.thinking', 'agent.tool_use', 'agent.tool_result', 'input.updated', 'turn.updated', 'session.updated', 'session.requires_action', 'session.error'];
 export function mergeEvents(current: SessionEvent[], incoming: SessionEvent[], session: string): SessionEvent[] {
   const map = new Map(current.map(e => [e.seq, e]));
   for (const e of incoming) {
@@ -34,6 +34,7 @@ export function mergeEvents(current: SessionEvent[], incoming: SessionEvent[], s
 export function projectEvents(events: SessionEvent[]): SessionEvent[] {
   const map = new Map<string, SessionEvent>();
   for (const e of events) {
+    if (e.name === 'mcp__task_progress__update_task_progress' || e.name === 'update_task_progress') continue;
     if (e.type === 'session.requires_action') {
       for (const action of e.required_actions || []) {
         const key = `confirmation:${action.request_id}`;

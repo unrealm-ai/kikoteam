@@ -19,6 +19,7 @@
 | 思考状态及公开内容 | `agent.thinking` | 可靠 |
 | 工具调用及进度 | `agent.tool_use` | 可靠 |
 | 工具结果 | `agent.tool_result` | 可靠 |
+| 子任务业务进展 | `task.progress_updated` | 可靠 |
 | 输入状态 | `input.updated` | 可靠 |
 | 执行轮次状态 | `turn.updated` | 可靠 |
 | 等待用户确认 | `session.requires_action` | 可靠 |
@@ -27,7 +28,7 @@
 | 实时文本增量 | `message.delta` | 仅实时 |
 | 当前流连接错误 | `stream.error` | 仅实时 |
 
-目录共 12 种，包含 10 种可靠事件和 2 种临时事件。普通工具、builtin MCP 和插件 MCP 共用 `agent.tool_use` / `agent.tool_result`，由 source 区分，不另设 MCP 专属 type。输入仍走 POST inputs，停止走 POST stop，默认直接执行获准工具。
+可靠事件可按游标续读，临时事件只在当前连接交付。普通工具、builtin MCP 和插件 MCP 共用 `agent.tool_use` / `agent.tool_result`，由 source 区分，不另设 MCP 专属 type。输入仍走 POST inputs，停止走 POST stop，默认直接执行获准工具。
 
 每次实现应在该功能的正式契约和交付说明中声明已启用的类型子集，按实际能力验收，不新增类型发现接口作为前置条件。未实现的类型不发占位事件、不制造缺失的上游事实；实现某项功能后，应按本文语义表达它，不能省略必要的受理、正式输出或终态而仍声称历史完整。新增类型或不兼容字段调整先更新本文并核对消费者，再更新契约和实现。
 
@@ -166,6 +167,10 @@ unknown 后由当前获准写入者核对出结果，可对同一 tool_use_id �
 **后台进程与工具 RPC 分开。** bash_start 正常返回只说明这次工具调用完成，结果仍可能为进程 running；后续 Turn 可通过 bash_poll / bash_write / bash_terminate 操作所属执行 Session 的进程，使用各自新的 tool_use_id。进程退出不自动改写原 bash_start 的调用结果。进程归属、停止范围和计数见 [Session 后台进程](../../agent-engine/docs/session-runtime.md#后台进程属于执行-session)。
 
 ## 7. Turn 与 Session 状态快照
+
+### task.progress_updated
+
+任务 Session 的可靠事件。沿用公共 session_id、input_id、turn_id、seq、occurred_at。source 为 agent 或 executor；plan_version 为十进制字符串；summary、steps 和可空 metric 构成该轮完整快照。metric 含 step_id、done、total、unit，数值只描述对应步骤。计划版本只随 Agent 写入递增，合并所有来源以 Session 的 seq 为准。历史与 SSE 共用相同结构和游标，详情仅在当前任务权限范围内显示。卡片按任务返回的执行状态决定是否仍显示为当前进展。详见[任务记录](task-records.md#对话卡片与执行计划)。
 
 ### turn.updated
 

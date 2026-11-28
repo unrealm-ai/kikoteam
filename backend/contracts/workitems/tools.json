@@ -16,7 +16,7 @@
   },
   "work_item_read_file": {
     "name":"work_item_read_file","description":"读取当前环节已授权的固定版本文件。先从 work_item_get_current 的 files 选出 id。每次返回最多 48 KiB 的 base64 数据，继续读取使用 next_offset。UTF-8 内容还返回 text。",
-    "inputSchema":{"type":"object","properties":{"file_id":{"type":"string","format":"uuid"},"offset":{"type":"integer","minimum":0}},"required":["file_id"],"additionalProperties":false}
+    "inputSchema":{"type":"object","properties":{"file_id":{"type":"string","format":"uuid"},"offset":{"type":"integer","minimum":0},"progress_step_id":{"type":"string","maxLength":64,"description":"关联当前计划中正在执行的文件读取步骤，顺序读取时按实际字节更新。"},"progress_plan_version":{"type":"string","pattern":"^[1-9][0-9]*$"}},"dependentRequired":{"progress_step_id":["progress_plan_version"],"progress_plan_version":["progress_step_id"]},"required":["file_id"],"additionalProperties":false}
   },
   "work_item_accept": {
     "name": "work_item_accept",

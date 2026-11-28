@@ -56,13 +56,17 @@ func addTool(server *sdk.Server, spec *sdk.Tool, store service.WorkToolStore, op
 }
 
 func handler(server *sdk.Server, secret, role string) http.Handler {
+	return scopedHandler(server, secret, "mcp-"+role, service.WorkInputHeader)
+}
+
+func scopedHandler(server *sdk.Server, secret, audience, header string) http.Handler {
 	transport := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return server }, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Request-ID", service.NewID())
 		token, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		input := r.Header.Get(service.WorkInputHeader)
-		id, err := service.VerifyWorkTool(secret, "mcp-"+role, input, token)
+		input := r.Header.Get(header)
+		id, err := service.VerifyWorkTool(secret, audience, input, token)
 		if !bearer || err != nil || r.Header.Get("Origin") != "" || r.Header.Get("Cookie") != "" {
 			http.Error(w, "unauthenticated", http.StatusUnauthorized)
 			return

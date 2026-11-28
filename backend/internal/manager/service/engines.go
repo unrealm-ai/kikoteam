@@ -40,6 +40,7 @@ type HarnessConfig struct {
 	HumanMCPToken              string                    `json:"human_mcp_token,omitempty"`
 	GroupHistoryToken          string                    `json:"group_history_token,omitempty"`
 	TaskSpaceHistoryToken      string                    `json:"task_space_history_token,omitempty"`
+	TaskProgressToken          string                    `json:"task_progress_token,omitempty"`
 	TriggerID                  string                    `json:"-"`
 	TriggerVersion             int64                     `json:"-"`
 	TriggerEventID             string                    `json:"-"`

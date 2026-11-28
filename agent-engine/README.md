@@ -14,6 +14,8 @@
 
 Go 实现，可多实例部署，主动向 backend 注册、心跳和对账。backend 分配 Session；Engine 为每个归属自己的活跃 Session 启动一个专属 Pi RPC 进程，运行在 Engine 侧，与 Sandbox 分开。跨轮复用，无后台进程等活动时可释放；后续 Input 通过 Pi 原生 `--session` 加载并继续同一会话。
 
+普通子任务通过已有的逐 Input MCP 配置挂载 task_progress，向用户报告当前阶段，首次计划版本为 0。凭据轮换复用原生进程，详见[任务进展契约](../backend/docs/task-records.md#对话卡片与执行计划)。
+
 ## 职责与边界
 
 首版[裸 Sandbox](../sandbox-runner/docs/local-sandbox.md) 与 Engine 运行在同一台 Mac/Linux、同一账号环境中。Pi 与 Sandbox 分开指管理职责及进程边界。原生 RPC 已通过 Mac 与 Linux 验收。

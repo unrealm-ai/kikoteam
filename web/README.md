@@ -30,6 +30,8 @@
 
 Web 私聊支持[项目文件树和附件](../backend/docs/conversation-files.md)，包括拖入上传、逐项重试和历史卡片下载。
 
+对话中的「触发任务」卡片读取会话任务列表的 reported_progress，可展开步骤并查看确定的工作量。抽屉关闭后仍刷新卡片，任务详情复用本任务的 SSE。字段及轮次规则见[对话卡片与执行计划](../backend/docs/task-records.md#对话卡片与执行计划)。
+
 ## 对话与事件订阅
 
 目标业务组织是一个 Conversation 含唯一主 chat、多个 Task，每个 Task 关联唯一 task Session，详见[生命周期设计](../docs/architecture/conversation-lifecycle.md)。停止主对话不停止任务；任务停止/归档只作用自身；前端不提供主对话归档入口；后端手动归档 API 保留原有停稳后归档规则，任务归档只作用任务自身。页面须区分已受理、已归档和运行资源已释放，不能从 Turn 完成推断环境已回收；Web 不直接控制 Engine/Runner。Web 固定私聊和任务查看已接 Manager；自动任务结果回告按 `source_kind: task_report` 展示，实际验收见下方会话呈现记录。

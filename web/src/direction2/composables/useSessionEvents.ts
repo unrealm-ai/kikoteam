@@ -51,6 +51,9 @@ export function useSessionEvents(workspace: Ref<string>, sessionID: Ref<string>,
         events.value = mergeEvents(events.value, [value], id);
         if (!event.lastEventId) throw new Error('可靠事件缺少续读游标');
         last = event.lastEventId;
+        // The progress event is already a full snapshot. A counter update
+        // does not invalidate the session or task detail resources.
+        if (value.type === 'task.progress_updated') return;
         if (value.type.endsWith('.updated') || value.type === 'session.requires_action') void refresh();
         changed?.();
       } catch (e) { stream.close(); error.value = e instanceof Error ? e.message : '事件格式错误'; connection.value = '订阅已停止'; }

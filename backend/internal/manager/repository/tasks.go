@@ -15,7 +15,9 @@ const taskExecutionSQL = `CASE WHEN ` + publicBlockReason + ` IS NOT NULL OR s.b
 const taskFrom = sessionFrom + ` JOIN manager_tasks k ON k.id=s.task_id
  LEFT JOIN LATERAL (SELECT to_jsonb(i)-'text' AS value FROM manager_inputs i WHERE i.session_id=s.id ORDER BY seq DESC LIMIT 1) li ON true
  LEFT JOIN LATERAL (SELECT (to_jsonb(t)-'result_summary'-'error'-'usage')||jsonb_build_object('turn_no',t.turn_no::text) AS value FROM manager_turns t WHERE t.session_id=s.id ORDER BY turn_no DESC LIMIT 1) lt ON true `
-const taskColumns = publicSessionColumns + `,k.id,k.created_at,a.name,a.avatar,k.source_chat_session_id,k.source_chat_input_id,li.value,lt.value`
+const taskColumns = publicSessionColumns + `,k.id,k.created_at,a.name,a.avatar,k.source_chat_session_id,k.source_chat_input_id,li.value,lt.value,
+ (SELECT e.event FROM manager_session_events e WHERE e.session_id=s.id AND e.event->>'type'='task.progress_updated'
+ AND e.event->>'turn_id'=COALESCE(s.active_turn_id::text,lt.value->>'id') ORDER BY e.seq DESC LIMIT 1)`
 
 // scanSession remains the single implementation of execution/admission reads.
 type appendedScanner struct {
@@ -26,8 +28,8 @@ type appendedScanner struct {
 func (r appendedScanner) Scan(dest ...any) error { return r.scanner.Scan(append(dest, r.extra...)...) }
 func scanTask(row scanner) (service.Task, error) {
 	var out service.Task
-	var input, turn []byte
-	r := appendedScanner{scanner: row, extra: []any{&out.TaskID, &out.CreatedAt, &out.Agent.Name, &out.Agent.Avatar, &out.Source.ChatSessionID, &out.Source.ChatInputID, &input, &turn, &out.WorkItemID}}
+	var input, turn, progress []byte
+	r := appendedScanner{scanner: row, extra: []any{&out.TaskID, &out.CreatedAt, &out.Agent.Name, &out.Agent.Avatar, &out.Source.ChatSessionID, &out.Source.ChatInputID, &input, &turn, &progress, &out.WorkItemID}}
 	st, err := scanSession(r)
 	if err != nil {
 		return out, err
@@ -56,6 +58,11 @@ func scanTask(row scanner) (service.Task, error) {
 	}
 	if len(turn) > 0 {
 		if err = json.Unmarshal(turn, &out.LatestTurn); err != nil {
+			return out, err
+		}
+	}
+	if len(progress) > 0 {
+		if err = json.Unmarshal(progress, &out.ReportedProgress); err != nil {
 			return out, err
 		}
 	}

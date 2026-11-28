@@ -37,19 +37,27 @@ type modelWorkItem struct {
 
 func (f workRuntimeFixture) reply(t *testing.T, w http.ResponseWriter, r *http.Request, req runtimeRequest) bool {
 	t.Helper()
-	var user, last string
+	var user, last, planVersion string
 	var item modelWorkItem
 	readFiles := map[string]bool{}
 	seenRoot := false
 	for _, m := range req.Messages {
 		if m.Role == "user" {
-			user, last = fmt.Sprint(m.Content), ""
+			user, last, planVersion = fmt.Sprint(m.Content), "", ""
 			item = modelWorkItem{}
 			readFiles = map[string]bool{}
 			seenRoot = seenRoot || strings.Contains(user, "WORK-ROOT")
 		}
 		if m.Role == "tool" {
 			last = fmt.Sprint(m.Content)
+			if strings.Contains(last, `"event_seq"`) {
+				var receipt struct {
+					Version string `json:"plan_version"`
+				}
+				if json.Unmarshal([]byte(last), &receipt) == nil {
+					planVersion = receipt.Version
+				}
+			}
 			if strings.Contains(last, `"data_base64"`) {
 				var chunk struct {
 					File struct{ ID, Name string }
@@ -163,7 +171,11 @@ func (f workRuntimeFixture) reply(t *testing.T, w http.ResponseWriter, r *http.R
 			ids := []string{}
 			for _, file := range item.Files {
 				if !readFiles[file.ID] {
-					single("mcp__work_items__work_item_read_file", map[string]string{"file_id": file.ID})
+					if planVersion == "" {
+						single("mcp__task_progress__update_task_progress", map[string]any{"base_plan_version": "0", "summary": "读取交接文件", "steps": []map[string]string{{"id": "read", "label": "读取文件", "status": "in_progress"}}})
+						return true
+					}
+					single("mcp__work_items__work_item_read_file", map[string]string{"file_id": file.ID, "progress_step_id": "read", "progress_plan_version": planVersion})
 					return true
 				}
 				ids = append(ids, file.ID)
@@ -298,6 +310,10 @@ func testRuntimeWorkItems(t *testing.T, ctx context.Context, db *sql.DB, store *
 	}
 	if strings.Join(sequence, ",") != "completed,submitted,started,returned,submitted,started,handoff,started,created" {
 		t.Fatalf("timeline: %v", sequence)
+	}
+	var measured bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM manager_session_events WHERE event->>'type'='task.progress_updated' AND event->>'source'='executor' AND event->'metric'->>'unit'='字节' AND (event->'metric'->>'done')::bigint=(event->'metric'->>'total')::bigint)`).Scan(&measured); err != nil || !measured {
+		t.Fatalf("missing measured file progress: %v", err)
 	}
 	var files, grants, notices int
 	wait(func() bool {

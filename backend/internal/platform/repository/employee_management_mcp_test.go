@@ -214,7 +214,7 @@ func TestEmployeeManagementMCPRealWebAndSharedSkill(t *testing.T) {
 		t.Fatal(listed)
 	}
 	caller := ps.EmployeeManagementCaller{Workspace: w, Actor: member, Employee: employee, Input: f.input}
-	if id, src, err := (&EmployeeManagementStore{DB: db}).DefaultModel(ctx, caller); err != nil || id == "" || src != "workspace" {
+	if id, src, err := (&EmployeeManagementStore{DB: db}).ResolveModel(ctx, caller, ""); err != nil || id == "" || src != "workspace" {
 		t.Fatal("default model resolution", id, src, err)
 	}
 	created := f.expect(t, "create_employee", map[string]any{"name": "新员工"}, "")
@@ -327,21 +327,43 @@ func TestEmployeeManagementMCPRealWebAndSharedSkill(t *testing.T) {
 	if _, err = agents.Update(ctx, w, owner, employee, ps.AgentPatch{Version: int64(current["version"].(float64)), ModelProfileID: &model.ID}); err != nil {
 		t.Fatal("Web employee save must retain model updates", err)
 	}
-	if after := f.expect(t, "get_employee", map[string]any{"config_key": "model"}, ""); after["model_id"] != model.ID {
+	var shortID, platformShortID string
+	if err := db.QueryRow(`SELECT 'm'||management_number::text FROM platform_model_profiles WHERE id=$1`, model.ID).Scan(&shortID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT 'm'||management_number::text FROM platform_proxy_models WHERE id=$1`, official).Scan(&platformShortID); err != nil || platformShortID == shortID {
+		t.Fatal(platformShortID, shortID, err)
+	}
+	if after := f.expect(t, "get_employee", map[string]any{"config_key": "model"}, ""); after["model_id"] != shortID {
 		t.Fatal(after)
 	}
 	reviewExec(t, db, `DELETE FROM platform_agent_maintainers WHERE agent_id=$1 AND user_id=$2`, employee, member)
-	f.expect(t, "list_employee_resources", map[string]any{"resource_type": "model", "id": model.ID}, "")
-	choices := f.expect(t, "list_employee_resources", map[string]any{"purpose": "create", "resource_type": "model", "id": model.ID, "page_size": 1}, "")
+	f.expect(t, "list_employee_resources", map[string]any{"resource_type": "model", "id": shortID}, "")
+	choices := f.expect(t, "list_employee_resources", map[string]any{"purpose": "create", "resource_type": "model", "id": shortID, "page_size": 1}, "")
 	choice := choices["items"].([]any)[0].(map[string]any)
-	if choice["id"] != model.ID || choice["source"] != "workspace" {
+	if choice["id"] != shortID || choice["source"] != "workspace" {
 		t.Fatal(choice)
 	}
-	newEmployee := f.expect(t, "create_employee", map[string]any{"name": "指定查询得到的模型", "model_id": choice["id"], "model_source": choice["source"]}, "")
+	newEmployee := f.expect(t, "create_employee", map[string]any{"name": "指定查询得到的模型", "model_id": choice["id"]}, "")
 	readback := f.expect(t, "get_employee", map[string]any{"employee_id": newEmployee["id"], "config_key": "model"}, "")
-	if readback["model_id"] != model.ID {
+	if readback["model_id"] != shortID {
 		t.Fatal(readback)
 	}
+	selected := f.expect(t, "create_employee", map[string]any{"name": "指定平台模型", "model_id": platformShortID}, "")
+	if err := db.QueryRow(`SELECT platform_model_id FROM platform_agents WHERE id=$1`, selected["id"]).Scan(&fallbackID); err != nil || fallbackID != official {
+		t.Fatal(fallbackID, err)
+	}
+	f.expect(t, "create_employee", map[string]any{"name": "不能替换为默认模型", "model_id": "m9223372036854775807"}, "model_unavailable")
+	f.expect(t, "create_employee", map[string]any{"name": "无效短 ID", "model_id": "m+1"}, "invalid_employee_management_request")
+	// Synthetic duplicate across catalogs: workspace is authoritative, even
+	// if its match is disabled. Normal inserts share one sequence.
+	reviewExec(t, db, `UPDATE platform_proxy_models SET management_number=(SELECT management_number FROM platform_model_profiles WHERE id=$2) WHERE id=$1`, official, model.ID)
+	id, source, err := (&EmployeeManagementStore{DB: db}).ResolveModel(ctx, caller, shortID)
+	if err != nil || id != model.ID || source != "workspace" {
+		t.Fatal(id, source, err)
+	}
+	reviewExec(t, db, `UPDATE platform_model_profiles SET enabled=false,is_default=false WHERE id=$1`, model.ID)
+	f.expect(t, "create_employee", map[string]any{"name": "不能跳过已停用的工作区模型", "model_id": shortID}, "model_unavailable")
 	f.expect(t, "list_employee_resources", map[string]any{"resource_type": "skill", "purpose": "create"}, "invalid_employee_management_request")
 	f.expect(t, "list_employee_resources", map[string]any{"resource_type": "model", "purpose": "create", "employee_id": employee}, "invalid_employee_management_request")
 	f.expect(t, "update_employee", map[string]any{"config_key": "profile", "name": "撤权后不修改", "version": 2}, "employee_management_forbidden")

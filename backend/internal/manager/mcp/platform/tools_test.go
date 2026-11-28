@@ -29,7 +29,7 @@ func (*fixture) Employees(context.Context, ps.EmployeeManagementCaller, ps.Manag
 func (*fixture) Resources(_ context.Context, _ ps.EmployeeManagementCaller, _ string, kind string, q ps.ManagementQuery) (ps.ManagementPage[ps.ManagementResource], error) {
 	return ps.ManagementPage[ps.ManagementResource]{Page: q.Page, Items: []ps.ManagementResource{{ID: q.ID, Name: q.Name, Source: kind}}}, nil
 }
-func (*fixture) DefaultModel(context.Context, ps.EmployeeManagementCaller) (string, string, error) {
+func (*fixture) ResolveModel(context.Context, ps.EmployeeManagementCaller, string) (string, string, error) {
 	return "00000000-0000-0000-0000-000000000010", "workspace", nil
 }
 func (*fixture) Create(context.Context, string, string, ps.AgentCreate) (ps.Agent, error) {
@@ -97,6 +97,9 @@ func TestMCPManagementContract(t *testing.T) {
 			}
 			if slices.ContainsFunc([]string{"workspace_id", "actor_id", "user_id"}, func(s string) bool { return strings.Contains(string(raw), s) }) || !assistant && strings.Contains(string(raw), "employee_id") {
 				t.Fatal("identity or scoped target escaped into schema", string(raw))
+			}
+			if x.Name == "create_employee" && (strings.Contains(string(raw), `"model_source"`) || !strings.Contains(string(raw), `"model_id"`)) {
+				t.Fatal("only the optional short model ID should be advertised", string(raw))
 			}
 			if (x.Name == "create_employee" || x.Name == "update_employee") && strings.Contains(string(raw), `"avatar"`) {
 				t.Fatal("avatar escaped into mutation schema", string(raw))

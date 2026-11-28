@@ -15,29 +15,30 @@ type AgentCardResources struct {
 	TriggerCount int      `json:"trigger_count"`
 }
 type Agent struct {
-	IsAssistant     bool                `json:"is_assistant,omitempty"`
-	CanChat         bool                `json:"can_chat"`
-	CanManage       bool                `json:"can_manage"`
-	CardResources   *AgentCardResources `json:"card_resources,omitempty"`
-	WebAccess       WebAccess           `json:"web_access"`
-	Payer           *AgentPayer         `json:"payer,omitempty"`
-	TemplateOrigin  *TemplateOrigin     `json:"template_origin,omitempty"`
-	ID              string              `json:"id"`
-	Name            string              `json:"name"`
-	Role            string              `json:"role"`
-	Avatar          string              `json:"avatar"`
-	Instruction     string              `json:"instruction"`
-	ModelProfileID  string              `json:"model_profile_id"`
-	PlatformModelID string              `json:"platform_model_id,omitempty"`
-	ModelName       string              `json:"model_name"`
-	ModelAvailable  bool                `json:"model_available"`
-	Harness         string              `json:"harness"`
-	Enabled         bool                `json:"enabled"`
-	Version         int64               `json:"version"`
-	ConfigVersion   int64               `json:"config_version"`
-	AdmissionEpoch  int64               `json:"admission_epoch"`
-	CreatedAt       time.Time           `json:"created_at"`
-	UpdatedAt       time.Time           `json:"updated_at"`
+	IsAssistant        bool                `json:"is_assistant,omitempty"`
+	CanChat            bool                `json:"can_chat"`
+	CanManage          bool                `json:"can_manage"`
+	CardResources      *AgentCardResources `json:"card_resources,omitempty"`
+	WebAccess          WebAccess           `json:"web_access"`
+	Payer              *AgentPayer         `json:"payer,omitempty"`
+	TemplateOrigin     *TemplateOrigin     `json:"template_origin,omitempty"`
+	ID                 string              `json:"id"`
+	Name               string              `json:"name"`
+	Role               string              `json:"role"`
+	Avatar             string              `json:"avatar"`
+	Instruction        string              `json:"instruction"`
+	ModelProfileID     string              `json:"model_profile_id"`
+	PlatformModelID    string              `json:"platform_model_id,omitempty"`
+	ManagementModelRef string              `json:"-"`
+	ModelName          string              `json:"model_name"`
+	ModelAvailable     bool                `json:"model_available"`
+	Harness            string              `json:"harness"`
+	Enabled            bool                `json:"enabled"`
+	Version            int64               `json:"version"`
+	ConfigVersion      int64               `json:"config_version"`
+	AdmissionEpoch     int64               `json:"admission_epoch"`
+	CreatedAt          time.Time           `json:"created_at"`
+	UpdatedAt          time.Time           `json:"updated_at"`
 }
 type AgentPayer struct {
 	ID   string `json:"id"`

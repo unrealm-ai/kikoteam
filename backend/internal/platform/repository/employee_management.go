@@ -181,13 +181,20 @@ func (s *EmployeeManagementStore) Read(ctx context.Context, v service.EmployeeMa
 			return err
 		}
 		out.CanManage, err = managementPermission(ctx, t, v, target)
-		return err
+		if err != nil || !out.CanManage {
+			return err
+		}
+		return t.tx.QueryRowContext(ctx, `SELECT COALESCE('m'||(
+ SELECT management_number FROM platform_model_profiles WHERE workspace_id=$1 AND id=NULLIF($2,'')::uuid
+ UNION ALL
+ SELECT management_number FROM platform_proxy_models WHERE id=NULLIF($3,'')::uuid)::text,'')`,
+			t.workspace, out.ModelProfileID, out.PlatformModelID).Scan(&out.ManagementModelRef)
 	})
 	return out, err
 }
 
 func (s *EmployeeManagementStore) Employees(ctx context.Context, v service.EmployeeManagementCaller, q service.ManagementQuery) (service.ManagementPage[service.EmployeeSummary], error) {
-	return managementList(ctx, s, v, q, func(t *modelTx) error { return authorizeAssistantWeb(ctx, t, v) }, `SELECT id,name,role,enabled,created_at FROM platform_agents WHERE workspace_id=$1`,
+	return managementList(ctx, s, v, q, false, func(t *modelTx) error { return authorizeAssistantWeb(ctx, t, v) }, `SELECT id,name,role,enabled,created_at FROM platform_agents WHERE workspace_id=$1`,
 		func(r *sql.Rows) (service.EmployeeSummary, error) {
 			var a service.EmployeeSummary
 			e := r.Scan(&a.ID, &a.Name, &a.Role, &a.Enabled)
@@ -197,8 +204,8 @@ func (s *EmployeeManagementStore) Employees(ctx context.Context, v service.Emplo
 }
 
 var managementResources = map[string]string{
-	"model": `SELECT id,name,description AS summary,'workspace' AS source,'' AS version_id,version::text AS version,created_at FROM platform_model_profiles WHERE workspace_id=$1 AND enabled AND validated
- UNION ALL SELECT id,name,'' AS summary,'platform','',version::text,created_at FROM platform_proxy_models WHERE enabled AND validated`,
+	"model": `SELECT id,name,description AS summary,management_number,'workspace' AS source,'' AS version_id,version::text AS version,created_at FROM platform_model_profiles WHERE workspace_id=$1 AND enabled AND validated
+ UNION ALL SELECT id,name,'' AS summary,management_number,'platform','',version::text,created_at FROM platform_proxy_models WHERE enabled AND validated`,
 	"skill": `SELECT s.id,s.name,COALESCE(NULLIF(s.description,''),v.description) AS summary,CASE WHEN s.workspace_id IS NULL THEN 'platform' ELSE 'workspace' END AS source,
  v.id::text AS version_id,COALESCE(NULLIF(v.version_label,''),v.sequence::text) AS version,s.created_at FROM platform_skills s JOIN platform_skill_versions v ON v.id=s.current_version_id
  WHERE (s.workspace_id=$1 OR s.workspace_id IS NULL) AND s.enabled AND s.listed AND s.archived_at IS NULL`,
@@ -217,29 +224,43 @@ func (s *EmployeeManagementStore) Resources(ctx context.Context, v service.Emplo
 	if !ok {
 		return service.ManagementPage[service.ManagementResource]{}, service.Fail("invalid_resource_type", 400, "资源类型应为 model、skill 或 mcp")
 	}
-	return managementList(ctx, s, v, q, func(t *modelTx) error { return authorizeResourceCatalog(ctx, t, v, target) }, base,
+	idColumn := "id"
+	if kind == "model" {
+		idColumn = "'m'||management_number::text"
+	}
+	return managementList(ctx, s, v, q, kind == "model", func(t *modelTx) error { return authorizeResourceCatalog(ctx, t, v, target) }, base,
 		func(r *sql.Rows) (service.ManagementResource, error) {
 			var a service.ManagementResource
 			e := r.Scan(&a.ID, &a.Name, &a.Summary, &a.Source, &a.VersionID, &a.Version)
 			return a, e
 		},
-		`id,name,left(regexp_replace(summary,'[[:space:]]+',' ','g'),160),source,version_id,version`)
+		idColumn+`,name,left(regexp_replace(summary,'[[:space:]]+',' ','g'),160),source,version_id,version`)
 }
 
-func managementList[T any](ctx context.Context, s *EmployeeManagementStore, v service.EmployeeManagementCaller, q service.ManagementQuery, authorize func(*modelTx) error, base string, scan func(*sql.Rows) (T, error), columns string) (service.ManagementPage[T], error) {
-	if err := q.Normalize(); err != nil {
+func managementList[T any](ctx context.Context, s *EmployeeManagementStore, v service.EmployeeManagementCaller, q service.ManagementQuery, model bool, authorize func(*modelTx) error, base string, scan func(*sql.Rows) (T, error), columns string) (service.ManagementPage[T], error) {
+	normalize := q.Normalize
+	idFilter := "(NULLIF($2,'')::uuid IS NULL OR id=NULLIF($2,'')::uuid)"
+	if model {
+		normalize = q.NormalizeModels
+		idFilter = "(NULLIF($2,'')::bigint IS NULL OR management_number=NULLIF($2,'')::bigint)"
+	}
+	if err := normalize(); err != nil {
 		return service.ManagementPage[T]{}, err
+	}
+	id := q.ID
+	if model {
+		id = service.ManagementModelNumber(id)
 	}
 	out := service.ManagementPage[T]{Items: []T{}, Page: q.Page, PageSize: q.PageSize}
 	err := s.inWorkspace(ctx, v, func(t *modelTx) error {
 		if e := authorize(t); e != nil {
 			return e
 		}
-		from := ` FROM (` + base + `) candidates WHERE (NULLIF($2,'')::uuid IS NULL OR id=NULLIF($2,'')::uuid) AND ($3='' OR strpos(lower(name),lower($3))>0)`
-		if e := t.tx.QueryRowContext(ctx, "SELECT count(*)"+from, t.workspace, q.ID, q.Name).Scan(&out.Total); e != nil {
+		from := ` FROM (` + base + `) candidates WHERE ` + idFilter + ` AND ($3='' OR strpos(lower(name),lower($3))>0)`
+		if e := t.tx.QueryRowContext(ctx, "SELECT count(*)"+from, t.workspace, id, q.Name).Scan(&out.Total); e != nil {
 			return e
 		}
-		rows, e := t.tx.QueryContext(ctx, "SELECT "+columns+from+" ORDER BY created_at DESC,id DESC LIMIT $4 OFFSET $5", t.workspace, q.ID, q.Name, q.PageSize, (q.Page-1)*q.PageSize)
+		rows, e := t.tx.QueryContext(ctx, "SELECT "+columns+from+" ORDER BY created_at DESC,id DESC LIMIT $4 OFFSET $5", t.workspace, id, q.Name, q.PageSize, (q.Page-1)*q.PageSize)
 		if e != nil {
 			return e
 		}
@@ -298,16 +319,41 @@ func authorizeAssistantWeb(ctx context.Context, t *modelTx, v service.EmployeeMa
 	return err
 }
 
-func (s *EmployeeManagementStore) DefaultModel(ctx context.Context, v service.EmployeeManagementCaller) (id, source string, err error) {
+func (s *EmployeeManagementStore) ResolveModel(ctx context.Context, v service.EmployeeManagementCaller, ref string) (id, source string, err error) {
 	err = s.inWorkspace(ctx, v, func(t *modelTx) error {
 		if e := authorizeAssistantWeb(ctx, t, v); e != nil {
 			return e
+		}
+		if ref != "" {
+			return lookupManagementModel(ctx, t, ref, &id, &source)
 		}
 		return t.tx.QueryRowContext(ctx, `WITH candidates AS (`+candidates+`)
  SELECT id,item->>'source' FROM candidates WHERE preferred ORDER BY rank,id LIMIT 1`, t.workspace).Scan(&id, &source)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		err = service.Fail("model_unavailable", 409, "请先配置工作区默认模型，或联系平台管理员配置平台默认模型")
+		if ref != "" {
+			err = service.Fail("model_unavailable", 409, "找不到所选模型，请重新查询可用模型")
+		} else {
+			err = service.Fail("model_unavailable", 409, "请先配置工作区默认模型，或联系平台管理员配置平台默认模型")
+		}
 	}
 	return
+}
+
+func lookupManagementModel(ctx context.Context, t *modelTx, ref string, id, source *string) error {
+	number := service.ManagementModelNumber(ref)
+	if number == "" {
+		return service.Fail("invalid_employee_management_request", 400, "请使用模型查询返回的短 ID")
+	}
+	var available bool
+	err := t.tx.QueryRowContext(ctx, `SELECT id,enabled AND validated FROM platform_model_profiles WHERE workspace_id=$1 AND management_number=$2::text::bigint`, t.workspace, number).Scan(id, &available)
+	*source = "workspace"
+	if errors.Is(err, sql.ErrNoRows) {
+		*source = "platform"
+		err = t.tx.QueryRowContext(ctx, `SELECT id,enabled AND validated FROM platform_proxy_models WHERE management_number=$1::text::bigint`, number).Scan(id, &available)
+	}
+	if err == nil && !available {
+		return service.Fail("model_unavailable", 409, "所选模型未通过验证或已停用，请重新查询可用模型")
+	}
+	return err
 }

@@ -15,7 +15,7 @@ type Directory interface {
 	Read(context.Context, ps.EmployeeManagementCaller, string) (ps.Agent, error)
 	Employees(context.Context, ps.EmployeeManagementCaller, ps.ManagementQuery) (ps.ManagementPage[ps.EmployeeSummary], error)
 	Resources(context.Context, ps.EmployeeManagementCaller, string, string, ps.ManagementQuery) (ps.ManagementPage[ps.ManagementResource], error)
-	DefaultModel(context.Context, ps.EmployeeManagementCaller) (string, string, error)
+	ResolveModel(context.Context, ps.EmployeeManagementCaller, string) (string, string, error)
 }
 type Agents interface {
 	Create(context.Context, string, string, ps.AgentCreate) (ps.Agent, error)
@@ -87,8 +87,7 @@ type createInput struct {
 	Name        string `json:"name"`
 	Role        string `json:"role,omitempty"`
 	Instruction string `json:"instruction,omitempty"`
-	ModelID     string `json:"model_id,omitempty" jsonschema:"取自 list_employee_resources 的 id；省略时优先用工作区默认模型，其次平台默认模型"`
-	ModelSource string `json:"model_source,omitempty" jsonschema:"指定模型时使用资源列表返回的 source（workspace 或 platform）"`
+	ModelID     string `json:"model_id,omitempty" jsonschema:"不指定时省略。指定时用模型列表返回的短 ID（如 m42）；省略时优先工作区默认模型，其次平台默认模型"`
 }
 type bindingInput struct {
 	PackageID  string `json:"package_id" jsonschema:"从 get_employee 的 capability_packages 取目标能力包的 id"`
@@ -137,7 +136,7 @@ func (t Tools) Server(assistant bool) *sdk.Server {
 		})
 	} else {
 		addTool(sv, "get_employee", getDesc, t.get)
-		addTool(sv, "list_employee_resources", resDesc+" 创建员工前可用 purpose=create、resource_type=model 查询，返回 id 和 source，分别作为 model_id 和 model_source。", t.resources)
+		addTool(sv, "list_employee_resources", resDesc+" 创建员工前可用 purpose=create、resource_type=model 查询，返回的短 id 可直接作为可选的 model_id。", t.resources)
 		addTool(sv, "update_employee", updateDesc, t.update)
 		addTool(sv, "list_employees", "在当前工作区分页查找员工；可按名称搜索或用 ID 精确过滤，只返回概览。", func(ctx context.Context, c ps.EmployeeManagementCaller, i ps.ManagementQuery) (any, error) {
 			return t.Directory.Employees(ctx, c, i)
@@ -162,9 +161,12 @@ var configOptions = []configOption{
 
 func modelIdentity(a ps.Agent) (string, string) {
 	if a.PlatformModelID != "" {
-		return a.PlatformModelID, "platform"
+		return a.ManagementModelRef, "platform"
 	}
-	return a.ModelProfileID, "workspace"
+	if a.ModelProfileID != "" {
+		return a.ManagementModelRef, "workspace"
+	}
+	return "", ""
 }
 func (t Tools) get(ctx context.Context, c ps.EmployeeManagementCaller, i getInput) (any, error) {
 	target, e := i.target(c)
@@ -256,13 +258,9 @@ func (t Tools) create(ctx context.Context, c ps.EmployeeManagementCaller, i crea
 	if c.Channel {
 		return nil, ps.Fail("employee_creation_web_only", 403, "请使用有创建权限的 Web 账号创建员工")
 	}
-	id, source := i.ModelID, i.ModelSource
-	if id == "" && source == "" {
-		var e error
-		id, source, e = t.Directory.DefaultModel(ctx, c)
-		if e != nil {
-			return nil, e
-		}
+	id, source, e := t.Directory.ResolveModel(ctx, c, i.ModelID)
+	if e != nil {
+		return nil, e
 	}
 	r := ps.AgentCreate{Name: i.Name, Role: i.Role, Avatar: fmt.Sprintf("cn-v2-%02d", rand.IntN(portraitPresetCount)+1), Instruction: i.Instruction}
 	switch source {

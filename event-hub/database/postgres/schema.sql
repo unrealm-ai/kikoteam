@@ -3727,6 +3727,18 @@ CREATE TABLE public.platform_mail_settings (
 
 
 --
+-- Name: platform_management_model_number_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.platform_management_model_number_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
 -- Name: platform_members; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3800,6 +3812,7 @@ CREATE TABLE public.platform_model_profiles (
     is_default boolean DEFAULT false NOT NULL,
     tested_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    management_number bigint DEFAULT nextval('public.platform_management_model_number_seq'::regclass) NOT NULL,
     CONSTRAINT platform_model_profiles_base_url_check CHECK (((length(base_url) >= 1) AND (length(base_url) <= 2048))),
     CONSTRAINT platform_model_profiles_check CHECK (((NOT is_default) OR enabled)),
     CONSTRAINT platform_model_profiles_check1 CHECK (((NOT enabled) OR validated)),
@@ -4038,6 +4051,7 @@ CREATE TABLE public.platform_proxy_models (
     updated_by uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    management_number bigint DEFAULT nextval('public.platform_management_model_number_seq'::regclass) NOT NULL,
     CONSTRAINT platform_proxy_models_cache_read_price_units_check CHECK ((cache_read_price_units >= 0)),
     CONSTRAINT platform_proxy_models_cache_write_price_units_check CHECK ((cache_write_price_units >= 0)),
     CONSTRAINT platform_proxy_models_check CHECK (((NOT enabled) OR validated)),
@@ -6003,6 +6017,14 @@ ALTER TABLE ONLY public.platform_model_profile_versions
 
 
 --
+-- Name: platform_model_profiles platform_model_profiles_management_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_model_profiles
+    ADD CONSTRAINT platform_model_profiles_management_number_key UNIQUE (management_number);
+
+
+--
 -- Name: platform_model_profiles platform_model_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6120,6 +6142,14 @@ ALTER TABLE ONLY public.platform_plugins
 
 ALTER TABLE ONLY public.platform_plugins
     ADD CONSTRAINT platform_plugins_workspace_id_id_key UNIQUE (workspace_id, id);
+
+
+--
+-- Name: platform_proxy_models platform_proxy_models_management_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_proxy_models
+    ADD CONSTRAINT platform_proxy_models_management_number_key UNIQUE (management_number);
 
 
 --

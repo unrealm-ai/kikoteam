@@ -172,7 +172,7 @@ KIKO 助手的默认配置由代码提供，不使用员工模板。每个新工
 | `list_employees` | 仅 KIKO Web，按名称或精确 ID 分页查当前工作区员工，返回概览。 |
 | `create_employee` | 仅 KIKO Web，复用工作区成员创建权限和页面创建服务；用户明确要求才调用。未指定模型时优先工作区默认模型，之后平台默认模型。创建不传头像，系统从平台支持的头像中随机选一张并保存。 |
 | `get_employee` | 默认只返回概览。有管理权限时附配置目录；传 `config_key` 一次查一个模块。 |
-| `list_employee_resources` | 有效工作区成员可从 Web 私聊只读查询共享模型、Skill 和 MCP，包括启用且已上架的官方 Skill 与插件；目录与员工管理权限分开，不授予安装权限。IM 私聊仍按当前员工管理权限查询。按模型／Skill／MCP 分类，支持名称、精确 ID、分页；返回 ID、名称、短摘要、来源和版本，不返回工具详情和凭证。KIKO Web 的创建流程可用 `purpose=create, resource_type=model` 查询模型，不要求对任何已有员工有管理权限；把返回的 `id` / `source` 填入 `model_id` / `model_source`。 |
+| `list_employee_resources` | 有效工作区成员可从 Web 私聊只读查询共享模型、Skill 和 MCP，包括启用且已上架的官方 Skill 与插件；目录与员工管理权限分开，不授予安装权限。IM 私聊仍按当前员工管理权限查询。按模型／Skill／MCP 分类，支持名称、精确 ID、分页；返回 ID、名称、短摘要、来源和版本，不返回工具详情和凭证。KIKO Web 的创建流程可用 `purpose=create, resource_type=model` 查询模型，不要求对任何已有员工有管理权限；只需把返回的短 `id`（例如 `m42`）填入 `model_id`；来源仅作展示。后端解析时先查当前工作区，再查平台，并保留原 UUID 作为数据库关联。 |
 | `update_employee` | 和 get 共用 `config_key`，每次保存一项。只支持档案、岗位约束及已有能力包增删共享 Skill／MCP；不上传或发布资源，不改群配置、权限、维护人、启停、渠道或触发器。 |
 
 配置 key 为 `profile`、`instruction`、`model`、`capability_packages`。模型只读，切换模型只在页面执行；创建员工仍可指定模型。MCP 不返回头像 ID；普通员工可在页面更换，KIKO 助手头像固定。保存使用 get 返回的员工版本或单个能力包版本。能力包改的是挂载，不动其它固定版本、权限或共享资源本身。更新后可按同一 key 读回。Web 原有功能不裁剪；切换到平台付费模型仍在 Web 确认积分扣费。验证 GitHub Skill 不等于发布或安装：无目标管理权限返回明确拒绝，有权限但没发布时不得安装。

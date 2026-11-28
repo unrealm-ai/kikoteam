@@ -21,7 +21,7 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 	mailStore := &MailSettingsStore{DB: db}
 	candidate := service.MailSettings{
 		MailPolicy: service.MailPolicy{Enabled: true}, Address: "mail.example.test:465", Host: "mail.example.test",
-		Username: "noreply@example.test", From: "noreply@example.test", ImplicitTLS: true,
+		Username: "smtp-account", From: "noreply@example.test", ImplicitTLS: true,
 	}
 	var deliveryTarget string
 	sends := 0
@@ -30,6 +30,9 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 		SendTest: func(_ context.Context, d service.MailSettingsDraft, to string) error {
 			sends++
 			deliveryTarget = to
+			if d.Username != candidate.Username || d.From != candidate.From {
+				return errors.New("SMTP login and sender were not preserved")
+			}
 			if d.Password != "initial-fixture-secret" && d.Password != "database-fixture-secret" {
 				return errors.New("SMTP fixture rejection")
 			}
@@ -81,14 +84,15 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 		t.Fatal("mail test must target current admin")
 	}
 	badTargets := map[string]func(*service.MailSettingsDraft){
-		"ip":       func(d *service.MailSettingsDraft) { d.Address, d.Host = "127.0.0.1:465", "127.0.0.1" },
-		"ipv6":     func(d *service.MailSettingsDraft) { d.Address, d.Host = "[::1]:465", "::1" },
-		"url":      func(d *service.MailSettingsDraft) { d.Address = "https://mail.example.test:465" },
-		"port":     func(d *service.MailSettingsDraft) { d.Address = "mail.example.test:2525" },
-		"tls-host": func(d *service.MailSettingsDraft) { d.Host = "wrong.example.test" },
-		"tls-mode": func(d *service.MailSettingsDraft) { d.ImplicitTLS = false },
-		"relay":    func(d *service.MailSettingsDraft) { d.Username, d.Password = "", "" },
-		"alias":    func(d *service.MailSettingsDraft) { d.From = "alias@example.test" },
+		"ip":         func(d *service.MailSettingsDraft) { d.Address, d.Host = "127.0.0.1:465", "127.0.0.1" },
+		"ipv6":       func(d *service.MailSettingsDraft) { d.Address, d.Host = "[::1]:465", "::1" },
+		"url":        func(d *service.MailSettingsDraft) { d.Address = "https://mail.example.test:465" },
+		"port":       func(d *service.MailSettingsDraft) { d.Address = "mail.example.test:2525" },
+		"tls-host":   func(d *service.MailSettingsDraft) { d.Host = "wrong.example.test" },
+		"tls-mode":   func(d *service.MailSettingsDraft) { d.ImplicitTLS = false },
+		"relay":      func(d *service.MailSettingsDraft) { d.Username, d.Password = "", "" },
+		"bad-sender": func(d *service.MailSettingsDraft) { d.From = "not-an-email" },
+		"bad-login":  func(d *service.MailSettingsDraft) { d.Username = "invalid\r\naccount" },
 		"missing-credential": func(d *service.MailSettingsDraft) {
 			d.Address, d.Host, d.Password = "other.example.test:465", "other.example.test", ""
 		},
@@ -171,8 +175,20 @@ func TestPlatformMailSettingsRuntimeAndHTTP(t *testing.T) {
 	view = request("PATCH", path, adminToken, draft, 200)
 	assertSafeMailView(t, view, "database", 3)
 	effective, err := settings.Runtime(ctx)
-	if err != nil || effective.Password != "database-fixture-secret" {
-		t.Fatal("blank password did not keep same-target secret", err)
+	if err != nil || effective.Password != "database-fixture-secret" || effective.Username != candidate.Username || effective.From != candidate.From {
+		t.Fatal("saved login, sender or same-target secret was not preserved", err)
+	}
+	draft.Version = 3
+	for _, change := range []func(*service.MailSettingsDraft){
+		func(d *service.MailSettingsDraft) { d.Username = "another-login" },
+		func(d *service.MailSettingsDraft) { d.From = "other@example.test" },
+	} {
+		changed := draft
+		change(&changed)
+		resp := request("POST", path+"/test", adminToken, changed, 400)
+		if !strings.Contains(resp.Body.String(), "invalid_mail_settings") {
+			t.Fatal("a changed login or sender must not reuse the saved password")
+		}
 	}
 	// Simulate an unavailable settings lookup without touching any real data.
 	if _, err := db.ExecContext(ctx, "ALTER TABLE platform_mail_settings RENAME TO missing_mail_settings_for_test"); err != nil {

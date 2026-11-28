@@ -1,0 +1,38 @@
+.registration-setting-card {
+  box-sizing: border-box;
+  border: 1px solid var(--id-border-subtle);
+  border-radius: var(--id-radius-lg);
+  background: var(--id-bg-surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 12px 16px;
+  margin: 0;
+}
+.signup-bonus-copy {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.signup-bonus-copy label,
+.signup-bonus-copy strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.signup-bonus-copy .sub-desc {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--id-text-secondary);
+}
+.signup-bonus-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.signup-bonus-control :deep(.n-input) {
+  width: 128px;
+}

@@ -197,8 +197,8 @@ func validateSimpleMailSettings(in MailSettings) error {
 			return invalidMailSettings("SMTP DNS 主机名格式无效")
 		}
 	}
-	if in.Username == "" || in.Username != in.From {
-		return invalidMailSettings("SMTP 认证账号和发件人必须是同一个邮箱地址")
+	if in.Username == "" {
+		return invalidMailSettings("请输入 SMTP 认证账号")
 	}
 	return nil
 }

@@ -39,7 +39,7 @@ onMounted(load);
 </script>
 
 <template>
-  <form class="settings-card settings signup-bonus-card" @submit.prevent="save">
+  <form class="registration-setting-card" @submit.prevent="save">
     <div class="signup-bonus-copy">
       <strong>邀请拉新奖励</strong>
       <span class="sub-desc">每位通过邀请链接注册并验证邮箱的新用户，为邀请人带来 100 积分。关闭后旧链接仍可注册或登录，但不发奖励。</span>
@@ -53,8 +53,4 @@ onMounted(load);
   </form>
 </template>
 
-<style scoped>
-.settings-card { padding: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.signup-bonus-copy { display: grid; gap: 4px; }
-.signup-bonus-control { display: flex; align-items: center; gap: 12px; }
-</style>
+<style scoped src="../components/registration-settings-cards.css"></style>

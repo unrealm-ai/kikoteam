@@ -69,7 +69,7 @@ candidateRequest:
         description: >-
           For Test or an enabled save, address must be a DNS hostname with port
           465 (implicit TLS) or 587 (STARTTLS); host must match that hostname;
-          username and from must be the same email address. The password cannot
+          username must be nonempty and may differ from the sender mailbox in from. The password cannot
           be empty unless retained from the same saved profile.
         required: [version, enabled, registration_verification_required, address, host, username, from, implicit_tls]
         properties:

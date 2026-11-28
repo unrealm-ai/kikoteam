@@ -169,14 +169,14 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
       <NButton size="small" :type="accountTab==='users'?'primary':'default'" @click="accountTab='users'">用户管理</NButton>
       <NButton size="small" :type="accountTab==='registration'?'primary':'default'" @click="selectRegistration">注册与邀请</NButton>
     </nav>
-    <section v-if="registrationOpened" v-show="tab==='accounts' && accountTab==='registration'" class="accounts-panel-stack">
-      <form v-if="settings" class="settings-card settings signup-bonus-card" @submit.prevent="saveSettings">
+    <section v-if="registrationOpened" v-show="tab==='accounts' && accountTab==='registration'" class="accounts-panel-stack registration-panel">
+      <form v-if="settings" class="registration-setting-card" @submit.prevent="saveSettings">
         <div class="signup-bonus-copy">
           <label for="signup-bonus">新用户注册赠送积分</label>
           <span class="sub-desc">新用户首次注册成功后自动发放的官方模型初始积分额度</span>
         </div>
         <div class="signup-bonus-control">
-          <NInput v-model:value="settings.signup_bonus" :input-props="{id:'signup-bonus'}" :disabled="busy" placeholder="0" />
+          <NInput v-model:value="settings.signup_bonus" size="small" :input-props="{id:'signup-bonus'}" :disabled="busy" placeholder="0" />
           <span class="unit-label">积分</span>
           <NButton attr-type="submit" type="primary" size="small" :loading="busy">保存设置</NButton>
         </div>
@@ -338,34 +338,10 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
   gap: 16px;
 }
 
-.signup-bonus-card {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 14px 20px;
-  padding: 16px 20px;
-}
-.signup-bonus-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1 1 260px;
-}
-.signup-bonus-copy label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--id-text-primary);
-}
-.signup-bonus-control {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.signup-bonus-control :deep(.n-input) {
-  width: 148px;
+.registration-panel.accounts-panel-stack {
+  width: 100%;
+  max-width: 780px;
+  gap: 12px;
 }
 .unit-label {
   font-size: 13px;
@@ -505,10 +481,8 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
   .platform-admin-banner {
     padding: 14px 16px;
   }
-  .signup-bonus-card {
-    padding: 16px;
-  }
 }
 </style>
 
 <style scoped src="../components/workspace-settings-shared.css"></style>
+<style scoped src="../components/registration-settings-cards.css"></style>

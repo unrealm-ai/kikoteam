@@ -189,6 +189,44 @@ test('SMTP test uses the unsaved draft without saving or revealing the stored pa
   } finally { await m.close(); }
 });
 
+test('custom SMTP persists an independent username and invalidates test proof when it changes', async () => {
+  let settings = {...baseMail, address:'smtp.example.test:465', implicit_tls:true, username:'service-user'};
+  const m = await mount(r => {
+    if (r.url === mail+'/test') return Response.json({ok:true,test_receipt:'custom-smtp-receipt'});
+    if (r.url === mail && r.method === 'PATCH') {
+      const {password: _password, test_receipt: _receipt, ...rest} = r.body;
+      settings = {...settings,...rest,version:5};
+    }
+    if (r.url === mail) return Response.json(settings);
+    throw Error('Unexpected endpoint');
+  });
+  try {
+    m.button('注册与邀请').click(); await wait();
+    assert.equal(m.input('platform-smtp-username').value,'service-user');
+    assert.equal(m.input('platform-smtp-password').value,'');
+    m.button('发测试邮件到我的邮箱').click(); await wait();
+    assert.deepEqual(m.requests.filter(r=>r.url===mail+'/test').at(-1).body,{
+      version:4, enabled:true, registration_verification_required:false, address:'smtp.example.test:465',
+      host:'smtp.example.test', username:'service-user', from:'notify@example.test', implicit_tls:true,
+    });
+    await m.edit('platform-smtp-username','new-login');
+    assert.equal(m.button('保存邮件设置').disabled,true);
+    m.button('发测试邮件到我的邮箱').click(); await wait();
+    assert.equal(m.requests.filter(r=>r.url===mail+'/test').length,1);
+    assert.match(m.host.textContent,/不能沿用旧凭据/);
+    await m.edit('platform-smtp-password','fixture-new-key');
+    m.button('发测试邮件到我的邮箱').click(); await wait();
+    await m.submit('[aria-label="邮件与注册设置"]');
+    const patch = m.requests.find(r=>r.url===mail && r.method==='PATCH');
+    assert.equal(patch.body.username,'new-login');
+    assert.equal(patch.body.from,'notify@example.test');
+    assert.equal(patch.body.test_receipt,'custom-smtp-receipt');
+    assert.equal(m.input('platform-smtp-username').value,'new-login');
+    assert.equal(m.input('platform-smtp-password').value,'');
+    assert.deepEqual(m.errors,[]);
+  } finally { await m.close(); }
+});
+
 test('SMTP revision conflict rebases a harmless policy edit; retry stays explicit', async () => {
   let reads = 0, writes = 0;
   const m = await mount(r => {

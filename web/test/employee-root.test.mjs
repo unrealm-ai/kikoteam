@@ -300,7 +300,12 @@ test('KIKO avatar uses distinct fixed SVGs and animates busy transitions only in
 
 test('avatar menu separates workspace selection and creation from account actions',async()=>{
  const workspaces=[{id:'w',name:'Workspace',role:'owner',version:1},{id:'other',name:'Other team',role:'member',version:1}];
- globalThis.fetch=async url=>{
+ const created={id:'new-workspace',name:'New workspace',role:'owner',version:1};
+ const requests=[];
+ globalThis.fetch=async (url,init={})=>{
+  requests.push({url,init});
+  if(url==='/api/v1/workspaces'&&init.method==='POST')return Response.json(created);
+  if(url==='/api/v1/workspaces/'+created.id)return Response.json(created);
   if(url==='/api/v1/me')return Response.json({user:{id:'u',name:'Owner',email:'owner@example.test',auth_provider:'email'}});
   if(url.includes('/api/v1/workspaces?'))return Response.json({items:workspaces,total:2});
   const workspace=workspaces.find(w=>url==='/api/v1/workspaces/'+w.id);
@@ -339,7 +344,61 @@ test('avatar menu separates workspace selection and creation from account action
   const creditsMenu=await open();
   creditsMenu.querySelectorAll('.popover-nav-list button')[1].click();await pause();
   assert.equal(window.location.hash,'#/?ws=other&view=credits');
+  const createMenu=await open();
+  createMenu.querySelector('[aria-label="创建工作区"]').click();await pause();
+  const field=document.querySelector('.n-modal input[placeholder="工作区名称"]');
+  field.value=created.name;
+  field.dispatchEvent(new window.Event('input',{bubbles:true}));
+  await pause();
+  const createButton=[...document.querySelectorAll('.n-modal button')].find(b=>b.textContent.trim()==='创建');
+  assert.ok(createButton&&!createButton.disabled);
+  createButton.click();await pause();await pause();
+  assert.equal(activeWorkspaceId.value,created.id);
+  assert.equal(window.location.hash,'#/?ws=new-workspace&view=market');
+  assert.equal(host.querySelector('.market-section-title')?.textContent,'AI 员工市场');
+  const request=requests.find(r=>r.url==='/api/v1/workspaces'&&r.init.method==='POST');
+  assert.deepEqual(JSON.parse(request.init.body),{name:created.name,description:''});
  }finally{app.unmount();host.remove();await pause()}
+});
+
+test('accepting link and email invitations lands on the invited workspace home without a success prompt',async()=>{
+ const personal={id:'personal',name:'Personal workspace',role:'owner',version:1};
+ const invited={id:'invited',name:'Invited workspace',role:'member',version:1};
+ for(const [kind,entryURL] of [
+  ['link','/invite/member-test#/?ws=personal&view=chat&emp=old'],
+  ['email','/?invitation_token=member-test#/?ws=personal&view=settings&sub=members'],
+ ]){
+  let accepts=0, acceptedAt=0;
+  const requests=[];
+  globalThis.fetch=async (url,init={})=>{
+   requests.push(url);
+   if(url==='/api/v1/me')return Response.json({user:{id:'u',name:'Member',email:'member@example.test'}});
+   if(url.includes('/api/v1/workspaces?'))return Response.json({items:accepts?[personal,invited]:[personal]});
+   if(url==='/api/v1/invitations/member-test')return Response.json({kind,status:'valid',workspace_name:invited.name});
+   if(url==='/api/v1/invitations/member-test/accept'&&init.method==='POST'){
+    accepts++;acceptedAt=requests.length;
+    return Response.json({workspace_id:invited.id});
+   }
+   if(url==='/api/v1/workspaces/invited')return Response.json(invited);
+   if(url.includes('agent-templates'))return Response.json({items:[],total:0,page:1,page_size:20});
+   return Response.json({error:{code:'not_found',message:'接口不存在'}},{status:404});
+  };
+  activeWorkspaceId.value='';
+  window.history.replaceState(null,'',entryURL);
+  const host=document.createElement('div');document.body.appendChild(host);
+  const errors=[];
+  const app=createApp(RootApp);app.config.errorHandler=e=>errors.push(String(e));app.mount(host);
+  try{
+   await pause();await pause();
+   assert.equal(accepts,1);
+   assert.equal(activeWorkspaceId.value,invited.id);
+   assert.equal(window.location.pathname+window.location.search+window.location.hash,'/#/?ws=invited&view=market');
+   assert.equal(host.querySelector('.market-section-title')?.textContent,'AI 员工市场');
+   assert.doesNotMatch(document.body.textContent,/已加入|加入成功/);
+   assert.ok(!requests.slice(acceptedAt).some(url=>url.includes('/workspaces/personal/')));
+   assert.deepEqual(errors,[]);
+  }finally{app.unmount();host.remove();await pause()}
+ }
 });
 
 test('topbar highlight switches exclusively between referral invite and pending approvals, and chat uses full sheet', async () => {

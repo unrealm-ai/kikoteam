@@ -62,7 +62,7 @@ func TestHostedAssistantProvisioningBothWorkspacePaths(t *testing.T) {
 	}
 	for w, user := range map[string]string{manual.ID: owner, personal: newOwner} {
 		entry, err := store.Entry(ctx, w, user)
-		if err != nil || entry.AgentID == "" || len(entry.Cards) != 3 || entry.Experienced {
+		if err != nil || entry.AgentID == "" || len(entry.Cards) != 3 {
 			t.Fatal(entry, err)
 		}
 		agents := &service.AgentService{Store: NewAgentStore(db)}
@@ -189,10 +189,18 @@ func TestHostedAssistantModelAdmissionAndRetry(t *testing.T) {
 	reviewExec(t, f.db, `INSERT INTO platform_model_profiles
  (id,workspace_id,name,protocol,base_url,model_id,version,has_key,validated,credential,credential_revision,vision_status,enabled,is_default,tested_at)
  VALUES($1,$2,'Local default','chat_completions','https://example.test/v1','local',1,true,true,'',1,'unknown',true,true,now())`, local, w)
-	if v, err := f.assistant.Entry(t.Context(), w, owner); err != nil || v.AgentID != entry.AgentID || v.Experienced {
-		t.Fatal("configuration must not consume an experience or recreate the assistant", v, err)
+	if v, err := f.assistant.Entry(t.Context(), w, owner); err != nil || v.AgentID != entry.AgentID || len(v.Cards) != len(entry.Cards) {
+		t.Fatal("configuration must not hide the home cards or recreate the assistant", v, err)
 	}
 	chat := f.api(t, c, "POST", base+"/sessions", body, key, 201)["id"].(string)
+	entryResponse := f.api(t, c, "GET", base+"/assistant", nil, "", 200)
+	cards, ok := entryResponse["cards"].([]any)
+	if !ok || len(cards) != len(entry.Cards) || entryResponse["agent_id"] != entry.AgentID {
+		t.Fatal("an existing chat must not hide the home cards", entryResponse)
+	}
+	if _, present := entryResponse["experienced"]; present {
+		t.Fatal("entry must not expose the removed completion marker")
+	}
 	var selected string
 	if err := f.db.QueryRow(`SELECT configuration->>'model_profile_id' FROM manager_sessions WHERE id=$1`, chat).Scan(&selected); err != nil || selected != local {
 		t.Fatal("workspace default should win", selected, err)

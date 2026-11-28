@@ -6,7 +6,6 @@ import ProjectDraftFiles from '../components/ProjectDraftFiles.vue';
 import {useProjectDraft} from '../composables/useProjectDraft';
 import D2EmployeeAvatar from '../components/D2EmployeeAvatar.vue';
 import ConversationControlIcon from '../components/ConversationControlIcon.vue';
-import AssistantDemoCards from '../components/AssistantDemoCards.vue';
 import { assistantApi, type AssistantCard, type AssistantEntry } from '../api/assistant';
 import ManagerSessionPanel from '../components/ManagerSessionPanel.vue';
 import TaskDetailPanel from '../components/TaskDetailPanel.vue';
@@ -18,9 +17,8 @@ import { sessionStatus, workItemProgress, type TaskNavigationTarget } from '../u
 const props = defineProps<{ accountId?: string | undefined; canConfigureModels?: boolean; selectedEmployeeId?: string | undefined; selectedConversationId?: string | undefined; assistantEntry?: AssistantEntry | undefined; assistantOpenRequest?: number | undefined;
  assistantDemo?: {card: AssistantCard; workspace: string; agent: string; key: string} | undefined }>();
 const emit = defineEmits<{configureModels: []; demoConsumed: [key: string]; selectEmployee: [id: string, direct?: boolean]}>();
-const demoOpen = ref(false);
 const modelRequired = ref(false);
-function requireModel() { modelRequired.value = true; demoOpen.value = false; error.value = ''; }
+function requireModel() { modelRequired.value = true; error.value = ''; }
 function showSendError(e: unknown, fallback: string) {
   if (e instanceof D2ApiError && e.code === 'assistant_model_required') requireModel();
   else error.value = e instanceof Error ? e.message : fallback;
@@ -225,7 +223,7 @@ async function refreshTasks(more = false) {
   }
 }
 async function open() {
-  demoOpen.value=false;modelRequired.value=false;draft.reset();showFiles.value=false;treeMounted.value=false;rightTab.value=showTasks.value?'tasks':'files';dragDepth.value=0;chatSending.value=false;
+  modelRequired.value=false;draft.reset();showFiles.value=false;treeMounted.value=false;rightTab.value=showTasks.value?'tasks':'files';dragDepth.value=0;chatSending.value=false;
   const g = ++generation; controller.abort(); controller = new AbortController();
   conversation.value = null; chatID.value = ''; taskID.value = ''; taskFullscreen.value = false; tasks.value = []; taskCursor.value = null; taskBusy = false; lastTaskRefresh = 0; loadedTaskPages = 1; cardTargets=[]; olderCards.value=[];
   opening.value = false; firstText.value = ''; firstRequest = null; error.value = ''; tasksError.value = ''; sending.value = false;
@@ -258,12 +256,11 @@ async function firstSend() {
   } catch (e) { if (g === generation) showSendError(e, '发送结果未知，请原样重试'); }
   finally { if (g === generation) sending.value = false; }
 }
-async function sendDemo(card: AssistantCard, key: string = crypto.randomUUID()) {
+async function sendDemo(card: AssistantCard, key: string) {
   if (!demoCards.value.some(item => item.key === card.key && item.input === card.input) || !conversation.value || locked.value) return;
   const g = generation, w = activeWorkspaceId.value, cid = conversation.value.id, signal = controller.signal;
   sending.value = true;
   error.value = '';
-  demoOpen.value = false;
   try {
     const live = await assistantApi.entry(w, signal);
     if (g !== generation) return;
@@ -363,71 +360,16 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
     </aside>
 
     <main class="chat-area">
-      <header v-if="!chatID" class="unified-fallback-header">
-        <NButton class="back" size="small" @click="mobileChat = false">返回员工列表</NButton>
-        <D2EmployeeAvatar v-if="employee" :name="employee.name" :preset="employee.avatar" :identity-key="employee.id" :assistant="employee.is_assistant || assistantChat" :assistant-busy="assistantChat ? assistantBusy : undefined" size="sm" />
-        <div class="fallback-heading">
-          <strong>{{ employee?.name || '选择 AI 员工' }}</strong>
-          <span class="muted">{{ employee?.role || '对话协作 · 任务持续跟进' }}</span>
-        </div>
-        <div class="fallback-actions">
-          <NButton v-if="!modelRequired && demoCards.length && conversation?.lifecycle === 'active'" size="small" secondary @click="demoOpen = !demoOpen">体验场景</NButton>
-          <button
-            v-if="conversation"
-            type="button"
-            class="drawer-toggle-btn"
-            :class="{ active: rightDrawerOpen }"
-            aria-label="任务与文件"
-            :aria-expanded="rightDrawerOpen"
-            @click="toggleRightDrawer"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg>
-            <span>任务与文件</span>
-            <span class="drawer-toggle-count">{{ tasks.length }}</span>
-          </button>
-        </div>
-      </header>
-      <AssistantDemoCards v-if="!modelRequired && demoOpen && demoCards.length" :cards="demoCards" :disabled="locked" @choose="card => sendDemo(card)" />
-      <p v-if="conversation && conversation.lifecycle !== 'active'" class="muted archived-banner" role="status">此主对话已归档，不能继续发送；历史消息仍保留，不会自动新建替代对话。</p>
-      <NAlert v-if="modelRequired" class="assistant-model-required" type="warning" title="请先配置模型">
-        <p>当前没有可用模型，消息未发送。添加模型并设为工作区默认后，回来重新发送或点击体验卡。</p>
-        <NButton v-if="canConfigureModels" text type="primary" @click="emit('configureModels')">前往模型配置</NButton>
-        <span v-else>请联系工作区管理员配置模型。</span>
-      </NAlert>
-      <p v-if="error" class="error" role="alert">{{ error }} <NButton v-if="!conversation" @click="open">重新加载</NButton></p>
-      <NSkeleton v-if="opening" text :repeat="4" />
-      <div v-else-if="conversation" class="panels">
+      <div class="panels">
         <div class="chat-column" @dragenter="dragEnter" @dragover="dragFiles($event)&&$event.preventDefault()" @dragleave="dragDepth=Math.max(0,dragDepth-1)" @drop="dropFiles">
-          <ManagerSessionPanel
-            v-if="chatID"
-            :key="chatID"
-            :workspace="activeWorkspaceId"
-            :session-id="chatID"
-            :read-only="conversation.lifecycle !== 'active'"
-            :title="employee?.name || '主对话'"
-            :subtitle="employee?.role || '对话协作 · 任务持续跟进'"
-            :agent-avatar="employee?.avatar"
-            :agent-id="employee?.id"
-            :assistant-avatar="employee?.is_assistant || assistantChat"
-            :assistant-avatar-busy="assistantChat ? assistantBusy : undefined"
-            :tasks="cardTasks"
-            @task-targets="cardTargets = $event"
-            :attachment-paths="draft.paths.value"
-            :attachment-ids="draft.attachmentIds.value"
-            :attachment-pending="draft.unreserved.value"
-            :attachment-lookup="filesAvailable"
-            :uploaded-attachments="draft.uploadedAttachments.value"
-            @sending="chatSending=$event"
-            @sent="modelRequired = false; draft.clearSent()"
-            @assistant-model-required="requireModel"
-            @report="tree?.refresh()"
-            @changed="refreshTasks()"
-            @open-task="openTask"
-          >
-            <template #header-prefix>
-              <NButton class="back" size="small" @click="mobileChat = false">返回员工列表</NButton>
-            </template>
-            <template #header-actions>
+          <header v-if="!chatID" class="unified-fallback-header">
+            <NButton class="back" size="small" @click="mobileChat = false">返回员工列表</NButton>
+            <D2EmployeeAvatar v-if="employee" :name="employee.name" :preset="employee.avatar" :identity-key="employee.id" :assistant="employee.is_assistant || assistantChat" :assistant-busy="assistantChat ? assistantBusy : undefined" size="sm" />
+            <div class="fallback-heading">
+              <strong>{{ employee?.name || '选择 AI 员工' }}</strong>
+              <span class="muted">{{ employee?.role || '对话协作 · 任务持续跟进' }}</span>
+            </div>
+            <div class="fallback-actions">
               <button
                 v-if="conversation"
                 type="button"
@@ -441,39 +383,93 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
                 <span>任务与文件</span>
                 <span class="drawer-toggle-count">{{ tasks.length }}</span>
               </button>
-            </template>
-            <template #attachments>
-              <ProjectDraftFiles v-if="filesAvailable" :draft="draft" :disabled="locked" />
-            </template>
-          </ManagerSessionPanel>
-          <section v-else-if="conversation.lifecycle === 'active'" class="new-chat">
-            <div class="new-chat-body">
-              <div class="welcome-card" :class="{ 'has-demo-cards': !modelRequired && demoCards.length && !assistantEntry?.experienced && !demoOpen }">
-                <D2EmployeeAvatar v-if="employee" :name="employee.name" :preset="employee.avatar" :identity-key="employee.id" :assistant="employee.is_assistant || assistantChat" :assistant-busy="assistantChat ? assistantBusy : undefined" size="lg" />
-                <h3>与「{{ employee?.name }}」开始协作</h3>
-                <p class="muted">{{ employee?.role ? `${employee.role}。` : '' }}暂无历史消息，请向「{{ employee?.name }}」发送工作需求。</p>
-                <AssistantDemoCards v-if="!modelRequired && demoCards.length && !assistantEntry?.experienced && !demoOpen" :cards="demoCards" :disabled="locked" @choose="card => sendDemo(card)" />
-                <div v-else-if="!modelRequired" class="quick-prompts">
-                  <button type="button" class="prompt-chip" @click="firstText = '帮我梳理当前工作的核心进度与待办事项'">梳理核心进度与待办 ↗</button>
-                  <button type="button" class="prompt-chip" @click="firstText = '请先查看项目目录文件并汇报关键发现'">查看项目目录并汇报 ↗</button>
-                </div>
-              </div>
             </div>
-            <footer class="new-chat-footer">
-              <div class="composer-card">
-                <NInput v-model:value="firstText" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" :disabled="sending || !employee?.enabled" placeholder="输入工作需求，任务执行期间仍可继续对话..." @keydown.enter.exact="onFirstEnter" />
-                <div class="composer-actions">
-                  <div v-if="filesAvailable" class="composer-attachments">
-                    <ProjectDraftFiles :draft="draft" :disabled="locked" />
-                  </div>
-                  <div class="composer-right-controls">
-                    <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
-                    <NButton size="small" type="primary" circle class="send-exec-btn" :title="error ? '重试发送' : '发送'" :aria-label="error ? '重试发送' : '发送'" :loading="sending" :disabled="draft.unreserved.value || (!firstText.trim() && !draft.paths.value.length && !draft.attachmentIds.value.length) || sending || !employee?.enabled" @click="firstSend"><template #icon><ConversationControlIcon kind="send" /></template></NButton>
+          </header>
+          <p v-if="conversation && conversation.lifecycle !== 'active'" class="muted archived-banner" role="status">此主对话已归档，不能继续发送；历史消息仍保留，不会自动新建替代对话。</p>
+          <NAlert v-if="modelRequired" class="assistant-model-required" type="warning" title="请先配置模型">
+            <p>当前没有可用模型，消息未发送。添加模型并设为工作区默认后，回来重新发送，或到首页重新点击体验卡。</p>
+            <NButton v-if="canConfigureModels" text type="primary" @click="emit('configureModels')">前往模型配置</NButton>
+            <span v-else>请联系工作区管理员配置模型。</span>
+          </NAlert>
+          <p v-if="error" class="error" role="alert">{{ error }} <NButton v-if="!conversation" @click="open">重新加载</NButton></p>
+          <NSkeleton v-if="opening" text :repeat="4" />
+          <template v-else-if="conversation">
+            <ManagerSessionPanel
+              v-if="chatID"
+              :key="chatID"
+              :workspace="activeWorkspaceId"
+              :session-id="chatID"
+              :read-only="conversation.lifecycle !== 'active'"
+              :title="employee?.name || '主对话'"
+              :subtitle="employee?.role || '对话协作 · 任务持续跟进'"
+              :agent-avatar="employee?.avatar"
+              :agent-id="employee?.id"
+              :assistant-avatar="employee?.is_assistant || assistantChat"
+              :assistant-avatar-busy="assistantChat ? assistantBusy : undefined"
+              :tasks="cardTasks"
+              @task-targets="cardTargets = $event"
+              :attachment-paths="draft.paths.value"
+              :attachment-ids="draft.attachmentIds.value"
+              :attachment-pending="draft.unreserved.value"
+              :attachment-lookup="filesAvailable"
+              :uploaded-attachments="draft.uploadedAttachments.value"
+              @sending="chatSending=$event"
+              @sent="modelRequired = false; draft.clearSent()"
+              @assistant-model-required="requireModel"
+              @report="tree?.refresh()"
+              @changed="refreshTasks()"
+              @open-task="openTask"
+            >
+              <template #header-prefix>
+                <NButton class="back" size="small" @click="mobileChat = false">返回员工列表</NButton>
+              </template>
+              <template #header-actions>
+                <button
+                  v-if="conversation"
+                  type="button"
+                  class="drawer-toggle-btn"
+                  :class="{ active: rightDrawerOpen }"
+                  aria-label="任务与文件"
+                  :aria-expanded="rightDrawerOpen"
+                  @click="toggleRightDrawer"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg>
+                  <span>任务与文件</span>
+                  <span class="drawer-toggle-count">{{ tasks.length }}</span>
+                </button>
+              </template>
+              <template #attachments>
+                <ProjectDraftFiles v-if="filesAvailable" :draft="draft" :disabled="locked" />
+              </template>
+            </ManagerSessionPanel>
+            <section v-else-if="conversation.lifecycle === 'active'" class="new-chat">
+              <div class="new-chat-body">
+                <div class="welcome-card">
+                  <D2EmployeeAvatar v-if="employee" :name="employee.name" :preset="employee.avatar" :identity-key="employee.id" :assistant="employee.is_assistant || assistantChat" :assistant-busy="assistantChat ? assistantBusy : undefined" size="lg" />
+                  <h3>与「{{ employee?.name }}」开始协作</h3>
+                  <p class="muted">{{ employee?.role ? `${employee.role}。` : '' }}暂无历史消息，请向「{{ employee?.name }}」发送工作需求。</p>
+                  <div v-if="!modelRequired" class="quick-prompts">
+                    <button type="button" class="prompt-chip" @click="firstText = '帮我梳理当前工作的核心进度与待办事项'">梳理核心进度与待办 ↗</button>
+                    <button type="button" class="prompt-chip" @click="firstText = '请先查看项目目录文件并汇报关键发现'">查看项目目录并汇报 ↗</button>
                   </div>
                 </div>
               </div>
-            </footer>
-          </section>
+              <footer class="new-chat-footer">
+                <div class="composer-card">
+                  <NInput v-model:value="firstText" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" :disabled="sending || !employee?.enabled" placeholder="输入工作需求，任务执行期间仍可继续对话..." @keydown.enter.exact="onFirstEnter" />
+                  <div class="composer-actions">
+                    <div v-if="filesAvailable" class="composer-attachments">
+                      <ProjectDraftFiles :draft="draft" :disabled="locked" />
+                    </div>
+                    <div class="composer-right-controls">
+                      <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
+                      <NButton size="small" type="primary" circle class="send-exec-btn" :title="error ? '重试发送' : '发送'" :aria-label="error ? '重试发送' : '发送'" :loading="sending" :disabled="draft.unreserved.value || (!firstText.trim() && !draft.paths.value.length && !draft.attachmentIds.value.length) || sending || !employee?.enabled" @click="firstSend"><template #icon><ConversationControlIcon kind="send" /></template></NButton>
+                    </div>
+                  </div>
+                </div>
+              </footer>
+            </section>
+          </template>
           <div v-if="dragDepth>0" class="drop-hint" role="status"><span>↑</span><strong>松开以添加附件</strong><small>支持文件和图片</small></div>
         </div>
         <div v-if="conversation" v-show="rightDrawerOpen" class="collab-drawer" :class="{ 'has-task-detail': showTasks && !!taskID && !!detailTaskID }">
@@ -601,14 +597,13 @@ h3{font-size:14px;margin:0}
 .drawer-toggle-btn.active .drawer-toggle-count{background:rgba(255,255,255,0.18);color:var(--id-text-inverse)}
 .archived-banner{margin:8px 22px 0;padding:8px 14px;border:1px solid var(--id-border-subtle);border-radius:var(--id-radius-md);background:var(--id-bg-subtle)}
 .panels{position:relative;display:flex;gap:0;flex:1;min-height:0;min-width:0}
-.chat-column{position:relative;display:flex;flex:1;min-width:0;min-height:0}
-.chat-column :deep(.session-panel){border:0;border-radius:0}
+.chat-column{position:relative;display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
+.chat-column > :deep(.session-panel){height:auto;min-height:0;border:0;border-radius:0}
 .drop-hint{pointer-events:none;position:absolute;z-index:2;bottom:145px;left:16px;right:16px;padding:32px;display:grid;justify-items:center;gap:8px;border:2px dashed var(--id-accent-primary);border-radius:12px;background:var(--id-bg-surface);color:var(--id-accent-primary);box-shadow:var(--id-shadow-lg)}
 .drop-hint span{font-size:32px}.drop-hint strong{font-size:18px}
-.new-chat{flex:1;border:0;border-radius:0;background:var(--id-bg-surface);display:flex;flex-direction:column;overflow:hidden;min-height:420px}
+.new-chat{flex:1;border:0;border-radius:0;background:var(--id-bg-surface);display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .new-chat-body{flex:1;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--id-bg-surface);overflow:auto}
 .welcome-card{max-width:440px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px}
-.welcome-card.has-demo-cards{max-width:820px;width:100%}
 .welcome-card h3{font-size:16px;font-weight:600;color:var(--id-text-primary);margin-top:4px}
 .welcome-card p{margin:0;line-height:1.6}
 .quick-prompts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:6px}
@@ -663,7 +658,7 @@ h3{font-size:14px;margin:0}
 .back{display:none}
 button:focus-visible{outline:2px solid var(--id-accent-primary);outline-offset:2px}
 @media(max-width:1400px){.employee-list{width:214px}}
-@media(max-width:1200px){.chat-column{min-height:0}.chat-column :deep(.session-panel),.new-chat,.task-detail :deep(.session-panel){min-height:0}.collab-drawer{position:absolute;top:0;right:0;bottom:0;z-index:20;width:min(382px,100%);max-width:100%;border-left:1px solid #ECEAE4;box-shadow:-6px 0 24px rgba(28,25,23,0.12)}.collab-drawer.has-task-detail{width:min(460px,100%)}.task-list{max-height:none}.task-detail{flex:1;min-height:0}}
+@media(max-width:1200px){.task-detail :deep(.session-panel){min-height:0}.collab-drawer{position:absolute;top:0;right:0;bottom:0;z-index:20;width:min(382px,100%);max-width:100%;border-left:1px solid #ECEAE4;box-shadow:-6px 0 24px rgba(28,25,23,0.12)}.collab-drawer.has-task-detail{width:min(460px,100%)}.task-list{max-height:none}.task-detail{flex:1;min-height:0}}
 @media(max-width:640px){.conversation-workspace{height:100%;min-height:0}.employee-list{width:100%;border-right:0}.chat-area{display:none}.mobile-chat .employee-list{display:none}.mobile-chat .chat-area{display:flex}.back{display:inline-flex}}
 .tasks.is-fullscreen{position:fixed;inset:0;z-index:1200;width:100vw;height:100dvh;max-width:none;border:0;border-radius:0;background:var(--id-bg-surface)}
 .tasks.is-fullscreen .task-list-heading,.tasks.is-fullscreen .task-list{display:none}

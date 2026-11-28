@@ -16,10 +16,9 @@ func NewAssistantDemoPackage(agent string) CapabilityPackage {
 }
 
 type AssistantEntry struct {
-	AgentID     string          `json:"agent_id,omitempty"`
-	Cards       []AssistantCard `json:"cards"`
-	Pending     bool            `json:"pending,omitempty"`
-	Experienced bool            `json:"experienced,omitempty"`
+	AgentID string          `json:"agent_id,omitempty"`
+	Cards   []AssistantCard `json:"cards"`
+	Pending bool            `json:"pending,omitempty"`
 }
 
 type AssistantCard struct {

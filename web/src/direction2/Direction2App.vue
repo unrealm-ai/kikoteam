@@ -99,17 +99,18 @@ async function createWorkspace() {
   creatingWorkspace.value = true; workspaceCreateError.value = '';
   try {
     const ws = workspaceFromWire(await platformRequest<WorkspaceWire>('/workspaces', post({name: newWorkspaceName.value.trim(), description: ''})));
-    workspaces.value.push(ws); activeWorkspaceId.value = ws.id; currentView.value = 'settings'; showCreateWorkspace.value = false; newWorkspaceName.value = '';
+    workspaces.value.push(ws);
+    activeWorkspaceId.value = ws.id;
+    applyNavigation(defaultView);
+    showCreateWorkspace.value = false;
+    newWorkspaceName.value = '';
   } catch (error) { workspaceCreateError.value = error instanceof Error ? error.message : '创建失败'; }
   finally { creatingWorkspace.value = false; }
 }
 async function invitationCompleted(workspaceId?: string) {
   invitationToken.value = '';
   const url = new URL(window.location.href); url.searchParams.delete('invitation_token'); if (url.pathname.startsWith('/invite/')) url.pathname = '/'; window.history.replaceState(null, '', url);
-  await bootstrapShell();
-  if (workspaceId && workspaces.value.some(w => w.id === workspaceId)) {
-    activeWorkspaceId.value = workspaceId; currentView.value = 'settings'; syncUrlHash(true);
-  }
+  await bootstrapShell(workspaceId);
 }
 const subParam = ref<string | undefined>(undefined);
 const isMobileSidebarOpen = ref(false);
@@ -218,11 +219,13 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
 }
 
-async function enterAuthenticatedShell(me: UserProfile, wsList: WorkspaceInfo[]) {
+async function enterAuthenticatedShell(me: UserProfile, wsList: WorkspaceInfo[], invitedWorkspaceId?: string) {
   if (!me?.id || !Array.isArray(wsList)) {
     throw new Error('未获取到有效登录信息或可用工作区列表');
   }
-  const routeState = readStateFromHash();
+  const routeState = invitedWorkspaceId && wsList.some(w => w.id === invitedWorkspaceId)
+    ? { ws: invitedWorkspaceId, view: defaultView }
+    : readStateFromHash();
   currentUser.value = me;
   if (me) leaveReferralEntry();
   workspaces.value = wsList;
@@ -242,13 +245,13 @@ async function enterAuthenticatedShell(me: UserProfile, wsList: WorkspaceInfo[])
   syncUrlHash(true);
 }
 
-async function bootstrapShell() {
+async function bootstrapShell(invitedWorkspaceId?: string) {
   shellStatus.value = 'loading';
   shellError.value = '';
   try {
     const me = await authApi.getMe();
     const wsList = await authApi.getWorkspaces();
-    await enterAuthenticatedShell(me, wsList);
+    await enterAuthenticatedShell(me, wsList, invitedWorkspaceId);
   } catch (err) {
     currentUser.value = null;
     workspaces.value = [];
@@ -999,7 +1002,7 @@ function openApproval(id: string) {
                       type="button"
                       class="unified-account-card unified-account-card--error"
                       aria-label="登录信息加载失败，点击重试"
-                      @click="bootstrapShell"
+                      @click="bootstrapShell()"
                     >
                       <span class="account-avatar-slot">
                         <span class="user-avatar-circle user-avatar-circle--error">!</span>
@@ -1041,7 +1044,7 @@ function openApproval(id: string) {
             <div v-else-if="shellStatus === 'error'" style="max-width: 560px; margin: 48px auto;">
               <NAlert type="error" title="无法加载当前用户与工作区信息">
                 <p style="margin: 6px 0 12px 0;">{{ shellError }}</p>
-                <NButton size="small" type="primary" @click="bootstrapShell">重新加载</NButton>
+                <NButton size="small" type="primary" @click="bootstrapShell()">重新加载</NButton>
               </NAlert>
             </div>
             <div v-else-if="!currentWorkspace" style="max-width: 560px; margin: 48px auto;">

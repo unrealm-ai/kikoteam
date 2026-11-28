@@ -8,8 +8,8 @@ const window=new Window({url:'http://127.0.0.1:5173/'});
 for(const name of ['window','document','navigator','HTMLElement','Element','SVGElement','Node','Text','Comment','Image','InputEvent','MouseEvent','KeyboardEvent','HTMLInputElement','Document','MutationObserver','ResizeObserver','getComputedStyle','requestAnimationFrame','cancelAnimationFrame']){
  if(name==='window')globalThis.window=window;else if(window[name]!==undefined)Object.defineProperty(globalThis,name,{configurable:true,writable:true,value:typeof window[name]==='function'&&['getComputedStyle','requestAnimationFrame','cancelAnimationFrame'].includes(name)?window[name].bind(window):window[name]});
 }
-const built=await esbuild.build({stdin:{contents:"export {default as PlatformConversationsView} from './src/direction2/views/PlatformConversationsView.vue'; export {mergeEvents, projectEvents, managerApi} from './src/direction2/api/manager'; export {activeWorkspaceId} from './src/direction2/api/client'; export {createApp,h,nextTick} from 'vue'; export {NMessageProvider,NDialogProvider} from 'naive-ui';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env.VITE_PLATFORM_REAL':'true','import.meta.env.DEV':'false'},plugins:[{name:'vue-test',setup(build){build.onLoad({filter:/\.vue$/},async({path})=>{const source=await fs.readFile(path,'utf8');const {descriptor}=parse(source);return {contents:compileScript(descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'};});}}]});
-const {PlatformConversationsView,mergeEvents,projectEvents,managerApi,activeWorkspaceId,createApp,h,NMessageProvider,NDialogProvider,nextTick}=await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
+const built=await esbuild.build({stdin:{contents:"export {default as PlatformConversationsView} from './src/direction2/views/PlatformConversationsView.vue'; export {mergeEvents, projectEvents, managerApi} from './src/direction2/api/manager'; export {activeWorkspaceId} from './src/direction2/api/client'; export {createApp,h,nextTick,shallowRef} from 'vue'; export {NMessageProvider,NDialogProvider} from 'naive-ui';",resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env.VITE_PLATFORM_REAL':'true','import.meta.env.DEV':'false'},plugins:[{name:'vue-test',setup(build){build.onLoad({filter:/\.vue$/},async({path})=>{const source=await fs.readFile(path,'utf8');const {descriptor}=parse(source);return {contents:compileScript(descriptor,{id:path,inlineTemplate:true}).content,loader:'ts'};});}}]});
+const {PlatformConversationsView,mergeEvents,projectEvents,managerApi,activeWorkspaceId,createApp,h,NMessageProvider,NDialogProvider,nextTick,shallowRef}=await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
 const pause=async()=>{await new Promise(r=>setTimeout(r,50));await nextTick()};
 class FakeSource {
  static all=[];
@@ -41,8 +41,14 @@ async function mount({chat='chat',override,props={}}={}) {
   return Response.json(resource(url.split('/').pop()));
  };
  activeWorkspaceId.value='w';const host=document.createElement('div');document.body.appendChild(host);
- const app=createApp({render:()=>h(NMessageProvider,null,{default:()=>h(NDialogProvider,null,{default:()=>h(PlatformConversationsView,props)})})});app.mount(host);await pause();await pause();
- return {calls,host,async cleanup(){app.unmount();host.remove();await pause()}};
+ const viewProps=shallowRef(props);
+ function updateProps(patch){viewProps.value={...viewProps.value,...patch}}
+ function consumeDemo(key){
+  viewProps.value.onDemoConsumed?.(key);
+  if(viewProps.value.assistantDemo?.key===key)updateProps({assistantDemo:undefined});
+ }
+ const app=createApp({render:()=>h(NMessageProvider,null,{default:()=>h(NDialogProvider,null,{default:()=>h(PlatformConversationsView,{...viewProps.value,onDemoConsumed:consumeDemo})})})});app.mount(host);await pause();await pause();
+ return {calls,host,updateProps,async cleanup(){app.unmount();host.remove();await pause()}};
 }
 test('fixed direct conversation uses cookie CSRF and latest history; no new/archive entry',async()=>{
  const m=await mount();try{assert.match(m.host.textContent,/最近消息/);assert.equal(button('新建会话'),undefined);assert.equal(button('归档'),undefined);assert.ok(m.calls.some(c=>c.url.includes('direction=backward')));const c=m.calls.find(c=>c.url.endsWith('/web-direct'));assert.equal(c.init.headers.get('X-CSRF-Protection'),'1');assert.equal(c.init.credentials,'include');assert.equal(c.init.headers.has('Authorization'),false);assert.equal(FakeSource.all.length,1);assert.match(FakeSource.all[0].url,/after=resume-chat/);}finally{await m.cleanup()}assert.ok(FakeSource.all.every(s=>s.closed));
@@ -739,26 +745,52 @@ test('default employee is not counted as history before a conversation is opened
  }finally{await m.cleanup()}
 });
 
-test('assistant navigation opens ordinary chat without sending, card click sends a single sample message',async()=>{
- const card={key:'sample',title:'体验并行客诉',description:'核对两个订单',input:'请并行核对两笔订单'};
- const m=await mount({chat:null,props:{selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[card]}}});
- try {
-  const writes=()=>m.calls.filter(c=>c.url.endsWith('/sessions')&&c.init.method==='POST');
-  assert.equal(writes().length,0);
-  const action=[...m.host.querySelectorAll('button')].find(b=>b.textContent.includes(card.title));
-  assert.ok(action);action.click();action.click();await pause();
-  assert.equal(writes().length,1);
-  assert.deepEqual(JSON.parse(writes()[0].init.body).input,{text:card.input});
-  assert.equal(m.calls.filter(c=>c.url.endsWith('/web-direct')).length,1);
- }finally{await m.cleanup()}
+const assistantSample={key:'sample',title:'体验并行客诉',description:'核对两个订单',input:'请并行核对两笔订单'};
+const assistantProps={selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[assistantSample]}};
+const homeDemoRequest=(key)=>({card:assistantSample,agent:'a',workspace:'w',key});
+const demoWrites=(m)=>m.calls.filter(c=>c.init.method==='POST'&&/\/(sessions|inputs)$/.test(c.url));
+
+test('assistant navigation opens ordinary chat without demos, while a home card sends one sample',async()=>{
+ for(const chat of [null,'chat']){
+  const consumed=[];
+  const m=await mount({chat,props:{...assistantProps,onDemoConsumed:key=>consumed.push(key)}});
+  try {
+   assert.doesNotMatch(m.host.textContent,/体验场景|体验并行客诉/);
+   if(!chat){
+    assert.match(m.host.textContent,/开始协作/);
+    assert.ok(button('梳理核心进度与待办 ↗'));
+   }else assert.match(m.host.textContent,/最近消息/);
+   const header=m.host.querySelector(chat?'.unified-session-header':'.unified-fallback-header');
+   const drawer=m.host.querySelector('.collab-drawer');
+   assert.ok(header.closest('.chat-column'));
+   assert.equal(header.closest('.chat-column').nextElementSibling,drawer);
+   assert.equal(drawer.style.display,'none');
+   button('任务与文件').click();await pause();
+   assert.equal(drawer.style.display,'');
+   button('收起项目文件').click();await pause();
+   assert.equal(drawer.style.display,'none');
+   assert.equal(demoWrites(m).length,0);
+   m.updateProps({assistantDemo:homeDemoRequest('home-sample')});
+   await pause();await pause();
+   assert.deepEqual(consumed,['home-sample']);
+   assert.equal(demoWrites(m).length,1);
+   const [{url,init}]=demoWrites(m);
+   const body=JSON.parse(init.body);
+   assert.equal(chat?body.text:body.input.text,assistantSample.input);
+   assert.ok(url.endsWith(chat?'/chat/inputs':'/sessions'));
+   assert.equal(m.calls.filter(c=>c.url.endsWith('/web-direct')).length,1);
+   assert.doesNotMatch(m.host.textContent,/体验场景|体验并行客诉/);
+  }finally{await m.cleanup()}
+ }
 });
 
-test('assistant denied Web demo access or already experienced does not auto-show sample cards',async()=>{
- const card={key:'sample',title:'体验并行客诉',description:'核对两个订单',input:'请并行核对两笔订单'};
- const unauthorized=await mount({chat:null,props:{selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[]}}});
- try {assert.doesNotMatch(unauthorized.host.textContent,/体验场景|体验并行客诉/)}finally{await unauthorized.cleanup()}
- const experienced=await mount({chat:null,props:{selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[card],experienced:true}}});
- try {assert.doesNotMatch(experienced.host.textContent,/体验并行客诉/);button('体验场景').click();await pause();assert.match(experienced.host.textContent,/体验并行客诉/)}finally{await experienced.cleanup()}
+test('a home demo request is not sent after demo permission is withdrawn',async()=>{
+ const m=await mount({chat:null,props:{...assistantProps,assistantDemo:homeDemoRequest('revoked')},override:url=>
+  url.endsWith('/assistant')?Response.json({agent_id:'a',cards:[]}):null});
+ try {
+  assert.equal(demoWrites(m).length,0);
+  assert.match(m.host.textContent,/体验权限或样例已更新/);
+ }finally{await m.cleanup()}
 });
 
 test('unified drawer switches between project files with Markdown preview and session tasks', async () => {
@@ -834,31 +866,26 @@ test('unified drawer switches between project files with Markdown preview and se
  }
 });
 
-test('assistant with no model keeps demos visible until clicked, then offers model setup without inserting a chat',async()=>{
- const card={key:'sample',title:'体验并行客诉',description:'核对两个订单',input:'请并行核对两笔订单'};
+test('home demo without a model offers setup and can be retried from the home card',async()=>{
  const missing=()=>Response.json({error:{code:'assistant_model_required',message:'后端提示不应直接显示'}},{status:422});
  let configured=false, opened=0;
- const props={selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[card]},canConfigureModels:true,onConfigureModels:()=>opened++};
- const matchWrite=(url,init)=>url.endsWith('/sessions')&&init.method==='POST';
- const override=(url,init)=>matchWrite(url,init)&&!configured?missing():null;
- const demo=()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes(card.title));
- let m=await mount({chat:null,props,override});
+ const props={...assistantProps,canConfigureModels:true,onConfigureModels:()=>opened++};
+ const override=(url,init)=>url.endsWith('/sessions')&&init.method==='POST'&&!configured?missing():null;
+ const m=await mount({chat:null,props,override});
  try {
-  assert.ok(demo());assert.equal(m.host.querySelector('.assistant-model-required'),null);
-  demo().click();await pause();
-  assert.equal(m.calls.filter(c=>matchWrite(c.url,c.init)).length,1);
-  assert.equal(demo(),undefined);
-  assert.match(m.host.querySelector('.assistant-model-required').textContent,/当前没有可用模型，消息未发送/);
+  assert.equal(m.host.querySelector('.assistant-model-required'),null);
+  assert.equal(demoWrites(m).length,0);
+  m.updateProps({assistantDemo:homeDemoRequest('first-attempt')});await pause();
+  assert.equal(demoWrites(m).length,1);
+  assert.doesNotMatch(m.host.textContent,/体验场景|体验并行客诉/);
+  assert.match(m.host.querySelector('.assistant-model-required').textContent,/到首页重新点击体验卡/);
   assert.equal(FakeSource.all.length,0);
   button('前往模型配置').click();assert.equal(opened,1);
- }finally{await m.cleanup()}
- configured=true;
- m=await mount({chat:null,props,override});
- try {
-  assert.ok(demo());assert.equal(m.calls.filter(c=>matchWrite(c.url,c.init)).length,0);
-  demo().click();await pause();
-  assert.equal(m.calls.filter(c=>matchWrite(c.url,c.init)).length,1);
+  configured=true;
+  m.updateProps({assistantDemo:homeDemoRequest('second-attempt')});await pause();await pause();
+  assert.equal(demoWrites(m).length,2);
   assert.equal(FakeSource.all.length,1);
+  assert.equal(m.host.querySelector('.assistant-model-required'),null);
  }finally{await m.cleanup()}
 });
 

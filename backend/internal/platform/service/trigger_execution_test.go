@@ -36,23 +36,27 @@ func TestTriggerRuntimeRequiresIndependentProof(t *testing.T) {
 		t.Fatal("empty snapshot skipped proof")
 	}
 }
-func TestPackageTriggerScopeIndependentAndDenyFirst(t *testing.T) {
+func TestPackageTriggerScopeIndependentAndExclusive(t *testing.T) {
 	a, b := NewID(), NewID()
-	p := CapabilityPackage{Enabled: true, Scope: PackageScope{Mode: "whitelist_with_blacklist"}, TriggerScope: DefaultPackageTriggerScope()}
+	p := CapabilityPackage{AgentID: NewID(), Enabled: true, Scope: PackageScope{Mode: "whitelist_with_blacklist"}, TriggerScope: DefaultPackageTriggerScope()}
 	ctx := WithTriggerExecution(context.Background(), TriggerExecution{TriggerID: a})
 	if !PackageAllowsExecution(ctx, p, "") {
 		t.Fatal("default trigger blocked by human whitelist")
 	}
 	p.TriggerScope = PackageTriggerScope{Mode: "allowlist", AllowTriggerIDs: []string{a}, DenyTriggerIDs: []string{a}}
-	if PackageAllowsTrigger(p, a) || PackageAllowsTrigger(p, b) {
-		t.Fatal("deny or whitelist bypass")
+	if normalizePackageTriggerScope(&p) == nil || PackageAllowsTrigger(p, a) || PackageAllowsTrigger(p, b) {
+		t.Fatal("mixed allowlist and denylist must be rejected")
 	}
 	p.TriggerScope.DenyTriggerIDs = nil
 	if !PackageAllowsTrigger(p, a) || PackageAllowsTrigger(p, b) {
 		t.Fatal("trigger selection wrong")
 	}
+	p.TriggerScope = PackageTriggerScope{Mode: "all", DenyTriggerIDs: []string{a}}
+	if normalizePackageTriggerScope(&p) != nil || PackageAllowsTrigger(p, a) || !PackageAllowsTrigger(p, b) {
+		t.Fatal("all-except-deny scope evaluated incorrectly")
+	}
 	p.Enabled = false
-	if PackageAllowsTrigger(p, a) {
+	if PackageAllowsTrigger(p, b) {
 		t.Fatal("disabled package admitted")
 	}
 	p.Enabled = true

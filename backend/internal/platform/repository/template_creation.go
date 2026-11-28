@@ -184,7 +184,7 @@ func (s *TemplateStore) CommitCreation(ctx context.Context, w, a string, r servi
 			if r.RequiredPackagesOnly && p.Onboarding == "deferred" {
 				continue
 			}
-			pkg := service.CapabilityPackage{ID: service.NewID(), AgentID: out.ID, Name: p.Name, Description: p.Description, Enabled: true, Version: 1, Scope: service.PackageScope{Mode: "inherit_with_blacklist", AllowMemberIDs: []string{}, DenyMemberIDs: []string{}}, Skills: []service.PackageSkill{}, Plugins: []service.PackagePlugin{}}
+			pkg := service.CapabilityPackage{WorkScope: service.DefaultWorkPackageScope(), ID: service.NewID(), AgentID: out.ID, Name: p.Name, Description: p.Description, Enabled: true, Version: 1, Scope: service.PackageScope{Mode: "inherit_with_blacklist", AllowMemberIDs: []string{}, DenyMemberIDs: []string{}}, Skills: []service.PackageSkill{}, Plugins: []service.PackagePlugin{}}
 			for _, s := range p.Skills {
 				ref := refs[s.ResourceKey]
 				pkg.Skills = append(pkg.Skills, service.PackageSkill{SkillID: ref.ID, VersionID: ref.VersionID})

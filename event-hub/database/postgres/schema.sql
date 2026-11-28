@@ -881,28 +881,13 @@ $_$;
 
 
 --
--- Name: manager_work_package_allowed(jsonb); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.manager_work_package_allowed(p jsonb) RETURNS boolean
-    LANGUAGE sql IMMUTABLE
-    AS $$
- SELECT COALESCE((p->>'enabled')::boolean,false) AND COALESCE(p->'conversation_scope','null'::jsonb)='null'
- AND p#>>'{scope,mode}'='inherit_with_blacklist'
- AND NOT EXISTS (SELECT 1 FROM unnest(ARRAY['allow_member_ids','deny_member_ids','allow','deny']) AS k
-  WHERE COALESCE(p->'scope'->k,'null'::jsonb) NOT IN ('null','[]'));
-$$;
-
-
---
 -- Name: manager_work_package_allows(jsonb, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.manager_work_package_allows(p jsonb, source uuid) RETURNS boolean
     LANGUAGE sql IMMUTABLE
     AS $$
- SELECT CASE WHEN COALESCE(p->'work_scope','null'::jsonb)='null' THEN manager_work_package_allowed(p)
- ELSE (p->>'enabled')::boolean AND manager_work_scope_allows(p->'work_scope',source) END;
+ SELECT COALESCE((p->>'enabled')::boolean,false) AND manager_work_scope_allows(p->'work_scope',source);
 $$;
 
 
@@ -3283,7 +3268,7 @@ CREATE TABLE public.platform_capability_packages (
     source_package_key text,
     trigger_scope jsonb DEFAULT '{"mode": "all", "deny_trigger_ids": [], "allow_trigger_ids": []}'::jsonb NOT NULL,
     conversation_scope jsonb,
-    work_scope jsonb,
+    work_scope jsonb DEFAULT '{"mode": "inherit", "employee_ids": []}'::jsonb NOT NULL,
     assistant_tool_set text,
     CONSTRAINT platform_capability_packages_check CHECK (((assistant_tool_set IS NULL) OR ((assistant_tool_set = ANY (ARRAY['platform'::text, 'demo'::text])) AND (agent_id IS NOT NULL)))),
     CONSTRAINT platform_capability_packages_conversation_scope_check CHECK (((conversation_scope IS NULL) OR (jsonb_typeof(conversation_scope) = 'object'::text))),

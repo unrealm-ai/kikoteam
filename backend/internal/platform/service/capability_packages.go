@@ -53,6 +53,7 @@ func NewDefaultEmployeePackage(employee string) CapabilityPackage {
 		Scope:             PackageScope{Mode: "inherit_with_blacklist", AllowMemberIDs: []string{}, DenyMemberIDs: []string{}},
 		ConversationScope: &PackageConversationScope{Private: inherit, Group: inherit},
 		TriggerScope:      DefaultPackageTriggerScope(),
+		WorkScope:         DefaultWorkPackageScope(),
 		Skills:            []PackageSkill{}, Plugins: []PackagePlugin{},
 	}
 }
@@ -175,6 +176,9 @@ func (s *PackageService) Create(ctx context.Context, w, actor, employee string, 
 	return s.createPackage(ctx, w, actor, v)
 }
 func (s *PackageService) createPackage(ctx context.Context, w, actor string, v CapabilityPackage) (CapabilityPackage, error) {
+	if v.WorkScope == nil {
+		v.WorkScope = DefaultWorkPackageScope()
+	}
 	if e := validatePackage(&v); e != nil {
 		return CapabilityPackage{}, e
 	}

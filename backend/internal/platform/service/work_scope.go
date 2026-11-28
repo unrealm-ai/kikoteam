@@ -7,6 +7,10 @@ type WorkScope struct {
 	EmployeeIDs []string `json:"employee_ids"`
 }
 
+func DefaultWorkPackageScope() *WorkScope {
+	return &WorkScope{Mode: "inherit", EmployeeIDs: []string{}}
+}
+
 func (s *WorkScope) Validate(defaultMode string) error {
 	if s.EmployeeIDs == nil {
 		s.EmployeeIDs = []string{}

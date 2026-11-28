@@ -20,7 +20,7 @@ test('Permission revocation disables a previously editable draft without submitt
 
 
 test('Pure whitelist hides deny selector and group availability remains independent',async()=>{
- const m=await mount(true);try{m.draft.value.unifiedAccess.mode='whitelist_with_blacklist';m.draft.value.unifiedAccess.allowGroupMembers=undefined;await pause();const card=document.querySelector('.settings-card-block');assert.match(card.textContent,/仅指定白名单/);assert.match(card.textContent,/群内可用/);assert.doesNotMatch(card.textContent,/额外排除|选择群/);assert.equal(card.querySelector('[role="switch"]').getAttribute('aria-checked'),'true')}finally{await m.cleanup()}
+ const m=await mount(true);try{m.draft.value.unifiedAccess.mode='whitelist_with_blacklist';m.draft.value.unifiedAccess.allowGroupMembers=undefined;await pause();const card=document.querySelector('.settings-card-block');assert.match(card.textContent,/白名单/);assert.match(card.textContent,/群内可用/);assert.doesNotMatch(card.textContent,/额外排除|选择群/);assert.equal(card.querySelector('[role="switch"]').getAttribute('aria-checked'),'true')}finally{await m.cleanup()}
 });
 test('Legacy mixed rules require explicit review and renewed confirmation after draft edits',async()=>{
  globalThis.__usageSnapshot={usage:{usage_config:{access:{mode:'allowlist',group_members_enabled:false,allow:[{channel:'wecom',kind:'group',id:'old-group'}],deny:[{channel:'web',kind:'user',id:'excluded-user'}]}}}};

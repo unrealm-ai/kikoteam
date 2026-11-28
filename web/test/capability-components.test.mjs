@@ -167,7 +167,23 @@ await skillsApi.publish('w','import','Display name','release',skill);await plugi
 assert.equal('name' in calls[0].body,false);assert.equal(calls[0].body.version,1);assert.equal(calls[1].method,'DELETE');assert.deepEqual(calls[1].body,{version:4});
 });
 async function triggerChoice(index,label){const field=[...document.querySelectorAll('fieldset')].find(e=>e.querySelector('legend')?.textContent==='自动化任务使用范围');const e=field.querySelectorAll('.n-base-selection')[index];assert.ok(e);e.dispatchEvent(new window.MouseEvent('click',{bubbles:true}));await pause();const opt=[...document.querySelectorAll('.n-base-select-option')].reverse().find(e=>e.textContent.trim()===label);assert.ok(opt,label);opt.click();await pause();}
-test('Package trigger allow and deny selectors save separate real scope without changing human members',async()=>{const tr={id:'trigger-1',kind:'schedule',config:{description:'日报'},enabled:true};const m=await mount(PlatformPackagesPanel,{props:{employeeId:'employee'},handle:(url,init,body)=>url.endsWith('/triggers')?Response.json({items:[tr]}):init.method==='PATCH'?Response.json({...packageItem,...body}):null});try{button('配置能力包').click();await pause();await pause();await triggerChoice(0,'仅允许指定触发器，黑名单优先');await triggerChoice(1,'定时 · 日报');document.body.click();await pause();await triggerChoice(2,'定时 · 日报');document.body.click();await pause();button('保存能力包').click();await pause();const c=m.calls.find(c=>c.init.method==='PATCH');assert.deepEqual(c.body.trigger_scope,{mode:'allowlist',allow_trigger_ids:['trigger-1'],deny_trigger_ids:['trigger-1']});assert.equal(c.body.scope,undefined);assert.equal(c.body.version,1);}finally{await m.cleanup()}});
+test('Automation allowlist and denylist are exclusive and save only the selected side',async()=>{
+ const tr={id:'trigger-1',kind:'schedule',config:{description:'日报'},enabled:true};
+ for(const mode of ['all','allowlist']){
+  const m=await mount(PlatformPackagesPanel,{props:{employeeId:'employee'},handle:(url,init,body)=>url.endsWith('/triggers')?Response.json({items:[tr]}):init.method==='PATCH'?Response.json({...packageItem,...body}):null});
+  try {
+   button('配置能力包').click();await pause();await pause();
+   if(mode==='allowlist')await triggerChoice(0,'白名单');
+   assert.equal(document.querySelectorAll('[data-scene="trigger"] .n-base-selection').length,2);
+   await triggerChoice(1,'定时 · 日报');document.body.click();await pause();
+   button('保存能力包').click();await pause();
+   const c=m.calls.find(c=>c.init.method==='PATCH');
+   assert.deepEqual(c.body.trigger_scope,{mode,allow_trigger_ids:mode==='allowlist'?['trigger-1']:[],deny_trigger_ids:mode==='all'?['trigger-1']:[]});
+   assert.equal(c.body.scope,undefined);
+  }finally{await m.cleanup()}
+ }
+});
+
 test('Unknown trigger IDs remain visible and template allowlist stays empty',async()=>{const bounded={...packageItem,trigger_scope:{mode:'allowlist',allow_trigger_ids:['unknown-trigger'],deny_trigger_ids:[]}};let m=await mount(PlatformPackagesPanel,{props:{employeeId:'employee'},handle:url=>url.includes('/capability-packages?')?Response.json(page([bounded])):null});try{button('配置能力包').click();await pause();await pause();assert.match(document.body.textContent,/不可见或已失效：unknown-trigger/);}finally{await m.cleanup()}m=await mount(PlatformPackagesPanel,{handle:(url,init,body)=>url.includes('/capability-package-templates')&&!init.method?Response.json(page([{...packageItem,trigger_scope:{mode:'allowlist',allow_trigger_ids:[],deny_trigger_ids:[]}}])):init.method==='PATCH'?Response.json({...packageItem,...body}):null});try{button('配置能力包').click();await pause();await pause();assert.match(document.body.textContent,/复制后仍禁止全部自动化任务/);const el=document.querySelector('.n-drawer input');el.value='Rename';el.dispatchEvent(new window.Event('input',{bubbles:true}));await pause();button('保存能力包').click();await pause();const c=m.calls.find(c=>c.init.method==='PATCH');assert.equal(c.body.trigger_scope,undefined);assert.equal(m.calls.some(c=>c.url.endsWith('/triggers')),false)}finally{await m.cleanup()}});
 
 test('Unified package people persist scoped channel identity and do not change trigger scope',async()=>{
@@ -252,7 +268,7 @@ test('A populated scene list cannot be silently discarded by switching its mode'
  const conversation_scope=conversationScopes();conversation_scope.private={enabled:true,mode:'inherit_with_blacklist',allow:[],deny:[{channel:'web',kind:'user',id:'restricted'}]};
  const saved={...packageItem,conversation_scope};
  const m=await mount(PlatformPackagesPanel,{props:{employeeId:'employee'},handle:url=>url.includes('/capability-packages?')?Response.json(page([saved])):undefined});
- try{button('配置能力包').click();await pause();await pause();document.querySelector('[data-scene="private"] .n-base-selection').click();await pause();const option=[...document.querySelectorAll('.n-base-select-option')].find(e=>e.textContent.trim()==='仅白名单');assert.ok(option);assert.ok(option.className.includes('disabled'));option.click();await pause();assert.match(document.querySelector('[data-scene="private"]').textContent,/拒绝名单/);assert.equal(m.calls.some(c=>c.init.method==='PATCH'),false);}finally{await m.cleanup()}
+ try{button('配置能力包').click();await pause();await pause();document.querySelector('[data-scene="private"] .n-base-selection').click();await pause();const option=[...document.querySelectorAll('.n-base-select-option')].find(e=>e.textContent.trim()==='白名单');assert.ok(option);assert.ok(option.className.includes('disabled'));option.click();await pause();assert.match(document.querySelector('[data-scene="private"]').textContent,/拒绝名单/);assert.equal(m.calls.some(c=>c.init.method==='PATCH'),false);}finally{await m.cleanup()}
 });
 
 
@@ -629,5 +645,26 @@ test('Drawer backdrop closes a clean editor, but preserves dirty data until disc
   assert.equal(m.calls.filter(c => c.init.method === 'POST').length, 1);
  } finally {
   await m.cleanup();
+ }
+});
+
+test('Only the demo package shows the bold simulated-data notice', async () => {
+ for (const kind of ['demo','platform']) {
+  const item={...packageItem,assistant_tool_set:kind,assistant_tools:[{name:'fixture_tool',description:'Fixture'}]};
+  const m=await mount(PlatformPackagesPanel,{props:{employeeId:'employee'},handle:url=>
+   url.includes('/capability-packages?') ? Response.json(page([item])) : null});
+  try {
+   button('配置能力包').click();await pause();await pause();
+   const alert=document.querySelector('.package-sections section:nth-child(2) .n-alert');
+   assert.ok(alert);
+   assert.match(alert.textContent,/fixture_tool/);
+   if(kind==='demo') {
+    assert.equal(alert.querySelector('strong')?.textContent,'仅供体验，使用模拟数据，不会读写真实业务数据。');
+    assert.doesNotMatch(alert.textContent,/只能修改启停/);
+   } else {
+    assert.match(alert.textContent,/只能修改启停和使用范围/);
+    assert.doesNotMatch(alert.textContent,/模拟数据/);
+   }
+  } finally {await m.cleanup()}
  }
 });

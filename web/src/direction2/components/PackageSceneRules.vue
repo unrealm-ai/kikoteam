@@ -19,6 +19,10 @@ function remove(key:'private'|'group',index:number){const s=props.conversation?.
 function templateValues(key:'private'|'group'){const scope=props.conversation![key];return scope[scope.mode==='allowlist'?'allow':'deny'];}
 function templateOptions(key:'private'|'group'){const result=props.members.map(m=>({label:`${m.name} (${m.email})`,value:m.id,disabled:m.status!=='active'}));for(const s of templateValues(key))if(!result.some(m=>m.value===s.id))result.push({label:`不可见或已失效：${s.id}`,value:s.id,disabled:true});return result;}
 function templateSelect(key:'private'|'group',ids:string[]){const s=props.conversation?.[key];if(!s)return;const side=s.mode==='allowlist'?'allow':'deny';scene(key,{[side]:ids.map(id=>templateValues(key).find(v=>v.id===id)||{channel:'web',kind:'user',id})});}
+function triggerMode(mode:PackageTriggerScope['mode']) {
+ if(mode===props.trigger.mode || (mode==='allowlist'?props.trigger.deny_trigger_ids:props.trigger.allow_trigger_ids).length)return;
+ updateTrigger({mode,allow_trigger_ids:[],deny_trigger_ids:[]});
+}
 function updateTrigger(patch:Partial<PackageTriggerScope>){if(!props.disabled)emit('update:trigger',{...props.trigger,...patch});}
 </script>
 <template>
@@ -32,7 +36,7 @@ function updateTrigger(patch:Partial<PackageTriggerScope>){if(!props.disabled)em
    <p class="resource-hint-sm">三个场景独立启停；关闭后保留草稿规则，但不允许在该场景使用此包。能力包不能扩大员工本身的使用权限。</p>
    <fieldset v-for="s in scenes.filter(s=>conversation![s.key].enabled)" :key="s.key" class="resource-fieldset" :data-scene="s.key">
     <legend>{{s.label}}使用范围</legend>
-    <NSelect :virtual-scroll="false" :value="conversation[s.key].mode" :disabled="disabled" :options="[{label:'继承员工使用范围 + 黑名单',value:'inherit_with_blacklist',disabled:conversation[s.key].allow.length>0},{label:'仅白名单',value:'allowlist',disabled:conversation[s.key].deny.length>0}]" @update:value="v=>mode(s.key,v)" />
+    <NSelect :virtual-scroll="false" :value="conversation[s.key].mode" :disabled="disabled" :options="[{label:'继承员工使用范围 + 黑名单',value:'inherit_with_blacklist',disabled:conversation[s.key].allow.length>0},{label:'白名单',value:'allowlist',disabled:conversation[s.key].deny.length>0}]" @update:value="v=>mode(s.key,v)" />
     <p class="resource-hint-sm">切换模式前请明确移除原名单；不会自动丢弃已有授权规则。</p>
     <p v-if="s.key==='group'" class="resource-hint-sm">群聊白名单同时配置人员（含部门）和群时，必须同时满足人员范围与群范围；同类别内部任一匹配即可。</p>
     <PlatformIdentityPicker v-if="employeeId" :key="`${s.key}:${conversation[s.key].mode}:people`" :workspace="workspace" :employee-id="employeeId" kind="people" purpose="capability" include-departments :disabled="disabled" @pick="(c,d)=>picked(s.key,c,d)" @revoked="emit('revoked')" />
@@ -48,9 +52,10 @@ function updateTrigger(patch:Partial<PackageTriggerScope>){if(!props.disabled)em
   </NAlert>
   <fieldset v-if="triggerEnabled" class="resource-fieldset" data-scene="trigger">
    <legend>自动化任务使用范围</legend><p v-if="!employeeId && trigger.mode==='allowlist' && !trigger.allow_trigger_ids.length" class="resource-hint-sm">模板空白名单复制后仍禁止全部自动化任务。</p>
-   <NSelect :virtual-scroll="false" :value="trigger.mode" :disabled="disabled" :options="[{label:'全部触发器 + 黑名单',value:'all'},{label:'仅允许指定触发器，黑名单优先',value:'allowlist'}]" @update:value="v=>updateTrigger({mode:v})" />
+   <NSelect :virtual-scroll="false" :value="trigger.mode" :disabled="disabled" :options="[{label:'全部触发器 + 黑名单',value:'all',disabled:trigger.allow_trigger_ids.length>0},{label:'白名单',value:'allowlist',disabled:trigger.deny_trigger_ids.length>0}]" @update:value="triggerMode" />
+   <p v-if="trigger.allow_trigger_ids.length || trigger.deny_trigger_ids.length" class="resource-hint-sm">切换模式前，请先清空当前名单。</p>
    <NSelect :virtual-scroll="false" v-if="trigger.mode==='allowlist'" :value="trigger.allow_trigger_ids" :disabled="disabled" multiple filterable :options="triggerOptions" placeholder="允许的触发器" @update:value="v=>updateTrigger({allow_trigger_ids:v})" />
-   <NSelect :virtual-scroll="false" :value="trigger.deny_trigger_ids" :disabled="disabled" multiple filterable :options="triggerOptions" placeholder="排除的触发器" @update:value="v=>updateTrigger({deny_trigger_ids:v})" />
+   <NSelect v-else :virtual-scroll="false" :value="trigger.deny_trigger_ids" :disabled="disabled" multiple filterable :options="triggerOptions" placeholder="排除的触发器" @update:value="v=>updateTrigger({deny_trigger_ids:v})" />
   </fieldset>
   <NCheckbox v-if="!conversation" :checked="triggerEnabled" :disabled="disabled" @update:checked="v=>updateTrigger({enabled:v})">启用触发器场景</NCheckbox>
  </section>

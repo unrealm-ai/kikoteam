@@ -187,8 +187,17 @@ PackagePage:
 PackageTriggerScope:
   type: object
   additionalProperties: false
-  description: Trigger authorization is independent of human member scope; deny takes
-    precedence.
+  description: Trigger authorization is independent of human scope. All uses only deny_trigger_ids; allowlist uses only allow_trigger_ids.
+  allOf:
+  - if:
+      properties:
+        mode: { const: all }
+    then:
+      properties:
+        allow_trigger_ids: { maxItems: 0 }
+    else:
+      properties:
+        deny_trigger_ids: { maxItems: 0 }
   required:
   - mode
   - allow_trigger_ids

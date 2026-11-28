@@ -82,10 +82,7 @@ func authorizeRuntime(ctx context.Context, tx any, actor, employee string, web f
 // usable; Web allow/deny lists conservatively exclude all channel execution.
 func PackageAllowsExecution(ctx context.Context, p CapabilityPackage, actor string) bool {
 	if g, work := WorkExecutionFrom(ctx); work {
-		if p.WorkScope != nil {
-			return actor == "" && p.Enabled && p.WorkScope.Allows(g.SourceAgentID)
-		}
-		return actor == "" && PackageAllowsWork(p)
+		return actor == "" && p.Enabled && p.WorkScope != nil && p.WorkScope.Allows(g.SourceAgentID)
 	}
 	if g, ok := TriggerExecutionFrom(ctx); ok {
 		return actor == "" && PackageAllowsTrigger(p, g.TriggerID)

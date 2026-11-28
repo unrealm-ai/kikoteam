@@ -17,11 +17,8 @@ const agents = ref<{ label: string; value: string }[]>([]),
 const modes = computed(() => [
   ...(props.receiver
     ? [{ label: '全部员工', value: 'all' }]
-    : [
-        ...(!props.scope ? [{ label: '沿用已有能力包范围', value: 'legacy' }] : []),
-        { label: '继承员工接手范围', value: 'inherit' },
-      ]),
-  { label: '仅允许所选来源', value: 'allowlist' },
+    : [{ label: '继承员工接手范围', value: 'inherit' }]),
+  { label: '白名单', value: 'allowlist' },
   { label: '排除所选来源', value: 'denylist' },
 ]);
 watch(
@@ -48,7 +45,7 @@ watch(
   <fieldset>
     <legend>{{ receiver ? '允许向此员工交接的来源' : '事项交接时允许使用此能力包的来源' }}</legend>
     <NSelect
-      :value="scope?.mode || 'legacy'"
+      :value="scope?.mode || (receiver ? 'all' : 'inherit')"
       :disabled="disabled"
       :options="modes"
       aria-label="交接来源规则"

@@ -76,7 +76,7 @@ test('Employee handoff scope uses its own versioned API in permissions and prese
  try {
    const card = document.querySelector('[aria-labelledby="employee-receiver-heading"]');
    const chooseAllowlist = async () => {
-     const input = [...card.querySelectorAll('.n-radio')].find(item => item.textContent.includes('仅允许白名单')).querySelector('input');
+     const input = [...card.querySelectorAll('.n-radio')].find(item => item.textContent.includes('白名单')).querySelector('input');
      input.checked = true;
      input.dispatchEvent(new window.Event('change', {bubbles: true}));
      await pause();

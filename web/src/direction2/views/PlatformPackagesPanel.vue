@@ -31,6 +31,7 @@ const fresh = (): PackageInput => ({
   name: '',
   description: '',
   enabled: true,
+  work_scope: {mode:'inherit',employee_ids:[]},
   trigger_scope: {...defaultTriggerScope(),enabled:true},
   conversation_scope: defaultConversationScope(true),
   scope: { mode: 'inherit_with_blacklist', allow_member_ids: [], deny_member_ids: [], allow: [], deny: [] },
@@ -329,7 +330,8 @@ onUnmounted(discard);
 
             <template #resources>
               <NAlert v-if="existing?.assistant_tool_set" type="info">
-                内置工具随平台代码升级，只能修改启停和使用范围。
+                <strong v-if="existing.assistant_tool_set === 'demo'">仅供体验，使用模拟数据，不会读写真实业务数据。</strong>
+                <template v-else>内置工具随平台代码升级，只能修改启停和使用范围。</template>
                 <ul v-if="existing.assistant_tools?.length">
                   <li v-for="tool in existing.assistant_tools" :key="tool.name"><code>{{tool.name}}</code>：{{tool.description}}</li>
                 </ul>

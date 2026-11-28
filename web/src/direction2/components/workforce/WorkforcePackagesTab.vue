@@ -148,6 +148,14 @@ function openEditPackage(pkg: CapabilityPackageBinding) {
   } else if (!cloned.scope.triggerUsageScope.denyTriggerIds) {
     cloned.scope.triggerUsageScope.denyTriggerIds = [];
   }
+  const trigger = cloned.scope.triggerUsageScope;
+  if (trigger.mode === 'allowlist') {
+    trigger.allowTriggerIds = trigger.allowTriggerIds.filter(id => !trigger.denyTriggerIds?.includes(id));
+    trigger.denyTriggerIds = [];
+  } else {
+    trigger.mode = 'all';
+    trigger.allowTriggerIds = [];
+  }
   if (!cloned.scope.userScope) {
     cloned.scope.userScope = {
       mode: cloned.scope.userMode === 'custom_whitelist' ? 'whitelist_with_blacklist' : 'inherit_with_blacklist',
@@ -573,11 +581,10 @@ async function savePackageConfig() {
               <div style="margin-top: 14px;">
                 <label style="font-weight: 600; font-size: 13px; color: var(--id-text-primary);">④ 自动触发器调用策略</label>
                 <div style="margin-top: 6px;">
-                  <NRadioGroup v-model:value="editingPackage.scope.triggerUsageScope.mode">
+                  <NRadioGroup :value="editingPackage.scope.triggerUsageScope.mode" @update:value="mode => { if (editingPackage && (mode === 'all' || mode === 'allowlist')) editingPackage.scope.triggerUsageScope = { mode, allowTriggerIds: [], denyTriggerIds: [] }; }">
                     <NSpace wrap>
-                      <NRadio value="all">全量触发器可用 (支持排除黑名单)</NRadio>
-                      <NRadio value="allowlist">指定触发器白名单</NRadio>
-                      <NRadio value="denylist">指定触发器黑名单 (排除指定项)</NRadio>
+                      <NRadio value="all">全部触发器 + 黑名单</NRadio>
+                      <NRadio value="allowlist">白名单</NRadio>
                     </NSpace>
                   </NRadioGroup>
                 </div>
@@ -590,7 +597,7 @@ async function savePackageConfig() {
                     placeholder="选择允许调用该能力包的触发器"
                   />
                 </div>
-                <div v-else-if="editingPackage.scope.triggerUsageScope.mode === 'denylist' || editingPackage.scope.triggerUsageScope.mode === 'all'" style="margin-top: 8px;">
+                <div v-else style="margin-top: 8px;">
                   <label style="font-size: 12px; color: var(--id-text-secondary); display: block; margin-bottom: 4px;">排除触发器黑名单 (此触发器不得调用本包)</label>
                   <NSelect
                     v-model:value="editingPackage.scope.triggerUsageScope.denyTriggerIds"
@@ -612,7 +619,7 @@ async function savePackageConfig() {
                       </NRadio>
                       <NRadio value="whitelist">
                         <strong>指定白名单</strong>
-                        <span style="font-size: 12px; color: var(--id-text-secondary);">（仅允许白名单内员工在交接时使用此能力包）</span>
+                        <span style="font-size: 12px; color: var(--id-text-secondary);">（白名单内的员工可在交接时使用此能力包）</span>
                       </NRadio>
                     </NSpace>
                   </NRadioGroup>

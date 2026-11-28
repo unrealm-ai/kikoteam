@@ -25,7 +25,8 @@ func normalizePackageTriggerScope(p *CapabilityPackage) error {
 		p.TriggerScope.Enabled = enabled
 	}
 	s := &p.TriggerScope
-	if s.Mode != "all" && s.Mode != "allowlist" || !packageIDs(s.AllowTriggerIDs) || !packageIDs(s.DenyTriggerIDs) {
+	if s.Mode != "all" && s.Mode != "allowlist" || !packageIDs(s.AllowTriggerIDs) || !packageIDs(s.DenyTriggerIDs) ||
+		s.Mode == "all" && len(s.AllowTriggerIDs) > 0 || s.Mode == "allowlist" && len(s.DenyTriggerIDs) > 0 {
 		return Fail("invalid_package_trigger_scope", 400, "触发器使用范围无效")
 	}
 	if p.AgentID == "" && (len(s.AllowTriggerIDs) > 0 || len(s.DenyTriggerIDs) > 0) {
@@ -51,7 +52,14 @@ func PackageAllowsTrigger(p CapabilityPackage, id string) bool {
 		}
 		s = DefaultPackageTriggerScope()
 	}
-	return !slices.Contains(s.DenyTriggerIDs, id) && (s.Mode == "all" || s.Mode == "allowlist" && slices.Contains(s.AllowTriggerIDs, id))
+	switch s.Mode {
+	case "all":
+		return len(s.AllowTriggerIDs) == 0 && !slices.Contains(s.DenyTriggerIDs, id)
+	case "allowlist":
+		return len(s.DenyTriggerIDs) == 0 && slices.Contains(s.AllowTriggerIDs, id)
+	default:
+		return false
+	}
 }
 
 type packageTriggerValidator interface {

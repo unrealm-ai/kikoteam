@@ -31,11 +31,3 @@ func authorizeWorkRuntime(ctx context.Context, tx any, g WorkExecution, actor, e
 	}
 	return check.AuthorizeWorkExecution(ctx, g, employee)
 }
-
-// Legacy unrestricted packages can participate in handoff. Packages with
-// conversation rules or human restrictions are scoped to those entry points.
-func PackageAllowsWork(p CapabilityPackage) bool {
-	s := p.Scope
-	return p.Enabled && p.ConversationScope == nil && s.Mode == "inherit_with_blacklist" &&
-		len(s.AllowMemberIDs) == 0 && len(s.DenyMemberIDs) == 0 && len(s.Allow) == 0 && len(s.Deny) == 0
-}

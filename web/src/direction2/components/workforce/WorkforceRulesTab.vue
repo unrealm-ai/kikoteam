@@ -693,7 +693,7 @@ defineExpose({
         <div class="p-row">
           <div class="p-info">
             <strong>使用范围模式</strong>
-            <p>支持面向全员开放（可排除黑名单），或仅面向指定白名单成员/部门开放。</p>
+            <p>支持面向全员开放（可排除黑名单），或向白名单成员/部门开放。</p>
           </div>
           <NRadioGroup
             :disabled="!canManage || (isSavingAccessScope)"
@@ -702,7 +702,7 @@ defineExpose({
           >
             <NSpace wrap>
               <NRadio value="all_with_blacklist">全员可用 + 黑名单排除</NRadio>
-              <NRadio value="whitelist_with_blacklist">仅指定白名单</NRadio>
+              <NRadio value="whitelist_with_blacklist">白名单</NRadio>
             </NSpace>
           </NRadioGroup>
         </div>
@@ -821,7 +821,7 @@ defineExpose({
           >
             <NSpace wrap>
               <NRadio value="all_with_blacklist">全部员工 + 黑名单排除</NRadio>
-              <NRadio value="whitelist">仅允许白名单</NRadio>
+              <NRadio value="whitelist">白名单</NRadio>
             </NSpace>
           </NRadioGroup>
         </div>
@@ -884,7 +884,7 @@ defineExpose({
                 @update:value="v => state.updateMode(v === 'allowlist' ? 'allowlist' : 'denylist')">
                 <NSpace wrap>
                   <NRadio value="denylist">全部员工 + 黑名单排除</NRadio>
-                  <NRadio value="allowlist">仅允许白名单</NRadio>
+                  <NRadio value="allowlist">白名单</NRadio>
                 </NSpace>
               </NRadioGroup>
             </div>

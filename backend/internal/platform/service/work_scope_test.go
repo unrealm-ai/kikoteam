@@ -8,9 +8,9 @@ import (
 func TestWorkPackageScopeUsesDirectSender(t *testing.T) {
 	sender, other := NewID(), NewID()
 	ctx := WithWorkExecution(context.Background(), WorkExecution{AssignmentID: NewID(), SourceAgentID: sender})
-	pack := CapabilityPackage{Enabled: true, Scope: PackageScope{Mode: "allowlist"}}
+	pack := CapabilityPackage{Enabled: true, Scope: PackageScope{Mode: "inherit_with_blacklist"}}
 	if PackageAllowsExecution(ctx, pack, "") {
-		t.Fatal("legacy restricted package became available")
+		t.Fatal("missing explicit work scope must not authorize handoff")
 	}
 	for _, tc := range []struct {
 		scope WorkScope

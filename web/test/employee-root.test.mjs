@@ -62,6 +62,7 @@ test('Market is the first and default destination, but explicit links still open
   if(url.includes('agent-templates'))return Response.json({items:[],total:0,page:1,page_size:20});
   return Response.json({error:{code:'not_found',message:'接口不存在'}},{status:404});
  };
+ window.localStorage.setItem('kiko:d2:sidebar-collapsed','0'); // An old expanded preference must not carry over.
  for(const [initial,expected,view] of [
   ['/','AI 员工市场','market'],
   ['/#/?ws=w','AI 员工市场','market'],
@@ -74,6 +75,13 @@ test('Market is the first and default destination, but explicit links still open
   const app=createApp(RootApp);app.config.errorHandler=e=>errors.push(String(e));app.mount(host);
   try{
    await pause();await pause();
+   const sidebar=host.querySelector('.d2-rail-nav');
+   const toggle=sidebar.querySelector('.rail-collapse-btn');
+   assert.ok(sidebar.classList.contains('collapsed'));
+   assert.equal(toggle.getAttribute('aria-expanded'),'false');
+   toggle.click();await nextTick();
+   assert.equal(sidebar.classList.contains('collapsed'),false);
+   assert.equal(toggle.getAttribute('aria-expanded'),'true');
    const rail=[...host.querySelectorAll('nav[aria-label="主导航"] button')];
    assert.equal(rail[0]?.getAttribute('aria-label'),'首页');
    assert.equal(rail[0]?.getAttribute('aria-current'),view==='market'?'page':null);
@@ -86,10 +94,30 @@ test('Market is the first and default destination, but explicit links still open
     host.querySelector('.brand-logo').click();await pause();
     assert.equal(window.location.hash,'#/?ws=w&view=market');
     assert.equal(host.querySelector('h1')?.textContent,'AI 员工市场');
+    assert.equal(sidebar.classList.contains('collapsed'),false); // In-app navigation keeps the current state.
    }
    assert.deepEqual(errors,[]);
   }finally{app.unmount();host.remove();await pause()}
  }
+});
+
+test('Public task link mounts the task page without the workbench sidebar',async()=>{
+ const requests=[];
+ globalThis.fetch=async url=>{
+  requests.push(url);
+  return Response.json({error:{code:'not_found',message:'任务已失效'}},{status:404});
+ };
+ window.history.replaceState(null,'','/tasks/synthetic-token');
+ const host=document.createElement('div');document.body.appendChild(host);
+ const app=createApp(RootApp);app.mount(host);
+ try{
+  await pause();
+  assert.ok(host.querySelector('.public-task'));
+  assert.equal(host.querySelector('.d2-rail-nav'),null);
+  assert.equal(host.querySelector('nav[aria-label="主导航"]'),null);
+  assert.equal(host.querySelector('.public-task-signin a')?.getAttribute('target'),'_blank');
+  assert.deepEqual(requests,['/api/v1/public/task-detail']);
+ }finally{app.unmount();host.remove();window.history.replaceState(null,'','/');await pause()}
 });
 
 test('Platform administration is the third settings tab for real platform administrators only',async()=>{
@@ -267,4 +295,48 @@ test('KIKO avatar uses distinct fixed SVGs and animates busy transitions only in
   assert.equal(chat.classList.contains('kiko-avatar-to-work'),false);
   assert.equal(nav.classList.contains('kiko-avatar-to-idle'),false);
  }finally{app.unmount();host.remove()}
+});
+
+test('avatar menu separates workspace selection and creation from account actions',async()=>{
+ const workspaces=[{id:'w',name:'Workspace',role:'owner',version:1},{id:'other',name:'Other team',role:'member',version:1}];
+ globalThis.fetch=async url=>{
+  if(url==='/api/v1/me')return Response.json({user:{id:'u',name:'Owner',email:'owner@example.test',auth_provider:'email'}});
+  if(url.includes('/api/v1/workspaces?'))return Response.json({items:workspaces,total:2});
+  const workspace=workspaces.find(w=>url==='/api/v1/workspaces/'+w.id);
+  if(workspace)return Response.json(workspace);
+  if(url.includes('agent-templates')||url.includes('/members?'))return Response.json({items:[],total:0,page:1,page_size:20});
+  return Response.json({error:{code:'not_found',message:'接口不存在'}},{status:404});
+ };
+ window.history.replaceState(null,'','/#/?ws=w&view=market');
+ const host=document.createElement('div');document.body.appendChild(host);
+ const app=createApp(RootApp);app.mount(host);
+ const open=async()=>{
+  host.querySelector('.unified-account-card').click();await pause();
+  const menu=document.querySelector('.account-popover-menu');
+  assert.ok(menu);
+  return menu;
+ };
+ try{
+  await pause();await pause();
+  const menu=await open();
+  const work=menu.querySelector('[aria-label="切换工作区"]');
+  const add=work.querySelector('.popover-workspaces-header [aria-label="创建工作区"]');
+  assert.ok(add?.querySelector('svg'));
+  assert.equal(work.querySelector('[aria-current="true"]').textContent.trim(),'Workspace✓');
+  assert.deepEqual([...menu.querySelectorAll('.popover-nav-list button')].map(b=>b.textContent.trim()),['工作区设置','我的积分','退出登录']);
+  assert.doesNotMatch(menu.textContent,/邮箱账号登录|Google OAuth|owner@example.test/);
+  add.click();await pause();
+  assert.ok(document.querySelector('.n-modal input[placeholder="工作区名称"]'));
+  document.querySelector('.n-modal .n-base-close').click();await pause();
+  const workspaceMenu=await open();
+  const other=[...workspaceMenu.querySelectorAll('.workspace-list button')].find(b=>b.textContent.trim()==='Other team');
+  assert.ok(other);other.click();await pause();
+  assert.equal(activeWorkspaceId.value,'other');
+  const settingsMenu=await open();
+  settingsMenu.querySelector('.popover-nav-list button').click();await pause();
+  assert.equal(window.location.hash,'#/?ws=other&view=settings');
+  const creditsMenu=await open();
+  creditsMenu.querySelectorAll('.popover-nav-list button')[1].click();await pause();
+  assert.equal(window.location.hash,'#/?ws=other&view=credits');
+ }finally{app.unmount();host.remove();await pause()}
 });

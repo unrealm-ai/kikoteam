@@ -80,16 +80,6 @@ const railNavItems: RailNavItem[] = [
   }
 ];
 
-const SIDEBAR_COLLAPSE_STORAGE_KEY = 'kiko:d2:sidebar-collapsed';
-
-function readInitialSidebarCollapsed(): boolean {
-  try {
-    return typeof window !== 'undefined' && window.localStorage.getItem(SIDEBAR_COLLAPSE_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
 const defaultView: RailView = realPlatform ? 'market' : 'employees';
 const currentView = ref<RailView>(defaultView);
 const referralEntry = ref(realPlatform && window.location.pathname.startsWith('/r/'));
@@ -124,7 +114,7 @@ async function invitationCompleted(workspaceId?: string) {
 const subParam = ref<string | undefined>(undefined);
 const isMobileSidebarOpen = ref(false);
 const showAccountPopover = ref(false);
-const isSidebarCollapsed = ref(readInitialSidebarCollapsed());
+const isSidebarCollapsed = ref(true);
 const isMobileViewport = ref(
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     ? window.matchMedia('(max-width: 960px)').matches
@@ -134,11 +124,6 @@ const isRailCollapsed = computed(() => !isMobileViewport.value && isSidebarColla
 
 function toggleSidebarCollapse() {
   isSidebarCollapsed.value = !isSidebarCollapsed.value;
-  try {
-    window.localStorage.setItem(SIDEBAR_COLLAPSE_STORAGE_KEY, isSidebarCollapsed.value ? '1' : '0');
-  } catch {
-    // ignore storage errors
-  }
 }
 
 // 全局工作区与用户状态 (严格由后端 /api/auth/me 与 /api/workspaces 驱动，无本地写死兜底)
@@ -172,11 +157,6 @@ watch([activeWorkspaceId, shellStatus, () => currentUser.value?.id, currentView]
 const workspaces = ref<WorkspaceInfo[]>([]);
 const currentWorkspace = computed(() => workspaces.value.find(w => w.id === activeWorkspaceId.value) ?? workspaces.value[0] ?? null);
 const isLoggingOut = ref(false);
-
-function authProviderLabel(provider?: UserProfile['authProvider']) {
-  if (provider === 'google') return 'Google OAuth 登录';
-  return '邮箱账号登录';
-}
 
 function workspaceRoleLabel(role?: string) {
   if (!role) return '成员';
@@ -940,47 +920,41 @@ function openApproval(id: string) {
 
                   <!-- 点击弹出的统一组织与个人设置 Popover -->
                   <div class="account-popover-menu">
-                    <div class="popover-user-section">
-                      <div class="p-avatar">{{ currentUser.name.slice(0, 1) }}</div>
-                      <div class="p-meta">
-                        <strong class="p-name">{{ currentUser.name }}</strong>
-                        <span class="p-email">{{ currentUser.email }}</span>
+                    <section class="popover-workspaces" aria-label="切换工作区">
+                      <div class="popover-workspaces-header">
+                        <span class="popover-section-label">切换工作区</span>
+                        <button
+                          v-if="realPlatform"
+                          type="button"
+                          class="popover-workspace-create"
+                          aria-label="创建工作区"
+                          title="创建工作区"
+                          @click="runWithUnsavedGuard(() => { showCreateWorkspace = true; showAccountPopover = false })"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                        </button>
                       </div>
-                    </div>
-
-                    <div class="popover-divider"></div>
-
-                    <div class="popover-section-label">切换工作区</div>
-                    <div class="workspace-list">
-                      <div
-                        v-for="ws in workspaces"
-                        :key="ws.id"
-                        class="ws-item-choice"
-                        :class="{ selected: ws.id === activeWorkspaceId }"
-                        @click="requestSwitchWorkspace(ws.id)"
-                      >
-                        <div class="ws-item-info">
-                          <strong>{{ ws.name }}</strong>
-                          <span>{{ ws.desc }}</span>
-                        </div>
-                        <span v-if="ws.id === activeWorkspaceId" class="check-mark">✓</span>
+                      <div class="workspace-list">
+                        <button
+                          v-for="ws in workspaces"
+                          :key="ws.id"
+                          type="button"
+                          class="ws-item-choice ws-item-choice--btn"
+                          :class="{ selected: ws.id === activeWorkspaceId }"
+                          :aria-current="ws.id === activeWorkspaceId ? 'true' : undefined"
+                          @click="requestSwitchWorkspace(ws.id)"
+                        >
+                          <span class="ws-item-info"><strong :title="ws.name">{{ ws.name }}</strong></span>
+                          <span v-if="ws.id === activeWorkspaceId" class="check-mark" aria-hidden="true">✓</span>
+                        </button>
                       </div>
-                    </div>
+                    </section>
 
-                    <div class="workspace-quick-actions popover-ws-hint">
-                      <NButton v-if="realPlatform" text @click="runWithUnsavedGuard(() => { showCreateWorkspace = true; showAccountPopover = false })">创建工作区</NButton><span v-else>工作区创建与团队加入由企业组织管理员统一分配</span>
-                    </div>
+                    <div class="popover-divider" aria-hidden="true"></div>
 
-                    <div class="popover-divider"></div>
-
-                    <div class="popover-nav-list">
-                      <button v-if="realPlatform" type="button" class="pop-nav-item pop-nav-item--btn" @click="showAccountPopover=false;navigate('credits')">我的积分</button>
-                      <button type="button" class="pop-nav-item pop-nav-item--btn" @click="navigate('settings')">
-                        <span>工作区与成员设置</span>
-                      </button>
-                      <div class="pop-nav-item pop-nav-item--sso">
-                        <span>{{ authProviderLabel(currentUser.authProvider) }}</span>
-                      </div>
+                    <div class="popover-nav-list" role="group" aria-label="账号与工作区操作">
+                      <button type="button" class="pop-nav-item pop-nav-item--btn" @click="navigate('settings')">工作区设置</button>
+                      <button v-if="realPlatform" type="button" class="pop-nav-item pop-nav-item--btn" @click="navigate('credits')">我的积分</button>
                       <button
                         type="button"
                         class="pop-nav-item pop-nav-item--btn pop-nav-item--danger"
@@ -1690,41 +1664,32 @@ function openApproval(id: string) {
   flex-direction: column;
   gap: 10px;
 }
-.popover-user-section {
+.popover-workspaces-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding-bottom: 6px;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding-inline-start: 10px;
 }
-.p-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--id-text-primary);
-  color: var(--id-text-inverse);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
-  flex-shrink: 0;
+.popover-workspace-create {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--id-border-subtle);
+  border-radius: var(--id-radius-md);
+  background: var(--id-bg-surface);
+  color: var(--id-text-secondary);
+  cursor: pointer;
 }
-.p-meta {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.p-name {
-  font-size: 13px;
-  font-weight: 600;
+.popover-workspace-create:hover {
+  background: var(--id-bg-muted);
   color: var(--id-text-primary);
 }
-.p-email {
-  font-size: 12px;
-  color: var(--id-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.popover-workspace-create:focus-visible {
+  outline: 2px solid var(--id-accent-primary);
+  outline-offset: 2px;
 }
 
 .popover-divider {
@@ -1738,6 +1703,8 @@ function openApproval(id: string) {
   color: var(--id-text-muted);
 }
 .workspace-list {
+  max-height: min(240px, 38dvh);
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1792,17 +1759,6 @@ function openApproval(id: string) {
   flex-shrink: 0;
 }
 
-.workspace-quick-actions {
-  display: flex;
-  gap: 8px;
-}
-.popover-ws-hint {
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--id-text-muted);
-  padding: 2px 2px 0;
-}
-
 .popover-nav-list {
   display: flex;
   flex-direction: column;
@@ -1830,15 +1786,6 @@ function openApproval(id: string) {
 .pop-nav-item:hover {
   background: var(--id-bg-muted);
   color: var(--id-text-primary);
-}
-.pop-nav-item--sso {
-  color: var(--id-text-muted);
-  font-size: 12px;
-  cursor: default;
-}
-.pop-nav-item--sso:hover {
-  background: transparent;
-  color: var(--id-text-muted);
 }
 .pop-nav-item--danger {
   color: var(--id-status-danger);

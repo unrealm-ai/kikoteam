@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { AssistantCard } from '../api/assistant';
 
-defineProps<{ cards: AssistantCard[]; disabled?: boolean; hideNote?: boolean }>();
+const props = defineProps<{ cards: AssistantCard[]; disabled?: boolean; hideNote?: boolean; illustrated?: boolean }>();
 defineEmits<{ choose: [card: AssistantCard] }>();
 
 interface CardMeta {
@@ -44,6 +45,16 @@ const DEFAULT_META: CardMeta = {
   tone: 'blue',
 };
 
+const cardArt: Record<string, string> = {
+  complaints: '/brand/assistant-experiences/complaints.webp',
+  meeting: '/brand/assistant-experiences/meeting.webp',
+  incident: '/brand/assistant-experiences/incident.webp',
+};
+const displayedCards = computed(() => props.cards.map(card => ({
+  card,
+  art: props.illustrated ? cardArt[card.key] : undefined,
+})));
+
 function meta(key: string): CardMeta {
   return CARD_META_MAP[key] ?? DEFAULT_META;
 }
@@ -54,15 +65,16 @@ function meta(key: string): CardMeta {
     <p v-if="!hideNote" class="assistant-demo-note">使用内置样例数据，体验真实任务拆分、人工确认与主动回告。</p>
     <div class="demo-cards-grid">
       <button
-        v-for="card in cards"
+        v-for="{card, art} in displayedCards"
         :key="card.key"
         type="button"
         class="demo-card"
+        :class="{ 'demo-card--illustrated': art }"
         :data-tone="meta(card.key).tone"
         :disabled="disabled"
         @click="$emit('choose', card)"
       >
-        <div class="demo-card-top">
+        <div v-if="!art" class="demo-card-top">
           <span class="demo-card-tag-group">
             <span class="demo-card-icon" aria-hidden="true">
               <svg v-if="card.key === 'complaints'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -95,10 +107,12 @@ function meta(key: string): CardMeta {
 
         <div class="demo-card-body">
           <strong class="demo-card-title">{{ card.title }}</strong>
-          <small class="demo-card-desc">{{ card.description }}</small>
+          <img v-if="art" class="demo-card-art" :src="art" alt="" width="768" height="432" decoding="async" />
+          <small v-else class="demo-card-desc">{{ card.description }}</small>
         </div>
 
         <div class="demo-card-footer">
+          <span v-if="art" class="demo-card-capability">{{ card.key === 'complaints' ? '并行推荐任务' : meta(card.key).tag }}</span>
           <span class="demo-card-cta">
             {{ meta(card.key).cta }}
             <span class="demo-card-arrow" aria-hidden="true">→</span>
@@ -282,6 +296,33 @@ function meta(key: string): CardMeta {
   font-size: 13px;
   font-weight: 600;
   color: var(--id-accent-primary, #2563eb);
+}
+
+.demo-card--illustrated .demo-card-body {
+  gap: 10px;
+}
+.demo-card-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: #fff;
+  margin-top: auto;
+}
+.demo-card--illustrated .demo-card-footer {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.demo-card-capability {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--id-bg-subtle, #f6f8fa);
+  color: var(--id-text-secondary, #52525b);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .demo-card-arrow {

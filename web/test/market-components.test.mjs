@@ -13,7 +13,8 @@ const {AgentMarketView,activeWorkspaceId,createApp,h,NMessageProvider,NDialogPro
 const pause=async()=>{await new Promise(r=>setTimeout(r,40));await nextTick()};
 
 const fixture={id:'template-one',scope:'official',version:2,sequence:1,template_version_id:'fixed-version',latest_version_id:'fixed-version',published_version_id:'fixed-version',is_listed:true,status:'published',has_unpublished_changes:false,content:{schema_version:1,name:'周报员',role:'整理工单与代码',avatar:'',category:'engineering',instruction_template:'整理周报',parameters:[],resource_refs:[],examples:[],packages:[{package_key:'weekly',name:'整理工单',description:'业务进展',onboarding_requirement:'required',skills:[],plugins:[]},{package_key:'code',name:'补充代码变更',description:'代码提交摘要',onboarding_requirement:'deferred',skills:[],plugins:[]}]}};
-const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
+const button=(text,root=document)=>[...root.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
+const drawerButton=text=>button(text,document.querySelector('.n-drawer')??document.createElement('div'));
 async function mount(role='owner',create,template=fixture,extraProps={}){
  const calls=[],guards=[],navigations=[],demos=[];let assistantOpens=0;globalThis.fetch=async(url,init={})=>{
  calls.push({url,init,body:init.body?JSON.parse(init.body):null});
@@ -45,7 +46,22 @@ test('market card and detail display the portrait saved in the template', async 
   await m.cleanup();
  }
 });
-test('market member can create from a published template without gaining template management',async()=>{const m=await mount('member');try{assert.equal(button('管理模板'),undefined);button('查看详情').click();await pause();assert.equal(button('用此模板创建').disabled,false);assert.equal(button('复制为工作区模板'),undefined);assert.equal(m.calls.some(c=>c.init.method),false)}finally{await m.cleanup()}});
+test('market keeps decision-making copy while hiding version metadata in browse mode', async () => {
+ const template={...fixture,builtin_key:'market-reporter',content:{...fixture.content,deliverables:'每日上午一份行情简报'}};
+ const m=await mount('member',undefined,template);
+ try {
+  const card=document.querySelector('.template-card');
+  assert.match(card.textContent,/整理工单与代码/);
+  assert.match(card.textContent,/每日上午一份行情简报/);
+  assert.equal(card.querySelector('.chips'),null);
+  assert.doesNotMatch(card.querySelector('.card-actions').textContent,/官方模板|v1/);
+  button('查看详情',card).click();await pause();
+  assert.ok(drawerButton('一键创建行情简报员'));
+  assert.match(document.querySelector('.n-drawer').textContent,/模板更新不会影响已创建的员工/);
+ } finally {await m.cleanup()}
+});
+
+test('market member can create from a published template without gaining template management',async()=>{const m=await mount('member');try{assert.equal(button('管理模板'),undefined);button('查看详情').click();await pause();assert.equal(drawerButton('用此模板创建').disabled,false);assert.equal(button('复制为工作区模板'),undefined);assert.equal(m.calls.some(c=>c.init.method),false)}finally{await m.cleanup()}});
 test('workspace owner copies a built-in role as an independent workspace draft',async()=>{
  const m=await mount('owner',undefined,{...fixture,builtin_key:'business-analyst'});
  try{
@@ -60,14 +76,14 @@ test('workspace owner copies a built-in role as an independent workspace draft',
 });
 test('template creation preserves every preset ability and submits once without a request key',async()=>{
  let resolve;const m=await mount('owner',()=>new Promise(r=>{resolve=r}));try{
- button('查看详情').click();await pause();button('用此模板创建').click();await pause();button('下一步').click();await pause();
+ button('用此模板创建',document.querySelector('.template-card')).click();await pause();assert.equal(drawerButton('查看详情'),undefined);assert.match(document.querySelector('.n-drawer').textContent,/岗位设定/);button('下一步').click();await pause();
  assert.match(document.body.textContent,/模板已预设的能力/);assert.match(document.body.textContent,/整理工单/);assert.match(document.body.textContent,/补充代码变更/);assert.equal(document.querySelectorAll('.n-drawer input[type=checkbox]').length,0);
  button('下一步').click();await pause();button('创建员工').click();await pause();assert.equal(button('创建员工').disabled,true);
  const writes=m.calls.filter(c=>c.init.method==='POST');assert.equal(writes.length,1);assert.equal(writes[0].body.template_version_id,'fixed-version');assert.equal(writes[0].init.headers.has('Idempotency-Key'),false);assert.equal('selected_capabilities' in writes[0].body,false);
  resolve(Response.json({id:'created-agent',name:'周报员'}));await pause();assert.equal(m.guards[0].hasUnsaved(),false);assert.deepEqual(m.navigations[0],['employees',undefined,'created-agent']);
  }finally{await m.cleanup()}
 });
-test('network-unknown creation preserves form and does not automatically retry',async()=>{const m=await mount('owner',()=>Promise.reject(new TypeError('network failure')));try{button('查看详情').click();await pause();button('用此模板创建').click();await pause();button('下一步').click();await pause();button('下一步').click();await pause();button('创建员工').click();await pause();assert.match(document.body.textContent,/先到 AI 员工列表核对/);assert.equal(m.calls.filter(c=>c.init.method==='POST').length,1);assert.equal(m.navigations.length,0)}finally{await m.cleanup()}});
+test('network-unknown creation preserves form and does not automatically retry',async()=>{const m=await mount('owner',()=>Promise.reject(new TypeError('network failure')));try{button('查看详情').click();await pause();drawerButton('用此模板创建').click();await pause();button('下一步').click();await pause();button('下一步').click();await pause();button('创建员工').click();await pause();assert.match(document.body.textContent,/先到 AI 员工列表核对/);assert.equal(m.calls.filter(c=>c.init.method==='POST').length,1);assert.equal(m.navigations.length,0)}finally{await m.cleanup()}});
 
 test('create a market preset directly without a workspace package template',async()=>{
  const m=await mount();
@@ -96,93 +112,40 @@ test('create a market preset directly without a workspace package template',asyn
  }finally{await m.cleanup()}
 });
 
-test('market shows demo cards with quick-create actions and emits assistantDemo/openAssistant', async () => {
- const card = {
-  key: 'complaints',
-  title: '并行处理两起客诉',
-  description: '同时查两单，分别给出处理方案。',
-  input: 'demo-input',
- };
- const m = await mount('member', undefined, fixture, {
-  assistantAgentId: 'assistant-1',
-  assistantCards: [card],
- });
+test('market puts assistant creation in the demo header and keeps demo clicks unchanged', async () => {
+ const card = {key:'complaints',title:'客诉太多，处理不过来？',description:'同时查两单，分别给出处理方案。',input:'demo-input'};
+ const m = await mount('member', undefined, fixture, {assistantAgentId:'assistant-1',assistantCards:[card]});
  try {
-  assert.equal(document.querySelector('.onboarding-pill')?.textContent.trim(),'内置体验工具使用样例数据');
-  const cardBtn = document.querySelector('.demo-card');
-  assert.ok(cardBtn);
-  assert.match(cardBtn.textContent, /推荐/);
-  assert.match(cardBtn.textContent, /同时跟进两单/);
+  const section = document.querySelector('.market-onboarding');
+  const action = button('让 KIKO 帮我创建员工', section.querySelector('.onboarding-header'));
+  const cardBtn = section.querySelector('.demo-card');
+  assert.ok(action && cardBtn);
+  assert.equal(section.querySelector('.onboarding-pill').textContent,'体验场景使用样例数据');
+  assert.doesNotMatch(cardBtn.textContent,/并行推进两单|同时查两单，分别给出处理方案/);
+  assert.equal(cardBtn.querySelector('.demo-card-art').getAttribute('src'),'/brand/assistant-experiences/complaints.webp');
+  assert.equal(cardBtn.querySelector('.demo-card-capability').textContent,'并行推荐任务');
+  assert.equal(action.compareDocumentPosition(cardBtn) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.notEqual(cardBtn.textContent.indexOf(card.title),-1);
   cardBtn.click();
+  action.click();
   await pause();
-  assert.deepEqual(m.demos, [card]);
-  button('让 KIKO 帮我创建员工').click();
-  await pause();
-  assert.equal(m.assistantOpens, 1);
-  assert.equal(button('+ 快速创建员工'), undefined);
-  const actions = document.querySelector('.onboarding-actions-bottom');
-  assert.equal(cardBtn.compareDocumentPosition(actions) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING);
-  assert.ok(actions.contains(button('让 KIKO 帮我创建员工')));
-  const create = button('从空白快速创建');
-  assert.ok(actions.contains(create));
-  create.click();
-  await pause();
-  assert.ok(document.querySelector('.market'));
-  assert.ok(document.querySelector('.n-modal'));
-  assert.deepEqual(m.navigations, []);
-  const name = document.querySelector('.n-modal input[placeholder="例如：SRE 故障值班助手"]');
-  name.value = '市场新员工';
-  name.dispatchEvent(new window.Event('input', {bubbles:true}));
-  await pause();
-  const submit = button('创建并进入渠道配置');
-  assert.equal(submit.disabled, false);
-  submit.click();
-  await pause();
-  const request = m.calls.find(c=>c.url.endsWith('/agents') && c.init.method==='POST');
-  assert.equal(request.body.name, '市场新员工');
-  assert.equal(request.body.model_profile_id, 'model-one');
-  assert.deepEqual(m.navigations, [['employees', 'channels', 'quick-created']]);
- } finally {
-  await m.cleanup();
- }
+  assert.deepEqual(m.demos,[card]);
+  assert.equal(m.assistantOpens,1);
+  assert.doesNotMatch(document.querySelector('.market').textContent,/快速创建员工|空白快速创建/);
+  assert.deepEqual(m.navigations,[]);
+  assert.equal(m.calls.some(c=>c.init.method==='POST'),false);
+ } finally { await m.cleanup(); }
 });
 
-test('market keeps quick-create header button and compact banner when demo cards are hidden', async () => {
- const withAssistant = await mount('member', undefined, fixture, {
-  assistantAgentId: 'assistant-1',
-  assistantCards: [],
- });
- try {
-  assert.equal(document.querySelector('.demo-card'), null);
-  assert.ok(document.querySelector('.market-onboarding.is-compact'));
-  assert.ok(button('让 KIKO 帮我创建员工'));
-  assert.ok(button('从空白快速创建'));
-  button('+ 快速创建员工').click();
-  await pause();
-  assert.ok(document.querySelector('.n-modal'));
-  assert.deepEqual(withAssistant.navigations, []);
-  button('取消').click();
-  await pause();
-  assert.deepEqual(withAssistant.navigations, []);
-  assert.equal(withAssistant.calls.some(c=>c.url.endsWith('/agents') && c.init.method==='POST'), false);
- } finally {
-  await withAssistant.cleanup();
- }
-
- const withoutAssistant = await mount('member', undefined, fixture, {
-  assistantAgentId: undefined,
-  assistantCards: [],
- });
- try {
-  assert.equal(document.querySelector('.demo-card'), null);
-  assert.ok(document.querySelector('.market-onboarding.is-compact'));
-  assert.equal(button('让 KIKO 帮我创建员工'), undefined);
-  button('从空白快速创建').click();
-  await pause();
-  assert.ok(document.querySelector('.n-modal'));
-  assert.deepEqual(withoutAssistant.navigations, []);
- } finally {
-  await withoutAssistant.cleanup();
+test('without demo access the assistant remains optional and blank creation stays off the market', async () => {
+ for (const [role,assistantAgentId,expectAction] of [['member','assistant-1',true],['member',undefined,false],['viewer','assistant-1',false]]) {
+  const m = await mount(role,undefined,fixture,{assistantAgentId,assistantCards:[]});
+  try {
+   assert.equal(Boolean(document.querySelector('.market-onboarding.is-compact')),expectAction);
+   assert.equal(Boolean(button('让 KIKO 帮我创建员工')),expectAction);
+   assert.equal(Boolean(button('用此模板创建')),role==='member');
+   assert.doesNotMatch(document.querySelector('.market').textContent,/快速创建员工|空白快速创建/);
+  } finally {await m.cleanup();}
  }
 });
 
@@ -193,9 +156,9 @@ test('market template details close when the backdrop is clicked', async () => {
   await pause();
   const mask = document.querySelector('.n-drawer-mask');
   assert.ok(mask);
-  assert.ok(button('用此模板创建'));
+  assert.ok(drawerButton('用此模板创建'));
   mask.click();
   await new Promise(r => setTimeout(r, 350));
-  assert.equal(button('用此模板创建'), undefined);
+  assert.equal(drawerButton('用此模板创建'), undefined);
  } finally { await m.cleanup(); }
 });

@@ -89,6 +89,7 @@ func TestChannelRuntimeIdentityAndPackageIntersection(t *testing.T) {
 		})
 	}
 	packs := &service.PackageService{Store: NewPackageStore(db)}
+	disableDefaultEmployeePackage(t, packs, w, owner, employee.ID)
 	pack, e := packs.Create(ctx, w, owner, employee.ID, service.PackageCreate{Name: "Inherited"})
 	if e != nil {
 		t.Fatal(e)

@@ -73,6 +73,7 @@ func TestWebGroupRuntimeScopeDoesNotGrantPrivateOrRevokedAccess(t *testing.T) {
 	}
 	// Snapshot is the only input-free path and still requires real group access.
 	packages := &service.PackageService{Store: NewPackageStore(db)}
+	disableDefaultEmployeePackage(t, packages, w, actor, employee)
 	rules := service.PackageConversationScope{
 		Private: service.PackageConversationRule{Mode: "inherit_with_blacklist"},
 		Group: service.PackageConversationRule{Mode: "allowlist", Enabled: true, Allow: []service.UsageSelector{

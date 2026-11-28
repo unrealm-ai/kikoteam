@@ -18,7 +18,7 @@ func TestAgentHTTPContract(t *testing.T) {
 	if _, e := db.Exec(`INSERT INTO platform_sessions(token_hash,account_id,expires_at) VALUES($1,$2,$3)`, service.HashToken(token), owner, time.Now().Add(time.Hour)); e != nil {
 		t.Fatal(e)
 	}
-	h := (&controller.Server{Auth: &service.AuthService{Store: &AuthStore{DB: db}}, Agents: &service.AgentService{Store: NewAgentStore(db)}, Origin: "http://localhost"}).Handler()
+	h := (&controller.Server{Auth: &service.AuthService{Store: &AuthStore{DB: db}}, Agents: &service.AgentService{Store: NewAgentStore(db)}, Packages: &service.PackageService{Store: NewPackageStore(db)}, Origin: "http://localhost"}).Handler()
 	request := func(method, path, body, cookie string) (int, map[string]any) {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("X-CSRF-Protection", "1")
@@ -51,6 +51,14 @@ func TestAgentHTTPContract(t *testing.T) {
 		t.Fatal(status, out)
 	}
 	id := out["id"].(string)
+	status, packages := request("GET", base+"/"+id+"/capability-packages", "", cookie)
+	if status != 200 || packages["total"] != float64(1) {
+		t.Fatal(status, packages)
+	}
+	item := packages["items"].([]any)[0].(map[string]any)
+	if item["name"] != "基础能力" || item["enabled"] != true {
+		t.Fatal(item)
+	}
 	if status, _ := request("PATCH", base+"/"+id, `{"version":1,"instruction":null}`, cookie); status != 400 {
 		t.Fatal(status)
 	}

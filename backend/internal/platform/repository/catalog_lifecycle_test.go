@@ -78,8 +78,8 @@ func TestCatalogRestartAndOptInMarketReporter(t *testing.T) {
 	}
 	templates := &service.TemplateService{Store: &TemplateStore{DB: db}, Assets: assets}
 	employee := createCatalogEmployee(t, ctx, templates, w, owner, model.ID, "行情简报员", true)
-	if count("select count(*) from platform_capability_packages where workspace_id=$1 and agent_id=$2", w, employee.ID) != 2 {
-		t.Fatal("expected the two required reporter packages")
+	if count("select count(*) from platform_capability_packages where workspace_id=$1 and agent_id=$2", w, employee.ID) != 3 {
+		t.Fatal("expected the base package and the two required reporter packages")
 	}
 	assertNewAgentDefaults(t, db, w, owner, employee.ID)
 	if count("select count(*) from platform_plugin_connections where workspace_id=$1 and plugin_id=$2 and enabled and validated", w, service.CatalogID("plugin", "stock")) != 1 {
@@ -106,8 +106,8 @@ func TestDisableWorkspaceStartersMigration(t *testing.T) {
 		t.Fatal("manual creation must consume the pending flag for older backend instances", err)
 	}
 	var packageCount int
-	if err = db.QueryRow(`SELECT count(*) FROM platform_capability_packages WHERE agent_id=$1`, employee.ID).Scan(&packageCount); err != nil || packageCount != 3 {
-		t.Fatal("full reporter template must retain the deferred package", packageCount, err)
+	if err = db.QueryRow(`SELECT count(*) FROM platform_capability_packages WHERE agent_id=$1`, employee.ID).Scan(&packageCount); err != nil || packageCount != 4 {
+		t.Fatal("full reporter template must retain the deferred package alongside the base package", packageCount, err)
 	}
 	before := employeeBindings(t, db, workspace)
 	pending, err := (&service.WorkspaceService{Store: NewWorkspaceStore(db)}).Create(ctx, owner, "pending", "")

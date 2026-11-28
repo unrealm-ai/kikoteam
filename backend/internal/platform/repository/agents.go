@@ -150,7 +150,10 @@ func (t *agentTx) Create(ctx context.Context, a service.Agent, creator string) e
 	if err := t.saveVersion(ctx, a); err != nil {
 		return err
 	}
-	return t.createDefaultHumanRecipient(ctx, a.ID, creator)
+	if err := t.createDefaultHumanRecipient(ctx, a.ID, creator); err != nil {
+		return err
+	}
+	return (&packageTx{model: t.model}).Save(ctx, service.NewDefaultEmployeePackage(a.ID), true)
 }
 
 func (t *agentTx) createDefaultHumanRecipient(ctx context.Context, agent, creator string) error {

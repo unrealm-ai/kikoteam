@@ -113,10 +113,12 @@ func TestEmployeeManagementMCPRealWebAndSharedSkill(t *testing.T) {
 	}
 	f := managementMCP(t, db, w, sess.ID, *sess.InitialInputID)
 	packages := &ps.PackageService{Store: NewPackageStore(db)}
-	p, err := packages.Create(ctx, w, owner, employee, ps.PackageCreate{Name: "物流能力"})
-	if err != nil {
-		t.Fatal(err)
+	initial, err := packages.List(ctx, w, owner, employee, 1, 20)
+	if err != nil || initial.Total != 1 || len(initial.Items) != 1 {
+		t.Fatal(initial, err)
 	}
+	p := initial.Items[0]
+	assertDefaultEmployeePackage(t, p, employee)
 	if status, list := f.rpc(t, "tools/list", "", nil); status != 200 || len(list["tools"].([]any)) != 3 {
 		t.Fatal(list)
 	}
@@ -218,6 +220,26 @@ func TestEmployeeManagementMCPRealWebAndSharedSkill(t *testing.T) {
 	created := f.expect(t, "create_employee", map[string]any{"name": "新员工"}, "")
 	if created["name"] != "新员工" {
 		t.Fatal(created)
+	}
+	target := created["id"].(string)
+	query := map[string]any{"config_key": "capability_packages", "employee_id": target}
+	newPackages := f.expect(t, "get_employee", query, "")
+	newItems := newPackages["items"].([]any)
+	if len(newItems) != 1 {
+		t.Fatal(newPackages)
+	}
+	defaultPackage := newItems[0].(map[string]any)
+	if defaultPackage["name"] != "基础能力" || defaultPackage["editable"] != true {
+		t.Fatal(defaultPackage)
+	}
+	f.expect(t, "update_employee", map[string]any{
+		"config_key": "capability_packages", "employee_id": target, "version": defaultPackage["version"],
+		"binding": map[string]any{"package_id": defaultPackage["id"], "resource_type": "skill", "action": "add", "resource_id": skill, "resource_version_id": ver},
+	}, "")
+	bound := f.expect(t, "get_employee", query, "")["items"].([]any)[0].(map[string]any)
+	skills := bound["skills"].([]any)
+	if len(skills) != 1 || skills[0].(map[string]any)["skill_id"] != skill {
+		t.Fatal(bound)
 	}
 	var creator string
 	if err = db.QueryRow(`SELECT creator_account_id FROM platform_agents WHERE id=$1`, created["id"]).Scan(&creator); err != nil || creator != member {

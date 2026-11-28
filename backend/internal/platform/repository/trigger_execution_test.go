@@ -73,10 +73,7 @@ func TestTriggerRuntimeProofAndPackageScope(t *testing.T) {
 		t.Fatal("pending admission accepted missing/foreign employee or running without Input")
 	}
 	packages := &service.PackageService{Store: NewPackageStore(db)}
-	p, err := packages.Create(ctx, w, actor, employee, service.PackageCreate{Name: "trigger package"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := defaultEmployeePackage(t, packages, w, actor, employee)
 	snapshot := func() service.ExecutionCapabilities {
 		tx, e := db.BeginTx(ctx, nil)
 		if e != nil {
@@ -94,8 +91,7 @@ func TestTriggerRuntimeProofAndPackageScope(t *testing.T) {
 		t.Fatal("enabled default package missing", old)
 	}
 	scope := service.PackageTriggerScope{Mode: "all", AllowTriggerIDs: []string{}, DenyTriggerIDs: []string{g.TriggerID}}
-	p, err = packages.Update(ctx, w, actor, employee, p.ID, service.PackagePatch{Version: p.Version, TriggerScope: &scope})
-	if err != nil {
+	if _, err := packages.Update(ctx, w, actor, employee, p.ID, service.PackagePatch{Version: p.Version, TriggerScope: &scope}); err != nil {
 		t.Fatal(err)
 	}
 	current := snapshot()

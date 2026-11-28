@@ -166,7 +166,7 @@ func TestAgentDirectoryFiltersAndResourceVisibility(t *testing.T) {
 		t.Fatal(result, err)
 	}
 	summary := result.Items[0].CardResources
-	if summary == nil || len(summary.Channels) != 1 || summary.Channels[0] != "feishu" || summary.PackageCount != 1 || summary.TriggerCount != 1 {
+	if summary == nil || len(summary.Channels) != 1 || summary.Channels[0] != "feishu" || summary.PackageCount != 2 || summary.TriggerCount != 1 {
 		t.Fatal(summary)
 	}
 	for _, role := range []string{"member", "admin"} {
@@ -265,6 +265,45 @@ func assertNewAgentDefaults(t *testing.T, db *sql.DB, w, creator, agent string) 
 	}
 }
 
+func defaultEmployeePackage(t *testing.T, s *service.PackageService, w, actor, employee string) service.CapabilityPackage {
+	t.Helper()
+	p, err := s.List(t.Context(), w, actor, employee, 1, 20)
+	if err != nil || p.Total != 1 || len(p.Items) != 1 {
+		t.Fatal(p, err)
+	}
+	assertDefaultEmployeePackage(t, p.Items[0], employee)
+	return p.Items[0]
+}
+
+func disableDefaultEmployeePackage(t *testing.T, s *service.PackageService, w, actor, employee string) {
+	t.Helper()
+	p := defaultEmployeePackage(t, s, w, actor, employee)
+	off := false
+	if _, err := s.Update(t.Context(), w, actor, employee, p.ID, service.PackagePatch{Version: p.Version, Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertDefaultEmployeePackage(t *testing.T, p service.CapabilityPackage, employee string) {
+	t.Helper()
+	if p.ID == "" || p.AgentID != employee || p.Name != "基础能力" || p.Description == "" || !p.Enabled || p.Version != 1 ||
+		p.AssistantToolSet != "" || p.SourceTemplateID != "" || len(p.Skills) != 0 || len(p.Plugins) != 0 {
+		t.Fatalf("invalid default package: %+v", p)
+	}
+	if p.ConversationScope == nil {
+		t.Fatal("expected separate private and group rules")
+	}
+	for _, rule := range []service.PackageConversationRule{p.ConversationScope.Private, p.ConversationScope.Group} {
+		if !rule.Enabled || rule.Mode != "inherit_with_blacklist" || len(rule.Allow)+len(rule.Deny) != 0 {
+			t.Fatalf("invalid default conversation rule: %+v", rule)
+		}
+	}
+	if p.TriggerScope.Mode != "all" || len(p.TriggerScope.AllowTriggerIDs)+len(p.TriggerScope.DenyTriggerIDs) != 0 ||
+		!service.PackageAllowsTrigger(p, service.NewID()) {
+		t.Fatalf("invalid default trigger rule: %+v", p.TriggerScope)
+	}
+}
+
 func TestAgentCreationDefaultsUseCreatingAdminAndPreserveUpdates(t *testing.T) {
 	db, models, w, owner := modelFixture(t)
 	ctx := t.Context()
@@ -278,6 +317,11 @@ func TestAgentCreationDefaultsUseCreatingAdminAndPreserveUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertNewAgentDefaults(t, db, w, admin, a.ID)
+	p, err := (&service.PackageService{Store: NewPackageStore(db)}).List(ctx, w, admin, a.ID, 1, 20)
+	if err != nil || p.Total != 1 || len(p.Items) != 1 {
+		t.Fatal(p, err)
+	}
+	assertDefaultEmployeePackage(t, p.Items[0], a.ID)
 	store := &managerrepo.Store{DB: db}
 	if _, err := store.HumanRecipients(ctx, w, admin, a.ID, &manager.HumanRecipients{Version: 1, Recipients: []manager.HumanRecipient{}}); err != nil {
 		t.Fatal(err)

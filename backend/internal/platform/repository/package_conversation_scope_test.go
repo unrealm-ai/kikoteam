@@ -74,6 +74,7 @@ func TestPackageConversationSceneRuntimeSnapshotAndDirectory(t *testing.T) {
 	run := service.WithChannelExecution(ctx, service.ChannelExecution{PrincipalID: principal, ConversationID: conversation, Generation: b.Generation, InputID: input})
 	store := NewPackageStore(db)
 	packs := &service.PackageService{Store: store}
+	disableDefaultEmployeePackage(t, packs, b.WorkspaceID, actor, b.AgentID)
 	dept := service.UsageSelector{Channel: "feishu", Kind: "department", ID: "od_team", BindingID: b.ID, IdentityEpoch: b.IdentityEpoch, IncludeDescendants: true}
 	scope := service.PackageConversationScope{
 		Private: service.PackageConversationRule{Enabled: true, Mode: "allowlist", Allow: []service.UsageSelector{dept}},

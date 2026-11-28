@@ -43,6 +43,20 @@ type CapabilityPackage struct {
 	CreatedAt         time.Time                 `json:"created_at"`
 	UpdatedAt         time.Time                 `json:"updated_at"`
 }
+
+// NewDefaultEmployeePackage is the editable starting point for every new employee.
+func NewDefaultEmployeePackage(employee string) CapabilityPackage {
+	inherit := PackageConversationRule{Enabled: true, Mode: "inherit_with_blacklist", Allow: []UsageSelector{}, Deny: []UsageSelector{}}
+	return CapabilityPackage{
+		ID: NewID(), AgentID: employee, Name: "基础能力", Description: "用于添加这个员工常用的技能和工具。",
+		Enabled: true, Version: 1,
+		Scope:             PackageScope{Mode: "inherit_with_blacklist", AllowMemberIDs: []string{}, DenyMemberIDs: []string{}},
+		ConversationScope: &PackageConversationScope{Private: inherit, Group: inherit},
+		TriggerScope:      DefaultPackageTriggerScope(),
+		Skills:            []PackageSkill{}, Plugins: []PackagePlugin{},
+	}
+}
+
 type PackageCreate struct {
 	WorkScope         *WorkScope                `json:"work_scope,omitempty"`
 	ConversationScope *PackageConversationScope `json:"conversation_scope,omitempty"`

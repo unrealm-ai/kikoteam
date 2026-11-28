@@ -87,13 +87,22 @@ func TestHostedAssistantProvisioningBothWorkspacePaths(t *testing.T) {
 			t.Fatal(creator, payer, err)
 		}
 		out, err := (&service.PackageService{Store: NewPackageStore(db)}).List(ctx, w, user, entry.AgentID, 1, 20)
-		if err != nil || len(out.Items) != 1 || out.Items[0].AssistantToolSet != "demo" {
+		if err != nil || len(out.Items) != 2 {
 			t.Fatal(out, err)
 		}
+		var demoCount int
 		for _, p := range out.Items {
-			if !p.ConversationScope.Private.Enabled || p.ConversationScope.Group.Enabled || p.TriggerScope.Enabled == nil || *p.TriggerScope.Enabled {
+			if p.AssistantToolSet == "" {
+				assertDefaultEmployeePackage(t, p, entry.AgentID)
+				continue
+			}
+			demoCount++
+			if p.AssistantToolSet != "demo" || !p.ConversationScope.Private.Enabled || p.ConversationScope.Group.Enabled || p.TriggerScope.Enabled == nil || *p.TriggerScope.Enabled {
 				t.Fatal(p)
 			}
+		}
+		if demoCount != 1 {
+			t.Fatal("expected exactly one built-in demo package", out)
 		}
 	}
 	member := service.NewID()

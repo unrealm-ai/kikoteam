@@ -85,6 +85,7 @@ func TestRuntimeCapabilitiesPinsScopesRevocationAndSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	packages := &service.PackageService{Store: NewPackageStore(db)}
+	disableDefaultEmployeePackage(t, packages, w, actor, agent.ID)
 	pin := service.PackagePlugin{PluginID: plug.ID, VersionID: plug.VersionID}
 	p, err := packages.Create(ctx, w, actor, agent.ID, service.PackageCreate{Name: "Allowed", Description: "Original business scope", Skills: []service.PackageSkill{{SkillID: v1.ID, VersionID: v1.CurrentVersion.ID}}, Plugins: []service.PackagePlugin{pin}})
 	if err != nil {
@@ -266,7 +267,7 @@ func TestAnonymousPluginDiscoveryAndDefinitionUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	packages := &service.PackageService{Store: NewPackageStore(db)}
-	_, err = packages.Create(ctx, w, actor, agent.ID, service.PackageCreate{Name: "Search", Plugins: []service.PackagePlugin{{PluginID: plugin.ID}}})
+	search, err := packages.Create(ctx, w, actor, agent.ID, service.PackageCreate{Name: "Search", Plugins: []service.PackagePlugin{{PluginID: plugin.ID}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,8 +366,8 @@ func TestAnonymousPluginDiscoveryAndDefinitionUpgrade(t *testing.T) {
 	if !errors.As(err, &issue) || issue.Code != "plugin_account_required" {
 		t.Fatal("upgraded without a target-version credential", err)
 	}
-	current, err := packages.List(ctx, w, actor, agent.ID, 1, 20)
-	if err != nil || current.Items[0].Plugins[0].VersionID != next.VersionID {
+	current, err := packages.Get(ctx, w, actor, agent.ID, search.ID)
+	if err != nil || len(current.Plugins) != 1 || current.Plugins[0].VersionID != next.VersionID {
 		t.Fatal("failed upgrade changed bindings", current, err)
 	}
 }

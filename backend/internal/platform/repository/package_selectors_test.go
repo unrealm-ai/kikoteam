@@ -30,6 +30,7 @@ func TestPackageSelectorsChannelSnapshotAndRevocation(t *testing.T) {
 	c := service.ChannelExecution{PrincipalID: principal, ConversationID: conversation, Generation: b.Generation, InputID: input}
 	run := service.WithChannelExecution(ctx, c)
 	packs := &service.PackageService{Store: NewPackageStore(db)}
+	disableDefaultEmployeePackage(t, packs, b.WorkspaceID, actor, b.AgentID)
 	ref := service.UsageSelector{Channel: "feishu", Kind: "user", ID: "ou_a", BindingID: b.ID, IdentityEpoch: b.IdentityEpoch}
 	scope := service.PackageScope{Mode: "whitelist_with_blacklist", Allow: []service.UsageSelector{ref, {Channel: "web", Kind: "user", ID: actor}}}
 	pack, err := packs.Create(ctx, b.WorkspaceID, actor, b.AgentID, service.PackageCreate{Name: "Mixed people", Scope: &scope})

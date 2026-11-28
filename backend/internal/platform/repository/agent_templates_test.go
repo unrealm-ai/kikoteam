@@ -57,6 +57,11 @@ func TestTemplatePublishCreateScopeAndRollback(t *testing.T) {
 		t.Fatal(a)
 	}
 	assertNewAgentDefaults(t, db, w, owner, a.ID)
+	packages, e := (&service.PackageService{Store: NewPackageStore(db)}).List(ctx, w, owner, a.ID, 1, 20)
+	if e != nil || packages.Total != 1 || len(packages.Items) != 1 {
+		t.Fatal(packages, e)
+	}
+	assertDefaultEmployeePackage(t, packages.Items[0], a.ID)
 	other := service.NewID()
 	insertWorkspaceAccount(t, db, other, "other-market@example.test")
 	if _, e = db.Exec(`INSERT INTO platform_members(workspace_id,user_id,role) VALUES($1,$2,'member')`, w, other); e != nil {

@@ -34,10 +34,7 @@ func TestEmployeeManagementMCPWebPermissionMatrix(t *testing.T) {
 	}
 	reviewExec(t, db, "UPDATE platform_workspaces SET assistant_agent_id=$2 WHERE id=$1", workspace, assistant)
 	reviewExec(t, db, "INSERT INTO platform_agent_maintainers(workspace_id,agent_id,user_id,granted_by) VALUES($1,$2,$3,$4)", workspace, employee.ID, maintainer, owner)
-	p, err := (&ps.PackageService{Store: NewPackageStore(db)}).Create(ctx, workspace, owner, employee.ID, ps.PackageCreate{Name: "页面预建能力包"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := defaultEmployeePackage(t, &ps.PackageService{Store: NewPackageStore(db)}, workspace, owner, employee.ID)
 	plugin, version := createManagementMatrixMCP(t, db, workspace)
 	usage := &ps.AgentUsageService{Store: &AgentUsageStore{DB: db}}
 	for _, id := range []string{assistant, employee.ID} {

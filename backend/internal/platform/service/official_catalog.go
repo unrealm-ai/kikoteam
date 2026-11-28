@@ -47,16 +47,21 @@ func (s CatalogSkill) Prepare(ctx context.Context, assets SkillAssets) (SkillBun
 }
 
 type CatalogPlugin struct {
-	Key         string    `json:"key"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Endpoint    string    `json:"endpoint"`
-	Auth        string    `json:"auth"`
-	Issuer      string    `json:"issuer,omitempty"`
-	Scopes      string    `json:"scopes,omitempty"`
-	Header      string    `json:"header,omitempty"`
-	Tools       []string  `json:"tools"`
-	PublicTools []MCPTool `json:"public_tools,omitempty"`
+	Key                   string    `json:"key"`
+	Name                  string    `json:"name"`
+	Description           string    `json:"description"`
+	Endpoint              string    `json:"endpoint"`
+	Auth                  string    `json:"auth"`
+	Issuer                string    `json:"issuer,omitempty"`
+	Scopes                string    `json:"scopes,omitempty"`
+	Header                string    `json:"header,omitempty"`
+	Tools                 []string  `json:"tools"`
+	PublicTools           []MCPTool `json:"public_tools,omitempty"`
+	ExecutionKind         string    `json:"execution_kind,omitempty"`
+	Distribution          string    `json:"distribution,omitempty"`
+	HandlerKey            string    `json:"handler_key,omitempty"`
+	DefaultScenes         []string  `json:"default_scenes,omitempty"`
+	RequiresConfiguration bool      `json:"requires_configuration,omitempty"`
 }
 
 const githubReadonlyEndpoint = "https://api.githubcopilot.com/mcp/readonly"
@@ -148,12 +153,26 @@ func loadResources(c *TemplateCatalog) (map[string]TemplateResource, error) {
 			}
 			baseline[tool.Name] = tool.SchemaDigest
 		}
-		if err := ValidatePlugin(&d); err != nil {
+		if p.ExecutionKind == "platform_managed" {
+			if p.Distribution != "all_agents" || !validManagedDefinition(p) || p.Endpoint != "/mcp/platform-plugins/"+p.Key || len(p.DefaultScenes) == 0 {
+				return nil, fmt.Errorf("invalid managed plugin %q", p.Key)
+			}
+		} else if err := ValidatePlugin(&d); err != nil {
 			return nil, err
 		}
 		refs[r.Key] = r
 	}
 	return refs, nil
+}
+
+// Each shipped handler explicitly declares its supported contract before catalog activation.
+func validManagedDefinition(p CatalogPlugin) bool {
+	for _, scene := range p.DefaultScenes {
+		if !slices.Contains([]string{"direct", "group", "trigger"}, scene) {
+			return false
+		}
+	}
+	return p.Key == "image-generation" && p.HandlerKey == "image_generation" && p.Auth == "none" && p.RequiresConfiguration && slices.Equal(p.Tools, []string{"generate_image"})
 }
 func resolveCatalogTemplate(c *TemplateContent, refs map[string]TemplateResource) error {
 	if len(c.Resources) != 0 {

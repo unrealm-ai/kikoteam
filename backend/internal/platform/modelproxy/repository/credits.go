@@ -32,10 +32,29 @@ func entry(ctx context.Context, tx *sql.Tx, account string, delta int64, kind, k
 		return v, Missing(e)
 	}
 	v = Entry{ID: platform.NewID(), Kind: kind, Amount: proxy.Amount(delta), Balance: proxy.Amount(balance), Reason: reason}
+	// Existing ledger writes also run while older schemas are being upgraded.
+	// Only an image charge depends on migration 111.
+	reference := "usage_id"
+	if kind == "image_charge" {
+		reference = "image_generation_id"
+	}
 	e = tx.QueryRowContext(ctx, `INSERT INTO platform_credit_ledger(id,account_id,wallet_version,kind,amount_units,balance_after_units,biz_key,
- request_fingerprint,operator_id,reason,agent_id,usage_id) VALUES($1,$2,$3,$4,$5,$6,$7,nullif($8,''),nullif($9,'')::uuid,nullif($10,''),nullif($11,'')::uuid,nullif($12,'')::uuid)
+ request_fingerprint,operator_id,reason,agent_id,`+reference+`) VALUES($1,$2,$3,$4,$5,$6,$7,nullif($8,''),nullif($9,'')::uuid,nullif($10,''),nullif($11,'')::uuid,nullif($12,'')::uuid)
  RETURNING created_at`, v.ID, account, version, kind, delta, balance, key, fingerprint, operator, reason, agent, call).Scan(&v.At)
 	return v, e
+}
+
+// ChargeImage appends to the same ordered wallet ledger as chat model charges.
+func ChargeImage(ctx context.Context, tx *sql.Tx, payer, agent, id string, price int64) error {
+	var balance int64
+	if err := tx.QueryRowContext(ctx, "SELECT balance_units FROM platform_credit_wallets WHERE account_id=$1 FOR UPDATE", payer).Scan(&balance); err != nil {
+		return err
+	}
+	if price <= 0 || balance < math.MinInt64+price {
+		return proxy.ErrChargeRange
+	}
+	_, err := entry(ctx, tx, payer, -price, "image_charge", "image:"+id, "", "", "", agent, id)
+	return err
 }
 
 // EnsureWallet also covers accounts created by an old Backend during rollout.
@@ -209,8 +228,8 @@ func (s Store) ListCredits(ctx context.Context, actor string, f Filter, cursor s
 	args := []any{f.Account, f.Agent, f.Model, f.From, f.To, f.Status, f.Kind}
 	if ledger {
 		var spent, granted string
-		e = s.DB.QueryRowContext(ctx, `SELECT (COALESCE(sum(-l.amount_units::numeric) FILTER(WHERE l.kind='model_charge'),0)/1000000)::numeric(25,6)::text,
-   (COALESCE(sum(l.amount_units::numeric) FILTER(WHERE l.kind<>'model_charge'),0)/1000000)::numeric(25,6)::text `+from+where, args...).Scan(&spent, &granted)
+		e = s.DB.QueryRowContext(ctx, `SELECT (COALESCE(sum(-l.amount_units::numeric) FILTER(WHERE l.kind IN ('model_charge','image_charge')),0)/1000000)::numeric(25,6)::text,
+   (COALESCE(sum(l.amount_units::numeric) FILTER(WHERE l.kind IN ('signup_bonus','admin_grant','referral_bonus')),0)/1000000)::numeric(25,6)::text `+from+where, args...).Scan(&spent, &granted)
 		if e != nil {
 			return out, e
 		}
@@ -249,11 +268,12 @@ func (s Store) ListCredits(ctx context.Context, actor string, f Filter, cursor s
 
 func creditQuery(ledger bool) (from, at, id, value, where string) {
 	if ledger {
-		from = ` FROM platform_credit_ledger l LEFT JOIN platform_model_usage u ON u.id=l.usage_id LEFT JOIN platform_agents a ON a.id=l.agent_id`
+		from = ` FROM platform_credit_ledger l LEFT JOIN platform_model_usage u ON u.id=l.usage_id LEFT JOIN platform_agents a ON a.id=l.agent_id LEFT JOIN platform_image_generations g ON g.id=l.image_generation_id`
 		at, id = "l.created_at", "l.id"
 		value = `jsonb_build_object('id',l.id,'kind',l.kind,'amount',(l.amount_units::numeric/1000000)::numeric(25,6)::text,
    'balance_after',(l.balance_after_units::numeric/1000000)::numeric(25,6)::text,'created_at',l.created_at,'reason',l.reason,
-   'usage',CASE WHEN u.id IS NOT NULL THEN ` + callJSON + ` END)`
+   'image',CASE WHEN g.id IS NOT NULL THEN jsonb_build_object('generation_id',g.id,'agent_name',a.name,'started_at',g.started_at,'agent_id',g.agent_id,'image_count',g.image_count,
+   'credits_per_image',(g.unit_price_units::numeric/1000000)::numeric(25,6)::text) END,'usage',CASE WHEN u.id IS NOT NULL THEN ` + callJSON + ` END)`
 		where = ` WHERE l.account_id=NULLIF($1,'')::uuid AND ($2='' OR l.agent_id=NULLIF($2,'')::uuid)
     AND ($3='' OR u.model_id=NULLIF($3,'')::uuid) AND ($4::timestamptz IS NULL OR l.created_at >= $4)
     AND ($5::timestamptz IS NULL OR l.created_at < $5) AND ($6='' OR u.status=$6) AND ($7='' OR l.kind=$7)`

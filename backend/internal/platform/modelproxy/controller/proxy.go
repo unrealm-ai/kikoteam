@@ -26,10 +26,11 @@ type Calls interface {
 }
 
 type Proxy struct {
-	Calls    Calls
-	Secrets  mp.Secrets
-	Upstream upstream.Upstream
-	Log      *slog.Logger
+	ReconcileImages func(context.Context) error
+	Calls           Calls
+	Secrets         mp.Secrets
+	Upstream        upstream.Upstream
+	Log             *slog.Logger
 }
 
 func (p Proxy) Routes(mux *http.ServeMux, hubToken string) {
@@ -46,7 +47,11 @@ func (p Proxy) Routes(mux *http.ServeMux, hubToken string) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 9*time.Second)
 		defer cancel()
-		if e := p.Calls.Reconcile(ctx); e != nil {
+		err := p.Calls.Reconcile(ctx)
+		if p.ReconcileImages != nil {
+			err = errors.Join(err, p.ReconcileImages(ctx))
+		}
+		if err != nil {
 			writeError(w, "", 503, "reconcile_pending", "仍有待结算记录")
 			return
 		}

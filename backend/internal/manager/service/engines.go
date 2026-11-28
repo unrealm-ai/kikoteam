@@ -19,6 +19,7 @@ type Assignment struct {
 	Generation   int64  `json:"generation,string"`
 }
 type HarnessConfig struct {
+	ImageGenerationToken       string                    `json:"image_generation_token,omitempty"`
 	EmployeeManagementToken    string                    `json:"employee_management_token,omitempty"`
 	EmployeeManagementEligible bool                      `json:"-"`
 	KikoAssistant              bool                      `json:"-"`

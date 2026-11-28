@@ -41,6 +41,7 @@ type Config struct {
 }
 
 type RelayServer struct {
+	Timeout      int               `json:"timeout,omitempty"`
 	URL          string            `json:"url"`
 	ToolExposure map[string]string `json:"toolExposure"`
 }

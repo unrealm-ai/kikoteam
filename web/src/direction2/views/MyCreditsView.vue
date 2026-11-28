@@ -10,11 +10,12 @@ const balance = ref(''), spent = ref(''), error = ref(''), notice = ref('');
 const entries = ref<Ledger[]>([]), calls = ref<Usage[]>([]);
 const next = ref(''), loading = ref(false);
 const employee = ref<string|null>(null), model = ref<string|null>(null), status = ref<string|null>(null);
+const kind = ref<string|null>(null);
 const from = ref(''), to = ref('');
 const employees = ref(new Map<string,string>()), models = ref(new Map<string,string>());
 let request: AbortController | undefined;
 const statuses = {running:'进行中',usage_recorded:'待结算',settled:'已结算',pending_review:'待核对',no_charge:'不收费'};
-const kinds = {signup_bonus:'注册赠送',referral_bonus:'邀请奖励',admin_grant:'管理员赠送',model_charge:'模型消耗'};
+const kinds = {signup_bonus:'注册赠送',referral_bonus:'邀请奖励',admin_grant:'管理员赠送',model_charge:'对话模型消耗',image_charge:'文生图消耗'};
 const statusTone = (value: Usage['status']) => {
   if (value === 'settled') return 'success';
   if (value === 'pending_review') return 'warning';
@@ -39,6 +40,7 @@ function filters(cursor: string) {
   const q = new URLSearchParams();
   if (employee.value) q.set('agent_id',employee.value);
   if (model.value) q.set('model_id',model.value);
+  if (tab.value==='ledger' && kind.value) q.set('kind',kind.value);
   if (tab.value==='usage' && status.value) q.set('status',status.value);
   if (from.value) q.set('from',new Date(from.value+'T00:00:00').toISOString());
   if (to.value) {
@@ -69,7 +71,7 @@ async function load(cursor = '') {
       const page = await creditsApi.ledger(accountId,q,signal);
       if (signal.aborted) return;
       entries.value = [...entries.value,...page.items];
-      page.items.forEach(e=>capture(e.usage));
+      page.items.forEach(e=>{capture(e.usage);if(e.image) employees.value.set(e.image.agent_id,e.image.agent_name);});
       next.value = page.next_cursor;
     } else {
       const page = await creditsApi.usage(accountId,q,signal);
@@ -119,7 +121,7 @@ async function resolve() {
 }
 watch(()=>props.accountId,()=>{
   resolving.value=undefined;balance.value=spent.value=notice.value='';
-  employee.value=model.value=status.value=null;
+  employee.value=model.value=status.value=kind.value=null;
   employees.value.clear();models.value.clear();
   void load();
 },{immediate:true});
@@ -163,6 +165,7 @@ onUnmounted(()=>{request?.abort();resolving.value=undefined;});
       <div class="filters">
         <NSelect v-model:value="employee" size="small" clearable placeholder="全部员工" :options="Array.from(employees, ([value,label])=>({value,label}))" />
         <NSelect v-model:value="model" size="small" clearable placeholder="全部模型" :options="Array.from(models, ([value,label])=>({value,label}))" />
+        <NSelect v-if="tab==='ledger'" v-model:value="kind" size="small" clearable placeholder="全部流水类型" :options="Object.entries(kinds).map(([value,label])=>({value,label}))" />
         <NSelect v-if="tab==='usage'" v-model:value="status" size="small" clearable placeholder="全部状态" :options="Object.entries(statuses).map(([value,label])=>({value,label}))" />
         <label class="date-filter-field">
           <span>开始日期</span>
@@ -203,7 +206,7 @@ onUnmounted(()=>{request?.abort();resolving.value=undefined;});
               </span>
             </td>
             <td>
-              <span class="mono-text tabular-num amount-cell" :class="{ 'amount-positive': e.kind !== 'model_charge' }">
+              <span class="mono-text tabular-num amount-cell" :class="{ 'amount-positive': Number(e.amount) > 0 }">
                 {{e.amount}}
               </span>
             </td>
@@ -220,6 +223,11 @@ onUnmounted(()=>{request?.abort();resolving.value=undefined;});
                   </div>
                   <code class="mono-text usage-id-code">{{e.usage.id}}</code>
                 </div>
+              </details>
+              <details v-else-if="e.image" class="usage-details">
+                <summary>{{e.image.agent_name}} · {{e.image.image_count}} 张图</summary>
+                <p>受理时间 {{formatter.format(new Date(e.image.started_at))}} · 每张 {{e.image.credits_per_image}} 积分</p>
+                <code>{{e.image.generation_id}}</code>
               </details>
               <span v-else class="sub-desc">{{e.reason || '—'}}</span>
             </td>

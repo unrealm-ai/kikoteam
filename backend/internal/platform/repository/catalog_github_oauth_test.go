@@ -129,7 +129,16 @@ func TestCatalogGitHubConnectionUpgrade(t *testing.T) {
 	priorOAuth.Description = "通过 GitHub 网页授权，只读访问获准仓库的 PR、Issue、差异和提交记录。"
 	publish := func(revision int64, definitions ...service.CatalogPlugin) {
 		t.Helper()
-		if err := SyncCatalog(ctx, db, service.TemplateCatalog{Revision: revision, Plugins: definitions}, rt.Skills.Assets); err != nil {
+		// Historical manual plugins predate the platform default directory.
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback() }() //nolint:errcheck // Commit or the original write error owns the result.
+		if err := syncCatalogResources(ctx, tx, service.TemplateCatalog{Revision: revision, Plugins: definitions}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -216,14 +225,18 @@ VALUES($1,$2,$3,$4,'legacy',5,true,true,$5,now())`, connection, w, resource.ID, 
 	before := snapshot()
 	const migration = "000082_plugin_connection_auth_method.sql"
 	applyTestMigrations(t, ctx, db, "000081_employee_capability_versions.sql", migration)
-	if err = SyncCatalog(ctx, db, catalog, rt.Skills.Assets); err != nil {
-		t.Fatal(err)
-	}
 	if snapshot() != before {
 		t.Fatal("upgrade changed a connection, binding or permission")
 	}
 	// Once the 082 boundary is verified, upgrade before invoking current APIs.
 	applyTestMigrations(t, ctx, db, migration, "")
+	before = snapshot()
+	if err = SyncCatalog(ctx, db, catalog, rt.Skills.Assets); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot() != before {
+		t.Fatal("catalog upgrade changed a connection, binding or permission")
+	}
 	var count int
 	if err = db.QueryRow("SELECT count(*) FROM platform_plugins WHERE builtin_key LIKE 'github%' AND listed").Scan(&count); err != nil || count != 1 {
 		t.Fatal("expected one official GitHub listing", err)

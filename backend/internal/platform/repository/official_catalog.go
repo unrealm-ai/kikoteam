@@ -109,9 +109,37 @@ func syncCatalogResources(ctx context.Context, tx *sql.Tx, c service.TemplateCat
 			if _, err = tx.ExecContext(ctx, "UPDATE platform_plugin_versions SET public_tools=$2 WHERE id=$1", r.VersionID, data); err != nil {
 				return err
 			}
+			if p.ExecutionKind == "platform_managed" {
+				scenes, err := json.Marshal(p.DefaultScenes)
+				if err != nil {
+					return err
+				}
+				if _, err = tx.ExecContext(ctx, `UPDATE platform_plugin_versions SET execution_kind=$2,distribution=$3,handler_key=$4,
+				 default_tools=$5,default_scenes=$6 WHERE id=$1 AND workspace_id IS NULL`, r.VersionID, p.ExecutionKind, p.Distribution, p.HandlerKey, data, scenes); err != nil {
+					return err
+				}
+				if _, err = tx.ExecContext(ctx, `INSERT INTO platform_default_plugin_settings(plugin_id,enabled) VALUES ($1,$2) ON CONFLICT DO NOTHING`, r.ID, !p.RequiresConfiguration); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
+}
+
+func refreshDefaultPluginListings(ctx context.Context, tx *sql.Tx, plugins []service.CatalogPlugin) error {
+	managedKeys := []string{}
+	for _, p := range plugins {
+		if p.Distribution == "all_agents" {
+			managedKeys = append(managedKeys, p.Key)
+		}
+	}
+	// Retired defaults disappear at activation. Keep admin configuration and old pins
+	// for a later re-release, authorized replay, and billing reconciliation.
+	_, err := tx.ExecContext(ctx, `UPDATE platform_plugins p SET listed=p.builtin_key=ANY($1::text[]),version=p.version+1,updated_at=now()
+	FROM platform_plugin_versions v WHERE v.id=p.current_version_id AND v.distribution='all_agents'
+	AND p.listed IS DISTINCT FROM (p.builtin_key=ANY($1::text[]))`, managedKeys)
+	return err
 }
 
 func saveTemplateRefs(ctx context.Context, tx *sql.Tx, version string, refs []service.TemplateResource) error {

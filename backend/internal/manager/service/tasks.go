@@ -61,8 +61,13 @@ type TaskAction struct {
 	Allowed bool    `json:"allowed"`
 	Reason  *string `json:"reason"`
 }
+type TaskImage struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
 type TaskDetail struct {
 	Task
+	Images       []TaskImage          `json:"images,omitempty"`
 	Progress     *TaskProgress        `json:"progress,omitempty"`
 	Artifacts    []TaskDetailArtifact `json:"artifacts,omitempty"`
 	InitialInput *Input               `json:"initial_input"`

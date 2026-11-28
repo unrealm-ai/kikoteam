@@ -1,5 +1,59 @@
 [
   {
+    "key": "image-generation",
+    "name": "官方文生图",
+    "description": "生成一张可交付的图片，按平台单价计费。",
+    "endpoint": "/mcp/platform-plugins/image-generation",
+    "auth": "none",
+    "tools": [
+      "generate_image"
+    ],
+    "execution_kind": "platform_managed",
+    "distribution": "all_agents",
+    "requires_configuration": true,
+    "handler_key": "image_generation",
+    "default_scenes": [
+      "direct",
+      "group",
+      "trigger"
+    ],
+    "public_tools": [
+      {
+        "name": "generate_image",
+        "description": "根据提示生成一张 PNG 图片。相同请求重试沿用 request_key，用户要求另一版时使用新键。通过 artifact_publish 发布返回的路径。",
+        "input_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16000
+            },
+            "aspect_ratio": {
+              "type": "string",
+              "enum": [
+                "square",
+                "landscape",
+                "portrait"
+              ]
+            },
+            "request_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [
+            "prompt",
+            "request_key"
+          ]
+        },
+        "schema_digest": "e5476579e334590713f022ea02399cb43bf14d85beed0608ce3f07ca5ecc3d6d"
+      }
+    ]
+  },
+  {
     "key": "stock",
     "name": "A 股行情快查",
     "description": "社区公开行情，提供三大指数和个股快照。免认证，附上游报价时间。",

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 	"time"
+
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/defaultplugins"
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
 
 func (s *TemplateStore) LoadCreation(ctx context.Context, w, a string, r service.TemplateCreation) (v service.TemplateVersion, assets []service.TemplateAsset, e error) {
@@ -264,6 +266,19 @@ func (s *TemplateStore) Setup(ctx context.Context, w, a, id string) (out map[str
 			return err
 		}
 		chat := agent.ModelAvailable && (agent.PlatformModelID == "" || agent.Payer != nil)
+		defaults, err := defaultplugins.List(ctx, m.tx, w, id)
+		if err != nil {
+			return err
+		}
+		out = map[string]any{"default_plugins": defaults, "conversation_model": map[string]any{"available": chat}, "task_model": map[string]any{"available": agent.ModelAvailable}, "access_allowed": allowed, "packages": []service.CapabilityPackage{}, "issues": []map[string]any{}, "examples": []map[string]any{}}
+		member, err := m.Member(ctx, a)
+		if err != nil {
+			return err
+		}
+		out["can_bind_payer"] = member.Role == "owner" && agent.Payer == nil
+		if member.Role != "owner" && member.Role != "admin" {
+			return nil
+		}
 		packages, _, err := (&packageTx{model: m}).List(ctx, id, 1, 100)
 		if err != nil {
 			return err
@@ -326,7 +341,7 @@ func (s *TemplateStore) Setup(ctx context.Context, w, a, id string) (out map[str
 			}
 			checks = append(checks, map[string]any{"key": ex.Key, "title": ex.Title, "text": ex.Text, "output": ex.Output, "package_keys": ex.PackageKeys, "can_try": can})
 		}
-		out = map[string]any{"conversation_model": map[string]any{"available": chat}, "task_model": map[string]any{"available": agent.ModelAvailable}, "access_allowed": allowed, "packages": packages, "issues": issues, "examples": checks}
+		out["packages"], out["issues"], out["examples"] = packages, issues, checks
 		return nil
 	})
 	return

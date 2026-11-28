@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PublishedTaskImages from './PublishedTaskImages.vue';
 import { copyText } from '../utils/clipboard';
 import WorkItemTimeline from './WorkItemTimeline.vue';
 import D2EmployeeAvatar from './D2EmployeeAvatar.vue';
@@ -647,6 +648,7 @@ onUnmounted(() => {
       <div class="workspace-body" :class="{ 'dual-pane': showDualSurface }">
         <!-- Left / Primary Pane: Sequential Agent Stream -->
         <div v-show="showDualSurface ? !narrow || !mobileSurface : tab === 'process'" class="process">
+          <PublishedTaskImages v-if="detail?.images?.length" :workspace="workspaceId" :task="detail.task_id" :images="detail.images" />
           <TaskSupplementReceipts v-if="detail" :report="latestReport" />
           <p v-if="detail && taskCenter && detail.actions.supplement?.reason === 'system_managed_input'" class="banner muted">
             此任务的输入由系统派发。

@@ -25,7 +25,7 @@ func (t *pluginTx) AgentExists(ctx context.Context, id string) error {
 }
 
 const oauthDefinitionColumns = `CASE WHEN v.auth_type='oauth' THEN jsonb_build_object('issuer',v.oauth_issuer,'client_id',COALESCE((SELECT c.client_id FROM platform_plugin_oauth_clients c WHERE c.id=v.oauth_client_id),''),'id',COALESCE(v.oauth_client_id::text,''),'resource',v.oauth_resource,'scopes',v.oauth_scopes) END`
-const pluginListFilter = `p.archived_at IS NULL AND ((p.workspace_id=NULLIF($1,'')::uuid AND $2 IN ('workspace','all')) OR (p.workspace_id IS NULL AND ($2='manage' OR p.listed AND $2 IN ('official','all')))) AND ($3='' OR strpos(lower(p.name),lower($3))>0 OR strpos(lower(p.description),lower($3))>0 OR p.builtin_key=ANY($4::text[]))`
+const pluginListFilter = `v.distribution='manual' AND p.archived_at IS NULL AND ((p.workspace_id=NULLIF($1,'')::uuid AND $2 IN ('workspace','all')) OR (p.workspace_id IS NULL AND ($2='manage' OR p.listed AND $2 IN ('official','all')))) AND ($3='' OR strpos(lower(p.name),lower($3))>0 OR strpos(lower(p.description),lower($3))>0 OR p.builtin_key=ANY($4::text[]))`
 
 const sharedStateColumn = `CASE WHEN NULLIF($1,'') IS NULL OR v.auth_type='none' THEN '' ELSE COALESCE((SELECT CASE WHEN c.enabled AND c.validated THEN 'connected' WHEN NOT c.enabled THEN 'revoked' ELSE 'unvalidated' END FROM platform_plugin_connections c WHERE c.workspace_id=NULLIF($1,'')::uuid AND c.plugin_id=p.id AND c.plugin_version_id=v.id AND c.agent_id IS NULL),'missing') END`
 const pluginDefinitionCols = `CASE WHEN p.workspace_id IS NULL THEN 'official' ELSE 'workspace' END,coalesce(p.builtin_key,''), ` + sharedStateColumn + `,p.listed,(SELECT count(DISTINCT pkg.agent_id) FROM platform_capability_package_plugins b JOIN platform_capability_packages pkg ON pkg.id=b.package_id WHERE b.plugin_id=p.id AND b.workspace_id=NULLIF($1,'')::uuid),p.id,v.name,v.description,v.endpoint,v.auth_type,v.header_name, ` + oauthDefinitionColumns
@@ -45,10 +45,10 @@ func scanPlugin(row scanner) (service.Plugin, error) {
 	return p, workspaceDBError(e)
 }
 func (t *pluginTx) Get(ctx context.Context, id string) (service.Plugin, error) {
-	return scanPlugin(t.model.tx.QueryRowContext(ctx, `SELECT `+pluginCols+` FROM platform_plugins p JOIN platform_plugin_versions v ON v.id=p.current_version_id WHERE (p.workspace_id=NULLIF($1,'')::uuid OR p.workspace_id IS NULL) AND p.archived_at IS NULL AND p.id=$2`, t.model.workspace, id))
+	return scanPlugin(t.model.tx.QueryRowContext(ctx, `SELECT `+pluginCols+` FROM platform_plugins p JOIN platform_plugin_versions v ON v.id=p.current_version_id WHERE (p.workspace_id=NULLIF($1,'')::uuid OR p.workspace_id IS NULL) AND p.archived_at IS NULL AND v.distribution='manual' AND p.id=$2`, t.model.workspace, id))
 }
 func (t *pluginTx) GetVersion(ctx context.Context, id, version string) (service.Plugin, error) {
-	p, err := scanPlugin(t.model.tx.QueryRowContext(ctx, `SELECT `+pluginVersionCols+` FROM platform_plugins p JOIN platform_plugin_versions v ON v.plugin_id=p.id WHERE (p.workspace_id=NULLIF($1,'')::uuid OR p.workspace_id IS NULL) AND p.archived_at IS NULL AND p.id=$2 AND v.id=$3`, t.model.workspace, id, version))
+	p, err := scanPlugin(t.model.tx.QueryRowContext(ctx, `SELECT `+pluginVersionCols+` FROM platform_plugins p JOIN platform_plugin_versions v ON v.plugin_id=p.id WHERE (p.workspace_id=NULLIF($1,'')::uuid OR p.workspace_id IS NULL) AND p.archived_at IS NULL AND p.id=$2 AND v.distribution='manual' AND v.id=$3`, t.model.workspace, id, version))
 	if err != nil || id != service.CatalogID("plugin", "fxiaoke") || t.model.workspace == "" {
 		return p, err
 	}
@@ -58,7 +58,7 @@ func (t *pluginTx) List(ctx context.Context, p, n int, filter service.ResourceLi
 	items := []service.Plugin{}
 	var total int
 	keys := service.MatchingCardKeys("plugin", filter.Query)
-	if e := t.model.tx.QueryRowContext(ctx, `SELECT count(*) FROM platform_plugins p WHERE `+pluginListFilter, t.model.workspace, filter.Scope, filter.Query, keys).Scan(&total); e != nil {
+	if e := t.model.tx.QueryRowContext(ctx, `SELECT count(*) FROM platform_plugins p JOIN platform_plugin_versions v ON v.id=p.current_version_id WHERE `+pluginListFilter, t.model.workspace, filter.Scope, filter.Query, keys).Scan(&total); e != nil {
 		return items, 0, e
 	}
 	rows, e := t.model.tx.QueryContext(ctx, `SELECT `+pluginCols+` FROM platform_plugins p JOIN platform_plugin_versions v ON v.id=p.current_version_id WHERE `+pluginListFilter+` ORDER BY p.created_at DESC,p.id DESC LIMIT $5 OFFSET $6`, t.model.workspace, filter.Scope, filter.Query, keys, n, (p-1)*n)

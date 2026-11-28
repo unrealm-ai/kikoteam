@@ -223,9 +223,9 @@ func (s *Service) resolveInputAttachments(ctx context.Context, c Conversation, a
 	return out, nil
 }
 
-func ReadWorkFile(root, workspace, agent, conversation, space, task, p string) ([]byte, error) {
+func workProjectBase(workspace, agent, conversation, space, task string) (string, error) {
 	if !ValidID(workspace) || !ValidID(agent) {
-		return nil, Fail("invalid_argument", 400, "事项文件归属无效")
+		return "", Fail("invalid_argument", 400, "事项文件归属无效")
 	}
 	base := path.Join("workspaces", workspace, "projects")
 	switch {
@@ -234,7 +234,14 @@ func ReadWorkFile(root, workspace, agent, conversation, space, task, p string) (
 	case conversation == "" && ValidID(space) && ValidID(task):
 		base = path.Join(base, "task-"+task)
 	default:
-		return nil, Fail("invalid_argument", 400, "事项文件归属无效")
+		return "", Fail("invalid_argument", 400, "事项文件归属无效")
+	}
+	return base, nil
+}
+func ReadWorkFile(root, workspace, agent, conversation, space, task, p string) ([]byte, error) {
+	base, err := workProjectBase(workspace, agent, conversation, space, task)
+	if err != nil {
+		return nil, err
 	}
 	f, info, err := openProjectFile(root, base, p)
 	if err != nil {

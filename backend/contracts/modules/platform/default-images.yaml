@@ -1,0 +1,172 @@
+directory:
+  get:
+    operationId: listPlatformDefaultPlugins
+    security: &session [{sessionCookie: []}]
+    responses:
+      '200':
+        description: Official deployment defaults, administrator only
+        content:
+          application/json:
+            schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/schemas/Summary'}}}}
+      default: &error
+        description: Invalid request, identity, permissions, version conflict or dependency failure
+        content: {application/json: {schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}}}
+configuration:
+  get:
+    operationId: getPlatformImageGeneration
+    security: *session
+    responses:
+      '200': &settings
+        description: Active deployment configuration. Credentials are write-only.
+        content: {application/json: {schema: {$ref: '#/schemas/Settings'}}}
+      default: *error
+  patch:
+    operationId: updatePlatformImageGeneration
+    security: *session
+    parameters: [&csrf {name: X-CSRF-Protection, in: header, required: true, schema: {const: '1'}}]
+    requestBody:
+      required: true
+      content: {application/json: {schema: {allOf: [{$ref: '#/schemas/Patch'}, {required: [version]}]}}}
+    responses: {'200': *settings, default: *error}
+test:
+  post:
+    operationId: testPlatformImageGeneration
+    security: *session
+    parameters: [*csrf]
+    requestBody: {required: true, content: {application/json: {schema: {$ref: '#/schemas/Patch'}}}}
+    responses:
+      '200':
+        description: One supplier-funded-by-platform test call returns a base64 PNG preview and short-lived receipt
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [receipt, preview_png, expires_at]
+              properties: {receipt: {type: string}, preview_png: {type: string, contentEncoding: base64}, expires_at: {type: string, format: date-time}}
+      default: *error
+usage:
+  get:
+    operationId: listImageGenerations
+    security: *session
+    parameters:
+      - {name: account_id, in: query, schema: &uuid {type: string, format: uuid}}
+      - {name: scope, in: query, description: Explicit platform admin global view, schema: {const: all}}
+      - {name: agent_id, in: query, schema: *uuid}
+      - {name: from, in: query, schema: &timestamp {type: string, format: date-time}}
+      - {name: to, in: query, schema: *timestamp}
+      - {name: status, in: query, schema: &state {enum: [admitted, dispatched, ready, pending_review, failed]}}
+      - {name: billing_status, in: query, schema: &billing {enum: [pending, settled, no_charge]}}
+      - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 30}}
+      - {name: cursor, in: query, schema: {type: string}}
+    responses:
+      '200':
+        description: Payer-visible metadata ordered by admission time and ID descending
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items,next_cursor]
+              properties:
+                next_cursor: {type: string}
+                items:
+                  type: array
+                  items:
+                    allOf:
+                      - {$ref: '#/schemas/Result'}
+                      - {type: object, properties: {payer_account_id: *uuid, agent_id: *uuid, agent_name: {type: string}, started_at: *timestamp}}
+      default: *error
+resolve:
+  post:
+    operationId: resolveImageGeneration
+    security: *session
+    parameters: [*csrf, {name: generation_id, in: path, required: true, schema: *uuid}]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {type: object, required: [action,reason], properties: {action: {enum: [reconcile,close_no_charge]}, reason: {type: string, minLength: 1, maxLength: 1024}}}
+    responses:
+      '200': {description: Recovery outcome, content: {application/json: {schema: {$ref: '#/schemas/Result'}}}}
+      default: *error
+payer:
+  put:
+    operationId: bindAgentPayer
+    description: The active workspace owner confirms their own wallet for an employee whose payer is missing.
+    security: *session
+    parameters: [*csrf, &workspace {name: workspace_id, in: path, required: true, schema: *uuid}, {name: agent_id, in: path, required: true, schema: *uuid}]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {type: object, required: [version,confirm_self], properties: {version: {type: integer, minimum: 1}, confirm_self: {const: true}}}
+    responses:
+      '200': {description: Employee bound to current account, content: {application/json: {schema: {$ref: './agent-schemas.yaml#/Agent'}}}}
+      default: *error
+content:
+  get:
+    operationId: getTaskArtifactContent
+    security: *session
+    parameters: [*workspace, {name: task_id, in: path, required: true, schema: *uuid}, {name: artifact_id, in: path, required: true, schema: *uuid}, {name: download, in: query, schema: {const: '1'}}]
+    responses:
+      '200': {description: Authorized immutable published version, content: {image/png: {}, application/octet-stream: {}}}
+      default: *error
+schemas:
+  Summary:
+    type: object
+    required: [key,name,release_version,enabled,source,status]
+    properties:
+      key: {type: string}
+      name: {type: string}
+      release_version: {type: integer}
+      enabled: {type: boolean}
+      source: {const: platform}
+      status: {enum: [available, unconfigured, disabled, payer_binding_required]}
+      credits_per_image: {type: string}
+  Settings:
+    type: object
+    required: [key,name,release_version,version,enabled,provider,base_url,upstream_model_id,credits_per_image,credential_configured,active_config_version,workspace_daily_image_limit,max_concurrent_generations,timeout_seconds]
+    properties:
+      key: {type: string}
+      name: {type: string}
+      release_version: &version {type: integer, minimum: 1}
+      version: &revision {type: integer, minimum: 0}
+      enabled: &flag {type: boolean}
+      active_config_version: {type: integer, minimum: 0}
+      credential_configured: *flag
+      provider: &provider {const: openai_images}
+      base_url: &url {type: string, format: uri}
+      upstream_model_id: {type: string}
+      credits_per_image: &price {type: string, pattern: '^[0-9]+(\.[0-9]{1,6})?$'}
+      workspace_daily_image_limit: &limit {type: integer, minimum: 1, maximum: 1000000}
+      max_concurrent_generations: &running {type: integer, minimum: 1, maximum: 1000}
+      timeout_seconds: &timeout {type: integer, minimum: 1, maximum: 300}
+  Patch:
+    type: object
+    additionalProperties: false
+    properties:
+      version: *revision
+      enabled: *flag
+      provider: *provider
+      base_url: *url
+      upstream_model_id: {type: string}
+      api_key: {type: string, writeOnly: true}
+      credits_per_image: *price
+      workspace_daily_image_limit: *limit
+      max_concurrent_generations: *running
+      timeout_seconds: *timeout
+      receipt: {type: string}
+  Result:
+    type: object
+    required: [generation_id,status,billing_status,credits_per_image,charged_credits,image_count]
+    properties:
+      generation_id: *uuid
+      status: *state
+      billing_status: *billing
+      credits_per_image: *price
+      charged_credits: {type: [string, 'null']}
+      image_count: {type: [integer, 'null'], minimum: 0, maximum: 1}
+      error_code: {type: string}
+      path: {type: string}
+      mime_type: {const: image/png}
+      width: {type: integer}
+      height: {type: integer}

@@ -16,6 +16,11 @@ func SnapshotCapabilities(ctx context.Context, tx *sql.Tx, w, actor, employee st
 	if err := authorizeSnapshotSource(ctx, tx, w, actor, employee); err != nil {
 		return out, err
 	}
+	defaults, err := defaultPluginPins(ctx, tx)
+	if err != nil {
+		return out, err
+	}
+	out.DefaultPlugins = defaults
 	rows, err := tx.QueryContext(ctx, `SELECT v.snapshot FROM platform_capability_packages p JOIN platform_capability_package_versions v ON v.workspace_id=p.workspace_id AND v.package_id=p.id AND v.version=p.version WHERE p.workspace_id=$1 AND p.agent_id=$2 ORDER BY p.id`, w, employee)
 	if err != nil {
 		return out, err

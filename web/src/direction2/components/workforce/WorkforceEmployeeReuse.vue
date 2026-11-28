@@ -18,7 +18,7 @@ onUnmounted(()=>{++generation;controller?.abort();guard?.unregister(draftGuard);
   <NAlert v-if="error" type="error">{{error}} <NButton size="small" @click="load">重新读取员工详情</NButton></NAlert>
   <template v-if="agent">
     <p v-if="agent.payer" class="reuse-payer-note">官方模型费用由 {{agent.payer.name}} 的积分账户支付。</p>
-    <AgentSetupPanel :key="workspace+':'+agent.id" :agent="agent" :can-manage="canManage" :can-manage-templates="canManageTemplates" @navigate="(t,p,id)=>emit('navigate',t,p,id)" @dirty="v=>{dirty=v;emit('dirty',v)}" @busy="v=>{busy=v;emit('busy',v)}" />
+    <AgentSetupPanel :key="workspace+':'+agent.id" :agent="agent" :can-manage="canManage" :can-manage-templates="canManageTemplates" @updated="v=>agent=v" @navigate="(t,p,id)=>emit('navigate',t,p,id)" @dirty="v=>{dirty=v;emit('dirty',v)}" @busy="v=>{busy=v;emit('busy',v)}" />
   </template>
 </template>
 <style scoped>

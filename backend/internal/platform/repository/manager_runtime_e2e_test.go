@@ -67,6 +67,7 @@ func TestManagerRuntimeCrashTakeover(t *testing.T) { testManagerRuntime(t, "cras
 func testManagerRuntime(t *testing.T, mode string) {
 	t.Helper()
 	workMode := mode == "work" || mode == "work-amendment"
+	imageMode := mode == "images"
 	liveEventModel := mode == "events" && os.Getenv("KIKO_EVENT_MODEL_BASE_URL") != ""
 	if os.Getenv("KIKO_RUNTIME_E2E") != "1" {
 		t.Skip("set KIKO_RUNTIME_E2E=1 for actual Engine/Pi process acceptance")
@@ -97,6 +98,10 @@ func testManagerRuntime(t *testing.T, mode string) {
 		var body runtimeRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
+			return
+		}
+		if imageMode {
+			imageRuntimeReply(t, w, body)
 			return
 		}
 		if mode == "report" {
@@ -234,6 +239,9 @@ func testManagerRuntime(t *testing.T, mode string) {
 	if workMode || liveEventModel {
 		budget = 5 * time.Minute
 	}
+	if imageMode {
+		budget = 12 * time.Minute
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
 	key := "fixture-key"
@@ -332,8 +340,12 @@ func testManagerRuntime(t *testing.T, mode string) {
 	svc := &manager.Service{ProjectRoot: filepath.Join(temp, "state"), Store: store, CursorSecret: []byte(strings.Repeat("s", 32))}
 	auth := &service.AuthService{Store: &AuthStore{DB: db}}
 	mux := http.NewServeMux()
+	imageFixture := imageRuntimeFixture{}
+	if imageMode {
+		imageFixture.setup(t, db, capabilities, store, mux, auth, actor)
+	}
 	mux.Handle("POST /api/v1/workspaces/{workspace_id}/agents/{agent_id}/capability-upgrades", (&platformcontroller.Server{Auth: auth, Packages: capabilities.Packages}).Handler())
-	(&managercontroller.Server{Runtime: capabilities, Service: svc, Engines: store, EngineToken: engineToken, Origin: "http://localhost", Authenticate: func(ctx context.Context, raw string) (string, error) { v, err := auth.Me(ctx, raw); return v.ID, err }, ResolveModelKey: func(ctx context.Context, w, a string, c manager.Configuration) (string, error) {
+	(&managercontroller.Server{Images: imageFixture.service, Runtime: capabilities, Service: svc, Engines: store, EngineToken: engineToken, Origin: "http://localhost", Authenticate: func(ctx context.Context, raw string) (string, error) { v, err := auth.Me(ctx, raw); return v.ID, err }, ResolveModelKey: func(ctx context.Context, w, a string, c manager.Configuration) (string, error) {
 		return models.RuntimeModelKey(ctx, w, a, c.ModelProfileID, c.Protocol, c.BaseURL, c.ModelID)
 	}}).Routes(mux)
 	delegationHandler, err := delegation.Handler(&manager.Delegation{Manager: svc, Store: store, Secret: engineToken}, nil)
@@ -381,6 +393,9 @@ func testManagerRuntime(t *testing.T, mode string) {
 	}()
 	defer func() { stopDispatch(); <-dispatchDone }()
 	client := &http.Client{Timeout: 5 * time.Second}
+	if imageMode {
+		client.Timeout = 315 * time.Second
+	}
 	callFor := func(cookie, method, path string, value any, key string) map[string]any {
 		t.Helper()
 		var data []byte
@@ -418,7 +433,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	}
 	base := "/api/v1/workspaces/" + workspace
 	var conversation, session string
-	if mode != "events" {
+	if mode != "events" && !imageMode {
 		conversationPath := base + "/conversations"
 		if mode == "report" {
 			conversationPath += "/web-direct"
@@ -441,7 +456,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	q.Set("search_path", schema)
 	dsn.RawQuery = q.Encode()
 	fixtureRoot := root
-	if mode != "events" && mode != "report" {
+	if mode != "events" && mode != "report" && !imageMode {
 		fixtureRoot = confirmationRuntimeRoot(t, root, temp)
 	}
 	binary := os.Getenv("KIKO_TEST_ENGINE_BINARY")
@@ -541,6 +556,10 @@ func testManagerRuntime(t *testing.T, mode string) {
 			turns := call("GET", sessionPath+"/turns", nil, "")["items"].([]any)
 			return len(turns) > 0 && turns[len(turns)-1].(map[string]any)["status"] == status
 		})
+	}
+	if imageMode {
+		imageFixture.verify(t, call, backend.URL, token, workspace, actor, agent)
+		return
 	}
 	if mode == "events" {
 		eventWebhookAcceptance(t, ctx, db, store, mux, workspace, actor, agent.ID, eventCommitTool, eventRepo, wait)

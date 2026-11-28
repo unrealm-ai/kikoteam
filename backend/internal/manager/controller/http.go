@@ -15,10 +15,12 @@ import (
 	"time"
 
 	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/imagegen"
 	platform "github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
 
 type Server struct {
+	Images               *imagegen.Service
 	AssistantToolAllowed func(context.Context, string, string, string, string, *platform.ExecutionCapabilities) (bool, error)
 	TrustedProxies       []netip.Prefix
 	Service              *service.Service

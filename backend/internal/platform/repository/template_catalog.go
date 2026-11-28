@@ -45,6 +45,9 @@ func SyncCatalog(ctx context.Context, db *sql.DB, catalog service.TemplateCatalo
 	if err = syncCatalogResources(ctx, tx, catalog, versions); err != nil {
 		return err
 	}
+	if err = refreshDefaultPluginListings(ctx, tx, catalog.Plugins); err != nil {
+		return err
+	}
 	keys := make([]string, 0, len(catalog.Entries))
 	for _, entry := range catalog.Entries {
 		keys = append(keys, entry.Key)

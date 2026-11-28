@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/imagegen"
 	mpcontroller "github.com/unrealm-ai/kikoteam/backend/internal/platform/modelproxy/controller"
 	mp "github.com/unrealm-ai/kikoteam/backend/internal/platform/modelproxy/service"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
@@ -20,6 +21,7 @@ import (
 )
 
 type Server struct {
+	Images                    *imagegen.Service
 	Referrals                 ReferralRepository
 	Catalog                   service.ResourceCatalog
 	SharingPolicies           *service.GroupSharingService
@@ -63,6 +65,7 @@ func (s *Server) Handler() http.Handler {
 	s.groupSelectorRoutes(m)
 	s.groupSharingRoutes(m)
 	s.agentUsageRoutes(m)
+	s.imageRoutes(m)
 	s.templateRoutes(m)
 	s.adminRoutes(m)
 	s.mailSettingsRoutes(m)
@@ -118,6 +121,13 @@ func (s *Server) wrap(route string, op operation) http.HandlerFunc {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Type", "application/json")
 		timeout, limit := requestPolicy(route)
+		if route == "testPlatformImageGeneration" {
+			timeout = 315 * time.Second
+			if e := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(timeout)); e != nil && !errors.Is(e, http.ErrNotSupported) {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 		r = r.WithContext(ctx)

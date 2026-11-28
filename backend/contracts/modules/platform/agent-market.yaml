@@ -319,6 +319,18 @@ schemas:
     type: object
     additionalProperties: false
     properties:
+      can_bind_payer: {type: boolean, description: Workspace owner may confirm billing for this unbound employee}
+      default_plugins:
+        type: array
+        items:
+          type: object
+          required: [key, name, source, status]
+          properties:
+            key: {type: string}
+            name: {type: string}
+            source: {const: platform}
+            status: {enum: [available, unconfigured, disabled, payer_binding_required]}
+            credits_per_image: {type: string}
       conversation_model:
         type: object
         additionalProperties: false
@@ -1215,8 +1227,7 @@ setup:
     operationId: getAgentSetupStatus
     security:
     - sessionCookie: []
-    description: Owner/admin read-only aggregation. Model, resource and account facts
-      are rechecked during execution.
+    description: Active members can read default capabilities and model readiness. Owners and admins also receive package, issue and example details. Runtime access is checked again at execution.
     parameters:
     - name: workspace_id
       in: path

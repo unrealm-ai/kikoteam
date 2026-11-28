@@ -3354,7 +3354,8 @@ CREATE TABLE public.platform_credit_ledger (
     operator_id uuid,
     reason text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT platform_credit_ledger_check CHECK ((((kind = 'signup_bonus'::text) AND (amount_units >= 0) AND (usage_id IS NULL) AND (agent_id IS NULL)) OR ((kind = 'admin_grant'::text) AND (amount_units > 0) AND (operator_id IS NOT NULL) AND (reason IS NOT NULL) AND (usage_id IS NULL) AND (agent_id IS NULL)) OR ((kind = 'model_charge'::text) AND (amount_units <= 0) AND (usage_id IS NOT NULL) AND (agent_id IS NOT NULL)) OR ((kind = 'referral_bonus'::text) AND (amount_units = 100000000) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (operator_id IS NULL)))),
+    image_generation_id uuid,
+    CONSTRAINT platform_credit_ledger_check CHECK ((((kind = 'signup_bonus'::text) AND (amount_units >= 0) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (image_generation_id IS NULL)) OR ((kind = 'admin_grant'::text) AND (amount_units > 0) AND (operator_id IS NOT NULL) AND (reason IS NOT NULL) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (image_generation_id IS NULL)) OR ((kind = 'model_charge'::text) AND (amount_units <= 0) AND (usage_id IS NOT NULL) AND (agent_id IS NOT NULL) AND (image_generation_id IS NULL)) OR ((kind = 'referral_bonus'::text) AND (amount_units = 100000000) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (operator_id IS NULL) AND (image_generation_id IS NULL)) OR ((kind = 'image_charge'::text) AND (amount_units < 0) AND (usage_id IS NULL) AND (agent_id IS NOT NULL) AND (image_generation_id IS NOT NULL)))),
     CONSTRAINT platform_credit_ledger_wallet_version_check CHECK ((wallet_version > 0))
 );
 
@@ -3389,6 +3390,21 @@ CREATE TABLE public.platform_credit_wallets (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT platform_credit_wallets_version_check CHECK ((version >= 0))
+);
+
+
+--
+-- Name: platform_default_plugin_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_default_plugin_settings (
+    plugin_id uuid NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    version bigint DEFAULT 0 NOT NULL,
+    active_config_version bigint,
+    updated_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT platform_default_plugin_settings_version_check CHECK ((version >= 0))
 );
 
 
@@ -3527,6 +3543,81 @@ CREATE TABLE public.platform_group_sharing_policy_events (
     CONSTRAINT platform_group_sharing_policy_events_action_check CHECK ((action = ANY (ARRAY['created'::text, 'updated'::text, 'deleted'::text]))),
     CONSTRAINT platform_group_sharing_policy_events_snapshot_check CHECK ((jsonb_typeof(snapshot) = 'object'::text)),
     CONSTRAINT platform_group_sharing_policy_events_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: platform_image_generation_config_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_image_generation_config_versions (
+    plugin_id uuid NOT NULL,
+    version bigint NOT NULL,
+    provider text NOT NULL,
+    base_url text NOT NULL,
+    upstream_model_id text NOT NULL,
+    credential_ciphertext bytea NOT NULL,
+    unit_price_units bigint NOT NULL,
+    supported_sizes jsonb NOT NULL,
+    max_concurrent_generations integer NOT NULL,
+    workspace_daily_image_limit integer NOT NULL,
+    timeout_seconds integer NOT NULL,
+    validated_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid NOT NULL,
+    CONSTRAINT platform_image_generation_con_workspace_daily_image_limit_check CHECK ((workspace_daily_image_limit > 0)),
+    CONSTRAINT platform_image_generation_conf_max_concurrent_generations_check CHECK ((max_concurrent_generations > 0)),
+    CONSTRAINT platform_image_generation_config_version_unit_price_units_check CHECK ((unit_price_units > 0)),
+    CONSTRAINT platform_image_generation_config_versions_timeout_seconds_check CHECK (((timeout_seconds >= 1) AND (timeout_seconds <= 300))),
+    CONSTRAINT platform_image_generation_config_versions_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: platform_image_generations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_image_generations (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    payer_account_id uuid NOT NULL,
+    task_id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    input_id uuid NOT NULL,
+    turn_id uuid NOT NULL,
+    request_key text NOT NULL,
+    request_fingerprint bytea NOT NULL,
+    plugin_id uuid NOT NULL,
+    plugin_version_id uuid NOT NULL,
+    config_version bigint NOT NULL,
+    unit_price_units bigint NOT NULL,
+    aspect_ratio text NOT NULL,
+    quota_date date DEFAULT ((now() AT TIME ZONE 'UTC'::text))::date NOT NULL,
+    generation_status text NOT NULL,
+    billing_status text NOT NULL,
+    image_count smallint,
+    upstream_request_id text,
+    error_code text,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    dispatched_at timestamp with time zone,
+    deadline_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone,
+    asset_version text,
+    output_path text,
+    mime_type text,
+    size_bytes bigint,
+    width integer,
+    height integer,
+    settled_at timestamp with time zone,
+    resolved_by uuid,
+    resolution_reason text,
+    resolved_at timestamp with time zone,
+    CONSTRAINT platform_image_generations_billing_status_check CHECK ((billing_status = ANY (ARRAY['pending'::text, 'settled'::text, 'no_charge'::text]))),
+    CONSTRAINT platform_image_generations_check CHECK ((((generation_status = 'ready'::text) AND (NOT (image_count IS DISTINCT FROM 1)) AND (asset_version IS NOT NULL) AND (output_path IS NOT NULL) AND (COALESCE(width, 0) > 0) AND (COALESCE(height, 0) > 0) AND (COALESCE(size_bytes, (0)::bigint) > 0) AND (NOT (mime_type IS DISTINCT FROM 'image/png'::text)) AND (billing_status = ANY (ARRAY['pending'::text, 'settled'::text]))) OR ((generation_status = 'failed'::text) AND (NOT (image_count IS DISTINCT FROM 0)) AND (billing_status = 'no_charge'::text)) OR ((generation_status = ANY (ARRAY['admitted'::text, 'dispatched'::text, 'pending_review'::text])) AND (image_count IS NULL) AND (billing_status = 'pending'::text)))),
+    CONSTRAINT platform_image_generations_check1 CHECK (((billing_status = 'settled'::text) = (settled_at IS NOT NULL))),
+    CONSTRAINT platform_image_generations_generation_status_check CHECK ((generation_status = ANY (ARRAY['admitted'::text, 'dispatched'::text, 'pending_review'::text, 'ready'::text, 'failed'::text]))),
+    CONSTRAINT platform_image_generations_unit_price_units_check CHECK ((unit_price_units > 0))
 );
 
 
@@ -3862,7 +3953,13 @@ CREATE TABLE public.platform_plugin_versions (
     oauth_issuer text DEFAULT ''::text NOT NULL,
     oauth_scopes text DEFAULT ''::text NOT NULL,
     public_tools jsonb,
+    execution_kind text DEFAULT 'remote'::text NOT NULL,
+    distribution text DEFAULT 'manual'::text NOT NULL,
+    handler_key text,
+    default_tools jsonb DEFAULT '[]'::jsonb NOT NULL,
+    default_scenes jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT platform_plugin_versions_auth_type_check CHECK ((auth_type = ANY (ARRAY['none'::text, 'bearer'::text, 'api_key'::text, 'oauth'::text]))),
+    CONSTRAINT platform_plugin_versions_check CHECK ((((execution_kind = 'remote'::text) AND (distribution = 'manual'::text) AND (handler_key IS NULL)) OR ((execution_kind = 'platform_managed'::text) AND (distribution = 'all_agents'::text) AND (workspace_id IS NULL) AND (handler_key IS NOT NULL)))),
     CONSTRAINT platform_plugin_versions_public_tools_check CHECK ((jsonb_typeof(public_tools) = 'array'::text)),
     CONSTRAINT platform_plugin_versions_version_check CHECK ((version > 0))
 );
@@ -5694,6 +5791,14 @@ ALTER TABLE ONLY public.platform_credit_wallets
 
 
 --
+-- Name: platform_default_plugin_settings platform_default_plugin_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_default_plugin_settings
+    ADD CONSTRAINT platform_default_plugin_settings_pkey PRIMARY KEY (plugin_id);
+
+
+--
 -- Name: platform_dingtalk_registrations platform_dingtalk_registratio_workspace_id_agent_id_operati_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5779,6 +5884,30 @@ ALTER TABLE ONLY public.platform_group_sharing_policies
 
 ALTER TABLE ONLY public.platform_group_sharing_policy_events
     ADD CONSTRAINT platform_group_sharing_policy_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: platform_image_generation_config_versions platform_image_generation_config_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generation_config_versions
+    ADD CONSTRAINT platform_image_generation_config_versions_pkey PRIMARY KEY (plugin_id, version);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_workspace_id_task_id_request_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_workspace_id_task_id_request_key_key UNIQUE (workspace_id, task_id, request_key);
 
 
 --
@@ -6763,6 +6892,34 @@ CREATE INDEX platform_group_sharing_policy_events_policy ON public.platform_grou
 
 
 --
+-- Name: platform_images_payer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_images_payer ON public.platform_image_generations USING btree (payer_account_id, started_at DESC, id DESC);
+
+
+--
+-- Name: platform_images_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_images_pending ON public.platform_image_generations USING btree (deadline_at, id) WHERE (billing_status = 'pending'::text);
+
+
+--
+-- Name: platform_images_quota; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_images_quota ON public.platform_image_generations USING btree (workspace_id, quota_date, generation_status);
+
+
+--
+-- Name: platform_images_running; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_images_running ON public.platform_image_generations USING btree (id) WHERE (generation_status = ANY (ARRAY['admitted'::text, 'dispatched'::text]));
+
+
+--
 -- Name: platform_invitation_delivery_lease; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6788,6 +6945,13 @@ CREATE UNIQUE INDEX platform_invitation_shared_recipient ON public.platform_invi
 --
 
 CREATE INDEX platform_invitations_workspace_idx ON public.platform_invitations USING btree (workspace_id, created_at DESC, id DESC);
+
+
+--
+-- Name: platform_ledger_image_charge; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX platform_ledger_image_charge ON public.platform_credit_ledger USING btree (image_generation_id) WHERE (image_generation_id IS NOT NULL);
 
 
 --
@@ -9225,6 +9389,14 @@ ALTER TABLE ONLY public.platform_credit_ledger
 
 
 --
+-- Name: platform_credit_ledger platform_credit_ledger_image_generation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_credit_ledger
+    ADD CONSTRAINT platform_credit_ledger_image_generation_id_fkey FOREIGN KEY (image_generation_id) REFERENCES public.platform_image_generations(id);
+
+
+--
 -- Name: platform_credit_ledger platform_credit_ledger_operator_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9254,6 +9426,22 @@ ALTER TABLE ONLY public.platform_credit_settings
 
 ALTER TABLE ONLY public.platform_credit_wallets
     ADD CONSTRAINT platform_credit_wallets_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: platform_default_plugin_settings platform_default_plugin_settings_plugin_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_default_plugin_settings
+    ADD CONSTRAINT platform_default_plugin_settings_plugin_id_fkey FOREIGN KEY (plugin_id) REFERENCES public.platform_plugins(id);
+
+
+--
+-- Name: platform_default_plugin_settings platform_default_plugin_settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_default_plugin_settings
+    ADD CONSTRAINT platform_default_plugin_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.platform_accounts(id);
 
 
 --
@@ -9374,6 +9562,94 @@ ALTER TABLE ONLY public.platform_group_sharing_policy_events
 
 ALTER TABLE ONLY public.platform_group_sharing_policy_events
     ADD CONSTRAINT platform_group_sharing_policy_events_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.platform_workspaces(id);
+
+
+--
+-- Name: platform_image_generation_config_versions platform_image_generation_config_versions_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generation_config_versions
+    ADD CONSTRAINT platform_image_generation_config_versions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: platform_image_generation_config_versions platform_image_generation_config_versions_plugin_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generation_config_versions
+    ADD CONSTRAINT platform_image_generation_config_versions_plugin_id_fkey FOREIGN KEY (plugin_id) REFERENCES public.platform_default_plugin_settings(plugin_id);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_input_id_fkey FOREIGN KEY (input_id) REFERENCES public.manager_inputs(id);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_payer_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_payer_account_id_fkey FOREIGN KEY (payer_account_id) REFERENCES public.platform_credit_wallets(account_id);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_plugin_id_config_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_plugin_id_config_version_fkey FOREIGN KEY (plugin_id, config_version) REFERENCES public.platform_image_generation_config_versions(plugin_id, version);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_plugin_id_plugin_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_plugin_id_plugin_version_id_fkey FOREIGN KEY (plugin_id, plugin_version_id) REFERENCES public.platform_plugin_versions(plugin_id, id);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_resolved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.manager_sessions(id);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.manager_tasks(id);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_turn_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_turn_id_fkey FOREIGN KEY (turn_id) REFERENCES public.manager_turns(id);
+
+
+--
+-- Name: platform_image_generations platform_image_generations_workspace_id_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_image_generations
+    ADD CONSTRAINT platform_image_generations_workspace_id_agent_id_fkey FOREIGN KEY (workspace_id, agent_id) REFERENCES public.platform_agents(workspace_id, id);
 
 
 --

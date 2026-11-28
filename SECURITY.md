@@ -39,7 +39,7 @@ KIKO 企业级AI员工云平台支持 AI 员工执行代码、读写文件和调
 
 ## 4. 网络安全与反向代理边界
 
-1. **必须屏蔽内部 HTTP 路径**：`backend` 的 `/api/internal/v1/` 以及 `/mcp/task-delegation`、`/mcp/task-space-history`、`/mcp/task-progress`、`/mcp/human-confirmations/`、`/mcp/work-items/` 仅供集群内部调用。**公网反向代理必须显式拦截这些路径（返回 403）**，配置示例见 [部署指南](docs/deployment.md#2-反向代理与必须屏蔽的内部路径)。
+1. **必须屏蔽内部 HTTP 路径**：`backend` 的 `/api/internal/v1/` 以及 `/mcp/task-delegation`、`/mcp/task-space-history`、`/mcp/task-progress`、`/mcp/human-confirmations/`、`/mcp/work-items/`、`/mcp/platform-plugins/` 仅供集群内部调用。**公网反向代理必须显式拦截这些路径（返回 403）**，配置示例见 [部署指南](docs/deployment.md#2-反向代理与必须屏蔽的内部路径)。
 2. **远程 MCP SSRF 防护**：当用户在资源库配置远程 HTTP/HTTPS MCP 地址时，Backend 默认拦截所有指向环回地址（`127.0.0.0/8`、`::1`）、链路本地地址（`169.254.0.0/16` 等云厂商元数据地址）以及私有内网网段的请求。仅当管理员在环境变量 `KIKO_MCP_PRIVATE_CIDRS` 中显式列入允许的内网 CIDR 时，才允许连接对应私网网段内的自建 MCP 服务（环回与链路本地地址始终禁止）。
 3. **HTTPS 与 Origin 校验**：生产环境必须通过 HTTPS 暴露 `KIKO_PUBLIC_ORIGIN`。非 localhost 的纯 HTTP IP 访问默认被拒绝（除非内网测试显式开启 `KIKO_ALLOW_HTTP_IP_ORIGIN=true`）。
 

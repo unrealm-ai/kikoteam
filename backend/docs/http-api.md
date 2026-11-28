@@ -14,6 +14,7 @@ backend 职责见[组件说明](../README.md)，通用 HTTP、认证、幂等及
 | `/webhooks/{provider}/{connection_id}` | 第三方业务事件 | 后续渠道阶段采用，按提供方协议验签 |
 | `/mcp/task-delegation` | Manager 内部主 chat 委派 | 已实现，核验专用运行身份，拒绝 Cookie/Origin，不允许外部个人 Agent 复用 |
 | `/mcp/task-progress` | Manager 内部任务进展 | 执行任务按当前 Input 身份上报步骤摘要。详见[任务记录](task-records.md#对话卡片与执行计划)。 |
+| `/mcp/platform-plugins/image-generation` | 平台预置文生图 | 执行任务凭当前 Input 的短期授权调用 `generate_image`，成功生成的图片按受理时单价结算。详见[平台预置插件与文生图](../../docs/proposal/platform-default-plugins-and-image-generation.md)。 |
 | `/mcp/task-space-history` | Manager 内部 TaskSpace 任务查询 | 仅 TaskSpace 执行任务可挂载，按活动 Input 和来源权限读任务。见 [TaskSpace 执行历史](task-spaces.md#执行-agent-读取同空间任务) |
 | `/mcp/work-items/{ordinary,assignee,review}` | Manager 内部事项工具 | 按当前任务角色提供候选查询、事项读取或验收。见[事项交接](work-items.md)。 |
 | `/mcp/human-confirmations/{chat,task}` | Manager 内部人工确认工具 | 按角色暴露工具，使用当前 Input 的专用凭据，拒绝 Cookie/Origin。见[人工确认](human-requests.md#内部-mcp-接口) |
@@ -21,7 +22,7 @@ backend 职责见[组件说明](../README.md)，通用 HTTP、认证、幂等及
 | `/healthz`、`/readyz` | backend 探针 | 按部署策略控制访问，不随 API 版本变化 |
 | `/assets/...`、页面路径 | backend 同容器的 Web 静态资源 | 前端阶段交付，保留路由分区 |
 
-不增加 public 或 protected 业务分组。internal 表示内部专用接口面，v1 表示其契约主版本。所有外部入站请求仍由唯一公网域名下的 backend 接收，公网代理应排除 `/api/internal/v1/` 和内部 MCP 路径（含 `/mcp/task-delegation`、`/mcp/task-space-history`、`/mcp/task-progress`、`/mcp/human-confirmations/` 和 `/mcp/work-items/`），应用层继续核验服务身份和能力。当前实现共用单 listener，入口的网络可达性由部署控制。其他组件的实际 HTTP 入口及探针由该组件维护。
+不增加 public 或 protected 业务分组。internal 表示内部专用接口面，v1 表示其契约主版本。所有外部入站请求仍由唯一公网域名下的 backend 接收，公网代理应排除 `/api/internal/v1/` 和内部 MCP 路径（含 `/mcp/task-delegation`、`/mcp/task-space-history`、`/mcp/task-progress`、`/mcp/human-confirmations/`、`/mcp/work-items/` 和 `/mcp/platform-plugins/`），应用层继续核验服务身份和能力。当前实现共用单 listener，入口的网络可达性由部署控制。其他组件的实际 HTTP 入口及探针由该组件维护。
 
 先匹配 API、协议入口、探针和静态资源，最后才处理页面回退。未知 API 或协议端点不能返回前端 HTML。入口前缀不决定访问权限，启用 MCP 时单独声明访问范围。backend 探针及启动遵循[部署与退出](../README.md#部署与退出)。
 

@@ -93,6 +93,28 @@ async function mount(handle) {
   };
 }
 
+test('image settings test the candidate, save its receipt, and change price without rereading the secret', async()=>{
+  const path=root+'/default-plugins/image-generation';
+  let config={name:'官方文生图',release_version:1,version:0,enabled:false,provider:'openai_images',base_url:'https://fixture.example/v1',upstream_model_id:'',credential_configured:false,credits_per_image:'5.000000',workspace_daily_image_limit:100,max_concurrent_generations:8,timeout_seconds:120};
+  const m=await mount(r=>{
+    if(r.url.includes('/image-generations?'))return Response.json({items:[],next_cursor:''});
+    if(r.url===path+'/test')return Response.json({receipt:'tested',preview_png:'AA==',expires_at:new Date(Date.now()+600000).toISOString()});
+    if(r.url===path&&r.method==='PATCH'){config={...config,upstream_model_id:'fixture',credential_configured:true,version:config.version+1,credits_per_image:r.body.credits_per_image??config.credits_per_image};}
+    if(r.url===path)return Response.json(config);
+    throw Error('unexpected URL');
+  });
+  try{
+    m.button('默认插件').click();await wait();await m.edit('image-model-id','fixture');await m.edit('image-api-key','test-secret');
+    m.button('测试出图').click();await wait();assert.ok(m.host.querySelector('img[alt="供应商测试样图"]'));
+    await m.submit('.image-settings');
+    const first=m.requests.find(r=>r.method==='PATCH');assert.equal(first.body.receipt,'tested');assert.equal(first.body.version,0);
+    assert.equal(m.input('image-api-key').value,'');
+    await m.edit('image-unit-price','8.000000');await m.submit('.image-settings');
+    const last=m.requests.filter(r=>r.method==='PATCH').at(-1);assert.equal(last.body.version,1);assert.equal(last.body.credits_per_image,'8.000000');assert.equal(last.body.api_key,undefined);
+    assert.deepEqual(m.errors,[]);
+  }finally{await m.close();}
+});
+
 test('SMTP test uses the unsaved draft without saving or revealing the stored password', async () => {
   const m = await mount(r => {
     if (r.url === mail) return Response.json(baseMail);
@@ -583,7 +605,7 @@ test('Grouped settings still use independent APIs and find a default model outsi
   });
   try {
     const labels = [...m.host.querySelectorAll('.admin-subnav button')].map(n=>n.textContent.trim());
-    assert.deepEqual(labels,['账户与注册','官方模型与助手','任务分享与附件','插件集成']);
+    assert.deepEqual(labels,['账户与注册','官方模型与助手','任务分享与附件','插件集成','默认插件']);
     m.button('官方模型与助手').click(); await wait();
     assert.match(m.host.querySelector('.assistant-settings').textContent, /旧默认模型（已验证、已启用）/);
     m.button('任务分享与附件').click(); await wait();

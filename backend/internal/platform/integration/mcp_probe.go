@@ -59,8 +59,13 @@ func (p *MCPProber) client() *http.Client {
 		c.CheckRedirect = func(*http.Request, []*http.Request) error { return errors.New("MCP redirects disabled") }
 		return &c
 	}
+	return PublicHTTPClient(p.PrivateCIDRs, 10*time.Second, 15*time.Second)
+}
+
+// PublicHTTPClient pins an approved DNS answer and never follows redirects or environment proxies.
+func PublicHTTPClient(allowed []netip.Prefix, headerTimeout, timeout time.Duration) *http.Client {
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
-	tr := &http.Transport{TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second}
+	tr := &http.Transport{TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: headerTimeout}
 	tr.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, e := net.SplitHostPort(address)
 		if e != nil {
@@ -71,13 +76,13 @@ func (p *MCPProber) client() *http.Client {
 			return nil, errors.New("MCP DNS resolution failed")
 		}
 		for _, ip := range ips {
-			if !mcpAddressAllowed(ip.IP, p.PrivateCIDRs) {
+			if !mcpAddressAllowed(ip.IP, allowed) {
 				return nil, errors.New("MCP target denied")
 			}
 		}
 		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
 	}
-	return &http.Client{Transport: tr, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("MCP redirects disabled") }}
+	return &http.Client{Transport: tr, Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect disabled") }}
 }
 
 type mcpWireTool struct {

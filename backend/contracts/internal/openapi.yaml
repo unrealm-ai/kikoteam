@@ -6,6 +6,17 @@ info:
 security:
   - engineBearer: []
 paths:
+  /mcp/platform-plugins/image-generation:
+    post:
+      operationId: imageGenerationMCP
+      security: [{imageToolBearer: []}]
+      description: Streamable HTTP MCP for the tools pinned to a task turn. generate_image accepts prompt, aspect_ratio and a stable request_key. Returns a project path and billing status.
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses:
+        '200': {description: JSON-RPC discovery or tool result}
+        '202': {description: Notification accepted}
+        '401': {description: Invalid runtime credential}
+        '403': {description: Turn or access is no longer valid}
   /mcp/plugin-connections/{connection_id}:
     post:
       operationId: pluginConnectionMCP
@@ -397,6 +408,7 @@ paths:
                   delegation_token: {type: string, description: Sensitive chat-only assignment-bound MCP credential. Source actor is resolved from the current started Input for every call; no task recursion.}
                   group_history_token: {type: string, description: Sensitive task-only purpose-bound group-history MCP credential; current input and direct sharing grants are revalidated per call. No TaskSpace or system result authority.}
                   task_progress_token: {type: string, description: Input-scoped credential for task progress.}
+                  image_generation_token: {type: string, description: Sensitive assignment and input scoped credential for the official image generation MCP. Issued for authorized task turns.}
                   task_space_history_token: {type: string, description: Sensitive TaskSpace summary MCP credential bound to the current execution assignment and Input. Issued only for TaskSpace task sessions.}
                   webhook_file:
                     type: object
@@ -493,6 +505,7 @@ components:
               lifecycle: {enum: [active, archived]}
               engine_id: {type: [string, 'null'], format: uuid}
   securitySchemes:
+    imageToolBearer: {type: http, scheme: bearer, description: Input and assignment scoped platform image tool credential.}
     workToolBearer: {type: http, scheme: bearer, description: Local work-item credential scoped to the active Input and Engine assignment.}
     humanToolBearer: {type: http, scheme: bearer, description: Scoped to one trusted Engine assignment and active Input.}
     hubBearer: {type: http, scheme: bearer, description: Dedicated KIKO_HUB_TOKEN. Never accepts browser cookies or Engine credentials.}

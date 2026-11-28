@@ -82,13 +82,13 @@ export async function refreshWorkMCP(pi, credentials, role, signal) {
     ["artifact_publish", ...roleTools[role]], signal, workUnavailable);
 }
 
-async function refreshTurnMCP(pi, server, url, headers, expected, signal, unavailable, toolExposure) {
+async function refreshTurnMCP(pi, server, url, headers, expected, signal, unavailable, toolExposure, timeout) {
   // The built-in MCP extension handles this asynchronously. Remove the
   // old registration and observe tools hidden before testing freshness of
   // the new same-name tools. Old in-flight HTTP requests keep old headers.
   pi.unregisterMcpServer(server);
   await waitForMCP(() => visibleMCP(pi, server).size === 0, signal, unavailable);
-  pi.registerMcpServer(server, toolExposure ? { url, headers, exposure: "hidden", toolExposure } : { url, headers, exposure: "direct" });
+  pi.registerMcpServer(server, toolExposure ? { url, headers, exposure: "hidden", toolExposure, ...(timeout ? {timeout} : {}) } : { url, headers, exposure: "direct" });
   await waitForMCP(() => catalogueReady(pi, server, expected), signal, unavailable);
 }
 
@@ -199,12 +199,12 @@ export default function humanTools(pi) {
         failure = assistantUnavailable;
         await refreshAssistantMCP(pi, current, ctx.signal);
       }
-      await Promise.all(relays.map(async ([name, { url, toolExposure }]) => {
+      await Promise.all(relays.map(async ([name, { url, toolExposure, timeout }]) => {
         // A disconnected optional plugin should not block an unrelated task.
         try {
           const headers = current.relay_headers?.[name];
           if (!headers?.Authorization) throw new Error("Missing relay credentials");
-          await refreshTurnMCP(pi, name, url, headers, Object.keys(toolExposure), ctx.signal, "Relay unavailable", toolExposure);
+          await refreshTurnMCP(pi, name, url, headers, Object.keys(toolExposure), ctx.signal, "Relay unavailable", toolExposure, timeout);
         } catch {
           pi.unregisterMcpServer(name);
         }

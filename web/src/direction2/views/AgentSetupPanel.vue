@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { NAlert, NButton, useMessage } from 'naive-ui';
 import { activeWorkspaceId } from '../api/client';
+import { platformRequest } from '../api/platform';
 import type { Agent } from '../api/agents';
 import { templatesApi, renderInstruction, type Setup, type Example } from '../api/templates';
 import { pluginsApi, type Plugin } from '../api/capabilities';
@@ -34,6 +35,15 @@ async function load() {
     setup.value = s; definitions.value = defs;
   } catch (e) { if (current === epoch) error.value = e instanceof Error ? e.message : '接入状态读取失败'; }
 }
+async function bindSelf() {
+  if (!props.canManage || busy.value) return;
+  const current=epoch; busy.value=true;
+  try {
+    const updated=await platformRequest<Agent>('/workspaces/'+activeWorkspaceId.value+'/agents/'+props.agent.id+'/payer-binding',{method:'PUT',body:JSON.stringify({confirm_self:true,version:props.agent.version})});
+    if(current===epoch) emit('updated',updated);
+  } catch(e){if(current===epoch)error.value=e instanceof Error?e.message:'付款绑定失败';}
+  finally {busy.value=false;}
+}
 async function saveAs() {
   if (busy.value || !props.canManageTemplates) return;
   busy.value = true; const current = epoch;
@@ -47,7 +57,7 @@ async function saveAs() {
 }
 const issues = computed(() => setup.value?.issues || []);
 const labels: Record<string, string> = {
-  needs_connection: '需要连接账号',
+  available:'可用',unconfigured:'等待平台配置',payer_binding_required:'待绑定有效付款账户',needs_connection: '需要连接账号',
   missing_operation: '缺少预设操作',
   schema_changed: '工具定义已变化',
   resource_unavailable: '资源不可用',
@@ -76,6 +86,11 @@ onUnmounted(() => { ++epoch; emit('dirty', false); emit('busy', false); });
       <NButton size="small" style="margin-left: 8px;" @click="load()">重新读取</NButton>
     </NAlert>
     <template v-if="setup">
+      <section v-if="setup.default_plugins?.length"><h4>平台默认能力</h4>
+        <p v-for="p in setup.default_plugins" :key="p.key">{{ p.name }} · 官方预置 · {{ labels[p.status] || p.status }} <span v-if="p.credits_per_image">· {{ Number(p.credits_per_image) }} 积分/张</span></p>
+        <template v-if="canManage"><p v-if="agent.payer">付款账户 · {{agent.payer.name}}</p>
+          <NButton v-else-if="setup.can_bind_payer" size="small" :disabled="busy" @click="bindSelf">确认由我的积分支付</NButton></template>
+      </section>
       <div class="setup-status-bar">
         <span class="wf-status-pill" :class="setup.conversation_model.available ? 'is-success' : 'is-warning'">
           <span class="wf-status-dot" />

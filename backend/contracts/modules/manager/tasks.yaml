@@ -49,6 +49,7 @@ item:
                   properties:
                     work_item_id: {type: string, format: uuid, description: Latest related handoff item}
                     progress: {$ref: '#/schemas/TaskProgress'}
+                    images: {type: array, maxItems: 20, description: Published PNGs from completed turns, items: {type: object, required: [id,name], properties: {id: {type: string, format: uuid}, name: {type: string}}}}
                     artifacts:
                       type: array
                       maxItems: 100

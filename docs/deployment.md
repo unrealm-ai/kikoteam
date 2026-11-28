@@ -41,6 +41,7 @@ flowchart LR
 | --- | --- |
 | `/api/internal/v1/` | Engine 注册心跳、Session 分配、Runner 运行时配置领取、Event Hub 内部回调 |
 | `/mcp/task-delegation` | 主对话（`chat`）委派、查询、追加、停止后台任务的内部 MCP |
+| `/mcp/platform-plugins/` | 后台任务调用平台托管的官方默认插件 |
 | `/mcp/task-space-history` | TaskSpace 执行任务读取同空间任务历史的内部 MCP |
 | `/mcp/task-progress` | 后台任务上报本轮进展的内部 MCP |
 | `/mcp/human-confirmations/` | 对话与后台任务发起或处理人工确认的内部 MCP |
@@ -60,7 +61,7 @@ server {
     # SSL 证书配置略...
 
     # 严禁从公网访问内部协作 API 与内部 MCP 端点
-    location ~ ^/(api/internal/v1/|mcp/(task-delegation|task-space-history|task-progress|human-confirmations|work-items))(/|$) {
+    location ~ ^/(api/internal/v1|mcp/(task-delegation|task-space-history|task-progress|human-confirmations|work-items|platform-plugins))(/|$) {
         return 403;
     }
 
@@ -201,6 +202,7 @@ server {
 2. **启动与升级顺序**：
    - 升级版本前，先备份 PostgreSQL 数据库、`.env`、`.kiko-local/` 和持久存储目录；
    - **升级 `event-hub` 时**：先让旧版本 `event-hub` 实例正常收到 `SIGTERM` 停止新触发、完成在途操作并释放 PostgreSQL Advisory Lock，再启动目标新版本的 `event-hub`；新实例获锁后会在同一连接上自动执行增量 SQL 迁移；
+   - 引入新平台默认工具时，在启动会自动同步目录的新版 Backend 或一次性同步任务前，先排空旧 Backend 和 Engine 的执行流量；确认新版本 Engine 能挂载声明的工具。保留固定原图所在的持久卷，并让所有处理出图或补偿的 Backend 实例共享该卷；
    - 迁移完成后，运行一次性 `backend sync-catalog`（Compose 中的 `template-catalog` 服务会自动完成）同步最新内置官方模板与资源目录；
    - 滚动更新 `backend` 与 `agent-engine`（建议为 `agent-engine` 配置 90 秒以上的 `stop_grace_period` 以便在途轮次和工具进程安全收尾）。
 

@@ -129,7 +129,7 @@ func (t *packageTx) ValidateSkill(ctx context.Context, r service.PackageSkill) (
 }
 func (t *packageTx) ValidatePlugin(ctx context.Context, r service.PackagePlugin) (service.PackageResource, error) {
 	var out service.PackageResource
-	e := t.model.tx.QueryRowContext(ctx, `SELECT p.enabled, NOT p.listed, p.current_version_id FROM platform_plugins p JOIN platform_plugin_versions v ON v.plugin_id=p.id WHERE (p.workspace_id=$1 OR p.workspace_id IS NULL) AND p.archived_at IS NULL AND p.id=$2 AND v.id=coalesce(nullif($3,'')::uuid,p.current_version_id) FOR SHARE OF p`, t.model.workspace, r.PluginID, r.VersionID).Scan(&out.Enabled, &out.Unlisted, &out.CurrentVersionID)
+	e := t.model.tx.QueryRowContext(ctx, `SELECT p.enabled, NOT p.listed, p.current_version_id FROM platform_plugins p JOIN platform_plugin_versions v ON v.plugin_id=p.id WHERE (p.workspace_id=$1 OR p.workspace_id IS NULL) AND p.archived_at IS NULL AND p.id=$2 AND v.distribution='manual' AND v.id=coalesce(nullif($3,'')::uuid,p.current_version_id) FOR SHARE OF p`, t.model.workspace, r.PluginID, r.VersionID).Scan(&out.Enabled, &out.Unlisted, &out.CurrentVersionID)
 	if errors.Is(e, sql.ErrNoRows) {
 		return out, service.Fail("plugin_unavailable", 409, "插件版本不存在或不属于当前工作区")
 	}

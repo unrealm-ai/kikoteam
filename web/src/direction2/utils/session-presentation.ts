@@ -174,7 +174,11 @@ export function taskReport(event: SessionEvent) {
     const value = record(JSON.parse(body.slice(start)));
     const task = taskNavigationTarget(value);
     if (typeof value.result !== 'string' || typeof value.outcome !== 'string' || !task) return null;
-    return { task, turnID: text(value.turn_id), outcome: value.outcome, result: value.result, unknown: value.has_unknown_tool_results === true, background: typeof value.background_process_count === 'number' ? value.background_process_count : null, queued: typeof value.queued_input_count === 'number' ? value.queued_input_count : 0 };
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const images = task.kind === 'task' && uuid.test(task.id) && Array.isArray(value.artifact_candidates)
+      ? value.artifact_candidates.map(record).filter(a => a.media_type === 'image/png' && uuid.test(text(a.artifact_id))).map(a => ({id: text(a.artifact_id), name: text(a.name) || '生成图片'}))
+      : [];
+    return { task, images, turnID: text(value.turn_id), outcome: value.outcome, result: value.result, unknown: value.has_unknown_tool_results === true, background: typeof value.background_process_count === 'number' ? value.background_process_count : null, queued: typeof value.queued_input_count === 'number' ? value.queued_input_count : 0 };
   } catch { return null; }
 }
 export function clockTime(value: string): string {

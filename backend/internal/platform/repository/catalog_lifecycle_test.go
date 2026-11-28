@@ -90,6 +90,29 @@ func TestDisableWorkspaceStartersMigration(t *testing.T) {
 	ctx := t.Context()
 	const previous = "000107_builtin_employee_management.sql"
 	db, models, workspace, owner := modelFixtureThrough(t, previous)
+	model := saveTestModel(t, models, workspace, owner)
+	employee, err := (&service.AgentService{Store: NewAgentStore(db)}).Create(ctx, workspace, owner, service.AgentCreate{Name: "Legacy employee", ModelProfileID: model.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := employeeBindings(t, db, workspace)
+	var queued bool
+	if err = db.QueryRow("SELECT starter_pending FROM platform_workspaces WHERE id=$1", workspace).Scan(&queued); err != nil || !queued {
+		t.Fatal("expected pending workspace on schema 107", err)
+	}
+	applyTestMigrations(t, ctx, db, previous, "000108_disable_workspace_starters.sql")
+	var kept bool
+	if err = db.QueryRow("SELECT starter_pending,EXISTS(SELECT FROM platform_agents WHERE workspace_id=$1 AND id=$2) FROM platform_workspaces WHERE id=$1", workspace, employee.ID).Scan(&queued, &kept); err != nil || queued || !kept || employeeBindings(t, db, workspace) != before {
+		t.Fatal("migration lost the legacy employee, changed bindings or kept pending creation", err)
+	}
+}
+
+func TestCurrentCatalogRetainsFullReporterAcrossStarterCleanup(t *testing.T) {
+	ctx := t.Context()
+	db, models, workspace, owner := modelFixture(t)
+	// Exercise today's complete reporter and its real bindings on its required
+	// schema, with the pending flags a previous release could have left behind.
+	reviewExec(t, db, "UPDATE platform_workspaces SET starter_pending=true WHERE id=$1", workspace)
 	assets := runtimeCapabilityServices(t, db).Skills.Assets
 	catalog, err := service.BuiltinCatalog()
 	if err != nil {
@@ -114,10 +137,11 @@ func TestDisableWorkspaceStartersMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	reviewExec(t, db, "UPDATE platform_workspaces SET starter_pending=true WHERE id=$1", pending.ID)
 	if err = db.QueryRow(`SELECT starter_pending FROM platform_workspaces WHERE id=$1`, pending.ID).Scan(&queued); err != nil || !queued {
 		t.Fatal("expected pending workspace before migration", err)
 	}
-	applyTestMigrations(t, ctx, db, previous, "000108_disable_workspace_starters.sql")
+	applyTestMigrations(t, ctx, db, "000107_builtin_employee_management.sql", "000108_disable_workspace_starters.sql")
 	var stillPending, keptEmployee bool
 	if err = db.QueryRow(`SELECT starter_pending, EXISTS(SELECT FROM platform_agents WHERE id=$2 AND workspace_id=$3) FROM platform_workspaces WHERE id=$1`, pending.ID, employee.ID, workspace).Scan(&stillPending, &keptEmployee); err != nil {
 		t.Fatal(err)

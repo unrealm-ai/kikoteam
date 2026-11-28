@@ -72,7 +72,13 @@ func TestBuiltinResourceCardsHTTP(t *testing.T) {
 		return result.Items, result.Total
 	}
 	base := "/workspaces/" + w
-	for kind, want := range map[string]int{"skills": len(catalog.Skills), "plugins": len(catalog.Plugins)} {
+	manual := 0
+	for _, p := range catalog.Plugins {
+		if p.Distribution != "all_agents" {
+			manual++
+		}
+	}
+	for kind, want := range map[string]int{"skills": len(catalog.Skills), "plugins": manual} {
 		items, total := read(base + "/" + kind + "?scope=official")
 		if total != want || len(items) != want {
 			t.Fatalf("%s: %d", kind, total)

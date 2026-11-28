@@ -181,6 +181,9 @@ func (s *Store) Task(ctx context.Context, w, actor, id string) (service.TaskDeta
 	}
 	out.Artifacts = make([]service.TaskDetailArtifact, 0, len(artifacts))
 	for _, a := range artifacts {
+		if a.MediaType == "image/png" && len(out.Images) < 20 {
+			out.Images = append(out.Images, service.TaskImage{ID: a.ID, Name: a.Name})
+		}
 		out.Artifacts = append(out.Artifacts, service.TaskDetailArtifact{ID: a.ID, Name: a.Name, Size: a.Size})
 	}
 	if err = tx.Commit(); err != nil {

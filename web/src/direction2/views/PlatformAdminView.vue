@@ -16,7 +16,9 @@ import PlatformChannelDownloadSettings from './PlatformChannelDownloadSettings.v
 import PlatformAssistantSettings from './PlatformAssistantSettings.vue';
 
 interface Account { id:string; name:string; email:string; is_platform_admin:boolean; platform_admin_version:number; credit_balance:string }
-type AdminSection = 'accounts' | 'models' | 'sharing' | 'integrations';
+import PlatformImageSettings from './PlatformImageSettings.vue';
+const imagesOpened = ref(false), imageEditor = ref<InstanceType<typeof PlatformImageSettings>>();
+type AdminSection = 'images' | 'accounts' | 'models' | 'sharing' | 'integrations';
 const tab = ref<AdminSection>('accounts');
 const accountTab = ref<'users' | 'registration'>('users');
 const registrationOpened = ref(false), integrationsOpened = ref(false), sharingOpened = ref(false);
@@ -35,11 +37,12 @@ function selectSection(section: AdminSection) {
   if (section === 'integrations') integrationsOpened.value = true;
   if (section === 'sharing') sharingOpened.value = true;
   if (section === 'models') assistantOpened.value = true;
+  if (section === 'images') imagesOpened.value = true;
   tab.value = section;
 }
-const hasUnsaved = () => mailEditor.value?.dirty === true || githubEditor.value?.dirty === true || downloadsEditor.value?.dirty === true || taskLinksEditor.value?.dirty === true || assistantEditor.value?.dirty === true;
+const hasUnsaved = () => mailEditor.value?.dirty === true || githubEditor.value?.dirty === true || downloadsEditor.value?.dirty === true || taskLinksEditor.value?.dirty === true || assistantEditor.value?.dirty === true || imageEditor.value?.dirty === true;
 async function save() {
-  for (const editor of [mailEditor.value, githubEditor.value, downloadsEditor.value, taskLinksEditor.value, assistantEditor.value]) {
+  for (const editor of [mailEditor.value, githubEditor.value, downloadsEditor.value, taskLinksEditor.value, assistantEditor.value, imageEditor.value]) {
     if (editor?.dirty && !await editor.save()) return false;
   }
   return true;
@@ -50,6 +53,7 @@ function discard() {
   downloadsEditor.value?.discard();
   taskLinksEditor.value?.discard();
   assistantEditor.value?.discard();
+  imageEditor.value?.discard();
 }
 defineExpose({ hasUnsaved, save, discard });
 const items = ref<Account[]>([]), page = ref(1), total = ref(0), q = ref('');
@@ -131,10 +135,12 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
         <NButton size="small" :quaternary="tab !== 'models'" :type="tab==='models'?'primary':'default'" :class="{ 'has-unsaved-dot': assistantEditor?.dirty }" @click="selectSection('models')">官方模型与助手</NButton>
         <NButton size="small" :quaternary="tab !== 'sharing'" :type="tab==='sharing'?'primary':'default'" :class="{ 'has-unsaved-dot': downloadsEditor?.dirty || taskLinksEditor?.dirty }" @click="selectSection('sharing')">任务分享与附件</NButton>
         <NButton size="small" :quaternary="tab !== 'integrations'" :type="tab==='integrations'?'primary':'default'" :class="{ 'has-unsaved-dot': githubEditor?.dirty }" @click="selectSection('integrations')">插件集成</NButton>
+        <NButton size="small" :quaternary="tab !== 'images'" :type="tab==='images'?'primary':'default'" :class="{ 'has-unsaved-dot': imageEditor?.dirty }" @click="selectSection('images')">默认插件</NButton>
       </nav>
     </header>
 
     <OfficialModelsView v-if="tab==='models'" @default-model-status="status => modelStatus = status"/>
+    <PlatformImageSettings v-if="imagesOpened" v-show="tab==='images'" ref="imageEditor" />
     <PlatformAssistantSettings v-if="assistantOpened" v-show="tab==='models'" ref="assistantEditor" :model-status="modelStatus"/>
     <div v-if="sharingOpened" v-show="tab==='sharing'" class="accounts-panel-stack">
       <PlatformTaskLinkSettings ref="taskLinksEditor" />

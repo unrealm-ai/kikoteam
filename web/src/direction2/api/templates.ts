@@ -8,7 +8,7 @@ export interface Example{can_try?:boolean;key:string;title:string;text:string;ou
 export interface Content{schema_version:number;name:string;avatar:string;role:string;category:string;audience:string;deliverables:string;model_requirements:string;instruction_template:string;parameters:Parameter[];packages:PresetPackage[];resource_refs:Resource[];examples:Example[]}
 export interface AgentTemplate{builtin_key?:string;id:string;scope:string;version:number;content:Content;sequence:number;template_version_id:string;latest_version_id:string;published_version_id:string;has_unpublished_changes:boolean;is_listed:boolean;recommended_rank:number;status:string;published_at:string|null}
 export interface TemplateVersion{id:string;template_id:string;sequence:number;content:Content;change_note:string;published_at:string|null}
-export interface Setup{conversation_model:{available:boolean};task_model:{available:boolean};access_allowed:boolean;packages:CapabilityPackage[];issues:{package_id:string;resource_id:string;code:string}[];examples:Example[]}
+export interface Setup{can_bind_payer?: boolean; default_plugins?:{key:string;name:string;status:string;credits_per_image?:string}[];conversation_model:{available:boolean};task_model:{available:boolean};access_allowed:boolean;packages:CapabilityPackage[];issues:{package_id:string;resource_id:string;code:string}[];examples:Example[]}
 const base=(workspace:string,official:boolean)=>official?'/official-agent-templates':`/workspaces/${encodeURIComponent(workspace)}/agent-templates`;
 export const templatesApi={
  list:(w:string,o:boolean,query:URLSearchParams,signal:AbortSignal)=>platformRequest<Page<AgentTemplate>>(`${base(w,o)}?${query}`,{signal}),

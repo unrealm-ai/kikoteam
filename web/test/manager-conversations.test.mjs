@@ -152,6 +152,18 @@ test('closed task drawer shows only the linked active turn progress and measured
  }finally{await m.cleanup()}
 });
 
+test('task report previews only its authorized published PNG versions', async()=>{
+ const a='00000000-0000-4000-8000-000000000001',task='00000000-0000-4000-8000-000000000002';
+ const body={session_id:'task1',task_id:task,outcome:'completed',result:'已发布图片',artifact_candidates:[
+   {artifact_id:a,name:'poster.png',media_type:'image/png',url:'https://example.com/foreign'},
+   {artifact_id:'../other',name:'invalid.png',media_type:'image/png'}]};
+ const row=reportEvent({content:[{type:'text',text:JSON.stringify(body)}]});
+ const m=await mount({override:url=>url.includes('/events?')?Response.json({items:[row],next_cursor:null,resume_cursor:'H'}):null});
+ try{const imgs=m.host.querySelectorAll('.report-card img');assert.equal(imgs.length,1);
+ const src=imgs[0].getAttribute('src');assert.ok(src.startsWith('/api/v1/workspaces/'));assert.ok(src.endsWith('/tasks/'+task+'/artifacts/'+a+'/content'));
+ assert.equal(m.host.querySelector('.report-card a[download]').getAttribute('href'),src+'?download=1');
+ }finally{await m.cleanup();}
+});
 test('Markdown renders headings, tables and code without executing HTML or loading embedded media',async()=>{
  const markdown = '# 销售报告\n\n**合计**：3375\n\n| 商品 | 金额 |\n| --- | ---: |\n| A | 100 |\n\n```json\n{"total":3375}\n```\n\n<script>alert(1)</script>\n<img src=x onerror=alert(1)>\n\n[危险](javascript:alert%281%29) [本地](file:///etc/passwd) [远程](https://example.com/report) ![跟踪图片](https://example.com/track.png)';
  const m=await mount({override:url=>url.includes('/events?')?Response.json({items:[event(10,'chat',markdown)],next_cursor:null,resume_cursor:'H'}):null});

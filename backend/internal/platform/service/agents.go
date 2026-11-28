@@ -352,6 +352,50 @@ func (s *AgentService) Update(ctx context.Context, w, a, id string, r AgentPatch
 	})
 	return v, e
 }
+func (s *AgentService) BindPayer(ctx context.Context, w, actor, id string, version int64) (Agent, error) {
+	var v Agent
+	err := s.Store.WithWorkspace(ctx, w, func(t AgentTx) error {
+		m, e := agentAuthorize(ctx, t, actor)
+		if e != nil {
+			return e
+		}
+		if m.Role != "owner" {
+			return Fail("workspace_forbidden", 403, "仅工作区所有者可确认由本人支付")
+		}
+		if v, e = t.Get(ctx, id); e != nil {
+			return e
+		}
+		if v.Payer != nil {
+			if v.Payer.ID == actor {
+				return nil
+			}
+			return Fail("payer_already_bound", 409, "员工已有其他付款账户")
+		}
+		if v.Version != version {
+			return Fail("agent_version_conflict", 409, "员工已更新，请刷新")
+		}
+		if e := t.EnsureModelKey(ctx, id); e != nil {
+			return e
+		}
+		if v, e = t.Get(ctx, id); e != nil {
+			return e
+		}
+		if v.Payer == nil || v.Payer.ID != actor {
+			return Fail("payer_already_bound", 409, "员工的付款账户已变更")
+		}
+		v.Version++
+		if e = t.Update(ctx, v, false); e != nil {
+			return e
+		}
+		v, e = t.Get(ctx, id)
+		return e
+	})
+	if err == nil {
+		return s.Get(ctx, w, actor, id)
+	}
+	return Agent{}, err
+}
+
 func validateAgentPatch(r AgentPatch) (bool, error) {
 	selecting := r.ModelProfileID != nil || r.PlatformModelID != nil
 	if r.ModelProfileID != nil && r.PlatformModelID != nil || r.ModelProfileID != nil && *r.ModelProfileID == "" || r.PlatformModelID != nil && *r.PlatformModelID == "" {

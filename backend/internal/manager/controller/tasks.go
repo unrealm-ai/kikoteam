@@ -9,6 +9,7 @@ import (
 
 func (s *Server) taskRoutes(mux *http.ServeMux) {
 	base := "/api/v1/workspaces/{workspace_id}/tasks"
+	mux.HandleFunc("GET "+base+"/{task_id}/artifacts/{artifact_id}/content", s.wrap("getTaskArtifactContent", s.taskArtifact))
 	mux.HandleFunc("GET "+base, s.wrap("listTasks", s.listTasks))
 	mux.HandleFunc("GET "+base+"/{task_id}", s.wrap("getTask", s.getTask))
 	mux.HandleFunc("GET "+base+"/{task_id}/reports", s.wrap("listTaskReports", s.listTaskReports))

@@ -12,9 +12,17 @@ import (
 // ExecutionCapabilities contains immutable resource pins and no credentials.
 // Package provenance is retained for intersection with current authorization.
 type ExecutionCapabilities struct {
-	ID       string              `json:"id"`
-	Packages []CapabilityPackage `json:"packages"`
-	Accounts []RuntimeAccountPin `json:"accounts"`
+	DefaultPlugins []DefaultPluginPin  `json:"default_plugins,omitempty"`
+	ID             string              `json:"id"`
+	Packages       []CapabilityPackage `json:"packages"`
+	Accounts       []RuntimeAccountPin `json:"accounts"`
+}
+
+type DefaultPluginPin struct {
+	PluginID  string    `json:"plugin_id"`
+	VersionID string    `json:"version_id"`
+	Handler   string    `json:"handler_key"`
+	Tools     []MCPTool `json:"tools"`
 }
 
 func (c *ExecutionCapabilities) ForPlugin(id string) *ExecutionCapabilities {

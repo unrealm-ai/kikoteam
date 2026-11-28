@@ -167,6 +167,20 @@ paths:
     $ref: ./modules/platform/model-proxy.yaml#/ledger
   /api/v1/accounts/{account_id}/credit-grants:
     $ref: ./modules/platform/model-proxy.yaml#/grant
+  /api/v1/platform/default-plugins:
+    $ref: ./modules/platform/default-images.yaml#/directory
+  /api/v1/platform/default-plugins/image-generation:
+    $ref: ./modules/platform/default-images.yaml#/configuration
+  /api/v1/platform/default-plugins/image-generation/test:
+    $ref: ./modules/platform/default-images.yaml#/test
+  /api/v1/image-generations:
+    $ref: ./modules/platform/default-images.yaml#/usage
+  /api/v1/image-generations/{generation_id}/resolve:
+    $ref: ./modules/platform/default-images.yaml#/resolve
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/payer-binding:
+    $ref: ./modules/platform/default-images.yaml#/payer
+  /api/v1/workspaces/{workspace_id}/tasks/{task_id}/artifacts/{artifact_id}/content:
+    $ref: ./modules/platform/default-images.yaml#/content
   /api/v1/credit-settings:
     $ref: ./modules/platform/model-proxy.yaml#/settings
   /api/v1/model-usage:

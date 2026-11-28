@@ -2,6 +2,8 @@
 
 # backend · 业务与调度后端
 
+平台官方文生图通过任务 MCP 接受请求，在保存固定原图后按受理单价扣员工付款账户的积分。目录继承、管理配置和恢复流程见[平台默认插件与官方文生图](../docs/proposal/platform-default-plugins-and-image-generation.md)。
+
 员工「接收外部事件」通过 `POST /api/triggers/events/{trigger_id}` 接收 GitHub、GitLab 和自建系统的通知。Manager 将配置的处理说明、事件原文及所选结果群绑定到本次任务。部署需要 Event Hub 迁移 87。见[触发规则设计](docs/trigger-rules.md)。
 
 [后台任务找人确认](docs/human-requests.md)支持 Web 指定成员、Pi 停稳、工作台或固定主私聊答复，以及沿原 Task 和 Session 续跑。

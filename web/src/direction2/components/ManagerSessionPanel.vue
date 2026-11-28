@@ -317,16 +317,18 @@ watch(rows, async (nextRows, prevRows) => {
       <p v-if="session && !session.accepts_input" class="warning">{{ session.lifecycle === 'archived' ? '此会话已归档，历史仍可查看，不能继续发送。' : `暂不能输入：${session.input_block_reason || session.lifecycle}` }}</p>
       <p v-if="held" class="warning">当前任务在等待确认或交接。补充会先排队，暂不能停止。</p>
       <div class="composer-card" :class="{ disabled: !canCompose, 'is-active': isActiveExecution }">
-        <div v-if="$slots.attachments" class="composer-attachments"><slot name="attachments" /></div>
         <NInput v-model:value="text" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" :disabled="!canCompose || submitting || controlBusy" :placeholder="continuing ? '填写新一轮的要求' : task ? '给此任务补充要求，按顺序接续执行...' : '发送消息，任务执行期间仍可继续对话'" @keydown.enter.exact="onEnter" />
         <div class="actions">
-          <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
-          <NButton v-if="!publicDetail || shared?.can_stop" size="small" circle :secondary="!isActiveExecution" :type="isActiveExecution ? 'error' : 'default'" class="stop-exec-btn" :class="{ quiet: !isActiveExecution }" :loading="controlBusy" :disabled="stopUnavailable" :title="stopLabel" :aria-label="stopLabel" @click="stop">
-            <template #icon><ConversationControlIcon kind="stop" /></template>
-          </NButton>
-          <NButton size="small" type="primary" circle :loading="submitting" :disabled="attachmentPending || (!text.trim() && !attachmentPaths?.length && !attachmentIds?.length) || !canCompose || submitting || controlBusy" :title="sendLabel" :aria-label="sendLabel" @click="send">
-            <template #icon><ConversationControlIcon kind="send" /></template>
-          </NButton>
+          <div v-if="$slots.attachments" class="composer-attachments"><slot name="attachments" /></div>
+          <div class="composer-right-controls">
+            <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
+            <NButton v-if="!publicDetail || shared?.can_stop" size="small" circle :secondary="!isActiveExecution" :type="isActiveExecution ? 'error' : 'default'" class="stop-exec-btn" :class="{ quiet: !isActiveExecution }" :loading="controlBusy" :disabled="stopUnavailable" :title="stopLabel" :aria-label="stopLabel" @click="stop">
+              <template #icon><ConversationControlIcon kind="stop" /></template>
+            </NButton>
+            <NButton size="small" type="primary" circle class="send-exec-btn" :loading="submitting" :disabled="attachmentPending || (!text.trim() && !attachmentPaths?.length && !attachmentIds?.length) || !canCompose || submitting || controlBusy" :title="sendLabel" :aria-label="sendLabel" @click="send">
+              <template #icon><ConversationControlIcon kind="send" /></template>
+            </NButton>
+          </div>
         </div>
       </div>
     </footer>
@@ -338,19 +340,20 @@ watch(rows, async (nextRows, prevRows) => {
 .confirmation{padding:12px 0;border-bottom:1px solid var(--id-border-subtle);overflow-wrap:anywhere}
 .confirmation p{white-space:pre-wrap}
 .session-panel{min-width:0;flex:1;display:flex;flex-direction:column;border:1px solid var(--id-border-subtle);border-radius:var(--id-radius-lg);background:var(--id-bg-surface);overflow:hidden;height:100%;min-height:420px}
-.unified-session-header{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--id-border-subtle);background:var(--id-bg-surface);flex-wrap:wrap}
+.unified-session-header{display:flex;align-items:center;gap:12px;min-height:58px;padding:10px 22px;border-bottom:1px solid var(--id-border-hairline);background:var(--id-bg-surface);flex-wrap:wrap}
 .session-heading{flex:1;min-width:120px;display:flex;flex-direction:column;gap:2px}
 .session-heading-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.session-heading strong{font-size:14px;font-weight:600;color:var(--id-text-primary)}
+.session-heading strong{font-size:14.5px;font-weight:600;color:var(--id-text-primary)}
 .header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .eyebrow{font-size:12px;color:var(--id-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.connection{display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:var(--id-radius-pill);background:var(--id-bg-subtle);border:1px solid var(--id-border-subtle);font-size:11px}
+.connection{display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:var(--id-radius-pill);background:var(--id-bg-subtle);border:1px solid var(--id-border-subtle);font-size:11px;color:var(--id-text-muted)}
+.connection:has(i.connected){background:#ECFDF5;border-color:#A7F3D0;color:#047857;font-weight:500}
 .connection i{width:6px;height:6px;border-radius:50%;background:var(--id-text-muted)}
 .connection i.connected{background:var(--id-status-success-dot)}
-.messages{flex:1;min-height:0;overflow:auto;padding:20px clamp(16px,3vw,36px);background:var(--id-bg-subtle);display:flex;flex-direction:column;gap:14px;scrollbar-gutter:stable}
-.event{width:100%;min-width:0;max-width:780px;align-self:center;font-size:13px;overflow-wrap:anywhere}
+.messages{flex:1;min-height:0;overflow:auto;padding:20px clamp(18px,3vw,36px) 12px;background:var(--id-bg-surface);display:flex;flex-direction:column;gap:14px;scrollbar-gutter:stable}
+.event{width:100%;min-width:0;max-width:740px;align-self:center;font-size:13.5px;overflow-wrap:anywhere}
 .event.tool,.event.thinking{padding-left:14px;border-left:2px solid var(--id-border-subtle)}
-.event.user{align-self:flex-end;max-width:min(85%,660px);width:fit-content;padding:11px 15px;border-radius:14px 14px 4px 14px;background:var(--id-bg-muted);border:1px solid var(--id-border-subtle)}
+.event.user{align-self:flex-end;max-width:min(82%,640px);width:fit-content;padding:10px 14px;border-radius:14px 14px 4px 14px;background:#F4F3EE;border:1px solid var(--id-border-subtle);color:var(--id-text-primary)}
 .message-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--id-text-muted);margin-bottom:6px}
 .message-meta strong{font-weight:600;color:var(--id-text-secondary)}
 .message-meta time{font-size:11px;font-family:var(--id-font-mono)}
@@ -383,16 +386,18 @@ watch(rows, async (nextRows, prevRows) => {
 .artifact-info small{margin-top:0;font-size:11px}
 .artifact-preview-cue{flex-shrink:0;font-size:11px;font-weight:500;color:var(--id-accent-primary)}
 small,.muted{font-size:12px;color:var(--id-text-muted)}.empty{margin:auto;text-align:center}.error,.warning{padding:8px 12px;font-size:13px}.error{color:var(--id-status-danger)}.warning{color:var(--id-status-warning)}
-.session-panel>footer{padding:10px 18px 14px;background:var(--id-bg-subtle);border-top:1px solid var(--id-border-subtle)}
-.composer-card{background:var(--id-bg-surface);border:1px solid var(--id-border-subtle);border-radius:12px;padding:10px 12px;box-shadow:var(--id-shadow-sm);transition:border-color var(--id-transition-fast),box-shadow var(--id-transition-fast)}
-.composer-card:focus-within{border-color:var(--id-accent-primary-border);box-shadow:var(--id-focus-ring)}
+.session-panel>footer{padding:8px clamp(18px,3vw,36px) 16px;background:var(--id-bg-surface);border-top:0}
+.composer-card{width:100%;max-width:740px;margin:0 auto;background:var(--id-bg-subtle);border:1px solid #DFDDD6;border-radius:14px;padding:10px 14px 9px;box-shadow:0 2px 10px rgba(28,25,23,0.03);transition:border-color var(--id-transition-fast),box-shadow var(--id-transition-fast)}
+.composer-card:focus-within{border-color:var(--id-border-strong);box-shadow:0 3px 14px rgba(28,25,23,0.06)}
 .composer-card.disabled{opacity:0.78;background:var(--id-bg-muted)}
-.composer-attachments{padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid var(--id-border-hairline)}
-.composer-card :deep(.n-input){--n-border:none !important;--n-border-hover:none !important;--n-border-focus:none !important;--n-box-shadow-focus:none !important;--n-color:transparent !important;--n-color-disabled:transparent !important}
-.composer-card :deep(.n-input__textarea-el){padding:2px 4px}
-.actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--id-border-hairline);flex-wrap:wrap}
-.composer-hint{margin-right:auto;color:var(--id-text-muted);font-size:11px}
-.stop-exec-btn.quiet{opacity:0.72}
+.composer-attachments{flex:1 1 auto;min-width:0}
+.composer-card :deep(.n-input){--n-border:none !important;--n-border-hover:none !important;--n-border-focus:none !important;--n-box-shadow-focus:none !important;--n-color:transparent !important;--n-color-focus:transparent !important;--n-color-disabled:transparent !important}
+.composer-card :deep(.n-input__textarea-el){padding:2px 2px}
+.actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;padding-top:6px;flex-wrap:wrap}
+.composer-right-controls{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.composer-hint{color:var(--id-text-placeholder);font-size:11px}
+.stop-exec-btn.quiet{opacity:0.75}
+.send-exec-btn{--n-color:#1C1917 !important;--n-color-hover:#292524 !important;--n-color-pressed:#0C0A09 !important;--n-color-disabled:#A8A29E !important;--n-border:1px solid #1C1917 !important;--n-border-hover:1px solid #292524 !important;--n-border-pressed:1px solid #0C0A09 !important;--n-border-disabled:1px solid #A8A29E !important}
 @media(max-width:1200px){.composer-hint{display:none}}
 @media(max-width:640px){.messages{padding:16px 12px}.unified-session-header,.session-panel>footer{padding:12px}.connection{font-size:10px}.actions{gap:6px}.event.user{max-width:94%}}
 .session-content{display:flex;flex:1;min-height:0;min-width:0}

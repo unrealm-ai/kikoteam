@@ -42,15 +42,70 @@ export function listProject(w: string, c: string, path: string, signal: AbortSig
     { signal }
   );
 }
-export async function downloadProjectFile(w: string, c: string, path: string, signal: AbortSignal) {
+async function fetchProjectFileContent(w: string, c: string, path: string, signal: AbortSignal, verb: string) {
   const response = await fetch('/api/v1' + base(w, c) + '/content?' + new URLSearchParams({ path }), {
     credentials: 'include',
     signal
   });
   if (!response.ok)
     throw new Error(
-      response.status === 404 ? '文件已移动或删除' : `无法下载文件（HTTP ${response.status}）`
+      response.status === 404 ? '文件已移动或删除' : `无法${verb}文件（HTTP ${response.status}）`
     );
+  return response;
+}
+export class ProjectFilePreviewTooLargeError extends Error {
+  constructor(maxBytes: number) {
+    super(`文件超过 ${Math.round(maxBytes / 1024)} KB，请下载后查看完整内容`);
+  }
+}
+export async function readProjectFileText(
+  w: string,
+  c: string,
+  path: string,
+  signal: AbortSignal,
+  maxBytes = 262144
+) {
+  const response = await fetchProjectFileContent(w, c, path, signal, '预览');
+  const contentLength = Number(response.headers.get('content-length') || '');
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    void response.body?.cancel();
+    throw new ProjectFilePreviewTooLargeError(maxBytes);
+  }
+  if (!response.body?.getReader) {
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > maxBytes) {
+      throw new ProjectFilePreviewTooLargeError(maxBytes);
+    }
+    return new TextDecoder().decode(buffer);
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new ProjectFilePreviewTooLargeError(maxBytes);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(merged);
+}
+export async function downloadProjectFile(w: string, c: string, path: string, signal: AbortSignal) {
+  const response = await fetchProjectFileContent(w, c, path, signal, '下载');
   const url = URL.createObjectURL(await response.blob());
   const a = document.createElement('a');
   a.href = url;

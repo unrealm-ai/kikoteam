@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { NAlert, NButton, NModal } from 'naive-ui';
 import { referralsApi, referralSettingsChanged } from '../api/referrals';
 
+defineProps<{ muted?: boolean }>();
+
 const enabled = ref(false), open = ref(false), loading = ref(false);
 const code = ref(''), error = ref(''), notice = ref('');
 const linkInput = ref<HTMLInputElement>();
@@ -72,6 +74,7 @@ onUnmounted(() => {
     v-if="enabled"
     type="button"
     class="referral-trigger"
+    :class="{ 'is-muted': muted }"
     aria-label="邀请得积分"
     aria-haspopup="dialog"
     :aria-expanded="open"
@@ -101,42 +104,64 @@ onUnmounted(() => {
   gap: 6px;
   flex-shrink: 0;
   height: 34px;
-  padding: 0 5px 0 4px;
-  border: 1px solid #f5becb;
+  padding: 0 6px 0 5px;
+  border: 1px solid #FCD34D;
   border-radius: var(--id-radius-pill);
-  background: #fff1f4;
-  color: #8c2141;
-  font: 600 13px/1 var(--id-font-sans);
+  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+  color: #92400E;
+  font: 600 12.5px/1 var(--id-font-sans);
   white-space: nowrap;
   cursor: pointer;
+  box-shadow: 0 1px 4px rgba(245, 158, 11, 0.14);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 .referral-trigger:hover {
-  background: #ffe4eb;
-  border-color: #df8099;
+  background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+  border-color: #F59E0B;
 }
 .referral-trigger:focus-visible {
-  outline: 2px solid #a62549;
+  outline: 2px solid #D97706;
   outline-offset: 2px;
 }
 .referral-trigger-icon {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: #fff;
-  font-size: 17px;
+  background: #FFFFFF;
+  font-size: 14px;
   line-height: 1;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.06);
 }
 .referral-trigger-reward {
-  padding: 4px 5px;
+  padding: 3px 6px;
   border-radius: var(--id-radius-pill);
-  background: #fbd6e0;
-  color: #8c2141;
+  background: rgba(245, 158, 11, 0.18);
+  color: #92400E;
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+.referral-trigger.is-muted {
+  background: #FFFFFF;
+  border-color: #DFDDD6;
+  color: #57534E;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.03);
+}
+.referral-trigger.is-muted:hover {
+  background: var(--id-bg-subtle);
+  border-color: var(--id-border-strong);
+  color: var(--id-text-primary);
+}
+.referral-trigger.is-muted .referral-trigger-icon {
+  background: var(--id-bg-muted);
+}
+.referral-trigger.is-muted .referral-trigger-reward {
+  background: var(--id-bg-muted);
+  color: var(--id-text-secondary);
 }
 @media (max-width: 760px) {
   .referral-trigger-label { display: none; }

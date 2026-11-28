@@ -76,12 +76,8 @@ test('Market is the first and default destination, but explicit links still open
   try{
    await pause();await pause();
    const sidebar=host.querySelector('.d2-rail-nav');
-   const toggle=sidebar.querySelector('.rail-collapse-btn');
    assert.ok(sidebar.classList.contains('collapsed'));
-   assert.equal(toggle.getAttribute('aria-expanded'),'false');
-   toggle.click();await nextTick();
-   assert.equal(sidebar.classList.contains('collapsed'),false);
-   assert.equal(toggle.getAttribute('aria-expanded'),'true');
+   assert.equal(sidebar.querySelector('.rail-collapse-btn'),null);
    const rail=[...host.querySelectorAll('nav[aria-label="主导航"] button')];
    assert.equal(rail[0]?.getAttribute('aria-label'),'首页');
    assert.equal(rail[0]?.getAttribute('aria-current'),view==='market'?'page':null);
@@ -94,7 +90,7 @@ test('Market is the first and default destination, but explicit links still open
     host.querySelector('.brand-logo').click();await pause();
     assert.equal(window.location.hash,'#/?ws=w&view=market');
     assert.equal(host.querySelector('h1')?.textContent,'AI 员工市场');
-    assert.equal(sidebar.classList.contains('collapsed'),false); // In-app navigation keeps the current state.
+    assert.ok(sidebar.classList.contains('collapsed')); // Desktop rail remains fixed collapsed across navigation.
    }
    assert.deepEqual(errors,[]);
   }finally{app.unmount();host.remove();await pause()}
@@ -232,15 +228,19 @@ test('KIKO assistant shortcut renders in global topbar-right instead of left mai
   await pause();await pause();
   const rail=host.querySelector('nav[aria-label="主导航"]');
   assert.equal(rail?.querySelector('[aria-label="KIKO 助手"]'),null);
-  const topbarBtn=host.querySelector('.topbar-right .assistant-pill-btn');
+  const topbarBtn=host.querySelector('.d2-topbar .topbar-center .assistant-pill-btn');
+  const railAnchor=host.querySelector('.d2-rail-nav .rail-kiko-anchor');
   assert.ok(topbarBtn);
+  assert.ok(railAnchor);
   assert.equal(topbarBtn.getAttribute('aria-label'),'KIKO 助手');
   assert.equal(topbarBtn.querySelector('img').getAttribute('src'),'/brand/kiko-assistant-nav.svg');
   assert.equal(topbarBtn.classList.contains('is-active'),false);
+  assert.equal(railAnchor.classList.contains('active'),false);
   assert.ok(host.querySelector('.market-onboarding.is-compact'));
   topbarBtn.click();await pause();await pause();
   assert.equal(window.location.hash,'#/?ws=w&view=chat&emp=a');
   assert.equal(topbarBtn.classList.contains('is-active'),true);
+  assert.equal(railAnchor.classList.contains('active'),true);
   assert.equal(host.querySelector('.unified-fallback-header img').getAttribute('src'),'/brand/kiko-assistant-idle.svg');
   const conversations=host.querySelector('.conversation-workspace');
   assert.ok(conversations.classList.contains('mobile-chat'),'shortcut opens the chat even on first list load');
@@ -339,4 +339,48 @@ test('avatar menu separates workspace selection and creation from account action
   creditsMenu.querySelectorAll('.popover-nav-list button')[1].click();await pause();
   assert.equal(window.location.hash,'#/?ws=other&view=credits');
  }finally{app.unmount();host.remove();await pause()}
+});
+
+test('topbar highlight switches exclusively between referral invite and pending approvals, and chat uses full sheet', async () => {
+ const ws = { id: 'w', name: 'Workspace', role: 'owner', version: 1 };
+ let pending = 2;
+ globalThis.fetch = async url => {
+  if (url === '/api/v1/me') return Response.json({ user: { id: 'u', name: 'Owner', email: 'owner@example.test' } });
+  if (url.includes('/api/v1/workspaces?')) return Response.json({ items: [ws], total: 1 });
+  if (url === '/api/v1/workspaces/w') return Response.json(ws);
+  if (url === '/api/v1/workspaces/w/human-requests/summary') return Response.json({ pending });
+  if (url === '/api/v1/referrals/me') return Response.json({ enabled: true, code: 'ref123' });
+  if (url.includes('agent-templates') || url.includes('/agents?') || url.includes('/conversations?')) {
+   return Response.json({ items: [], total: 0, page: 1, page_size: 20, next_cursor: null });
+  }
+  return Response.json({ error: { code: 'not_found', message: '接口不存在' } }, { status: 404 });
+ };
+ window.history.replaceState(null, '', '/#/?ws=w&view=chat');
+ const host = document.createElement('div');
+ document.body.appendChild(host);
+ const app = createApp(RootApp);
+ app.mount(host);
+ try {
+  await pause(); await pause();
+  const invite = () => host.querySelector('.referral-trigger');
+  const reminder = () => host.querySelector('.reminder-pill-btn');
+  assert.ok(host.querySelector('.d2-main-content.is-chat-sheet'));
+  assert.ok(reminder()?.classList.contains('has-pending'));
+  assert.ok(invite()?.classList.contains('is-muted'));
+
+  pending = 0;
+  host.querySelector('.brand-logo').click();
+  await pause();
+  assert.equal(host.querySelector('.d2-main-content.is-chat-sheet'), null);
+  activeWorkspaceId.value = '';
+  await nextTick();
+  activeWorkspaceId.value = 'w';
+  await pause(); await pause();
+  assert.equal(reminder()?.classList.contains('has-pending'), false);
+  assert.equal(invite()?.classList.contains('is-muted'), false);
+ } finally {
+  app.unmount();
+  host.remove();
+  await pause();
+ }
 });

@@ -52,7 +52,7 @@ test('returning to a source Conversation reads its exact identity without creati
  try{assert.ok(m.calls.some(c=>c.url.endsWith('/conversations/source-conversation')));assert.ok(m.calls.some(c=>c.url.includes('/original-chat/events?')));assert.ok(!m.calls.some(c=>c.url.endsWith('/web-direct')));}finally{await m.cleanup()}
 });
 test('one task detail stream at a time, main stays connected; closing never stops task',async()=>{
- const m=await mount();try{button('会话任务 (2)').click();await pause();[...document.querySelectorAll('button')].find(b=>b.textContent.includes('task1')).click();await pause();assert.equal(FakeSource.all.filter(s=>!s.closed).length,2);[...document.querySelectorAll('button')].find(b=>b.textContent.includes('task2')).click();await pause();assert.equal(FakeSource.all.filter(s=>!s.closed).length,2);assert.equal(FakeSource.all.find(s=>s.url.includes('/task1/')).closed,true);button('关闭任务详情').click();await pause();assert.equal(FakeSource.all.filter(s=>!s.closed).length,1);assert.ok(!m.calls.some(c=>c.url.endsWith('/stop')));}finally{await m.cleanup()}
+ const m=await mount();try{button('任务与文件').click();await pause();button('会话任务 (2)').click();await pause();[...document.querySelectorAll('button')].find(b=>b.textContent.includes('task1')).click();await pause();assert.equal(FakeSource.all.filter(s=>!s.closed).length,2);[...document.querySelectorAll('button')].find(b=>b.textContent.includes('task2')).click();await pause();assert.equal(FakeSource.all.filter(s=>!s.closed).length,2);assert.equal(FakeSource.all.find(s=>s.url.includes('/task1/')).closed,true);button('关闭任务详情').click();await pause();assert.equal(FakeSource.all.filter(s=>!s.closed).length,1);assert.ok(!m.calls.some(c=>c.url.endsWith('/stop')));}finally{await m.cleanup()}
 });
 test('old pages never rewind SSE cursor; duplicate events and message snapshots merge',async()=>{
  const m=await mount({override:(url)=>url.includes('/events?')?Response.json(url.includes('cursor=older')?{items:[event(1)],next_cursor:null,resume_cursor:'H'}:{items:[event(10)],next_cursor:'older',resume_cursor:'H'}):null});try{const stream=FakeSource.all[0];stream.emit(event(11),'H11');stream.emit(event(11),'H11');await pause();button('加载更早历史消息').click();await pause();assert.equal(FakeSource.all.length,1);assert.equal(m.host.querySelectorAll('article').length,3);assert.match(stream.url,/after=H/);}finally{await m.cleanup()}
@@ -99,7 +99,7 @@ test('invalid stream cursor stops with reload action rather than reconnect loop'
  const m=await mount();try{const source=FakeSource.all[0];source.emit({type:'stream.error',code:'invalid_cursor',message:'游标失效'},'');await pause();assert.equal(source.closed,true);assert.match(m.host.textContent,/游标失效/);assert.equal(FakeSource.all.length,1);}finally{await m.cleanup()}
 });
 test('task pagination becomes available after initial empty list grows beyond one page',async()=>{
- let many=false;const m=await mount({override:url=>url.includes('/sessions?')?Response.json(many?{items:Array.from({length:50},(_,i)=>resource(`task${i}`)),next_cursor:'older-tasks'}:{items:[],next_cursor:null}):null});try{button('会话任务 (0)').click();await pause();assert.equal(button('加载更多任务'),undefined);many=true;await new Promise(r=>setTimeout(r,1050));document.dispatchEvent(new window.Event('visibilitychange'));await pause();assert.ok(button('加载更多任务'));}finally{await m.cleanup()}
+ let many=false;const m=await mount({override:url=>url.includes('/sessions?')?Response.json(many?{items:Array.from({length:50},(_,i)=>resource(`task${i}`)),next_cursor:'older-tasks'}:{items:[],next_cursor:null}):null});try{button('任务与文件').click();await pause();button('会话任务 (0)').click();await pause();assert.equal(button('加载更多任务'),undefined);many=true;await new Promise(r=>setTimeout(r,1050));document.dispatchEvent(new window.Event('visibilitychange'));await pause();assert.ok(button('加载更多任务'));}finally{await m.cleanup()}
 });
 test('late conflict lookup never submits input after switching workspace',async()=>{
  let finish;const m=await mount({chat:null,override:(url,init)=>{
@@ -198,7 +198,7 @@ test('sidebar retry keeps the key and destination after a lost upload response',
       ['outputs','other'].map(name => ({kind:'directory',path:name,name}))});
   }});
   try {
-    button('项目文件').click();
+    button('任务与文件').click();
     await pause();
     const tree = m.host.querySelector('.file-tree');
     const select = label => [...tree.querySelectorAll('nav button')].find(b => b.textContent.includes(label)).click();
@@ -247,8 +247,10 @@ for(const existing of [false,true]){
   }});
   try{
     const tree=()=>m.host.querySelector('.file-tree');
+    const drawer=()=>m.host.querySelector('.collab-drawer');
     const choose=label=>[...tree().querySelectorAll('button')].find(b=>b.textContent.includes(label)).click();
-    assert.equal(tree(),null);button('项目文件').click();await pause();
+    assert.equal(tree(),null);button('任务与文件').click();await pause();
+    assert.equal(drawer().style.display,'');
     choose('outputs');await pause();choose('地区汇总.csv');await pause();choose('引用到对话');await pause();
     const textarea=m.host.querySelector('.chat-column textarea');
     textarea.value='核对汇总表与趋势图';textarea.dispatchEvent(new window.Event('input',{bubbles:true}));
@@ -257,10 +259,10 @@ for(const existing of [false,true]){
     drag('dragenter');await pause();assert.ok(m.host.querySelector('.drop-hint'));drag('drop');await pause();
     assert.equal(m.host.querySelector('.drop-hint'),null);assert.equal(uploads.length,1);
     if(existing){assert.equal(button('发送').disabled,false);button('重试').click();await pause();assert.deepEqual(uploads,[uploads[0],uploads[0]]);}
-    tree().querySelector('[aria-label="收起项目文件"]').click();await pause();
-    assert.equal(tree().style.display,'none');assert.equal(textarea.value,'核对汇总表与趋势图');
+    drawer().querySelector('[aria-label="收起项目文件"]').click();await pause();
+    assert.equal(tree().style.display,'none');assert.equal(drawer().style.display,'none');assert.equal(textarea.value,'核对汇总表与趋势图');
     assert.deepEqual([...m.host.querySelectorAll('.chip')].map(e=>e.title),['outputs/地区汇总.csv','uploads/趋势图 (2).png']);
-    button('项目文件').click();await pause();assert.ok(tree().textContent.includes('地区汇总.csv'));button('项目文件').click();
+    button('任务与文件').click();await pause();assert.ok(tree().textContent.includes('地区汇总.csv'));button('任务与文件').click();await pause();assert.equal(drawer().style.display,'none');
     const endpoint=existing?'/sessions/chat/inputs':'/sessions';
     const sends=()=>m.calls.filter(c=>c.url.endsWith(endpoint)&&c.init.method==='POST');
     assert.equal(sends().length,0);button('发送').click();await pause();
@@ -358,6 +360,7 @@ test('authenticated conversation task detail keeps its own write path and disabl
    return Response.json(current);
  }});
  try {
+   button('任务与文件').click(); await pause();
    button('会话任务 (2)').click(); await pause();
    [...document.querySelectorAll('button')].find(b=>b.textContent.includes('task1')).click(); await pause();
    const panel = m.host.querySelector('.task-detail-panel');
@@ -471,6 +474,7 @@ test('conversation sidebar fullscreen expands into dual-pane workspace and prese
        : null,
  });
  try {
+   button('任务与文件').click(); await pause();
    button('会话任务 (2)').click(); await pause();
    [...document.querySelectorAll('button')].find(b=>b.textContent.includes('task1')).click(); await pause();
 
@@ -623,4 +627,77 @@ test('assistant denied Web demo access or already experienced does not auto-show
  try {assert.doesNotMatch(unauthorized.host.textContent,/体验场景|体验并行客诉/)}finally{await unauthorized.cleanup()}
  const experienced=await mount({chat:null,props:{selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[card],experienced:true}}});
  try {assert.doesNotMatch(experienced.host.textContent,/体验并行客诉/);button('体验场景').click();await pause();assert.match(experienced.host.textContent,/体验并行客诉/)}finally{await experienced.cleanup()}
+});
+
+test('unified drawer switches between project files with Markdown preview and session tasks', async () => {
+ let largeRequested = false;
+ let streamCancelled = false;
+ const m = await mount({
+  override: url => {
+   if (url.includes('/files?')) {
+    return Response.json({
+     path: '',
+     entries: [
+      { kind: 'file', path: 'ORD-1087_核查报告.md', name: 'ORD-1087_核查报告.md', size_bytes: 64 },
+      { kind: 'file', path: 'stale-large.md', name: 'stale-large.md', size_bytes: 64 }
+     ]
+    });
+   }
+   if (url.includes('/files/content?') && url.includes('stale-large.md')) {
+    largeRequested = true;
+    const chunk = new Uint8Array(65536).fill(65);
+    let sentChunks = 0;
+    const stream = new ReadableStream({
+     pull(controller) {
+      if (sentChunks >= 6) {
+       controller.close();
+       return;
+      }
+      sentChunks += 1;
+      controller.enqueue(chunk);
+     },
+     cancel() {
+      streamCancelled = true;
+     }
+    });
+    return new Response(stream, { headers: { 'Content-Type': 'text/markdown' } });
+   }
+   if (url.includes('/files/content?')) {
+    return new Response('# 核查报告\n\n- 下单：**黑色 X2**', { headers: { 'Content-Type': 'text/markdown' } });
+   }
+   return null;
+  }
+ });
+ try {
+  const drawer = () => m.host.querySelector('.collab-drawer');
+  assert.equal(drawer().style.display, 'none');
+  button('任务与文件').click();
+  await pause();
+  assert.equal(drawer().style.display, '');
+  const fileBtn = [...drawer().querySelectorAll('.file-tree nav button')].find(b => b.textContent.includes('ORD-1087_核查报告.md'));
+  assert.ok(fileBtn);
+  fileBtn.click();
+  await pause();
+  const preview = drawer().querySelector('.live-preview');
+  assert.ok(preview);
+  assert.equal(preview.getAttribute('aria-label'), '文件预览');
+  assert.doesNotMatch(preview.textContent, /实时预览/);
+  assert.equal(preview.querySelector('.session-markdown h1')?.textContent, '核查报告');
+
+  const largeBtn = [...drawer().querySelectorAll('.file-tree nav button')].find(b => b.textContent.includes('stale-large.md'));
+  assert.ok(largeBtn);
+  largeBtn.click();
+  await pause();
+  assert.equal(largeRequested, true);
+  assert.equal(streamCancelled, true);
+  assert.match(drawer().querySelector('.live-preview').textContent, /超过 256 KB/);
+  assert.equal(drawer().querySelector('.live-preview .session-markdown'), null);
+
+  button('会话任务 (2)').click();
+  await pause();
+  assert.equal(drawer().querySelector('.file-tree').style.display, 'none');
+  assert.ok(drawer().querySelector('.tasks'));
+ } finally {
+  await m.cleanup();
+ }
 });

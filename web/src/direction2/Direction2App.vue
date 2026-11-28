@@ -114,17 +114,12 @@ async function invitationCompleted(workspaceId?: string) {
 const subParam = ref<string | undefined>(undefined);
 const isMobileSidebarOpen = ref(false);
 const showAccountPopover = ref(false);
-const isSidebarCollapsed = ref(true);
 const isMobileViewport = ref(
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     ? window.matchMedia('(max-width: 960px)').matches
     : false
 );
-const isRailCollapsed = computed(() => !isMobileViewport.value && isSidebarCollapsed.value);
-
-function toggleSidebarCollapse() {
-  isSidebarCollapsed.value = !isSidebarCollapsed.value;
-}
+const isRailCollapsed = computed(() => !isMobileViewport.value);
 
 // 全局工作区与用户状态 (严格由后端 /api/auth/me 与 /api/workspaces 驱动，无本地写死兜底)
 const shellStatus = ref<'loading' | 'unauthenticated' | 'ready' | 'error'>('loading');
@@ -199,9 +194,6 @@ function handleGlobalKeydown(e: KeyboardEvent) {
     if (globalSearchQuery.value.trim() && searchResults.value.length > 0) {
       showSearchPopover.value = true;
     }
-  } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && !isMobileViewport.value) {
-    e.preventDefault();
-    toggleSidebarCollapse();
   } else if (e.key === 'Escape') {
     if (showSearchPopover.value) {
       closeSearchPopover(false);
@@ -724,73 +716,79 @@ function openApproval(id: string) {
           </div>
 
           <div class="topbar-center">
-            <NPopover
-              :show="showSearchPopover && Boolean(globalSearchQuery.trim())"
-              trigger="manual"
-              placement="bottom-start"
-              :show-arrow="false"
-              style="width: min(440px, 92vw);"
-              @update:show="(v: boolean) => { if (!v) showSearchPopover = false; }"
-              @clickoutside="showSearchPopover = false"
-            >
-              <template #trigger>
-                <div class="global-search">
-                  <NInput
-                    ref="globalSearchInputRef"
-                    :value="globalSearchQuery"
-                    placeholder="搜索：员工名称、飞书/钉钉群、任务或事项..."
-                    size="small"
-                    clearable
-                    @update:value="onSearchInput"
-                    @focus="() => { if (globalSearchQuery.trim() && searchResults.length > 0) showSearchPopover = true; }"
-                    @keydown.esc="showSearchPopover = false"
-                  >
-                    <template #prefix>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-prefix-icon">
-                        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-                      </svg>
-                    </template>
-                    <template v-if="!globalSearchQuery" #suffix>
-                      <kbd class="search-kbd" title="快捷聚焦搜索 (Cmd/Ctrl + K)">⌘K</kbd>
-                    </template>
-                  </NInput>
-                </div>
-              </template>
-              <div class="search-popover-list">
-                <div v-if="globalSearchQuery.trim() && searchResults.length === 0" class="search-empty-hint">
-                  未找到与「{{ globalSearchQuery }}」匹配的记录
-                </div>
-                <button
-                  v-for="item in searchResults"
-                  :key="item.kind + ':' + item.id"
-                  type="button"
-                  class="ws-item-choice ws-item-choice--btn"
-                  @click="selectSearchItem(item)"
-                >
-                  <div class="ws-item-info">
-                    <strong>{{ item.title }}</strong>
-                    <span>{{ item.subtitle }}</span>
+            <div class="omnibar-shell">
+              <NPopover
+                :show="showSearchPopover && Boolean(globalSearchQuery.trim())"
+                trigger="manual"
+                placement="bottom-start"
+                :show-arrow="false"
+                style="width: min(440px, 92vw);"
+                @update:show="(v: boolean) => { if (!v) showSearchPopover = false; }"
+                @clickoutside="showSearchPopover = false"
+              >
+                <template #trigger>
+                  <div class="global-search">
+                    <NInput
+                      ref="globalSearchInputRef"
+                      :value="globalSearchQuery"
+                      placeholder="搜索：员工名称、飞书/钉钉群、任务或事项..."
+                      size="small"
+                      clearable
+                      @update:value="onSearchInput"
+                      @focus="() => { if (globalSearchQuery.trim() && searchResults.length > 0) showSearchPopover = true; }"
+                      @keydown.esc="showSearchPopover = false"
+                    >
+                      <template #prefix>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-prefix-icon">
+                          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                        </svg>
+                      </template>
+                      <template v-if="!globalSearchQuery" #suffix>
+                        <kbd class="search-kbd" title="快捷聚焦搜索 (Cmd/Ctrl + K)">⌘K</kbd>
+                      </template>
+                    </NInput>
                   </div>
+                </template>
+                <div class="search-popover-list">
+                  <div v-if="globalSearchQuery.trim() && searchResults.length === 0" class="search-empty-hint">
+                    未找到与「{{ globalSearchQuery }}」匹配的记录
+                  </div>
+                  <button
+                    v-for="item in searchResults"
+                    :key="item.kind + ':' + item.id"
+                    type="button"
+                    class="ws-item-choice ws-item-choice--btn"
+                    @click="selectSearchItem(item)"
+                  >
+                    <div class="ws-item-info">
+                      <strong>{{ item.title }}</strong>
+                      <span>{{ item.subtitle }}</span>
+                    </div>
+                  </button>
+                </div>
+              </NPopover>
+
+              <template v-if="realPlatform && assistantEntry?.agent_id">
+                <span class="omnibar-divider" aria-hidden="true"></span>
+                <button
+                  type="button"
+                  class="assistant-pill-btn"
+                  :class="{ 'is-active': assistantNavActive }"
+                  aria-label="KIKO 助手"
+                  @click="openAssistant()"
+                >
+                  <span class="assistant-pill-icon" aria-hidden="true">
+                    <img src="/brand/kiko-assistant-nav.svg" alt="" width="18" height="18" />
+                  </span>
+                  <span class="assistant-pill-text">KIKO 助手</span>
+                  <span class="assistant-pill-sub">· 随时提问</span>
                 </button>
-              </div>
-            </NPopover>
+              </template>
+            </div>
           </div>
 
           <div class="topbar-right">
-            <ReferralInvite v-if="realPlatform && currentUser" :key="currentUser.id" />
-            <button
-              v-if="realPlatform && assistantEntry?.agent_id"
-              type="button"
-              class="assistant-pill-btn"
-              :class="{ 'is-active': assistantNavActive }"
-              aria-label="KIKO 助手"
-              @click="openAssistant()"
-            >
-              <span class="assistant-pill-icon" aria-hidden="true">
-                <img src="/brand/kiko-assistant-nav.svg" alt="" width="18" height="18" />
-              </span>
-              <span class="assistant-pill-text">KIKO 助手</span>
-            </button>
+            <ReferralInvite v-if="realPlatform && currentUser" :key="currentUser.id" :muted="pendingApprovalsCount > 0" />
             <!-- 待处理提醒入口 (人在回路全局统一入口：直达任务中心待确认审批流) -->
             <button
               type="button"
@@ -820,34 +818,35 @@ function openApproval(id: string) {
             @click="isMobileSidebarOpen = false"
           ></div>
           <aside class="d2-rail-nav" :class="{ 'mobile-open': isMobileSidebarOpen, collapsed: isRailCollapsed }">
-            <!-- PC 端右边框悬浮折叠圆钮 -->
-            <NTooltip placement="right" :delay="120" :duration="80">
-              <template #trigger>
-                <button
-                  type="button"
-                  class="rail-edge-toggle rail-collapse-btn"
-                  :aria-expanded="!isSidebarCollapsed"
-                  :aria-label="isSidebarCollapsed ? '展开左侧导航' : '收起左侧导航'"
-                  @click="toggleSidebarCollapse"
-                >
-                  <svg v-if="isRailCollapsed" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="m9 18 6-6-6-6"/>
-                  </svg>
-                  <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="m15 18-6-6 6-6"/>
-                  </svg>
-                </button>
-              </template>
-              {{ isRailCollapsed ? '展开导航 (⌘B)' : '收起导航 (⌘B)' }}
-            </NTooltip>
-
             <div class="mobile-rail-header">
               <span>导航菜单</span>
               <button type="button" class="mobile-close-btn" aria-label="关闭导航菜单" @click="isMobileSidebarOpen = false">✕</button>
             </div>
 
-            <!-- 上部主导航项目（独立纵向滚动，避免裁切右侧悬浮圆钮） -->
+            <!-- 上部：置顶 KIKO 助手座舱 + 主导航项目 -->
             <div class="rail-nav-scroll">
+              <template v-if="realPlatform && assistantEntry?.agent_id">
+                <div class="rail-kiko-wrap">
+                  <NTooltip placement="right" :disabled="!isRailCollapsed" :delay="80" :duration="80">
+                    <template #trigger>
+                      <button
+                        type="button"
+                        class="rail-kiko-anchor"
+                        :class="{ active: assistantNavActive }"
+                        aria-label="快速打开 KIKO 助手"
+                        @click="openAssistant()"
+                      >
+                        <img src="/brand/kiko-assistant-nav.svg" alt="" width="26" height="26" />
+                        <span class="rail-kiko-dot" aria-hidden="true"></span>
+                        <span class="rail-label">KIKO 助手</span>
+                      </button>
+                    </template>
+                    KIKO 助手
+                  </NTooltip>
+                </div>
+                <div class="rail-top-divider" aria-hidden="true"></div>
+              </template>
+
               <nav class="nav-items-group" aria-label="主导航">
                 <NTooltip
                   v-for="item in visibleRailNavItems"
@@ -995,8 +994,8 @@ function openApproval(id: string) {
             </div>
           </aside>
 
-          <!-- 3. 内容区容器 -->
-          <main class="d2-main-content">
+          <!-- 3. 内容区容器（中间立体突出白色画布） -->
+          <main class="d2-main-content" :class="{ 'is-chat-sheet': currentView === 'chat' && shellStatus === 'ready' && !!currentWorkspace }">
             <NAlert v-if="shellError && shellStatus === 'ready'" type="error">{{ shellError }}</NAlert>
             <div v-if="shellStatus === 'loading'" class="shell-loading-skeleton">
               <div class="shell-sk-header">
@@ -1109,15 +1108,14 @@ function openApproval(id: string) {
   font-family: var(--id-font-sans);
 }
 
-/* 顶栏：轻量极简、1px 发丝线层级 */
+/* 顶栏：融入暖瓷白底壳 + 中央全能指令舱 */
 .d2-topbar {
-  height: 52px;
-  background: var(--id-bg-surface);
-  border-bottom: 1px solid var(--id-border-subtle);
+  height: 58px;
+  background: var(--id-bg-canvas);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 18px;
   gap: 16px;
   position: sticky;
   top: 0;
@@ -1204,45 +1202,73 @@ function openApproval(id: string) {
   color: var(--id-text-primary);
 }
 .platform-tag {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
-  background: var(--id-bg-muted);
+  background: #ECEAE4;
   color: var(--id-text-secondary);
   padding: 2px 8px;
-  border-radius: var(--id-radius-sm);
+  border-radius: var(--id-radius-md);
   margin-left: 2px;
-  border: 1px solid var(--id-border-subtle);
 }
 
 .topbar-center {
   flex: 1;
   min-width: 0;
-  max-width: 440px;
+  max-width: 650px;
+  display: flex;
+  justify-content: center;
+}
+.omnibar-shell {
+  width: 100%;
+  height: 40px;
+  background: var(--id-bg-surface);
+  border: 1px solid #DFDDD6;
+  border-radius: var(--id-radius-pill);
+  box-shadow: 0 2px 10px rgba(28, 25, 23, 0.04);
+  display: flex;
+  align-items: center;
+  padding: 3px 4px 3px 8px;
+  gap: 8px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.omnibar-shell:focus-within {
+  border-color: var(--id-border-strong);
+  box-shadow: 0 3px 14px rgba(28, 25, 23, 0.07);
+}
+.global-search {
+  flex: 1;
+  min-width: 0;
 }
 .global-search :deep(.n-input) {
-  background: var(--id-bg-muted);
-  border: 1px solid var(--id-border-subtle);
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-}
-.global-search :deep(.n-input:hover),
-.global-search :deep(.n-input--focus) {
-  background: var(--id-bg-surface);
-  border-color: var(--id-border-strong);
+  background: transparent !important;
+  border: none !important;
+  --n-border: none !important;
+  --n-border-hover: none !important;
+  --n-border-focus: none !important;
+  --n-box-shadow-focus: none !important;
+  --n-color: transparent !important;
+  --n-color-focus: transparent !important;
 }
 .search-prefix-icon {
-  color: var(--id-text-placeholder);
+  color: var(--id-text-muted);
   flex-shrink: 0;
 }
 .search-kbd {
   font-family: var(--id-font-mono);
-  font-size: 12px;
-  line-height: 1;
+  font-size: 11px;
+  line-height: 1.1;
   color: var(--id-text-muted);
-  background: var(--id-bg-surface);
+  background: #F5F4F0;
   border: 1px solid var(--id-border-subtle);
-  border-radius: 4px;
-  padding: 2px 5px;
+  border-radius: 5px;
+  padding: 2px 6px;
   user-select: none;
+}
+.omnibar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--id-border-subtle);
+  flex-shrink: 0;
 }
 .search-popover-list {
   display: flex;
@@ -1261,69 +1287,72 @@ function openApproval(id: string) {
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .assistant-pill-btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   height: 32px;
-  padding: 0 12px 0 8px;
+  padding: 0 13px 0 5px;
   border-radius: 999px;
-  border: 1px solid var(--id-accent-primary-border);
-  background: var(--id-accent-primary-soft);
-  color: var(--id-accent-primary);
+  border: none;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #FFFFFF;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.28);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 .assistant-pill-btn:hover {
-  background: rgba(37, 99, 235, 0.13);
-  border-color: var(--id-accent-primary);
+  filter: brightness(1.03);
+  box-shadow: 0 3px 12px rgba(16, 185, 129, 0.36);
 }
 .assistant-pill-btn:focus-visible {
   outline: none;
-  box-shadow: var(--id-focus-ring);
+  box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 4px #10B981;
 }
 .assistant-pill-btn.is-active {
-  background: var(--id-accent-primary);
-  border-color: var(--id-accent-primary);
-  color: var(--id-text-inverse);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.28), 0 3px 12px rgba(5, 150, 105, 0.36);
 }
 .assistant-pill-icon {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(37, 99, 235, 0.14);
-  color: var(--id-accent-primary);
+  background: #FFFFFF;
   flex-shrink: 0;
 }
-.assistant-pill-btn.is-active .assistant-pill-icon {
-  background: rgba(255, 255, 255, 0.22);
-  color: var(--id-text-inverse);
-}
 .assistant-pill-text {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
+  line-height: 1;
+}
+.assistant-pill-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: #D1FAE5;
   line-height: 1;
 }
 .reminder-pill-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 32px;
+  gap: 7px;
+  height: 34px;
   background: var(--id-bg-surface);
-  border: 1px solid var(--id-border-subtle);
+  border: 1px solid #DFDDD6;
   padding: 0 12px;
   border-radius: 999px;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.03);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .reminder-pill-btn:hover {
-  background: var(--id-bg-muted);
+  background: var(--id-bg-subtle);
   border-color: var(--id-border-strong);
 }
 .reminder-pill-btn:focus-visible {
@@ -1331,17 +1360,20 @@ function openApproval(id: string) {
   box-shadow: var(--id-focus-ring);
 }
 .reminder-pill-btn.has-pending {
-  background: var(--id-bg-surface);
-  border-color: var(--id-border-strong);
+  padding: 0 8px 0 12px;
+  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+  border-color: #F59E0B;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.16);
 }
 .reminder-pill-btn.has-pending:hover {
-  background: var(--id-bg-muted);
+  background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
 }
 .reminder-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--id-status-warning-dot);
+  background: #F59E0B;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22);
   flex-shrink: 0;
 }
 .bell-icon {
@@ -1350,18 +1382,21 @@ function openApproval(id: string) {
   color: var(--id-text-muted);
 }
 .reminder-text {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
-  color: var(--id-text-primary);
+  color: var(--id-text-secondary);
+}
+.reminder-pill-btn.has-pending .reminder-text {
+  color: #92400E;
+  font-weight: 600;
 }
 .badge-count {
-  background: var(--id-status-warning-soft);
-  color: var(--id-status-warning);
-  border: 1px solid var(--id-status-warning-border);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 2px 6px;
+  background: #F59E0B;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 1px 6px;
   border-radius: 999px;
   font-family: var(--id-font-mono);
 }
@@ -1369,75 +1404,90 @@ function openApproval(id: string) {
   font-variant-numeric: tabular-nums;
 }
 
-/* 主体与左侧主导航 */
+/* 主体与固定折叠左侧主导航 */
 .d2-body {
   display: flex;
   flex: 1;
+  min-height: 0;
+  padding: 0 14px 14px 8px;
+  gap: 10px;
 }
 .d2-rail-nav {
-  width: var(--id-sidebar-width, 228px);
-  background: var(--id-bg-surface);
-  border-right: 1px solid var(--id-border-subtle);
+  width: 60px;
+  background: transparent;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 12px 8px;
+  padding: 6px 0 4px;
   flex-shrink: 0;
   position: sticky;
-  top: 52px;
-  height: calc(100vh - 52px);
+  top: 58px;
+  height: calc(100vh - 72px);
   align-self: flex-start;
   overflow: visible;
-  transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 50;
-}
-.rail-edge-toggle {
-  position: absolute;
-  top: 50%;
-  right: -11px;
-  transform: translateY(-50%);
-  z-index: 60;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--id-border-subtle);
-  background: var(--id-bg-surface);
-  color: var(--id-text-muted);
-  box-shadow: var(--id-shadow-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  opacity: 0.85;
-  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
-}
-.rail-edge-toggle:hover {
-  opacity: 1;
-  color: var(--id-text-primary);
-  border-color: var(--id-border-strong);
-  background: var(--id-bg-surface);
-  box-shadow: var(--id-shadow-md);
-  transform: translateY(-50%) scale(1.06);
-}
-.rail-edge-toggle:active {
-  transform: translateY(-50%) scale(0.96);
-}
-.rail-edge-toggle:focus-visible {
-  opacity: 1;
-  outline: none;
-  box-shadow: var(--id-focus-ring);
 }
 .rail-nav-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  margin: 0 -2px;
-  padding: 0 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.rail-kiko-wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+.rail-kiko-anchor {
+  appearance: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: linear-gradient(145deg, #ECFDF5, #D1FAE5);
+  border: 1.5px solid #34D399;
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.rail-kiko-anchor:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.25);
+}
+.rail-kiko-anchor.active {
+  border-color: #059669;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.22), 0 4px 14px rgba(16, 185, 129, 0.22);
+}
+.rail-kiko-anchor:focus-visible {
+  outline: none;
+  box-shadow: var(--id-focus-ring);
+}
+.rail-kiko-dot {
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #10B981;
+  border: 2px solid var(--id-bg-canvas);
+}
+.rail-top-divider {
+  width: 24px;
+  height: 1px;
+  background: #DFDDD6;
+  margin: 10px 0;
+  flex-shrink: 0;
 }
 .d2-rail-nav.collapsed {
-  width: 64px;
+  width: 58px;
 }
 .d2-rail-nav.collapsed .nav-items-group {
   align-items: center;
@@ -1450,7 +1500,8 @@ function openApproval(id: string) {
 .nav-items-group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 5px;
+  width: 100%;
 }
 .rail-item {
   appearance: none;
@@ -1463,30 +1514,33 @@ function openApproval(id: string) {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: var(--id-radius-md);
+  border-radius: 10px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--id-text-secondary);
+  color: var(--id-text-muted);
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 .rail-label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.d2-rail-nav.collapsed .rail-item,
+.d2-rail-nav.collapsed .rail-kiko-anchor {
+  justify-content: center;
+}
 .d2-rail-nav.collapsed .rail-item {
-  width: 42px;
-  height: 36px;
+  width: 40px;
+  height: 38px;
   padding: 0;
   gap: 0;
-  justify-content: center;
 }
 .d2-rail-nav.collapsed .rail-label {
   display: none;
 }
 .rail-item:hover {
-  background: var(--id-bg-muted);
+  background: rgba(255, 255, 255, 0.72);
   color: var(--id-text-primary);
 }
 .rail-item:focus-visible {
@@ -1494,12 +1548,13 @@ function openApproval(id: string) {
   box-shadow: var(--id-focus-ring);
 }
 .rail-item.active {
-  background: var(--id-bg-muted);
+  background: var(--id-bg-surface);
   color: var(--id-text-primary);
   font-weight: 600;
+  box-shadow: 0 1px 4px rgba(28, 25, 23, 0.08);
 }
 .rail-item.active .rail-icon {
-  color: var(--id-accent-primary);
+  color: var(--id-text-primary);
 }
 .rail-icon {
   display: flex;
@@ -1521,10 +1576,8 @@ function openApproval(id: string) {
 /* 左下角整合卡片 */
 .rail-footer {
   margin-top: 8px;
-  padding-top: 10px;
-  border-top: 1px solid var(--id-border-subtle);
+  padding-top: 8px;
   flex-shrink: 0;
-  background: var(--id-bg-surface);
 }
 .unified-account-card {
   appearance: none;
@@ -1573,7 +1626,7 @@ function openApproval(id: string) {
   border-color: var(--id-border-strong);
 }
 .d2-rail-nav.collapsed .unified-account-card:hover {
-  background: var(--id-bg-muted);
+  background: rgba(255, 255, 255, 0.72);
   border-color: transparent;
 }
 .unified-account-card--error {
@@ -1795,13 +1848,24 @@ function openApproval(id: string) {
   color: var(--id-status-danger);
 }
 
-/* 右侧主视窗与骨架屏 */
+/* 右侧主视窗（中间立体突出白色画布）与骨架屏 */
 .d2-main-content {
   flex: 1;
-  padding: 20px 28px;
-  max-width: 1600px;
   min-width: 0;
+  background: var(--id-bg-surface);
+  border: 1px solid #E4E2DC;
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(28, 25, 23, 0.05), 0 1px 3px rgba(28, 25, 23, 0.03);
+  padding: 22px 28px;
   overflow-x: hidden;
+}
+.d2-main-content.is-chat-sheet {
+  padding: 0;
+  height: calc(100vh - 72px);
+  min-height: 540px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .shell-loading-skeleton {
   display: flex;
@@ -1871,14 +1935,19 @@ function openApproval(id: string) {
   .mobile-menu-btn {
     display: inline-flex;
   }
-  .platform-tag {
+  .platform-tag,
+  .assistant-pill-sub {
     display: none;
+  }
+  .d2-body {
+    padding: 0 10px 10px;
+    gap: 0;
   }
   .mobile-nav-backdrop {
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(9, 9, 11, 0.35);
+    background: rgba(28, 25, 23, 0.35);
     z-index: 110;
   }
   .d2-rail-nav,
@@ -1889,6 +1958,9 @@ function openApproval(id: string) {
     bottom: 0;
     height: 100vh;
     width: 236px;
+    padding: 12px 10px;
+    background: var(--id-bg-surface);
+    border-right: 1px solid var(--id-border-subtle);
     z-index: 120;
     transform: translateX(-100%);
     transition: transform 0.2s ease;
@@ -1896,6 +1968,22 @@ function openApproval(id: string) {
   }
   .d2-rail-nav.mobile-open {
     transform: translateX(0);
+  }
+  .d2-rail-nav.collapsed .rail-nav-scroll {
+    align-items: stretch;
+  }
+  .d2-rail-nav.collapsed .rail-kiko-wrap {
+    justify-content: stretch;
+  }
+  .d2-rail-nav.collapsed .rail-kiko-anchor {
+    width: 100%;
+    height: auto;
+    padding: 8px 10px;
+    gap: 10px;
+    justify-content: flex-start;
+  }
+  .d2-rail-nav.collapsed .rail-top-divider {
+    width: 100%;
   }
   .d2-rail-nav.collapsed .nav-items-group {
     align-items: stretch;
@@ -1930,14 +2018,16 @@ function openApproval(id: string) {
   .d2-rail-nav.collapsed .account-meta {
     display: flex;
   }
-  .rail-edge-toggle {
-    display: none;
-  }
   .mobile-rail-header {
     display: flex;
   }
   .d2-main-content {
     padding: 16px;
+    border-radius: 12px;
+  }
+  .d2-main-content.is-chat-sheet {
+    padding: 0;
+    height: calc(100vh - 68px);
   }
   .shell-sk-grid {
     grid-template-columns: 1fr;
@@ -1947,7 +2037,7 @@ function openApproval(id: string) {
 @media (max-width: 760px) {
   .d2-topbar {
     height: auto;
-    min-height: 52px;
+    min-height: 54px;
     flex-wrap: wrap;
     padding: 8px 12px;
     gap: 8px;
@@ -1967,6 +2057,9 @@ function openApproval(id: string) {
     max-width: none;
     width: 100%;
   }
+  .omnibar-shell {
+    height: 38px;
+  }
   .brand-logo-mark {
     width: 22px;
     height: 22px;
@@ -1980,13 +2073,17 @@ function openApproval(id: string) {
     height: 30px;
   }
   .assistant-pill-btn {
-    padding-left: 7px;
+    padding-left: 5px;
   }
   .search-kbd {
     display: none;
   }
   .d2-main-content {
     padding: 14px 12px;
+  }
+  .d2-main-content.is-chat-sheet {
+    padding: 0;
+    height: calc(100vh - 108px);
   }
 }
 </style>

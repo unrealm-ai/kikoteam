@@ -468,12 +468,11 @@ test('Wave 4: mobile responsiveness across shell, views, modals, and grids', () 
   const shell = readRel('src/direction2/Direction2App.vue');
   assert.match(shell, /isMobileSidebarOpen/);
   assert.match(shell, /mobile-menu-btn/);
-  assert.match(shell, /isSidebarCollapsed/);
   assert.match(shell, /isRailCollapsed/);
   assert.match(shell, /<NTooltip[\s\S]*?:disabled="!isRailCollapsed"/);
-  assert.match(shell, /rail-collapse-btn/);
+  assert.doesNotMatch(shell, /rail-collapse-btn/);
   assert.match(shell, /isMobileViewport \? 'top-start' : 'right-end'/);
-  assert.match(shell, /\.d2-rail-nav\.collapsed\s*\{[\s\S]*?width:\s*64px;/);
+  assert.match(shell, /\.d2-rail-nav\.collapsed\s*\{[\s\S]*?width:\s*58px;/);
 
   const vueFiles = collectFiles(srcDir).filter(f => f.endsWith('.vue'));
   for (const file of vueFiles) {

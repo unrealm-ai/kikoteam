@@ -3,26 +3,26 @@
  * Single source of truth for neutral surfaces, hairline borders, typography, and semantic accents.
  */
 :root {
-  /* 1. Surfaces & Canvas (90% Neutral Base) */
-  --id-bg-canvas: #FAFAFA;
+  /* 1. Surfaces & Canvas (90% Warm Porcelain White Base) */
+  --id-bg-canvas: #F7F6F3;
   --id-bg-surface: #FFFFFF;
-  --id-bg-subtle: #FAFAFA;
-  --id-bg-muted: #F4F4F5;
-  --id-bg-hover: #F4F4F5;
+  --id-bg-subtle: #FAF9F7;
+  --id-bg-muted: #F3F2EE;
+  --id-bg-hover: #F0EFEA;
   --id-bg-terminal: #09090B;
   --id-bg-terminal-header: #18181B;
 
   /* 2. Hairline Borders & Dividers (8% Structural Hierarchy) */
-  --id-border-hairline: #F4F4F5;
-  --id-border-subtle: #E4E4E7;
-  --id-border-strong: #D4D4D8;
+  --id-border-hairline: #F0EEE9;
+  --id-border-subtle: #E6E4DD;
+  --id-border-strong: #D6D3CD;
   --id-border-terminal: #27272A;
 
   /* 3. Text Hierarchy */
-  --id-text-primary: #09090B;
-  --id-text-secondary: #52525B;
-  --id-text-muted: #71717A;
-  --id-text-placeholder: #A1A1AA;
+  --id-text-primary: #1C1917;
+  --id-text-secondary: #57534E;
+  --id-text-muted: #78716C;
+  --id-text-placeholder: #A8A29E;
   --id-text-terminal: #E4E4E7;
   --id-text-inverse: #FFFFFF;
 

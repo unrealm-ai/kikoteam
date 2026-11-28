@@ -55,17 +55,20 @@ const picker = ref<HTMLInputElement>();
   flex-wrap: wrap;
 }
 .attachment-bar {
-  margin: 0 0 6px;
+  margin: 0;
 }
 .pick {
-  border: 1px solid var(--id-border-subtle);
-  background: var(--id-bg-subtle);
+  border: 1px solid #DFDDD6;
+  background: var(--id-bg-surface);
   color: var(--id-text-secondary);
-  border-radius: var(--id-radius-md);
-  padding: 4px 10px;
+  border-radius: var(--id-radius-pill);
+  height: 27px;
+  padding: 0 10px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
   transition: background-color var(--id-transition-fast), border-color var(--id-transition-fast), color var(--id-transition-fast);
 }
 .pick:hover:not(:disabled) {

@@ -93,7 +93,7 @@ list_targets 已移除，主对话只能操作当前员工。list_sessions 只�
 | `task_delegation_list_sessions` | cursor?、limit?、planning_state?、execution_state?、latest_turn_status? | 当前主会话委派的 Task 摘要，{items, next_cursor} |
 | `task_delegation_get_session` | task_id、turn_id?、cursor?、limit?、input_id? | 简明状态及结果摘要、当前执行事实、所选轮次的正式回复分页与输入回执 |
 | `trigger_task_get_result` | notification_id? 或 cursor? | [同一目的群已送达的定时任务和 Hook 执行记录](trigger-notifications.md#在群里追问一次执行) |
-| `task_delegation_send_message` | task_id、text?、attachment_ids?、attachment_paths?、source_files_unused?，文字和附件至少提供一项 | 原 Session 新 Input 的身份及当前状态 |
+| `task_delegation_supplement_task` | task_id、instruction?、attachment_ids?、attachment_paths?、source_files_unused?，文字和附件至少提供一项 | 原 Session 新 Input 的身份及当前状态 |
 | `send_task_detail_link` | task_id、可选 text | 平台生成授权链接并发往当前外部渠道；只返回投递状态。用户轮限本对话任务、不做业务去重，回告轮限本次任务、检查有效链接与待确认投递 |
 | `artifact_select` | 有序 artifact_ids | 将获准版本绑定到本轮回复和各自原渠道目标 |
 | `task_delegation_supplement_todo` | task_id、instruction、expected_version、attachment_paths? | 补充未启动待办 |
@@ -112,7 +112,13 @@ list_targets 已移除，主对话只能操作当前员工。list_sessions 只�
 
 创建和追加均从服务端核验本次来源用户输入。委派说明与原文在执行上下文中分别呈现。附件选择、无关附件的 `source_files_unused` 声明及确定失败后的纠错约束见[任务委派的来源与重试](../../docs/spec/async-inbound-attachments.md#任务委派的来源与重试)。
 
-instruction / text 沿用[Input 文本校验](session-api.md#1-路径身份与共同约定)，title 沿用 Session 标题约束；task_id / turn_id 为 UUID，未知参数拒绝。mode 固定 task，不接收临时模型、岗位指令、指定 Skill、插件账号、Sandbox 或回报地址覆盖。
+普通任务、会话定时任务和待办的创建都用 `instruction` 写独立执行说明，应解析主对话指代，保留必要前情、明确限制、审批前提和验收标准。会话定时的执行时间仍放在 `schedule`；待办的“先记下、等我说开始”由计划状态表达，不写入业务目标。普通任务补充的 `instruction`、未启动待办补充的 `instruction` 都只提交本次变更，明确是新增、替换、撤销还是补充事实，并点名受影响的对象或旧要求；未改变的限制继续有效。涉及结果的重要推断单列为「执行假设」，不视为用户要求或授权，关键对象或授权不明确时先问。普通任务创建和补充的原文由系统关联，无需复述。普通任务只补附件时仍可省略 `instruction`。
+
+普通任务补充此前名为 `task_delegation_send_message`、正文参数为 `text`；新 MCP 清单仅提供新契约，已有 Web 历史事件仍按补充任务展示。
+
+修改会话定时计划的任务内容时，先读取原计划，把变更合并进完整的 `instruction` 后提交；它会整段替换原说明，只影响以后触发的任务。只改时间或启停时不传 `instruction`。更名不改变补充的权限、投递方式或回执。
+
+instruction 沿用[Input 文本校验](session-api.md#1-路径身份与共同约定)，title 沿用 Session 标题约束；task_id / turn_id 为 UUID，未知参数拒绝。mode 固定 task，不接收临时模型、岗位指令、指定 Skill、插件账号、Sandbox 或回报地址覆盖。
 
 调用 task_delegation_create_session 的参数示例：
 
@@ -135,7 +141,7 @@ instruction / text 沿用[Input 文本校验](session-api.md#1-路径身份与�
 
 回执只表示已持久受理，不表示模型已启动或工作完成。不会返回瞬时执行状态，请在需要时使用查询工具。相同来源输入和相同参数的获准重放仍返回原 task_id 与 input_id。已保存但未启动的待办、失败和未知结果不使用此回执。事务提交后才唤醒既有分配机制，通知丢失可由 Backend 重新发现待办，不重新创建 Task。环境在首次执行时由现有生命周期用例取得，不在 MCP 受理事务内启动 Pi / Runner。
 
-send_message 将补充文字、有序 attachment_paths 或二者作为原任务的新 Input，沿用 steer。Manager 按当前已授权来源输入、目标和内容去重，并在提交事务内核对版本。补充问题、停止后继续和故障后“继续”均不创建新 Task / Session，故障后按原生加载机制执行新 Turn。另起一件工作才再次调用 create_session。
+supplement_task 将补充文字、有序 attachment_paths 或二者作为原任务的新 Input，沿用 steer。Manager 按当前已授权来源输入、目标和内容去重，并在提交事务内核对版本。补充问题、停止后继续和故障后“继续”均不创建新 Task / Session，故障后按原生加载机制执行新 Turn。另起一件工作才再次调用 create_session。
 
 ### 查询与分页
 
@@ -167,7 +173,7 @@ MCP 请求超时、断流或取消请求本身不能证明事务回滚，也不�
 
 ## 6. 轮次回报与主会话唤醒
 
-**2026-11-17 增量设计，已接入，验收范围见专项设计**：每个 task Turn 结束均生成可靠回报，包括需要用户确认的回复。回报进入来源主 chat 的队列，轮到时独立执行，空闲时唤醒。`send_message` 的输入方式为默认 steer、可选 queue。具体语义和兼容要求统一见[引导输入与任务轮次回报](session-input-and-task-report.md)。下文可信来源、去重及归档边界继续适用；静默 append_assistant 不承担本次主动回报。
+**2026-11-17 增量设计，已接入，验收范围见专项设计**：每个 task Turn 结束均生成可靠回报，包括需要用户确认的回复。回报进入来源主 chat 的队列，轮到时独立执行，空闲时唤醒。`supplement_task` 的输入方式为默认 steer、可选 queue。具体语义和兼容要求统一见[引导输入与任务轮次回报](session-input-and-task-report.md)。下文可信来源、去重及归档边界继续适用；静默 append_assistant 不承担本次主动回报。
 
 MCP 的创建响应与异步执行结果是两次不同事实。create_session 已返回后，不再把后续结果追加成该 tools/call 的第二个最终响应，也不假定 Pi 支持任意服务端唤醒。
 

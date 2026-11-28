@@ -581,16 +581,17 @@ test('task locator rejects a valid task from another conversation without openin
 });
 
 test('query, supplement and stop tool outputs use task_id without depending on hidden Session IDs', async () => {
- const names = ['task_delegation_get_session','task_delegation_send_message','task_delegation_stop_session'];
+ const names = ['task_delegation_get_session','task_delegation_supplement_task','task_delegation_stop_session','task_delegation_send_message'];
  const items = names.map((name,index)=>toolEvent({name,seq:String(20+index),tool_use_id:'only-task-id-'+index,
    input:{task_id:'business-task2'},output:{structuredContent:{task_id:'business-task2'}}}));
  const m=await mount({override:url=>url.includes('/chat/events?')?Response.json({items,next_cursor:null,resume_cursor:'H'}):null});
  try {
    const cards=[...m.host.querySelectorAll('.task-action')];
-   assert.equal(cards.length,3);
+   assert.equal(cards.length,4);
    assert.match(cards[0].textContent,/查看任务进展/);
    assert.match(cards[1].textContent,/补充任务要求.*已受理/);
    assert.match(cards[2].textContent,/停止任务.*已受理/);
+   assert.match(cards[3].textContent,/补充任务要求.*已受理/);
    assert.ok(cards.every(card=>card.querySelector('.task-link')));
    cards[2].querySelector('.task-link').click(); await pause();
    assert.ok(FakeSource.all.find(s=>s.url.includes('/task2/')));

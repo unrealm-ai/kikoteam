@@ -36,7 +36,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 		"create_session":               {"for the current employee only", "read-only", "every explicit constraint and prohibition", "Not for supplementing, querying or stopping", "without polling", "automatic round-result callback", "identical arguments within the same authorized source input", "does not authorize running scripts", "not new user authorization", "Never bypass a permission denial"},
 		"list_sessions":                {"only tasks delegated by this source chat", "clarify", "Do not repeatedly list"},
 		"get_session":                  {"explicit user progress/result query", "no match was found in the visible scope", "if the read failed", "summary.status", "summary.result describes the selected Turn only", "pagination is not polling", "Do not loop", "completed Turn is not business-task completion"},
-		"send_message":                 {"not a new task", "Earlier restrictions remain", "Default steer attempts to guide", "Say briefly what was recorded", "only when the receipt proves it", "does not prove execution started or the change was applied", "Do not poll", "same authorized source input", "does not authorize running scripts", "not new user authorization", "Never bypass a permission denial"},
+		"supplement_task":              {"not a new task", "Earlier restrictions remain", "Default steer attempts to guide", "Say briefly what was recorded", "only when the receipt proves it", "does not prove execution started or the change was applied", "Do not poll", "same authorized source input", "does not authorize running scripts", "not new user authorization", "Never bypass a permission denial"},
 		"stop_session":                 {"explicitly intends to stop", "Not pause/resume", "not confirmed stopped", "does not stop delegated tasks", "a repeat can stop newer inputs", "only query the same task", "never issue another stop without a new explicit user request", "New running inputs do not establish what happened to the earlier stop"},
 	}
 	if len(tools) != len(expected) {
@@ -79,8 +79,8 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 				t.Errorf("amendment must accept only amendment_basis and content: %v", tool.Schema)
 			}
 		}
-		if name == "send_message" {
-			wantFields := []string{"task_id", "text", "attachment_paths", "attachment_ids", "source_files_unused"}
+		if name == "supplement_task" {
+			wantFields := []string{"task_id", "instruction", "attachment_paths", "attachment_ids", "source_files_unused"}
 			if len(tool.Schema.Properties) != len(wantFields) {
 				t.Errorf("unexpected append tool fields: %v", tool.Schema.Properties)
 			}
@@ -93,7 +93,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 				t.Errorf("unexpected append tool required fields: %v", tool.Schema.Required)
 			}
 		}
-		if name == "create_session" || name == "send_message" {
+		if name == "create_session" || name == "supplement_task" {
 			var flag struct{ Type string }
 			if err := json.Unmarshal(tool.Schema.Properties["source_files_unused"], &flag); err != nil || flag.Type != "boolean" || slices.Contains(tool.Schema.Required, "source_files_unused") {
 				t.Errorf("%s must support an optional boolean source_files_unused", name)
@@ -106,7 +106,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 		}
 		if name == "create_todo" {
 			property := string(tool.Schema.Properties["instruction"])
-			for _, phrase := range []string{"future business goal", "independent approvals", "omit those scheduling instructions"} {
+			for _, phrase := range []string{"goal, exact target and scope", "independent approvals", "Do not put the request to save or wait for an explicit start"} {
 				if !strings.Contains(property, phrase) {
 					t.Errorf("%s instruction missing %q", name, phrase)
 				}

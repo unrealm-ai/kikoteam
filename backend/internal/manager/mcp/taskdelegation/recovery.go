@@ -34,7 +34,7 @@ func failedToolResult(op, code, message string, args manager.DelegationArgs, err
 }
 
 func recoveryForTask(op, code string, args manager.DelegationArgs, err error) *recoveryHint {
-	if op != "send_message" && op != "stop_session" && op != "supplement_todo" && op != "cancel_todo" && op != "start_todo" && op != "get_session" && op != "send_task_detail_link" {
+	if op != "supplement_task" && op != "stop_session" && op != "supplement_todo" && op != "cancel_todo" && op != "start_todo" && op != "get_session" && op != "send_task_detail_link" {
 		return nil
 	}
 	if code == "resource_not_found" && op == "get_session" && manager.ValidID(args.TaskID) && args.TurnID != "" {
@@ -49,7 +49,7 @@ func recoveryForTask(op, code string, args manager.DelegationArgs, err error) *r
 		if errors.As(err, &canceled) {
 			return &recoveryHint{Action: "stop", Outcome: "not_applied", Instructions: "这是已取消且未启动的待办，不要补充、启动或再次停止。"}
 		}
-		if op == "send_message" {
+		if op == "supplement_task" {
 			return queryTask(args, "not_applied", "这是未启动待办。先核实 planning_state 和 planning_version；仍未启动且用户明确要求补充时，用 supplement_todo。")
 		}
 		if op == "stop_session" {

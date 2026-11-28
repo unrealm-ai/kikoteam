@@ -43,7 +43,7 @@ POST /api/v1/workspaces/W/conversations/C/archive
   {}
 ```
 
-task 的创建请求将 mode 改为 task，保持同一个 Conversation。通常主 chat 使用 task_delegation 的 create_session 建立；工具响应仅代表已受理，调用 get_session 查询实际进度/结果。继续追问用 send_message，仍是原 Session 的新 Input；同一次重试沿用 request_key。首版只支持当前员工，跨员工请求明确拒绝，任务自身不能递归委派。主 chat 停止不会停止已委派任务，Conversation 归档才会收尾全部 Session。
+task 的创建请求将 mode 改为 task，保持同一个 Conversation。通常主 chat 使用 task_delegation 的 create_session 建立；工具响应仅代表已受理，调用 get_session 查询实际进度/结果。继续追问用 supplement_task，仍是原 Session 的新 Input；同一来源与相同参数的重试由服务端去重。首版只支持当前员工，跨员工请求明确拒绝，任务自身不能递归委派。主 chat 停止不会停止已委派任务，Conversation 归档才会收尾全部 Session。
 
 可靠历史及 SSE 来自同一事件表；首版发送完整消息和工具/状态快照，不发送临时文本 delta。读取历史固定高水位，通过 resume_cursor / Last-Event-ID 接上实时流；断流不停止 Turn。只有 Input 提交做必要去重，stop 每次按当前已受理范围停止，不需要 key。
 

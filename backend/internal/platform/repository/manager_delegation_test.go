@@ -154,7 +154,7 @@ func TestDelegationScopeAtomicDedupAndRunnerGrants(t *testing.T) {
 	// an unknown-result retry adds no duplicate Input or new Task.
 	const supplement = "只读取报告；不要修改文件，也不要发送。补充统计近七天数据。"
 	for range 2 {
-		out, e := d.Call(ctx, scope, "send_message", manager.DelegationArgs{SessionID: target, Text: supplement})
+		out, e := d.Call(ctx, scope, "supplement_task", manager.DelegationArgs{SessionID: target, Instruction: supplement})
 		if e != nil || out.(manager.Input).Status != "queued" {
 			t.Fatalf("supplement not queued: %v %v", out, e)
 		}

@@ -4,7 +4,7 @@
 
 ## 输入与轮次
 
-公开 inputs 和创建 Session 的首条 input 接受 `delivery_mode: steer | queue`，省略默认 steer；MCP send_message 固定使用默认 steer，接受文字和有序附件。Web 输入框可选引导或排队，默认引导。存量 Input 在迁移 15 中保留 queue，新提交使用 steer。普通 Input 去重指纹包含有效方式，旧省略字段请求重放兼容旧指纹；改方式不能复用原 key。
+公开 inputs 和创建 Session 的首条 input 接受 `delivery_mode: steer | queue`，省略默认 steer；MCP supplement_task 固定使用默认 steer，接受文字和有序附件。Web 输入框可选引导或排队，默认引导。存量 Input 在迁移 15 中保留 queue，新提交使用 steer。普通 Input 去重指纹包含有效方式，旧省略字段请求重放兼容旧指纹；改方式不能复用原 key。
 
 steer 忙时通过原生 RPC 引导当前 Turn，空闲时启动新 Turn；不会强制终止正在运行的工具或撤销副作用。queue 保留在数据库，当前平台 Turn 终结后才领取，原生 follow_up 队列不承担平台持久队列。一个 Turn 可处理多条同主体输入，始终最多一个活动 Turn。Turn.input_id 表示起始输入，各 Input.turn_id 保存关联。显式 queue 不会被回报提前消费。
 

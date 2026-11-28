@@ -34,9 +34,9 @@ func TestDelegatedInputRetainsSourceAndRequiredFilesOnRetry(t *testing.T) {
 	ctx := t.Context()
 	const wrongPath = "outputs/unselected.txt"
 	var task string
-	for _, op := range []string{"create_session", "send_message"} {
+	for _, op := range []string{"create_session", "supplement_task"} {
 		primary, secondary := manager.NewID(), manager.NewID()
-		if op == "send_message" {
+		if op == "supplement_task" {
 			scope = steerDelegatingSource(t, db, m, d, scope, "only compare the two attached documents")
 		}
 		if _, err := db.ExecContext(ctx, `UPDATE manager_inputs SET attachments=jsonb_build_array(
@@ -56,7 +56,7 @@ func TestDelegatedInputRetainsSourceAndRequiredFilesOnRetry(t *testing.T) {
 				t.Fatalf("%s: want %s with %q, got %v", op, code, detail, err)
 			}
 		}
-		args := manager.DelegationArgs{Instruction: "compare inputs", Text: "apply these changes"}
+		args := manager.DelegationArgs{Instruction: "compare inputs"}
 		reject(args, "attachment_selection_required", "source_files_unused")
 		args.AttachmentIDs = []string{secondary, primary}
 		args.AttachmentPaths = []string{wrongPath}
@@ -228,7 +228,7 @@ func TestDelegationTransfersOnlyAuthorizedSourceAttachmentGrants(t *testing.T) {
 	immediate := v.(map[string]any)
 	pending.Path = ""
 	inspect(*immediate["input_id"].(*string), b, pending, a)
-	v, err = d.Call(ctx, scope, "send_message", manager.DelegationArgs{SessionID: immediate["session_id"].(string), AttachmentIDs: []string{a.ID}})
+	v, err = d.Call(ctx, scope, "supplement_task", manager.DelegationArgs{SessionID: immediate["session_id"].(string), AttachmentIDs: []string{a.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}

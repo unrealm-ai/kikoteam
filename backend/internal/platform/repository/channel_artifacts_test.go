@@ -89,7 +89,7 @@ func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
 		t.Helper()
 		token, e := manager.SignDelegation(d.Secret, id)
 		must(e)
-		b, e := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "task_delegation_send_message", "arguments": args}})
+		b, e := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "task_delegation_supplement_task", "arguments": args}})
 		must(e)
 		r := httptest.NewRequest("POST", "/mcp/task-delegation", bytes.NewReader(b))
 		r.Header.Set("Authorization", "Bearer "+token)
@@ -126,7 +126,7 @@ func TestChannelMediaOnlyAppendAndMergedReportTargets(t *testing.T) {
 			ids := []string{x.box + ":1", x.box + ":0"}
 			args := map[string]any{"session_id": task, "attachment_ids": ids}
 			first := call(id, args)
-			args["text"] = ""
+			args["instruction"] = ""
 			second := call(id, args)
 			if first.ID != second.ID || first.Text != "" || len(first.Attachments) != 2 || first.Attachments[0].ID != ids[0] || first.Attachments[0].Path != "" || second.Receipt == nil || !second.Receipt.Duplicate {
 				t.Fatal("attachment-only append", first, second)

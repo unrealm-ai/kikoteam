@@ -16,10 +16,10 @@ func TestDelegationRecoveryUsesScopedReadBeforeWrite(t *testing.T) {
 		op, code, action, tool, outcome, hintText string
 	}{
 		{"get_session", "resource_not_found", "query", "task_delegation_list_sessions", "", "列表每项的 task_id"},
-		{"send_message", "task_not_started", "query", "task_delegation_get_session", "not_applied", "supplement_todo"},
+		{"supplement_task", "task_not_started", "query", "task_delegation_get_session", "not_applied", "supplement_todo"},
 		{"stop_session", "task_not_started", "query", "task_delegation_get_session", "not_applied", "不能把停止自动当成取消"},
 		{"supplement_todo", "version_conflict", "query", "task_delegation_get_session", "not_applied", "planning_version"},
-		{"send_message", "dependency_unavailable", "query", "task_delegation_get_session", "unknown", "不要重发"},
+		{"supplement_task", "dependency_unavailable", "query", "task_delegation_get_session", "unknown", "不要重发"},
 		{"stop_session", "dependency_unavailable", "query", "task_delegation_get_session", "unknown", "看不到回执不代表未写入"},
 		{"cancel_todo", "already_started", "query", "task_delegation_get_session", "not_applied", "须确认用户确实授权"},
 		{"stop_session", "access_revoked", "stop", "", "", "不要重试"},
@@ -45,7 +45,7 @@ func TestCanceledTodoRecoveryPreservesErrorAndDoesNotSuggestMutation(t *testing.
 	if !errors.As(err, &original) || original.Code != "task_not_started" || original.Status != 409 {
 		t.Fatalf("unexpected compatibility error: %v", err)
 	}
-	for _, op := range []string{"send_message", "stop_session"} {
+	for _, op := range []string{"supplement_task", "stop_session"} {
 		hint := recoveryForTask(op, original.Code, manager.DelegationArgs{}, err)
 		if hint == nil || hint.Action != "stop" || hint.Tool != "" {
 			t.Fatalf("unexpected canceled todo recovery: %#v", hint)
@@ -59,7 +59,7 @@ func TestDelegationRecoveryOmitsUntrustedValuesAndUnrelatedTools(t *testing.T) {
 			t.Fatalf("%s: scope creep: %#v", op, hint)
 		}
 	}
-	hint := recoveryForTask("send_message", "invalid_argument", manager.DelegationArgs{TaskID: "private-fake-id"}, nil)
+	hint := recoveryForTask("supplement_task", "invalid_argument", manager.DelegationArgs{TaskID: "private-fake-id"}, nil)
 	payload, err := json.Marshal(hint)
 	if err != nil || hint == nil || strings.Contains(string(payload), "private-fake-id") || hint.Tool != "task_delegation_list_sessions" {
 		t.Fatalf("unexpected payload: %s, %v", payload, err)

@@ -192,7 +192,9 @@ test('current task selectors and receipts use task identity, never native sessio
   const {fixture}=get('append-unknown');
   const tools=makeRequest(fixture,p).tools;
   assert.ok(tools.some(t=>t.function.name===prefix+names.send));
-  const wrong={session_id:fixture.expectedTarget.task_id,text:fixture.expectedTarget.text};
+  assert.ok(!tools.some(t=>t.function.name===prefix+'task_delegation_send_message'));
+  assert.equal(validateCall(tool(names.send,{task_id:fixture.expectedTarget.task_id,text:'旧字段'}),tools,fixture).valid,false);
+  const wrong={session_id:fixture.expectedTarget.task_id,instruction:fixture.expectedTarget.instruction};
   assert.equal(validateCall(tool(names.send,wrong),tools,fixture).reason,'missing_required');
   const validSend=validateCall(tool(names.send,fixture.expectedTarget),tools,fixture);
   assert.equal(validSend.valid,true);

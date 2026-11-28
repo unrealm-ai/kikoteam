@@ -81,7 +81,7 @@ export function followupFixture(c, _profile) {
     : reportOnly && channel !== 'web' && f.allowedWrite === o.artifact ? o.artifact : undefined;
   const expectedTarget = expectedTool === o.artifact ? {artifact_ids:[...f.selectedArtifactIDs]}
     : expectedTool === o.get ? {task_id:ids.task_id,...(f.requirePriorTurn ? {turn_id:ids.turn_id} : {})}
-    : expectedTool === o.send ? {task_id:ids.task_id,text:c.change}
+    : expectedTool === o.send ? {task_id:ids.task_id,instruction:c.change}
     : expectedTool === o.stop ? {task_id:ids.task_id} : {};
   const history = reportOnly ? reportHistory(c, ids) : ['none','no-link'].includes(c.history) ? [] : [
     {role:'user',content:planned ? `先记下「${c.title}」，别开始。` : `请帮我处理「${c.title}」。`},

@@ -258,8 +258,8 @@ func runtimeDelegationReply(t *testing.T, w http.ResponseWriter, body runtimeReq
 			suffix = "task_delegation_get_session"
 			args = map[string]any{"task_id": target}
 		case strings.Contains(text, "delegate-send"):
-			suffix = "task_delegation_send_message"
-			args = map[string]any{"task_id": target, "text": "task-delegated followup"}
+			suffix = "task_delegation_supplement_task"
+			args = map[string]any{"task_id": target, "instruction": "task-delegated followup"}
 		case strings.Contains(text, "delegate-stop"):
 			suffix = "task_delegation_stop_session"
 			args = map[string]any{"task_id": target}

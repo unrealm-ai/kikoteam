@@ -9,7 +9,7 @@
 - `start_todo`：明确启动未开始的待办；必传查询所得 `expected_version` 。
 - `cancel_todo`：仅取消尚未启动待办。已启动返回 `already_started`，绝不调用 stop；取消后不能再启动。
 - `list_sessions/get_session`：包含待办状态与版本；待办详情返回保存的全部正文、`application=on_start`、可用动作，不伪造 Turn 或结果。
-- `send_message`：已启动任务支持文字、有序附件或二者，按默认 steer 追加，不重写已执行历史。
+- `supplement_task`：已启动任务支持文字、有序附件或二者，按默认 steer 追加，不重写已执行历史。
 - `stop_session`：只停止已启动任务，不能当作取消待办，也不是暂停/恢复。
 
 ## 待办状态语义

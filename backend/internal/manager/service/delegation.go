@@ -179,8 +179,8 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 			}
 		}
 		return d.result(ctx, scope, v, args)
-	case "send_message":
-		return d.sendTaskMessage(ctx, scope, v, args)
+	case "supplement_task":
+		return d.supplementTask(ctx, scope, v, args)
 	case "stop_session":
 		return d.Manager.controlSession(ctx, scope.WorkspaceID, scope.ActorID, v.ID, false, &scope.Identity)
 	default:
@@ -211,10 +211,10 @@ func (d *Delegation) delegatedTaskTarget(ctx context.Context, scope DelegationSc
 }
 
 func pinsDelegationInput(name string, args DelegationArgs) bool {
-	return len(args.AttachmentIDs) > 0 || (strings.HasSuffix(name, "_todo") || strings.HasSuffix(name, "_scheduled_task")) || name == "create_session" || name == "send_message" || name == "artifact_select" || name == "trigger_task_get_result" || name == "send_task_detail_link"
+	return len(args.AttachmentIDs) > 0 || (strings.HasSuffix(name, "_todo") || strings.HasSuffix(name, "_scheduled_task")) || name == "create_session" || name == "supplement_task" || name == "artifact_select" || name == "trigger_task_get_result" || name == "send_task_detail_link"
 }
 
-func (d *Delegation) sendTaskMessage(ctx context.Context, scope DelegationScope, v Session, args DelegationArgs) (any, error) {
+func (d *Delegation) supplementTask(ctx context.Context, scope DelegationScope, v Session, args DelegationArgs) (any, error) {
 	if v.PlanningState == "canceled" {
 		return nil, CanceledTodoError{}
 	}
@@ -224,10 +224,10 @@ func (d *Delegation) sendTaskMessage(ctx context.Context, scope DelegationScope,
 	if len(args.AttachmentPaths) == 0 {
 		args.AttachmentPaths = nil
 	}
-	if (len(args.AttachmentPaths) > 0 || len(args.AttachmentIDs) > 0) && strings.TrimSpace(args.Text) == "" {
-		args.Text = ""
+	if (len(args.AttachmentPaths) > 0 || len(args.AttachmentIDs) > 0) && strings.TrimSpace(args.Instruction) == "" {
+		args.Instruction = ""
 	}
-	payload := []any{"delegated_append", scope.Identity.SessionID, scope.InputID, v.ID, args.Text, args.AttachmentPaths}
+	payload := []any{"delegated_append", scope.Identity.SessionID, scope.InputID, v.ID, args.Instruction, args.AttachmentPaths}
 	if len(args.AttachmentIDs) > 0 {
 		payload = append(payload, args.AttachmentIDs)
 	}
@@ -235,7 +235,7 @@ func (d *Delegation) sendTaskMessage(ctx context.Context, scope DelegationScope,
 	if e != nil {
 		return nil, e
 	}
-	input, duplicate, e := d.Manager.submitInputVersion(ctx, scope.WorkspaceID, scope.ActorID, v.ID, key, args.Text, "", &scope, &v.InputRevision, args.AttachmentIDs, args.AttachmentPaths...)
+	input, duplicate, e := d.Manager.submitInputVersion(ctx, scope.WorkspaceID, scope.ActorID, v.ID, key, args.Instruction, "", &scope, &v.InputRevision, args.AttachmentIDs, args.AttachmentPaths...)
 	if e != nil {
 		return nil, e
 	}

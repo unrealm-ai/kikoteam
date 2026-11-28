@@ -77,7 +77,7 @@ func legacyTaskSelector(name string) bool {
 		return false
 	}
 	switch selector {
-	case "get_session", "send_message", "stop_session", "start_todo", "cancel_todo", "supplement_todo":
+	case "get_session", "supplement_task", "stop_session", "start_todo", "cancel_todo", "supplement_todo":
 		return true
 	default:
 		return false

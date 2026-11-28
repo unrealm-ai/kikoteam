@@ -108,3 +108,83 @@ func TestClaimAttachmentReferencesInBothNormalAndSteeringInputs(t *testing.T) {
 		})
 	}
 }
+
+func TestTaskBriefAndFollowupKeepTheirOwnSourceMessage(t *testing.T) {
+	cases := []struct {
+		name, source, raw, brief, exclude string
+	}{
+		{"create", `{"message_id":"create-source","text":"刚才那两个你查一下，先别改代码。","attachments":[]}`, "刚才那两个你查一下，先别改代码。",
+			"检查右侧面板是否贴顶、邀请接受后是否进入工作区首页；分别给复现结果，不改代码。", "第二个先不看"},
+		{"supplement", `{"message_id":"supplement-source","text":"第二个先不看，手机也帮我试下。","attachments":[]}`, "第二个先不看，手机也帮我试下。",
+			"撤销邀请落地页检查；右侧面板保留桌面验证，并增加手机验证。不改代码。\n执行假设：未指定机型，先用 390px 视口。", "刚才那两个"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := renderDelegatedInput(tc.brief, []byte(tc.source), []byte("[]"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, brief, ok := strings.Cut(got, "\n\n本任务委派说明")
+			if !ok || !strings.Contains(raw, tc.raw) || strings.Contains(raw, tc.brief) ||
+				!strings.HasSuffix(brief, "\n"+tc.brief) || strings.Contains(brief, tc.raw) || strings.Contains(got, tc.exclude) {
+				t.Fatalf("original request and task brief were not kept separate: %q", got)
+			}
+		})
+	}
+}
+
+func TestTaskSupplementUsesItsOwnSourceWhenQueuedOrSteered(t *testing.T) {
+	for _, mode := range []string{"queue", "steer"} {
+		t.Run(mode, func(t *testing.T) {
+			db, store, chat := triggerFixture(t)
+			ctx := t.Context()
+			actor, original, followup := fixtureID(2), fixtureID(20), fixtureID(21)
+			for i, raw := range []string{"刚才那两个都查一下，先别改代码。", "第二个先不看，手机也帮我试下。"} {
+				claimExec(t, db, `INSERT INTO manager_inputs(id,workspace_id,session_id,submitted_by,admission_epoch,seq,text,status)
+ VALUES($1,$2,$3,$4,1,$5,$6,'processed')`, []string{original, followup}[i], chat.WorkspaceID, chat.SessionID, actor, i+1, raw)
+			}
+			task, session, assignment := fixtureID(40), fixtureID(41), fixtureID(42)
+			claimExec(t, db, `INSERT INTO manager_tasks(id,workspace_id,conversation_id,agent_id,source_chat_session_id,source_chat_input_id)
+ VALUES($1,$2,$3,$4,$5,$6)`, task, chat.WorkspaceID, chat.ConversationID, chat.AgentID, chat.SessionID, original)
+			claimExec(t, db, `INSERT INTO manager_sessions(id,workspace_id,agent_id,conversation_id,created_by,task_id,mode,configuration,engine_id,assignment_id,generation,last_input_seq)
+ VALUES($1,$2,$3,$4,$5,$6,'task','{}',$7,$8,1,2)`, session, chat.WorkspaceID, chat.AgentID, chat.ConversationID, actor, task, store.EngineID, assignment)
+			work, err := store.Refresh(ctx, Assignment{SessionID: session, AssignmentID: assignment, Generation: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			insert := func(id int, seq int, source, text, delivery string) {
+				t.Helper()
+				claimExec(t, db, `INSERT INTO manager_inputs(id,workspace_id,session_id,submitted_by,admission_epoch,seq,text,delivery_mode,delegated_from_input_id)
+ VALUES($1,$2,$3,$4,1,$5,$6,$7,$8)`, fixtureID(id), work.WorkspaceID, session, actor, seq, text, delivery, source)
+			}
+			insert(43, 1, original, "验证面板贴顶和邀请落地页；只检查。", "queue")
+			first, err := store.Claim(ctx, work, fixtureID(50))
+			if err != nil || first == nil || !strings.Contains(first.Input.Text, original) || !strings.Contains(first.Input.Text, "验证面板贴顶和邀请落地页") {
+				t.Fatalf("initial task did not receive its own source and brief: %v %v", first, err)
+			}
+			brief := "取消邀请落地页验证；保留面板贴顶验证，追加手机。不改代码。"
+			insert(44, 2, followup, brief, mode)
+			var got *Input
+			if mode == "steer" {
+				got, err = store.ClaimSteering(ctx, work, *first)
+			} else {
+				if err := store.Complete(ctx, work, *first, "completed", "", ""); err != nil {
+					t.Fatal(err)
+				}
+				var turn *Turn
+				turn, err = store.Claim(ctx, work, fixtureID(51))
+				if turn != nil {
+					got = &turn.Input
+				}
+			}
+			if err != nil || got == nil {
+				t.Fatal(got, err)
+			}
+			if got.ID != fixtureID(44) || !strings.Contains(got.Text, followup) ||
+				!strings.Contains(got.Text, "第二个先不看，手机也帮我试下。") ||
+				!strings.HasSuffix(got.Text, brief) || strings.Contains(got.Text, original) {
+				t.Fatalf("supplement did not carry its own source and delta: %q", got.Text)
+			}
+		})
+	}
+}

@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 
 const o = {
- create:'task_delegation_create_session',get:'task_delegation_get_session',send:'task_delegation_send_message',
+ create:'task_delegation_create_session',get:'task_delegation_get_session',send:'task_delegation_supplement_task',
  stop:'task_delegation_stop_session',cancel:'task_delegation_cancel_todo',work:'work_item_get_current',list:'task_delegation_list_sessions',
 };
 const reads = new Set([o.get, o.work, o.list]);
@@ -109,7 +109,7 @@ export function historicalFixture(raw, profile) {
    ...(c.path?{attachment_paths:[c.path]}:{}),
  }:expectedTool===o.work?{task_id:idsByRole.task_id}:scopedSession.has(expectedTool)?{
    task_id:idsByRole.task_id,
-   ...(expectedTool===o.send?{text:c.change}:{}),
+   ...(expectedTool===o.send?{instruction:c.change}:{}),
    ...(expectedTool===o.cancel?{expected_version:'2'}:{}),
  }:{};
  const reportOnly=c.kind==='report';

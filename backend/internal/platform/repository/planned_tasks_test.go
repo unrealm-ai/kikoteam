@@ -241,8 +241,8 @@ func TestDelegationFiltersAndEvidenceReceipts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := manager.DelegationArgs{SessionID: plan.SessionID, Text: "extra"}
-	raw, err = d.Call(ctx, scope, "send_message", args)
+	args := manager.DelegationArgs{SessionID: plan.SessionID, Instruction: "extra"}
+	raw, err = d.Call(ctx, scope, "supplement_task", args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,12 +250,12 @@ func TestDelegationFiltersAndEvidenceReceipts(t *testing.T) {
 	if input.Receipt == nil || input.Receipt.Delivery != "pending" || input.Receipt.InputRevision != 2 || input.Receipt.Application != "unconfirmed" {
 		t.Fatal(input)
 	}
-	raw, err = d.Call(ctx, scope, "send_message", args)
+	raw, err = d.Call(ctx, scope, "supplement_task", args)
 	if err != nil || !raw.(manager.Input).Receipt.Duplicate {
 		t.Fatal("lost receipt dedup", raw, err)
 	}
-	args.Text = "second supplement"
-	if next, e := d.Call(ctx, scope, "send_message", args); e != nil || next.(manager.Input).Seq != 3 {
+	args.Instruction = "second supplement"
+	if next, e := d.Call(ctx, scope, "supplement_task", args); e != nil || next.(manager.Input).Seq != 3 {
 		t.Fatal("distinct append missing", next, e)
 	}
 	for _, state := range []string{"unknown", "committed", "absent"} {
@@ -361,8 +361,8 @@ func TestPlannedTaskSameSourceDifferentActorCannotMutateOrRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, op := range []string{"get_session", "start_todo", "cancel_todo", "send_message"} {
-		if _, err = d.Call(ctx, current, op, manager.DelegationArgs{SessionID: plan.SessionID, ExpectedVersion: 1, RequestKey: op, Text: "not mine"}); err == nil {
+	for _, op := range []string{"get_session", "start_todo", "cancel_todo", "supplement_task"} {
+		if _, err = d.Call(ctx, current, op, manager.DelegationArgs{SessionID: plan.SessionID, ExpectedVersion: 1, RequestKey: op, Instruction: "not mine"}); err == nil {
 			t.Fatal("other actor accessed planned task", op)
 		}
 	}

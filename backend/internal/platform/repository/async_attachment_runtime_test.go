@@ -87,7 +87,7 @@ func asyncAttachmentModelReply(t *testing.T, w http.ResponseWriter, body runtime
 	args := map[string]any{"instruction": asyncTaskRequest, "attachment_ids": []string{id[1]}}
 	tool := "mcp__task_delegation__task_delegation_create_session"
 	if isAppend {
-		tool = "mcp__task_delegation__task_delegation_send_message"
+		tool = "mcp__task_delegation__task_delegation_supplement_task"
 		_, suffix, _ := strings.Cut(user, "task_id=")
 		fields := strings.Fields(suffix)
 		if len(fields) == 0 {
@@ -95,7 +95,7 @@ func asyncAttachmentModelReply(t *testing.T, w http.ResponseWriter, body runtime
 			humanTextStream(t, w, "fixture failure")
 			return true
 		}
-		args = map[string]any{"task_id": fields[0], "text": asyncRetry, "attachment_ids": []string{id[1]}}
+		args = map[string]any{"task_id": fields[0], "instruction": asyncRetry, "attachment_ids": []string{id[1]}}
 	}
 	switch {
 	case last.Role != "tool":

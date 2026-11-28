@@ -108,7 +108,9 @@ export function toolOutput(event: SessionEvent): unknown {
 const taskActions: Record<string, string> = {
   task_delegation_create_session: '触发任务', task_delegation_list_targets: '查看可用员工',
   task_delegation_list_sessions: '查看任务列表', task_delegation_get_session: '查看任务进展',
-  task_delegation_send_message: '补充任务要求', task_delegation_stop_session: '停止任务',
+  task_delegation_supplement_task: '补充任务要求', task_delegation_stop_session: '停止任务',
+  // Persisted events from before the MCP rename still render as task actions.
+  task_delegation_send_message: '补充任务要求',
   send_task_detail_link: '发送任务详情链接', send_task_detail_card: '发送任务详情链接',
 };
 export function isTaskDetailLinkTool(name: string | undefined): boolean { return name === 'send_task_detail_link' || name === 'send_task_detail_card'; }
@@ -135,7 +137,7 @@ export function toolStatus(event: SessionEvent): string {
   if (event.output_state !== 'available') return '调用结束';
   const output = record(toolOutput(event));
   if (event.name === 'task_delegation_create_session') return output.accepted === true || text(output.session_id) ? '已触发' : '调用结束';
-  if (['task_delegation_send_message', 'task_delegation_stop_session'].includes(event.name || '')) return '已受理';
+  if (['task_delegation_supplement_task', 'task_delegation_send_message', 'task_delegation_stop_session'].includes(event.name || '')) return '已受理';
   if (isTaskDetailLinkTool(event.name)) {
     return ({ queued: '已提交投递', sent: '已发送', already_sent: '此前已发送', not_sent: '未发送', delivery_unconfirmed: '送达待核对' } as Record<string, string>)[text(output.status)] || '调用结束';
   }

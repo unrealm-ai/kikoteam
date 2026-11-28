@@ -4,7 +4,7 @@ export const prefix = 'mcp__task_delegation__';
 export const names = Object.freeze({
   get: 'task_delegation_get_session',
   list: 'task_delegation_list_sessions',
-  send: 'task_delegation_send_message',
+  send: 'task_delegation_supplement_task',
   stop: 'task_delegation_stop_session',
   cancel: 'task_delegation_cancel_todo',
   create: 'task_delegation_create_session',

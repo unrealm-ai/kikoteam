@@ -222,3 +222,13 @@ test('unknown task creation permits only the same arguments in this input',()=>{
   assert.equal(fixture.respond(changed,[first]).error.code,'unsafe_unknown_replay');
   assert.ok(fixture.checkCalls([first,changed]).includes('unsafe_unknown_replay'));
 });
+
+test('main-chat reminders use the scheduled task report instead of the hidden business reminder', () => {
+  const profile=loadProfile();
+  assert.match(profile.system,/用户要求到点提醒本人时，也用会话定时任务/);
+  assert.match(profile.system,/时间不明确先问，不猜上午或下午/);
+  const scheduled=profile.tools.find(t=>t.name.endsWith('create_scheduled_task'));
+  assert.match(scheduled.description,/let the platform report it to the source chat/);
+  assert.match(scheduled.description,/Do not perform the activity being reminded of or use external notification tools/);
+  assert.deepEqual(scheduled.inputSchema.required,['instruction','schedule']);
+});

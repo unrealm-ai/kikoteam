@@ -7,6 +7,7 @@ import (
 )
 
 type TriggerScheduleItem struct {
+	Kind    string    `json:"kind,omitempty"`
 	ID      string    `json:"id"`
 	Version int64     `json:"version,string"`
 	NextDue time.Time `json:"next_due"`
@@ -16,6 +17,7 @@ type TriggerSchedulePoll struct {
 	Items      []TriggerScheduleItem `json:"items"`
 }
 type TriggerScheduleTick struct {
+	Kind              string    `json:"kind,omitempty"`
 	Version           int64     `json:"version,string"`
 	ExpectedDue       time.Time `json:"expected_due"`
 	RecoveryStartedAt time.Time `json:"recovery_started_at"`

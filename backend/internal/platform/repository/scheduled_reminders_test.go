@@ -110,3 +110,49 @@ func TestScheduledReminderRejectsTaskParametersAndMissingTargets(t *testing.T) {
 		}
 	}
 }
+
+func TestFixedReminderDisableMigrationKeepsOrdinaryTriggers(t *testing.T) {
+	db, store, w, actor, agent, conv, _ := triggerNoticeFixture(t)
+	ctx := t.Context()
+	targets := json.RawMessage(`[{"conversation_id":"` + conv + `"}]`)
+	reminder, err := store.SaveTrigger(ctx, w, actor, agent, "", manager.TriggerWrite{
+		Kind: "schedule", Enabled: true, Config: json.RawMessage(`{"action":"send_message","cron":"* * * * *","description":"值班提醒"}`),
+		AllowedActions: []string{"send_message"}, NotificationTargets: targets,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.SaveTrigger(ctx, w, actor, agent, "", manager.TriggerWrite{
+		Kind: "schedule", Enabled: true, Config: json.RawMessage(`{"cron":"* * * * *","description":"写日报"}`),
+		AllowedActions: []string{"create_task"}, NotificationTargets: targets,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	due := time.Now().UTC().Truncate(time.Minute).Add(-time.Minute)
+	reviewExec(t, db, `UPDATE manager_triggers SET next_due=$2 WHERE id=$1`, reminder.ID, due)
+	if _, err = store.TickTriggerSchedule(ctx, reminder.ID, manager.TriggerScheduleTick{Version: reminder.Version, ExpectedDue: due, RecoveryStartedAt: due.Add(-time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.MaterializeTriggerNotifications(ctx); err != nil {
+		t.Fatal(err)
+	}
+	due = due.Add(-time.Minute)
+	reviewExec(t, db, `UPDATE manager_triggers SET next_due=$2 WHERE id=$1`, reminder.ID, due)
+	if _, err = store.TickTriggerSchedule(ctx, reminder.ID, manager.TriggerScheduleTick{Version: reminder.Version, ExpectedDue: due, RecoveryStartedAt: due.Add(-time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	applyTestMigrations(t, ctx, db, "000115_chat_schedules.sql", "000116_disable_fixed_trigger_reminders.sql")
+	var enabled, hasNext bool
+	var version int64
+	if err = db.QueryRow(`SELECT enabled,version,next_due IS NOT NULL FROM manager_triggers WHERE id=$1`, reminder.ID).Scan(&enabled, &version, &hasNext); err != nil || enabled || version != reminder.Version+1 || hasNext {
+		t.Fatal(enabled, version, hasNext, err)
+	}
+	if err = db.QueryRow(`SELECT enabled,version FROM manager_triggers WHERE id=$1`, task.ID).Scan(&enabled, &version); err != nil || !enabled || version != task.Version {
+		t.Fatal(enabled, version, err)
+	}
+	var total, sent int
+	if err = db.QueryRow(`SELECT count(*),count(*) FILTER (WHERE status='sent') FROM manager_trigger_notifications WHERE trigger_id=$1`, reminder.ID).Scan(&total, &sent); err != nil || total != 1 || sent != 1 {
+		t.Fatal(total, sent, err)
+	}
+}

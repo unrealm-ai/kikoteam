@@ -13,9 +13,7 @@ import (
 func (s *Store) PlannedTaskCommand(ctx context.Context, scope service.DelegationScope, q service.PlannedTaskRequest) (service.PlannedTask, error) {
 	var out service.PlannedTask
 	target := service.Target{Workspace: scope.WorkspaceID, Actor: scope.ActorID, Conversation: scope.ConversationID, Session: q.SessionID, Source: &scope.Identity, DedupLock: "task_plan:" + scope.Identity.SessionID + ":" + q.RequestKey}
-	if len(q.AttachmentIDs) > 0 || q.Action == "start_todo" {
-		target.SourceInputID = scope.InputID
-	}
+	target.SourceInputID = scope.InputID
 	err := s.WithSession(ctx, target, func(base service.SessionTx) error {
 		out = service.PlannedTask{}
 		t := base.(*sessionTx)

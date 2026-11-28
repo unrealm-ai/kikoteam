@@ -270,7 +270,7 @@ func (w *Worker) execute(ctx context.Context, current repository.Work, turn repo
 		err = prepared.PrepareHumanTools()
 	}
 	if err == nil {
-		status, code, summary = w.prompt(ctx, current, turn, client, runner, renderPromptInput(current, cfg, turn.Input.Text), prepared.HumanTools.Token != "", prepared.HumanTools.WorkToken != "", current.Mode == "chat" && cfg.HumanMCPToken != "")
+		status, code, summary = w.prompt(ctx, current, turn, client, runner, renderPromptInput(current, cfg, turn.Input.Text, time.Now()), prepared.HumanTools.Token != "", prepared.HumanTools.WorkToken != "", current.Mode == "chat" && cfg.HumanMCPToken != "")
 	}
 	if ctx.Err() != nil {
 		status = "interrupted"

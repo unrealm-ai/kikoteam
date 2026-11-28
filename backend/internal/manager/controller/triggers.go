@@ -15,6 +15,7 @@ import (
 const nativeEventRoute = "POST /api/triggers/events/{trigger_id}"
 
 func (s *Server) triggerRoutes(m *http.ServeMux) {
+	s.chatScheduleManagementRoutes(m)
 	base := "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/triggers"
 	m.HandleFunc("GET "+base, s.wrap("listTriggers", s.listTriggers))
 	m.HandleFunc("POST "+base, s.wrap("createTrigger", s.saveTrigger))

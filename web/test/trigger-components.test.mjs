@@ -75,7 +75,7 @@ test('GitHub creation immediately exposes the enabled hook and copyable one-time
     assert.ok(button('复制密钥'));
     detail.closest('[role="dialog"]').querySelector('button[aria-label="close"]').click();
     await pause();
-    button('查看触发记录与接入信息').click();
+    await openTriggerRecord();
     await pause();
     assert.equal(button('复制密钥'), undefined);
     assert.equal(m.calls.filter(c => c.init.method).length, 1);
@@ -126,7 +126,7 @@ test('Copying uses the address inside the dialog when clipboard permission is de
   t.after(() => originalCommand ? Object.defineProperty(document, 'execCommand', originalCommand) : delete document.execCommand);
   const m = await mount({handle:path => path.endsWith('/tr-1') ? Response.json(hook) : null});
   try {
-    button('查看触发记录与接入信息').click();
+    await openTriggerRecord();
     await pause();
     button('复制地址').click();
     await pause();
@@ -143,27 +143,52 @@ test('Copying uses the address inside the dialog when clipboard permission is de
 });
 const trigger={name:'测试触发器',notification_targets:[],id:'tr-1',workspace_id:'w',agent_id:'a',kind:'webhook',enabled:false,version:'3',config:{adapter:'generic'},allowed_actions:['create_task'],created_at:'2026-11-18T00:00:00Z',updated_at:'2026-11-18T00:00:00Z',next_due:null};
 const candidate=(id,provider='web',name='员工群')=>({ref:{id,kind:'group',provider,workspace_id:'w',agent_id:'a',identity_namespace:'chat_id',external_id:'external-'+id},name,provider,evidence:provider==='web'?'member':'observed',coverage:provider==='web'?'all_joined':'observed_only',selectable:true,status:'active'});
+async function typeTab(label) {
+  const tab = [...document.querySelectorAll('.n-tabs-tab')].find(node => node.textContent.trim() === label);
+  assert.ok(tab, label);
+  tab.click();
+  await pause();
+}
+async function openTriggerRecord() {
+  if (!button('查看触发记录与接入信息')) await typeTab('事件触发');
+  button('查看触发记录与接入信息').click();
+}
 const button=t=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===t);
 async function mount({handle,canManage=true}={}){const calls=[],guards=[],workspace=ref('w');globalThis.fetch=async(url,init={})=>{const body=init.body?JSON.parse(init.body):null;calls.push({url,init,body});const v=handle?.(url,init,body);if(v)return v;if(init.method&&url.endsWith('/selectors/groups/resolve'))return Response.json({items:body.refs.map(ref=>({ref,name:'已核验群',selectable:true,status:'active'}))});if(url.includes('/selectors/groups?'))return Response.json({items:[],next_cursor:null});if(init.method&&url.endsWith('/trigger-group-candidates/resolve'))return Response.json({conversation_id:'resolved-conversation'});if(init.method)return Response.json(trigger);if(url.includes('/trigger-group-candidates?'))return Response.json({items:[],truncated:false});if(url.includes('/trigger-notification-targets?'))return Response.json({items:[],truncated:false});if(url.includes('/notifications?'))return Response.json({items:[],truncated:false});if(url.endsWith('/triggers'))return Response.json({items:[trigger]});if(url.endsWith('/credentials'))return Response.json({items:[{key_id:'k',status:'active',created_at:trigger.created_at}]});if(url.includes('/events?'))return Response.json({items:[],next_cursor:null});return Response.json(trigger)};const host=document.createElement('div');document.body.append(host);const app=createApp({render:()=>h(NDialogProvider,null,{default:()=>h(View,{workspace:workspace.value,employeeId:'a',canManage})})});app.provide('d2DraftGuard',{register:v=>guards.push(v),unregister:()=>{}});app.mount(host);await pause();return{calls,guards,workspace,async cleanup(){app.unmount();host.remove();await pause()}}}
 function fill(placeholder,value){const input=document.querySelector(`[placeholder="${placeholder}"]`);assert.ok(input);input.value=value;input.dispatchEvent(new window.Event('input',{bubbles:true}))}
-test('Trigger manager uses real list and cursor events, no webhook execution',async()=>{const m=await mount();try{button('查看触发记录与接入信息').click();await pause();assert.ok(m.calls.some(c=>c.url.endsWith('/triggers/tr-1/credentials')));assert.ok(m.calls.some(c=>c.url.endsWith('/events?limit=20')));assert.equal(m.calls.filter(c=>c.init.method).length,0);assert.match(document.body.textContent,/已受理不等于执行完成/)}finally{await m.cleanup()}});
+test('Trigger manager uses real list and cursor events, no webhook execution',async()=>{const m=await mount();try{await openTriggerRecord();await pause();assert.ok(m.calls.some(c=>c.url.endsWith('/triggers/tr-1/credentials')));assert.ok(m.calls.some(c=>c.url.endsWith('/events?limit=20')));assert.equal(m.calls.filter(c=>c.init.method).length,0);assert.match(document.body.textContent,/已受理不等于执行完成/)}finally{await m.cleanup()}});
 test('Schedule creation defaults enabled and sends real complete body',async()=>{const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','汇总客户日报');button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST');assert.ok(c.url.endsWith('/triggers'));assert.deepEqual(c.body,{name:'自动化任务',notification_targets:[],kind:'schedule',enabled:true,config:{cron:'0 9 * * *',timezone:'Asia/Shanghai',description:'汇总客户日报',businessKey:{mode:'empty'}},allowed_actions:['create_task']});assert.ok(c.init.headers.get('X-CSRF-Protection'));}finally{await m.cleanup()}});
-test('Trigger edit sends version CAS and conflict preserves draft without auto retry',async()=>{const m=await mount({handle:(url,init)=>init.method==='PUT'?Response.json({error:{code:'version_conflict',message:'配置冲突'}},{status:409}):null});try{button('编辑配置').click();await pause();button('保存触发器').click();await pause();assert.equal(m.calls.filter(c=>c.init.method==='PUT').length,1);assert.equal(m.calls.find(c=>c.init.method==='PUT').body.version,'3');assert.match(document.body.textContent,/配置冲突/);assert.ok(button('保存触发器'));assert.doesNotMatch(document.body.textContent,/配置已保存/)}finally{await m.cleanup()}});
+test('Trigger edit sends version CAS and conflict preserves draft without auto retry',async()=>{const m=await mount({handle:(url,init)=>init.method==='PUT'?Response.json({error:{code:'version_conflict',message:'配置冲突'}},{status:409}):null});try{await typeTab('事件触发');button('编辑配置').click();await pause();button('保存触发器').click();await pause();assert.equal(m.calls.filter(c=>c.init.method==='PUT').length,1);assert.equal(m.calls.find(c=>c.init.method==='PUT').body.version,'3');assert.match(document.body.textContent,/配置冲突/);assert.ok(button('保存触发器'));assert.doesNotMatch(document.body.textContent,/配置已保存/)}finally{await m.cleanup()}});
 test('Member has no trigger requests or write controls',async()=>{const m=await mount({canManage:false});try{assert.equal(m.calls.length,0);assert.equal(button('新增自动化任务'),undefined);assert.match(document.body.textContent,/管理员权限/)}finally{await m.cleanup()}});
-test('Credential confirmation is bound to workspace and cannot write after navigation',async()=>{const m=await mount();try{button('查看触发记录与接入信息').click();await pause();button('生成新签名密钥').click();await pause();m.workspace.value='w2';await pause();button('确认生成').click();await pause();assert.equal(m.calls.filter(c=>c.init.method).length,0)}finally{await m.cleanup()}});
-test('Rotated secret only appears after confirmation and clears on workspace change',async()=>{const m=await mount({handle:(url,init)=>init.method==='POST'?Response.json({key_id:'new-key',secret:'test-only-one-time-secret',status:'active',created_at:trigger.created_at}):null});try{button('查看触发记录与接入信息').click();await pause();assert.equal(document.querySelector('.trigger-detail .n-alert textarea[readonly]'),null);button('生成新签名密钥').click();await pause();assert.equal(m.calls.filter(c=>c.init.method).length,0);button('确认生成').click();await pause();assert.equal(document.querySelector('.trigger-detail .n-alert textarea[readonly]').value,'test-only-one-time-secret');m.workspace.value='w2';await pause();assert.equal(document.querySelector('.trigger-detail .n-alert textarea[readonly]'),null)}finally{await m.cleanup()}});
-test('403 invalidates older detail response and prevents credential requests',async()=>{let finish,lists=0;const m=await mount({handle:(url,init)=>!init.method&&url.endsWith('/tr-1')?new Promise(r=>finish=r):url.endsWith('/triggers')&&++lists>1?Response.json({error:{code:'forbidden',message:'权限撤销'}},{status:403}):null});try{button('查看触发记录与接入信息').click();await pause();button('刷新触发器').click();await pause();finish(Response.json(trigger));await pause();assert.equal(button('生成新签名密钥'),undefined);assert.equal(m.calls.some(c=>c.url.endsWith('/credentials')),false)}finally{await m.cleanup()}});
+test('Credential confirmation is bound to workspace and cannot write after navigation',async()=>{const m=await mount();try{await openTriggerRecord();await pause();button('生成新签名密钥').click();await pause();m.workspace.value='w2';await pause();button('确认生成').click();await pause();assert.equal(m.calls.filter(c=>c.init.method).length,0)}finally{await m.cleanup()}});
+test('Rotated secret only appears after confirmation and clears on workspace change',async()=>{const m=await mount({handle:(url,init)=>init.method==='POST'?Response.json({key_id:'new-key',secret:'test-only-one-time-secret',status:'active',created_at:trigger.created_at}):null});try{await openTriggerRecord();await pause();assert.equal(document.querySelector('.trigger-detail .n-alert textarea[readonly]'),null);button('生成新签名密钥').click();await pause();assert.equal(m.calls.filter(c=>c.init.method).length,0);button('确认生成').click();await pause();assert.equal(document.querySelector('.trigger-detail .n-alert textarea[readonly]').value,'test-only-one-time-secret');m.workspace.value='w2';await pause();assert.equal(document.querySelector('.trigger-detail .n-alert textarea[readonly]'),null)}finally{await m.cleanup()}});
+test('403 invalidates older detail response and prevents credential requests',async()=>{let finish,lists=0;const m=await mount({handle:(url,init)=>!init.method&&url.endsWith('/tr-1')?new Promise(r=>finish=r):url.endsWith('/triggers')&&++lists>1?Response.json({error:{code:'forbidden',message:'权限撤销'}},{status:403}):null});try{await openTriggerRecord();await pause();button('刷新触发器').click();await pause();finish(Response.json(trigger));await pause();assert.equal(button('生成新签名密钥'),undefined);assert.equal(m.calls.some(c=>c.url.endsWith('/credentials')),false)}finally{await m.cleanup()}});
 test('Notification selector writes only resolved conversation IDs and preserves paging',async()=>{const m=await mount({handle:url=>url.includes('/selectors/groups?')?Response.json({items:[candidate('web-candidate')],next_cursor:'more'}):null});try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','日报');button('选择').click();await pause();assert.ok(button('移除此群'));button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST'&&c.url.endsWith('/triggers'));assert.deepEqual(c.body.notification_targets,[{conversation_id:'resolved-conversation'}]);assert.equal(c.body.config.notificationTargets,undefined);assert.equal(c.body.config.notification_targets,undefined)}finally{await m.cleanup()}});
-test('Group delivery shows accepted, sent, failed and unknown independently of task completion',async()=>{const m=await mount({handle:url=>url.includes('/notifications?')?Response.json({items:['accepted','sent','failed','unknown'].map((status,i)=>({source_input_id:'i'+i,source_turn_id:'turn',task_id:'task',conversation_id:'group',status,context_status:'pending',created_at:trigger.created_at})),truncated:false}):null});try{button('查看触发记录与接入信息').click();await pause();for(const label of ['渠道已受理，送达待核对','发送已确认','发送失败','结果未知，不自动重发'])assert.match(document.body.textContent,new RegExp(label));assert.doesNotMatch(document.body.textContent,/任务已完成/)}finally{await m.cleanup()}});
+test('Group delivery shows accepted, sent, failed and unknown independently of task completion',async()=>{const m=await mount({handle:url=>url.includes('/notifications?')?Response.json({items:['accepted','sent','failed','unknown'].map((status,i)=>({source_input_id:'i'+i,source_turn_id:'turn',task_id:'task',conversation_id:'group',status,context_status:'pending',created_at:trigger.created_at})),truncated:false}):null});try{await openTriggerRecord();await pause();for(const label of ['渠道已受理，送达待核对','发送已确认','发送失败','结果未知，不自动重发'])assert.match(document.body.textContent,new RegExp(label));assert.doesNotMatch(document.body.textContent,/任务已完成/)}finally{await m.cleanup()}});
 test('Group candidate error never becomes empty success or permits saving',async()=>{const m=await mount({handle:url=>url.includes('/trigger-notification-targets?')?Response.json({error:{code:'dependency_unavailable',message:'群目标读取失败'}},{status:503}):null});try{button('新增自动化任务').click();await pause();assert.match(document.body.textContent,/群目标读取失败/);assert.equal(button('创建并启用').disabled,true);assert.equal(m.calls.filter(c=>c.init.method).length,0)}finally{await m.cleanup()}});
 async function choose(index,label){document.querySelectorAll('.n-base-selection')[index].dispatchEvent(new window.MouseEvent('click',{bubbles:true}));await pause();const opt=[...document.querySelectorAll('.n-base-select-option')].reverse().find(o=>o.textContent.trim()===label);assert.ok(opt,label);opt.click();document.body.click();await pause();}
-test('Fixed reminder requires target and never submits a model task or business key',async()=>{const m=await mount({handle:url=>url.includes('/selectors/groups?')?Response.json({items:[candidate('group')],next_cursor:null}):null});try{button('新增自动化任务').click();await pause();await choose(1,'发送固定文案提醒（不调用模型）');fill('让员工完成什么工作','请更新日报');button('创建并启用').click();await pause();assert.match(document.body.textContent,/固定提醒至少需要一个群目标/);assert.equal(m.calls.some(c=>c.init.method==='POST'&&c.url.endsWith('/triggers')),false);button('选择').click();await pause();button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST'&&c.url.endsWith('/triggers'));assert.equal(c.body.config.action,'send_message');assert.equal(c.body.config.businessKey,undefined);assert.deepEqual(c.body.allowed_actions,['send_message']);assert.deepEqual(c.body.notification_targets,[{conversation_id:'resolved-conversation'}]);}finally{await m.cleanup()}});
+
+test('Existing fixed reminders and new reminder entry are both hidden',async()=>{
+  const reminder={...trigger,kind:'schedule',name:'旧提醒',enabled:true,config:{cron:'0 9 * * *',timezone:'Asia/Shanghai',action:'send_message',description:'请更新日报'},allowed_actions:['send_message'],notification_targets:[{conversation_id:'group'}]};
+  const m=await mount({handle:(url,init)=>{
+    if (!init.method && url.endsWith('/triggers')) return Response.json({items:[reminder]});
+    return null;
+  }});
+  try {
+    assert.doesNotMatch(document.body.textContent,/旧提醒|请更新日报/);
+    assert.equal(button('编辑配置'),undefined);
+    button('新增自动化任务').click();await pause();
+    assert.doesNotMatch(document.body.textContent,/定时动作|发送固定文案提醒/);
+    assert.match(document.body.textContent,/每次任务说明/);
+    assert.equal(m.calls.filter(v=>v.init.method).length,0);
+  }finally{await m.cleanup()}
+});
 test('GitHub Issue adapter uses real dedicated config and signature instructions',async()=>{const gh={...trigger,config:{adapter:'github_issue',repositoryId:123,installationId:456}};const m=await mount({handle:(url,init)=>!init.method&&url.endsWith('/tr-1')?Response.json(gh):null});try{button('新增自动化任务').click();await pause();await choose(0,'GitHub 新建 Issue');const nums=document.querySelectorAll('.n-input-number input');for(const [i,n] of [123,456].entries()){nums[i].value=String(n);nums[i].dispatchEvent(new window.Event('input',{bubbles:true}));nums[i].dispatchEvent(new window.Event('blur',{bubbles:true}));}await pause();button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST');assert.equal(c.body.kind,'webhook');assert.equal(c.body.config.adapter,'github_issue');assert.deepEqual(c.body.allowed_actions,['create_task']);assert.match(document.body.textContent,/\/api\/triggers\/github\/tr-1/);assert.match(document.body.textContent,/X-Hub-Signature-256/);assert.doesNotMatch(document.body.textContent,/X-Timestamp 的原值/)}finally{await m.cleanup()}});
-test('All six calendar key periods are selectable and submitted with IANA timezone',async()=>{for(const [period,label] of [['minute','分钟'],['hour','小时'],['day','日'],['week','周（周一开始）'],['month','月'],['year','年']]){const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','周期汇总');fill('Asia/Shanghai','America/New_York');await choose(2,'按日历周期');await choose(3,label);assert.match(document.body.textContent,/周从周一开始/);assert.match(document.body.textContent,/UTC 起止时刻/);button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST');assert.deepEqual(c.body.config.businessKey,{mode:'period',period});assert.equal(c.body.config.timezone,'America/New_York');assert.equal(c.body.config.business_key,undefined)}finally{await m.cleanup()}}});
-test('Fixed calendar key uses unchanged user value',async()=>{const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','业务汇总');await choose(2,'固定业务键');fill('固定业务键','customer-42');button('创建并启用').click();await pause();assert.deepEqual(m.calls.find(c=>c.init.method==='POST').body.config.businessKey,{mode:'fixed',value:'customer-42'})}finally{await m.cleanup()}});
+test('All six calendar key periods are selectable and submitted with IANA timezone',async()=>{for(const [period,label] of [['minute','分钟'],['hour','小时'],['day','日'],['week','周（周一开始）'],['month','月'],['year','年']]){const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','周期汇总');fill('Asia/Shanghai','America/New_York');await choose(1,'按日历周期');await choose(2,label);assert.match(document.body.textContent,/周从周一开始/);assert.match(document.body.textContent,/UTC 起止时刻/);button('创建并启用').click();await pause();const c=m.calls.find(c=>c.init.method==='POST');assert.deepEqual(c.body.config.businessKey,{mode:'period',period});assert.equal(c.body.config.timezone,'America/New_York');assert.equal(c.body.config.business_key,undefined)}finally{await m.cleanup()}}});
+test('Fixed calendar key uses unchanged user value',async()=>{const m=await mount();try{button('新增自动化任务').click();await pause();fill('让员工完成什么工作','业务汇总');await choose(1,'固定业务键');fill('固定业务键','customer-42');button('创建并启用').click();await pause();assert.deepEqual(m.calls.find(c=>c.init.method==='POST').body.config.businessKey,{mode:'fixed',value:'customer-42'})}finally{await m.cleanup()}});
 test('Candidate resolution uses provider evidence and does not select pending or late results',async()=>{let finish;const m=await mount({handle:(url,init)=>url.includes('/selectors/groups?')?Response.json({items:[candidate('observed','wecom')],next_cursor:null}):url.endsWith('/trigger-group-candidates/resolve')?new Promise(r=>finish=r):null});try{button('新增自动化任务').click();await pause();button('选择').click();await pause();const c=m.calls.find(c=>c.url.endsWith('/trigger-group-candidates/resolve'));assert.deepEqual(c.body,{provider:'wecom',candidate_id:'observed'});assert.equal(button('移除此群'),undefined);assert.equal(button('创建并启用').disabled,true);m.workspace.value='w2';await pause();finish(Response.json({conversation_id:'late-conversation'}));await pause();assert.equal(button('移除此群'),undefined);assert.doesNotMatch(document.body.textContent,/late-conversation/)}finally{await m.cleanup()}});
 test('Failed candidate resolution never forges a group ID into notification targets',async()=>{const m=await mount({handle:url=>url.includes('/selectors/groups?')?Response.json({items:[candidate('external-group-id','dingtalk')],next_cursor:null}):url.endsWith('/trigger-group-candidates/resolve')?Response.json({error:{code:'candidate_stale',message:'候选已失效'}},{status:409}):null});try{button('新增自动化任务').click();await pause();button('选择').click();await pause();assert.match(document.body.textContent,/候选已失效/);assert.equal(button('移除此群'),undefined);fill('让员工完成什么工作','汇总');button('创建并启用').click();await pause();assert.deepEqual(m.calls.find(c=>c.init.method==='POST'&&c.url.endsWith('/triggers')).body.notification_targets,[])}finally{await m.cleanup()}});
-test('Double-click credential creation opens one dialog and submits only one request',async()=>{let finish;const m=await mount({handle:(url,init)=>init.method==='POST'&&url.endsWith('/credentials')?new Promise(r=>finish=r):null});try{button('查看触发记录与接入信息').click();await pause();const create=button('生成新签名密钥');create.click();create.click();await pause();const confirms=[...document.querySelectorAll('button')].filter(b=>b.textContent.trim()==='确认生成');assert.equal(confirms.length,1);confirms[0].click();confirms[0].click();await pause();assert.equal(m.calls.filter(c=>c.init.method==='POST'&&c.url.endsWith('/credentials')).length,1);finish(Response.json({key_id:'single',secret:'one-secret',status:'active',created_at:trigger.created_at}));await pause();assert.equal(document.querySelector('.trigger-detail .n-alert textarea[readonly]').value,'one-secret')}finally{await m.cleanup()}});
+test('Double-click credential creation opens one dialog and submits only one request',async()=>{let finish;const m=await mount({handle:(url,init)=>init.method==='POST'&&url.endsWith('/credentials')?new Promise(r=>finish=r):null});try{await openTriggerRecord();await pause();const create=button('生成新签名密钥');create.click();create.click();await pause();const confirms=[...document.querySelectorAll('button')].filter(b=>b.textContent.trim()==='确认生成');assert.equal(confirms.length,1);confirms[0].click();confirms[0].click();await pause();assert.equal(m.calls.filter(c=>c.init.method==='POST'&&c.url.endsWith('/credentials')).length,1);finish(Response.json({key_id:'single',secret:'one-secret',status:'active',created_at:trigger.created_at}));await pause();assert.equal(document.querySelector('.trigger-detail .n-alert textarea[readonly]').value,'one-secret')}finally{await m.cleanup()}});
 test('Feishu lists live at open and pages without reading a cached selector; only selected proof is registered', async()=>{
   const m=await mount({handle:(url,init,body)=>{
     if(!url.endsWith('/channels/feishu/groups/discover')) return null;
@@ -204,7 +229,7 @@ test('Closing trigger records discards late detail data and permits reopening', 
     }
   });
   try {
-    button('查看触发记录与接入信息').click();
+    await openTriggerRecord();
     await pause();
     const modal = document.querySelector('[role="dialog"][aria-label="触发记录与接入信息"]');
     assert.ok(modal);
@@ -214,11 +239,52 @@ test('Closing trigger records discards late detail data and permits reopening', 
     assert.equal(button('生成新签名密钥'), undefined);
     assert.equal(m.calls.some(c => c.url.includes('/events?')), false);
 
-    button('查看触发记录与接入信息').click();
+    await openTriggerRecord();
     await pause();
     assert.ok(button('生成新签名密钥'));
     assert.equal(m.calls.filter(c => c.url.endsWith('/credentials')).length, 1);
   } finally {
     await m.cleanup();
   }
+});
+
+test('Dialog scheduling is under triggers, indicates its source, and allows only update and enable/disable', async () => {
+  let plan = {schedule_id:'plan', version:'1', instruction:'更新项目周报', status:'active', channel:'feishu', chat_type:'group', source_label:'项目群', next_due:'2026-12-02T01:00:00Z', schedule:{frequency:'weekly',times:['09:00'],weekdays:[3],timezone:'Asia/Shanghai'}};
+  const m = await mount({handle:(url,init,body)=>{
+    if (url.endsWith('/chat-schedules')) return Response.json({items:[plan]});
+    if (url.endsWith('/chat-schedules/plan') && init.method==='PATCH') {
+      plan = {...plan, version:String(Number(plan.version)+1), schedule:body.schedule ?? plan.schedule, status:body.enabled===undefined ? plan.status : body.enabled ? 'active':'paused'};
+      return Response.json(plan);
+    }
+    return null;
+  }});
+  try {
+    assert.match(document.body.textContent,/固定执行的团队工作/);
+    await typeTab('事件触发');
+    assert.match(document.body.textContent,/收到外部事件就处理/);
+    assert.ok(button('查看触发记录与接入信息'));
+    await typeTab('会话定时任务');
+    assert.match(document.body.textContent,/飞书 · 群聊 · 项目群/);
+    assert.match(document.body.textContent,/只在原对话创建和取消/);
+    assert.equal(button('新增自动化任务'),undefined);
+    assert.equal(button('删除'),undefined);
+    button('改时间').click(); await pause();
+    fill('09:00, 18:00','17:00');
+    button('保存').click(); await pause();
+    button('停用').click(); await pause();
+    button('启用').click(); await pause();
+    const patches=m.calls.filter(v=>v.init.method);
+    assert.deepEqual(patches.map(p=>p.init.method),['PATCH','PATCH','PATCH']);
+    assert.deepEqual(patches.map(p=>p.body),[
+      {version:'1',schedule:{frequency:'weekly',timezone:'Asia/Shanghai',times:['17:00'],weekdays:[3]}},
+      {version:'2',enabled:false},{version:'3',enabled:true}
+    ]);
+  } finally { await m.cleanup() }
+});
+test('Ordinary user cannot load dialog schedule configuration from the trigger panel',async()=>{
+  const m=await mount({canManage:false});
+  try {
+    assert.doesNotMatch(document.body.textContent,/会话定时任务/);
+    assert.equal(m.calls.some(v=>v.url.includes('/chat-schedules')),false);
+  } finally { await m.cleanup() }
 });

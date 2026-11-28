@@ -3,6 +3,7 @@ package runtime
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/integration"
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
@@ -22,7 +23,7 @@ func TestRenderPromptInputFromTrustedReportModeOnly(t *testing.T) {
 		{name: "task does not render chat reminders", mode: "task", text: body, reportOnly: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out := renderPromptInput(repository.Work{Mode: tc.mode}, integration.HarnessConfig{ReportOnly: tc.reportOnly}, tc.text)
+			out := renderPromptInput(repository.Work{Mode: tc.mode}, integration.HarnessConfig{ReportOnly: tc.reportOnly}, tc.text, time.Time{})
 			if !tc.reportOnly || tc.mode != "chat" {
 				if out != tc.text {
 					t.Fatal("unexpected rewrite of ordinary body")
@@ -34,5 +35,23 @@ func TestRenderPromptInputFromTrustedReportModeOnly(t *testing.T) {
 				t.Fatal("report prompt does not preserve exact original body")
 			}
 		})
+	}
+}
+
+func TestScheduleClockRefreshesOnNewMainChatTurns(t *testing.T) {
+	cfg := integration.HarnessConfig{DelegationToken: "trusted"}
+	chat := repository.Work{Mode: "chat"}
+	body := "晚上6点提醒我"
+	first := time.Date(2026, 11, 28, 6, 55, 0, 0, time.UTC)
+	got := renderPromptInput(chat, cfg, body, first)
+	if !strings.Contains(got, "2026-11-28T14:55:00+08:00") || !strings.HasSuffix(got, "\n\n"+body) {
+		t.Fatal(got)
+	}
+	newTurn := renderPromptInput(chat, cfg, body, first.Add(24*time.Hour))
+	if !strings.Contains(newTurn, "2026-11-29T14:55:00+08:00") || strings.Contains(newTurn, "2026-11-28") {
+		t.Fatal(newTurn)
+	}
+	if got = renderPromptInput(repository.Work{Mode: "task"}, cfg, body, first); got != body {
+		t.Fatal("task body was rewritten")
 	}
 }

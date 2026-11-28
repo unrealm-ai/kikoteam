@@ -57,6 +57,10 @@ func (s *Service) CreateSession(ctx context.Context, w, actor, key string, r Cre
 	return s.createSession(ctx, w, actor, key, r, nil)
 }
 func (s *Service) createSession(ctx context.Context, w, actor, key string, r CreateSession, source *DelegationScope) (Session, bool, error) {
+	return s.createSessionWithSchedule(ctx, w, actor, key, r, source, nil)
+}
+
+func (s *Service) createSessionWithSchedule(ctx context.Context, w, actor, key string, r CreateSession, source *DelegationScope, scheduled *ChatScheduleRun) (Session, bool, error) {
 	mode, modeErr := DeliveryMode(r.DeliveryMode)
 	if modeErr != nil {
 		return Session{}, false, modeErr
@@ -67,36 +71,28 @@ func (s *Service) createSession(ctx context.Context, w, actor, key string, r Cre
 		return Session{}, false, legacyErr
 	}
 	r.DeliveryMode = mode
-	target := Target{Workspace: w, Actor: actor, Conversation: r.ConversationID, TaskSpaceID: r.TaskSpaceID, AgentID: r.AgentID}
+	target := Target{Workspace: w, Actor: actor, Conversation: r.ConversationID, TaskSpaceID: r.TaskSpaceID, AgentID: r.AgentID, ChatSchedule: scheduled}
 	if source != nil {
 		target.Source = &source.Identity
 		target.SourceInputID = source.InputID
-		target.DelegatedFiles = &DelegatedFiles{IDs: r.AttachmentIDs, Paths: r.AttachmentPaths, SourceFilesUnused: source.SourceFilesUnused}
+		if scheduled == nil {
+			target.DelegatedFiles = &DelegatedFiles{IDs: r.AttachmentIDs, Paths: r.AttachmentPaths, SourceFilesUnused: source.SourceFilesUnused}
+		}
 	}
 	if !validSessionOwner(r, target.Source) || (r.Mode != "chat" && r.Mode != "task") || !validAttachmentSelection(r.AttachmentPaths, r.AttachmentIDs, source != nil) || !validTitle(r.Title) || r.Input != nil && !validMessageText(r.Input.Text, r.AttachmentPaths, r.AttachmentIDs) {
 		return Session{}, false, Fail("invalid_argument", 400, "会话参数无效")
 	}
-	d := Dedup{Kind: "initial_input", Target: "sessions", Key: key}
+	d, err := sessionCreateDedup(r, key, source, scheduled)
+	if err != nil {
+		return Session{}, false, err
+	}
 	if r.Input != nil {
-		var err error
-		d.Fingerprint, err = fingerprint(r)
-		if err != nil {
-			return Session{}, false, err
-		}
-		if source != nil {
-			sum := sha256.Sum256([]byte("task_delegation_create:" + source.Identity.SessionID + ":" + source.InputID + ":" + d.Fingerprint))
-			d.Kind = "delegated_initial_input"
-			d.Key = hex.EncodeToString(sum[:])
-		}
-		if !validKey(d.Key) {
-			return Session{}, false, Fail("idempotency_key_required", 400, "提交首条输入需要有效去重键")
-		}
 		target.DedupLock = d.Kind + ":" + d.Target + ":" + d.Key
 	}
 	initialID, initialDedup := NewID(), d
 	id := initialID
 	replayed := false
-	err := s.Store.WithSession(ctx, target, func(tx SessionTx) error {
+	err = s.Store.WithSession(ctx, target, func(tx SessionTx) error {
 		id, d, replayed = initialID, initialDedup, false
 		if r.Input != nil {
 			found, err := tx.FindDedup(d)
@@ -152,6 +148,9 @@ func (s *Service) createSession(ctx context.Context, w, actor, key string, r Cre
 				return err
 			}
 		}
+		if err := finishScheduledSession(tx, scheduled, v.TaskID); err != nil {
+			return err
+		}
 		return tx.SnapshotEvent()
 	})
 	if err != nil {
@@ -159,6 +158,45 @@ func (s *Service) createSession(ctx context.Context, w, actor, key string, r Cre
 	}
 	v, err := s.Store.Session(ctx, w, actor, id)
 	return PublicSession(v), replayed, err
+}
+
+func finishScheduledSession(tx SessionTx, scheduled *ChatScheduleRun, taskID *string) error {
+	if scheduled == nil {
+		return nil
+	}
+	stx, ok := tx.(chatScheduleTransaction)
+	if !ok || taskID == nil {
+		return Fail("dependency_unavailable", 503, "定时任务暂不可用")
+	}
+	return stx.FinishChatSchedule(scheduled, *taskID)
+}
+
+func sessionCreateDedup(r CreateSession, key string, source *DelegationScope, scheduled *ChatScheduleRun) (Dedup, error) {
+	d := Dedup{Kind: "initial_input", Target: "sessions", Key: key}
+	if r.Input == nil {
+		return d, nil
+	}
+	var err error
+	d.Fingerprint, err = fingerprint(r)
+	if err != nil {
+		return d, err
+	}
+	switch {
+	case scheduled != nil:
+		d.Kind = "scheduled_initial_input"
+		d.Key, err = fingerprint([]any{scheduled.ID, scheduled.Tick.ExpectedDue.UTC()})
+		if err != nil {
+			return d, err
+		}
+	case source != nil:
+		sum := sha256.Sum256([]byte("task_delegation_create:" + source.Identity.SessionID + ":" + source.InputID + ":" + d.Fingerprint))
+		d.Kind = "delegated_initial_input"
+		d.Key = hex.EncodeToString(sum[:])
+	}
+	if !validKey(d.Key) {
+		return d, Fail("idempotency_key_required", 400, "提交首条输入需要有效去重键")
+	}
+	return d, nil
 }
 
 func (s *Service) appendInputMode(ctx context.Context, tx SessionTx, actor, text, mode string, paths, ids []string, trusted []Attachment) (Input, error) {

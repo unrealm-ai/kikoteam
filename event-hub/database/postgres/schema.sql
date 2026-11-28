@@ -1690,6 +1690,57 @@ CREATE TABLE public.manager_channel_speaker_aliases (
 
 
 --
+-- Name: manager_chat_schedule_operations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manager_chat_schedule_operations (
+    schedule_id uuid NOT NULL,
+    source_session_id uuid NOT NULL,
+    actor_id uuid NOT NULL,
+    request_hash text NOT NULL
+);
+
+
+--
+-- Name: manager_chat_schedule_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manager_chat_schedule_runs (
+    schedule_id uuid NOT NULL,
+    due timestamp with time zone NOT NULL,
+    task_id uuid,
+    status text NOT NULL,
+    reason text DEFAULT ''::text NOT NULL,
+    CONSTRAINT manager_chat_schedule_runs_status_check CHECK ((status = ANY (ARRAY['accepted'::text, 'skipped'::text])))
+);
+
+
+--
+-- Name: manager_chat_schedules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manager_chat_schedules (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    source_session_id uuid NOT NULL,
+    source_input_id uuid NOT NULL,
+    actor_id uuid NOT NULL,
+    title text,
+    instruction text NOT NULL,
+    rule jsonb NOT NULL,
+    attachment_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    attachment_paths jsonb DEFAULT '[]'::jsonb NOT NULL,
+    status text NOT NULL,
+    version bigint DEFAULT 1 NOT NULL,
+    next_due timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT manager_chat_schedules_check CHECK (((status = 'active'::text) = (next_due IS NOT NULL))),
+    CONSTRAINT manager_chat_schedules_status_check CHECK ((status = ANY (ARRAY['active'::text, 'paused'::text, 'canceled'::text, 'completed'::text]))),
+    CONSTRAINT manager_chat_schedules_version_check CHECK ((version > 0))
+);
+
+
+--
 -- Name: manager_conversation_sandboxes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4614,6 +4665,38 @@ ALTER TABLE ONLY public.manager_channel_speaker_aliases
 
 
 --
+-- Name: manager_chat_schedule_operations manager_chat_schedule_operations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedule_operations
+    ADD CONSTRAINT manager_chat_schedule_operations_pkey PRIMARY KEY (source_session_id, actor_id, request_hash);
+
+
+--
+-- Name: manager_chat_schedule_runs manager_chat_schedule_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedule_runs
+    ADD CONSTRAINT manager_chat_schedule_runs_pkey PRIMARY KEY (schedule_id, due);
+
+
+--
+-- Name: manager_chat_schedule_runs manager_chat_schedule_runs_task_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedule_runs
+    ADD CONSTRAINT manager_chat_schedule_runs_task_id_key UNIQUE (task_id);
+
+
+--
+-- Name: manager_chat_schedules manager_chat_schedules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedules
+    ADD CONSTRAINT manager_chat_schedules_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: manager_conversation_sandboxes manager_conversation_sandboxes_conversation_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6509,6 +6592,20 @@ CREATE INDEX manager_channel_reaction_ready_idx ON public.manager_channel_inbox 
 
 
 --
+-- Name: manager_chat_schedules_due; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_chat_schedules_due ON public.manager_chat_schedules USING btree (next_due, id) WHERE (status = 'active'::text);
+
+
+--
+-- Name: manager_chat_schedules_owner; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_chat_schedules_owner ON public.manager_chat_schedules USING btree (workspace_id, source_session_id, actor_id, created_at DESC, id DESC);
+
+
+--
 -- Name: manager_chat_unique; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7568,6 +7665,62 @@ ALTER TABLE ONLY public.manager_channel_principals
 
 ALTER TABLE ONLY public.manager_channel_speaker_aliases
     ADD CONSTRAINT manager_channel_speaker_aliases_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.manager_conversations(id);
+
+
+--
+-- Name: manager_chat_schedule_operations manager_chat_schedule_operations_schedule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedule_operations
+    ADD CONSTRAINT manager_chat_schedule_operations_schedule_id_fkey FOREIGN KEY (schedule_id) REFERENCES public.manager_chat_schedules(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_chat_schedule_operations manager_chat_schedule_operations_source_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedule_operations
+    ADD CONSTRAINT manager_chat_schedule_operations_source_session_id_fkey FOREIGN KEY (source_session_id) REFERENCES public.manager_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_chat_schedule_runs manager_chat_schedule_runs_schedule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedule_runs
+    ADD CONSTRAINT manager_chat_schedule_runs_schedule_id_fkey FOREIGN KEY (schedule_id) REFERENCES public.manager_chat_schedules(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_chat_schedule_runs manager_chat_schedule_runs_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedule_runs
+    ADD CONSTRAINT manager_chat_schedule_runs_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.manager_tasks(id) ON DELETE SET NULL;
+
+
+--
+-- Name: manager_chat_schedules manager_chat_schedules_source_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedules
+    ADD CONSTRAINT manager_chat_schedules_source_input_id_fkey FOREIGN KEY (source_input_id) REFERENCES public.manager_inputs(id);
+
+
+--
+-- Name: manager_chat_schedules manager_chat_schedules_source_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedules
+    ADD CONSTRAINT manager_chat_schedules_source_session_id_fkey FOREIGN KEY (source_session_id) REFERENCES public.manager_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: manager_chat_schedules manager_chat_schedules_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_chat_schedules
+    ADD CONSTRAINT manager_chat_schedules_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.platform_workspaces(id) ON DELETE CASCADE;
 
 
 --

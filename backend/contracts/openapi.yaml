@@ -65,6 +65,10 @@ paths:
     $ref: ./modules/platform/people-selectors.yaml#/sources
   /api/v1/workspaces/{workspace_id}/agents/{agent_id}/selectors/people/resolve:
     $ref: ./modules/platform/people-selectors.yaml#/resolve
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/chat-schedules:
+    $ref: ./modules/manager/chat-schedules.yaml#/collection
+  /api/v1/workspaces/{workspace_id}/agents/{agent_id}/chat-schedules/{schedule_id}:
+    $ref: ./modules/manager/chat-schedules.yaml#/item
   /api/v1/workspaces/{workspace_id}/agents/{agent_id}/triggers:
     $ref: ./modules/manager/triggers.yaml#/collection
   /api/v1/workspaces/{workspace_id}/agents/{agent_id}/triggers/{trigger_id}:

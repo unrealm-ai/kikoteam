@@ -64,7 +64,7 @@ func plannedFixture(t *testing.T) (*sql.DB, *manager.Service, *manager.Delegatio
 func TestPlannedTaskAtomicStartAndCancellation(t *testing.T) {
 	db, m, d, scope := plannedFixture(t)
 	ctx := context.Background()
-	create := manager.DelegationArgs{Instruction: "initial requirements", RequestKey: "todo1"}
+	create := manager.DelegationArgs{Instruction: "initial requirements"}
 	raw, err := d.Call(ctx, scope, "create_todo", create)
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +79,7 @@ func TestPlannedTaskAtomicStartAndCancellation(t *testing.T) {
 	if _, err = d.Call(ctx, scope, "stop_session", manager.DelegationArgs{SessionID: v.SessionID}); err == nil {
 		t.Fatal("stop falsely cancels todo")
 	}
-	raw, err = d.Call(ctx, scope, "supplement_todo", manager.DelegationArgs{SessionID: v.SessionID, Instruction: "more context", ExpectedVersion: 1, RequestKey: "add"})
+	raw, err = d.Call(ctx, scope, "supplement_todo", manager.DelegationArgs{SessionID: v.SessionID, Instruction: "more context", ExpectedVersion: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestPlannedTaskAtomicStartAndCancellation(t *testing.T) {
 	if summary := raw.(manager.PlannedTask).Summary; summary == nil || summary.Status != "planned" || summary.Result != nil {
 		t.Fatalf("unstarted todo has an incorrect summary: %+v", summary)
 	}
-	args := manager.DelegationArgs{SessionID: v.SessionID, ExpectedVersion: 2, RequestKey: "start"}
+	args := manager.DelegationArgs{SessionID: v.SessionID, ExpectedVersion: 2}
 	var wg sync.WaitGroup
 	errs := make(chan error, 5)
 	for range 5 {
@@ -138,19 +138,19 @@ func TestPlannedTaskAtomicStartAndCancellation(t *testing.T) {
 	if err != nil || !cfg.TodoStarted || cfg.Employee.Name != employee.Name || cfg.Configuration.Instruction != employee.Instruction {
 		t.Fatalf("started todo prompt facts lost frozen decision or employee profile: %v", err)
 	}
-	if _, err = d.Call(ctx, scope, "cancel_todo", manager.DelegationArgs{SessionID: v.SessionID, ExpectedVersion: 3, RequestKey: "cancel-running"}); err == nil {
+	if _, err = d.Call(ctx, scope, "cancel_todo", manager.DelegationArgs{SessionID: v.SessionID, ExpectedVersion: 3}); err == nil {
 		t.Fatal("cancel_todo affected running work")
 	}
-	raw, err = d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "cancel later", RequestKey: "todo2"})
+	raw, err = d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "cancel later"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	other := raw.(manager.PlannedTask)
-	raw, err = d.Call(ctx, scope, "cancel_todo", manager.DelegationArgs{SessionID: other.SessionID, ExpectedVersion: 1, RequestKey: "cancel-todo"})
+	raw, err = d.Call(ctx, scope, "cancel_todo", manager.DelegationArgs{SessionID: other.SessionID, ExpectedVersion: 1})
 	if err != nil || raw.(manager.PlannedTask).State != "canceled" {
 		t.Fatal(raw, err)
 	}
-	if _, err = d.Call(ctx, scope, "start_todo", manager.DelegationArgs{SessionID: other.SessionID, ExpectedVersion: 2, RequestKey: "revive"}); err == nil {
+	if _, err = d.Call(ctx, scope, "start_todo", manager.DelegationArgs{SessionID: other.SessionID, ExpectedVersion: 2}); err == nil {
 		t.Fatal("canceled todo revived")
 	}
 	if _, err = db.Exec(`INSERT INTO manager_inputs(id,workspace_id,session_id,submitted_by,seq,text)VALUES(gen_random_uuid(),$1,$2,$3,1,'bypass')`, scope.WorkspaceID, other.SessionID, scope.ActorID); err == nil {
@@ -162,21 +162,21 @@ func TestPlannedTaskRacesRollbackAndRevocation(t *testing.T) {
 	db, m, d, scope := plannedFixture(t)
 	ctx := context.Background()
 	for n, pair := range [][2]string{{"start_todo", "cancel_todo"}, {"start_todo", "supplement_todo"}} {
-		key := string(rune('a' + n))
-		raw, e := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "keep requirements", RequestKey: key})
+		suffix := string(rune('a' + n))
+		raw, e := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "keep requirements " + suffix})
 		if e != nil {
 			t.Fatal(e)
 		}
 		v := raw.(manager.PlannedTask)
 		errs := make(chan error, 2)
 		var wg sync.WaitGroup
-		for j, action := range pair {
+		for _, action := range pair {
 			wg.Add(1)
-			go func(j int, action string) {
+			go func(action string) {
 				defer wg.Done()
-				_, err := d.Call(ctx, scope, action, manager.DelegationArgs{SessionID: v.SessionID, ExpectedVersion: 1, Instruction: "addition", RequestKey: key + string(rune('x'+j))})
+				_, err := d.Call(ctx, scope, action, manager.DelegationArgs{SessionID: v.SessionID, ExpectedVersion: 1, Instruction: "addition"})
 				errs <- err
-			}(j, action)
+			}(action)
 		}
 		wg.Wait()
 		close(errs)
@@ -190,18 +190,23 @@ func TestPlannedTaskRacesRollbackAndRevocation(t *testing.T) {
 			t.Fatal("race did not have one winner", wins)
 		}
 	}
-	raw, e := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "retry requirements", RequestKey: "retry"})
+	raw, e := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "retry requirements"})
 	if e != nil {
 		t.Fatal(e)
 	}
 	v := raw.(manager.PlannedTask)
-	if _, e = d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "changed", RequestKey: "retry"}); e == nil {
-		t.Fatal("replay content changed")
+	replayed, e := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "retry requirements"})
+	if e != nil || !replayed.(manager.PlannedTask).Duplicate || replayed.(manager.PlannedTask).TaskID != v.TaskID {
+		t.Fatal("exact retry did not reuse the todo", replayed, e)
+	}
+	changed, e := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "changed"})
+	if e != nil || changed.(manager.PlannedTask).TaskID == v.TaskID {
+		t.Fatal("different arguments were collapsed", changed, e)
 	}
 	if _, e = db.Exec(`UPDATE platform_model_profiles SET enabled=false,is_default=false WHERE workspace_id=$1`, scope.WorkspaceID); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = d.Call(ctx, scope, "start_todo", manager.DelegationArgs{SessionID: v.SessionID, ExpectedVersion: 1, RequestKey: "bad-model"}); e == nil {
+	if _, e = d.Call(ctx, scope, "start_todo", manager.DelegationArgs{SessionID: v.SessionID, ExpectedVersion: 1}); e == nil {
 		t.Fatal("started without model")
 	}
 	var state string
@@ -212,7 +217,7 @@ func TestPlannedTaskRacesRollbackAndRevocation(t *testing.T) {
 	if _, e = db.Exec(`UPDATE platform_agents SET usage_config=jsonb_set(usage_config,'{access}','{"mode":"allowlist","group_members_enabled":false,"allow":[],"deny":[]}'::jsonb)WHERE id=$1`, scope.AgentID); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "retry requirements", RequestKey: "retry"}); e == nil {
+	if _, e = d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "retry requirements"}); e == nil {
 		t.Fatal("replay bypassed revocation")
 	}
 	if _, _, e = m.SubmitInput(ctx, scope.WorkspaceID, scope.ActorID, v.SessionID, "forged", "unauthorized"); e == nil {
@@ -223,7 +228,7 @@ func TestPlannedTaskRacesRollbackAndRevocation(t *testing.T) {
 func TestDelegationFiltersAndEvidenceReceipts(t *testing.T) {
 	db, _, d, scope := plannedFixture(t)
 	ctx := context.Background()
-	raw, err := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "plan", RequestKey: "filter-plan"})
+	raw, err := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "plan"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +237,7 @@ func TestDelegationFiltersAndEvidenceReceipts(t *testing.T) {
 	if err != nil || len(raw.(manager.Page[manager.Session]).Items) != 1 {
 		t.Fatal(raw, err)
 	}
-	_, err = d.Call(ctx, scope, "start_todo", manager.DelegationArgs{SessionID: plan.SessionID, ExpectedVersion: 1, RequestKey: "filter-start"})
+	_, err = d.Call(ctx, scope, "start_todo", manager.DelegationArgs{SessionID: plan.SessionID, ExpectedVersion: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +311,7 @@ func TestPlannedTaskMCPProtocolAndRemovedTargetTool(t *testing.T) {
 	if strings.Contains(list, "task_delegation_list_targets") || strings.Contains(list, `"session_id"`) || !strings.Contains(list, "task_delegation_cancel_todo") {
 		t.Fatal("wrong tool surface", list)
 	}
-	result := call("tools/call", `{"name":"task_delegation_create_todo","arguments":{"instruction":"deferred","request_key":"http-todo"}}`)
+	result := call("tools/call", `{"name":"task_delegation_create_todo","arguments":{"instruction":"deferred"}}`)
 	if strings.Contains(result, `"isError":true`) || !strings.Contains(result, "planned") || strings.Contains(result, `"accepted":true`) {
 		t.Fatal(result)
 	}
@@ -314,7 +319,7 @@ func TestPlannedTaskMCPProtocolAndRemovedTargetTool(t *testing.T) {
 	if err = db.QueryRow(`SELECT id FROM manager_tasks WHERE source_chat_session_id=$1`, scope.Identity.SessionID).Scan(&task); err != nil {
 		t.Fatal(err)
 	}
-	result = call("tools/call", `{"name":"task_delegation_start_todo","arguments":{"task_id":"`+task+`","request_key":"http-start","expected_version":"1"}}`)
+	result = call("tools/call", `{"name":"task_delegation_start_todo","arguments":{"task_id":"`+task+`","expected_version":"1"}}`)
 	if strings.Contains(result, `"isError":true`) || !strings.Contains(result, "started") {
 		t.Fatal(result)
 	}
@@ -323,7 +328,7 @@ func TestPlannedTaskMCPProtocolAndRemovedTargetTool(t *testing.T) {
 func TestPlannedTaskSameSourceDifferentActorCannotMutateOrRead(t *testing.T) {
 	db, m, d, scope := plannedFixture(t)
 	ctx := context.Background()
-	raw, err := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "creator-only requirements", RequestKey: "creator-plan"})
+	raw, err := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "creator-only requirements"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +375,7 @@ func TestPlannedTaskSameSourceDifferentActorCannotMutateOrRead(t *testing.T) {
 func TestArchivedTodoDoesNotAdvertiseStart(t *testing.T) {
 	_, m, d, scope := plannedFixture(t)
 	ctx := context.Background()
-	raw, err := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "archive later", RequestKey: "archive-plan"})
+	raw, err := d.Call(ctx, scope, "create_todo", manager.DelegationArgs{Instruction: "archive later"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +391,7 @@ func TestArchivedTodoDoesNotAdvertiseStart(t *testing.T) {
 	if archived.Lifecycle != "archived" || archived.AvailableActions["start"] || archived.AvailableActions["cancel_todo"] || archived.AvailableActions["supplement"] {
 		t.Fatal(archived)
 	}
-	if _, err = d.Call(ctx, scope, "start_todo", manager.DelegationArgs{SessionID: v.SessionID, ExpectedVersion: 1, RequestKey: "archived-start"}); err == nil {
+	if _, err = d.Call(ctx, scope, "start_todo", manager.DelegationArgs{SessionID: v.SessionID, ExpectedVersion: 1}); err == nil {
 		t.Fatal("archived task started")
 	}
 }

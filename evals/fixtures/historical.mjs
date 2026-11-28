@@ -110,7 +110,7 @@ export function historicalFixture(raw, profile) {
  }:expectedTool===o.work?{task_id:idsByRole.task_id}:scopedSession.has(expectedTool)?{
    task_id:idsByRole.task_id,
    ...(expectedTool===o.send?{text:c.change}:{}),
-   ...(expectedTool===o.cancel?{expected_version:'2',request_key:'synthetic-cancel-'+c.id}:{}),
+   ...(expectedTool===o.cancel?{expected_version:'2'}:{}),
  }:{};
  const reportOnly=c.kind==='report';
  return {

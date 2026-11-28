@@ -1,0 +1,349 @@
+{
+  "collection": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "get": {
+      "operationId": "listManagedChatSchedules",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Requires current employee management authority. Returns up to 100 plans, not chat transcripts.",
+      "responses": {
+        "200": {
+          "description": "Current configuration",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/schemas/ManagedChatSchedule"
+                    }
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      }
+    }
+  },
+  "item": {
+    "parameters": [
+      {
+        "$ref": "./conversations.yaml#/parameters/workspace"
+      },
+      {
+        "name": "agent_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      {
+        "name": "schedule_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    ],
+    "patch": {
+      "operationId": "updateManagedChatSchedule",
+      "security": [
+        {
+          "sessionCookie": []
+        }
+      ],
+      "description": "Requires current employee management authority. Updates time or enabled state only, guarded by version. Does not change the original actor, task description or destination.",
+      "responses": {
+        "200": {
+          "description": "Current configuration",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/schemas/ManagedChatSchedule"
+              }
+            }
+          }
+        },
+        "default": {
+          "$ref": "./sessions.yaml#/responses/Error"
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/schemas/SchedulePatch"
+            }
+          }
+        }
+      }
+    }
+  },
+  "schemas": {
+    "ManagedChatSchedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schedule_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "paused",
+            "completed",
+            "canceled"
+          ]
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "schedule": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "frequency": {
+              "type": "string",
+              "enum": [
+                "once",
+                "hourly",
+                "daily",
+                "weekly",
+                "monthly"
+              ]
+            },
+            "timezone": {
+              "type": "string",
+              "description": "IANA timezone, e.g. Asia/Shanghai. Default Asia/Shanghai."
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Once only: future RFC3339 date and time with offset, at minute precision."
+            },
+            "minute": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 59,
+              "description": "Hourly only: minute within each wall-clock hour, defaults to 0. Do not combine with interval above 1."
+            },
+            "interval": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 168,
+              "description": "Hourly only: elapsed hours between runs, anchored when created or rescheduled if above 1."
+            },
+            "times": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "maxItems": 24,
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "weekdays": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 7,
+                "description": "Weekly only: ISO weekday, Monday=1, Sunday=7."
+              },
+              "maxItems": 7,
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "month_days": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "anyOf": [
+                  {
+                    "const": -1
+                  },
+                  {
+                    "minimum": 1,
+                    "maximum": 31
+                  }
+                ],
+                "description": "Monthly only: day of month; -1 is the last day. Invalid calendar dates are skipped."
+              },
+              "maxItems": 32,
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "anchor": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "frequency"
+          ]
+        },
+        "next_due": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "chat_type": {
+          "type": "string"
+        },
+        "source_label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schedule_id",
+        "status",
+        "instruction",
+        "schedule",
+        "version",
+        "channel",
+        "chat_type"
+      ]
+    },
+    "SchedulePatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "schedule": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "frequency"
+          ],
+          "properties": {
+            "frequency": {
+              "type": "string",
+              "enum": [
+                "once",
+                "hourly",
+                "daily",
+                "weekly",
+                "monthly"
+              ]
+            },
+            "timezone": {
+              "type": "string",
+              "description": "IANA timezone, e.g. Asia/Shanghai. Default Asia/Shanghai."
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Once only: future RFC3339 date and time with offset, at minute precision."
+            },
+            "minute": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 59,
+              "description": "Hourly only: minute within each wall-clock hour, defaults to 0. Do not combine with interval above 1."
+            },
+            "interval": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 168,
+              "description": "Hourly only: elapsed hours between runs, anchored when created or rescheduled if above 1."
+            },
+            "times": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "maxItems": 24,
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "weekdays": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 7,
+                "description": "Weekly only: ISO weekday, Monday=1, Sunday=7."
+              },
+              "maxItems": 7,
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "month_days": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "anyOf": [
+                  {
+                    "const": -1
+                  },
+                  {
+                    "minimum": 1,
+                    "maximum": 31
+                  }
+                ],
+                "description": "Monthly only: day of month; -1 is the last day. Invalid calendar dates are skipped."
+              },
+              "maxItems": 32,
+              "uniqueItems": true,
+              "minItems": 1
+            }
+          },
+          "description": "Once uses at; hourly uses minute or interval; daily, weekly and monthly require local times (HH:mm); weekly also requires weekdays; monthly also requires month_days. Omit unused fields."
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "version"
+      ]
+    }
+  }
+}

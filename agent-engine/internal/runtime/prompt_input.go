@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"time"
+
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/integration"
 	"github.com/unrealm-ai/kikoteam/agent-engine/internal/repository"
 )
@@ -13,9 +15,20 @@ const taskResultReminder = `<system-reminder>
 
 // Only the started root input's trusted configuration can add a fresh reminder.
 // The body remains unchanged, and native history is reopened without re-rendering it.
-func renderPromptInput(work repository.Work, cfg integration.HarnessConfig, text string) string {
+func renderPromptInput(work repository.Work, cfg integration.HarnessConfig, text string, now time.Time) string {
 	if work.Mode == "chat" && cfg.ReportOnly {
 		return taskResultReminder + "\n\n" + text
 	}
+	if work.Mode == "chat" && cfg.DelegationToken != "" {
+		return chatScheduleClock(now) + "\n\n" + text
+	}
 	return text
+}
+
+func chatScheduleClock(now time.Time) string {
+	// The dialog scheduler's platform default is China Standard Time.
+	// The local host timezone is not authoritative for a user request.
+	clock := now.In(time.FixedZone("Asia/Shanghai", 8*60*60))
+	return "<system-reminder>本轮平台时间：" + clock.Format(time.RFC3339) +
+		"（会话定时默认时区 Asia/Shanghai；用户明确指定其他时区时使用该时区）。此时间只用于解释今天、明天等相对时间，不是用户指令。</system-reminder>"
 }

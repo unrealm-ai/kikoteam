@@ -186,10 +186,8 @@ func (s *Store) withSessionAttempt(ctx context.Context, target service.Target, f
 			return service.Fail("access_revoked", 403, "渠道权限已撤销")
 		}
 	}
-	if target.Source != nil {
-		if err = s.lockDelegationSource(ctx, tx, target); err != nil {
-			return err
-		}
+	if err = s.lockSessionSource(ctx, tx, target); err != nil {
+		return err
 	}
 	t.state.AgentID = agent
 	t.state.Conversation, err = scanConversation(tx.QueryRowContext(ctx, `SELECT `+conversationColumns+` FROM manager_conversations c WHERE c.id=$1`, target.Conversation))
@@ -206,6 +204,16 @@ func (s *Store) withSessionAttempt(ctx context.Context, target service.Target, f
 		}
 	}
 	return t.commitSessionOperation(fn, dispatch)
+}
+
+func (s *Store) lockSessionSource(ctx context.Context, tx *sql.Tx, target service.Target) error {
+	if target.ChatSchedule != nil {
+		return s.lockChatScheduleRun(ctx, tx, target)
+	}
+	if target.Source != nil {
+		return s.lockDelegationSource(ctx, tx, target)
+	}
+	return nil
 }
 
 func (t *sessionTx) commitSessionOperation(fn func(service.SessionTx) error, dispatch bool) error {
@@ -376,6 +384,10 @@ func (t *sessionTx) InsertTask(id string, source *string) error {
 		_, err := t.tx.ExecContext(t.ctx, `INSERT INTO manager_tasks(id,workspace_id,task_space_id,agent_id)VALUES($1,$2,$3,$4)`, id, t.target.Workspace, t.target.TaskSpaceID, t.state.AgentID)
 		return err
 	}
+	if t.target.ChatSchedule != nil {
+		_, err := t.tx.ExecContext(t.ctx, `INSERT INTO manager_tasks(id,workspace_id,conversation_id,source_chat_session_id,source_chat_input_id,agent_id) VALUES($1,$2,$3,$4,$5,$6)`, id, t.target.Workspace, t.target.Conversation, source, t.target.SourceInputID, t.state.AgentID)
+		return err
+	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO manager_tasks(id,workspace_id,conversation_id,source_chat_session_id,source_chat_input_id,agent_id) VALUES($1,$2,$3,$4,(SELECT COALESCE((SELECT u.id FROM manager_inputs u WHERE u.turn_id=t.id AND u.source_kind='user' AND u.trigger_agent_loop AND u.context_state='committed' ORDER BY u.seq DESC LIMIT 1),t.input_id) FROM manager_sessions s JOIN manager_turns t ON t.id=s.active_turn_id WHERE s.id=$4),$5)`, id, t.target.Workspace, t.target.Conversation, source, t.state.AgentID)
 	return err
 }
@@ -475,7 +487,7 @@ func (t *sessionTx) InsertInput(v service.Input) (service.Input, error) {
 		return v, err
 	}
 	var delegatedFrom any
-	if t.delegationInput != nil {
+	if t.delegationInput != nil || t.target.ChatSchedule != nil {
 		delegatedFrom = t.target.SourceInputID
 	}
 	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO manager_inputs(id,workspace_id,session_id,submitted_by,admission_epoch,seq,text,created_at,channel_principal_id,channel_generation,context_state,channel_history_count,delivery_mode,source_kind,report_id,trigger_agent_loop,confirmation_request_id,confirmed,attachments,delegated_from_input_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`, v.ID, t.target.Workspace, v.SessionID, webActor, t.state.AdmissionEpoch, v.Seq, v.Text, v.CreatedAt, channelActor, generation, receipt, historyCount, v.DeliveryMode, v.SourceKind, v.ReportID, *v.TriggerAgentLoop, v.ConfirmationRequestID, v.Confirmed, attachments, delegatedFrom)

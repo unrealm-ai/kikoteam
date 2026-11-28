@@ -311,7 +311,7 @@
   },
   {
     "name": "task_delegation_create_todo",
-    "description": "Save explicitly requested deferred work as an unstarted todo for the current employee and source chat. No model, tools or task Input run until explicit start_todo. The planned state records the request to start later. Retry with the same request_key and fields if the submission outcome is unknown.",
+    "description": "Save explicitly requested deferred work as an unstarted todo for the current employee and source chat. No model, tools or task Input run until explicit start_todo. The planned state records the request to start later. The server deduplicates identical arguments within the same authorized user input. If a later message asks about an unknown outcome, query first.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -326,10 +326,6 @@
           "type": "string",
           "maxLength": 200,
           "description": "Summarize the future goal in one short phrase. Put the full requirements in instruction."
-        },
-        "request_key": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9_-]{1,128}$"
         },
         "attachment_ids": {
           "type": "array",
@@ -355,22 +351,17 @@
         }
       },
       "required": [
-        "instruction",
-        "request_key"
+        "instruction"
       ]
     }
   },
   {
     "name": "task_delegation_start_todo",
-    "description": "Start an unstarted todo when the user explicitly asks to start that task. Rechecks current permissions and model configuration and submits the saved business requirements. Use the current planning_version from get_session. Start authorizes scheduling only; independent business approvals still apply. On version conflict, re-read before deciding what to do. For an unknown outcome, keep the original request_key and version. Acceptance is not completion.",
+    "description": "Start an unstarted todo when the user explicitly asks to start that task. Rechecks current permissions and model configuration and submits the saved business requirements. Use the current planning_version from get_session. Start authorizes scheduling only; independent business approvals still apply. On version conflict, re-read before deciding what to do. For an unknown outcome, check first; only an identical retry within the same user input preserves the original operation. Acceptance is not completion.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "request_key": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9_-]{1,128}$"
-        },
         "task_id": {
           "type": "string",
           "format": "uuid"
@@ -382,22 +373,17 @@
       },
       "required": [
         "task_id",
-        "expected_version",
-        "request_key"
+        "expected_version"
       ]
     }
   },
   {
     "name": "task_delegation_cancel_todo",
-    "description": "Cancel only an unstarted todo after explicit user intent. This is not stop, pause or cancel of running work. An already_started error means no running work was stopped. Read current planning_version; preserve original request_key/version on unknown retry.",
+    "description": "Cancel only an unstarted todo after explicit user intent. This is not stop, pause or cancel of running work. An already_started error means no running work was stopped. Read current planning_version; check state before an unknown retry; identical arguments in the same user input are deduplicated.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "request_key": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9_-]{1,128}$"
-        },
         "task_id": {
           "type": "string",
           "format": "uuid"
@@ -409,14 +395,13 @@
       },
       "required": [
         "task_id",
-        "expected_version",
-        "request_key"
+        "expected_version"
       ]
     }
   },
   {
     "name": "task_delegation_supplement_todo",
-    "description": "Append requirements to an unstarted todo using its planning_version and a stable request_key.",
+    "description": "Append requirements to an unstarted todo using its planning_version; the server deduplicates identical arguments within the same user input.",
     "inputSchema": {
       "type": "object",
       "additionalProperties": false,
@@ -435,10 +420,6 @@
           "type": "string",
           "pattern": "^[1-9][0-9]*$",
           "description": "Required for a planned task; planning_version from latest query."
-        },
-        "request_key": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9_-]{1,128}$"
         },
         "attachment_ids": {
           "type": "array",
@@ -467,7 +448,6 @@
       "required": [
         "task_id",
         "instruction",
-        "request_key",
         "expected_version"
       ]
     }
@@ -492,6 +472,269 @@
       },
       "required": [
         "artifact_ids"
+      ]
+    }
+  },
+  {
+    "name": "task_delegation_create_scheduled_task",
+    "description": "Schedule work explicitly requested by the user, once or repeatedly, in the current conversation sandbox. This does not start a task now. Put timing only in schedule and put the actual goal, authorized context, constraints, approvals and deliverable in instruction, as for an ordinary task. The platform binds the original conversation and actor, checks permission each time and reports results there. Clarify essential timing before scheduling. A reminder to this user is also valid work: ask the task to output the requested reminder in its completion result and let the platform report it to the source chat. Do not perform the activity being reminded of or use external notification tools. This does not configure a business trigger or todo. Same input and identical arguments are deduplicated.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536,
+          "description": "Self-contained goal, necessary authorized context, explicit constraints, prohibitions, independent approval requirements and expected deliverable. Do not rely on the source chat transcript."
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Summarize the user's goal in one short phrase. Put the full requirements in instruction."
+        },
+        "attachment_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 36,
+            "maxLength": 56
+          },
+          "description": "Forward only exact attachment IDs from the current user's messages in this chat. Do not use filenames, paths, guessed IDs or IDs from other senders."
+        },
+        "attachment_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "description": "Forward the ordered project-relative file paths referenced by the user for this task. Use exact paths from the source chat."
+        },
+        "source_files_unused": {
+          "type": "boolean",
+          "description": "Set true only for an independent task that needs none of the source message's files and has no other file inputs. Otherwise forward the files needed for this task. On retry keep all required references; never use this flag to drop them."
+        },
+        "schedule": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "frequency"
+          ],
+          "properties": {
+            "frequency": {
+              "type": "string",
+              "enum": [
+                "once",
+                "hourly",
+                "daily",
+                "weekly",
+                "monthly"
+              ]
+            },
+            "timezone": {
+              "type": "string",
+              "description": "IANA timezone, e.g. Asia/Shanghai. Default Asia/Shanghai."
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Once only: future RFC3339 date and time with offset, at minute precision."
+            },
+            "minute": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 59,
+              "description": "Hourly only: minute within each wall-clock hour, defaults to 0. Do not combine with interval above 1."
+            },
+            "interval": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 168,
+              "description": "Hourly only: elapsed hours between runs, anchored when created or rescheduled if above 1."
+            },
+            "times": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "maxItems": 24,
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "weekdays": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 7,
+                "description": "Weekly only: ISO weekday, Monday=1, Sunday=7."
+              },
+              "maxItems": 7,
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "month_days": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "anyOf": [
+                  {
+                    "const": -1
+                  },
+                  {
+                    "minimum": 1,
+                    "maximum": 31
+                  }
+                ],
+                "description": "Monthly only: day of month; -1 is the last day. Invalid calendar dates are skipped."
+              },
+              "maxItems": 32,
+              "uniqueItems": true,
+              "minItems": 1
+            }
+          },
+          "description": "Once uses at; hourly uses minute or interval; daily, weekly and monthly require local times (HH:mm); weekly also requires weekdays; monthly also requires month_days. Omit unused fields."
+        }
+      },
+      "required": [
+        "instruction",
+        "schedule"
+      ]
+    }
+  },
+  {
+    "name": "task_delegation_list_scheduled_tasks",
+    "description": "Read scheduled plans created by the current actor in this conversation. Include schedule_id for one plan and its recent run receipts, including task IDs when a task was admitted. Use it to locate the exact plan before changing or canceling; a receipt does not prove business completion.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schedule_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  },
+  {
+    "name": "task_delegation_update_scheduled_task",
+    "description": "Modify the future runs of an existing scheduled plan in this conversation. Use an exact schedule_id from the list. Omit unchanged fields; supply a complete schedule if changing timing. Set enabled=false to pause or enabled=true to resume without catch-up. Set cancel=true by itself to cancel future runs only, never to stop an already created task.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schedule_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536,
+          "description": "Self-contained goal, necessary authorized context, explicit constraints, prohibitions, independent approval requirements and expected deliverable. Do not rely on the source chat transcript."
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Summarize the user's goal in one short phrase. Put the full requirements in instruction."
+        },
+        "schedule": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "frequency"
+          ],
+          "properties": {
+            "frequency": {
+              "type": "string",
+              "enum": [
+                "once",
+                "hourly",
+                "daily",
+                "weekly",
+                "monthly"
+              ]
+            },
+            "timezone": {
+              "type": "string",
+              "description": "IANA timezone, e.g. Asia/Shanghai. Default Asia/Shanghai."
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Once only: future RFC3339 date and time with offset, at minute precision."
+            },
+            "minute": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 59,
+              "description": "Hourly only: minute within each wall-clock hour, defaults to 0. Do not combine with interval above 1."
+            },
+            "interval": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 168,
+              "description": "Hourly only: elapsed hours between runs, anchored when created or rescheduled if above 1."
+            },
+            "times": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "maxItems": 24,
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "weekdays": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 7,
+                "description": "Weekly only: ISO weekday, Monday=1, Sunday=7."
+              },
+              "maxItems": 7,
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "month_days": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "anyOf": [
+                  {
+                    "const": -1
+                  },
+                  {
+                    "minimum": 1,
+                    "maximum": 31
+                  }
+                ],
+                "description": "Monthly only: day of month; -1 is the last day. Invalid calendar dates are skipped."
+              },
+              "maxItems": 32,
+              "uniqueItems": true,
+              "minItems": 1
+            }
+          },
+          "description": "Once uses at; hourly uses minute or interval; daily, weekly and monthly require local times (HH:mm); weekly also requires weekdays; monthly also requires month_days. Omit unused fields."
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "cancel": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schedule_id"
       ]
     }
   }

@@ -74,7 +74,11 @@ type Delegation struct {
 	Secret  string
 }
 type DelegationArgs struct {
-	SourceFilesUnused bool `json:"source_files_unused,omitempty"`
+	Enabled           *bool             `json:"enabled,omitempty"`
+	Schedule          *ChatScheduleRule `json:"schedule,omitempty"`
+	ScheduleID        string            `json:"schedule_id,omitempty"`
+	Cancel            bool              `json:"cancel,omitempty"`
+	SourceFilesUnused bool              `json:"source_files_unused,omitempty"`
 
 	AmendmentBasis   string   `json:"amendment_basis,omitempty"`
 	ArtifactIDs      []string `json:"artifact_ids,omitempty"`
@@ -141,6 +145,8 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 		return artifacts.SelectArtifacts(ctx, scope, args.ArtifactIDs)
 	case "work_item_get_current", "work_item_amend_requirements":
 		return d.callWorkItem(ctx, scope, name, args)
+	case "create_scheduled_task", "list_scheduled_tasks", "update_scheduled_task":
+		return d.chatSchedule(ctx, scope, name, args)
 	case "create_todo":
 		return d.planned(ctx, scope, name, args)
 	case "start_todo", "cancel_todo", "supplement_todo":
@@ -205,7 +211,7 @@ func (d *Delegation) delegatedTaskTarget(ctx context.Context, scope DelegationSc
 }
 
 func pinsDelegationInput(name string, args DelegationArgs) bool {
-	return len(args.AttachmentIDs) > 0 || name == "create_session" || name == "send_message" || name == "artifact_select" || name == "trigger_task_get_result" || name == "send_task_detail_link"
+	return len(args.AttachmentIDs) > 0 || (strings.HasSuffix(name, "_todo") || strings.HasSuffix(name, "_scheduled_task")) || name == "create_session" || name == "send_message" || name == "artifact_select" || name == "trigger_task_get_result" || name == "send_task_detail_link"
 }
 
 func (d *Delegation) sendTaskMessage(ctx context.Context, scope DelegationScope, v Session, args DelegationArgs) (any, error) {

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
-import { NAlert, NButton, NCheckbox, NCheckboxGroup, NDrawer, NDrawerContent, NForm, NFormItem, NInput, NInputNumber, NModal, NSelect, NSkeleton, NTag, useDialog } from 'naive-ui';
+import { NAlert, NButton, NCheckbox, NCheckboxGroup, NDrawer, NDrawerContent, NForm, NFormItem, NInput, NInputNumber, NModal, NSelect, NSkeleton, NTab, NTabs, NTag, useDialog } from 'naive-ui';
 import { D2ApiError } from '../api/client';
 import { triggersApi, triggerLabel, type Trigger, type TriggerWrite, type TriggerCredential, type TriggerEvent, type TriggerTarget, type TriggerNotification } from '../api/triggers';
+import PlatformChatSchedulesPanel from './PlatformChatSchedulesPanel.vue';
 import PlatformIdentityPicker from '../components/PlatformIdentityPicker.vue';
 import WebhookCopyField from '../components/WebhookCopyField.vue';
 import type { EventSource } from '../api/triggers';
@@ -22,6 +23,8 @@ const fresh = (): TriggerWrite => ({
   allowed_actions: ['create_task']
 });
 const form = ref<TriggerWrite>(fresh());
+const scheduleTab = ref<'schedule' | 'webhook' | 'chat'>('schedule');
+const visibleItems = computed(() => items.value.filter(row => row.kind === scheduleTab.value && row.config.action !== 'send_message'));
 const needsGitLabSetup = computed(() => !existing.value && form.value.config.source === 'gitlab');
 const saveEnabled = computed(() => form.value.enabled && !needsGitLabSetup.value);
 const sources = [
@@ -190,6 +193,10 @@ function open(t?: Trigger) {
   sampleEventName.value = 'push';
   ++editGeneration; existing.value = t;
   form.value = t ? JSON.parse(JSON.stringify({ name: t.name || '触发器', kind: t.kind, enabled: t.enabled, config: t.config, allowed_actions: t.allowed_actions, notification_targets: t.notification_targets || [] })) : fresh();
+  if (!t && scheduleTab.value === 'webhook') {
+    form.value.kind = 'webhook';
+    sourceChanged('custom');
+  }
   baseline.value = JSON.stringify(form.value); editor.value = true; error.value = ''; notice.value = ''; secret.value = undefined;
   void loadTargets();
 }
@@ -201,11 +208,6 @@ function kind(v: 'schedule' | 'generic' | 'github_issue' | 'event') {
     form.value.config = v === 'schedule' ? fresh().config : { adapter: v };
   }
   form.value.allowed_actions = ['create_task'];
-}
-function scheduleAction(v: 'create_task' | 'send_message') {
-  form.value.config.action = v; form.value.allowed_actions = [v];
-  if (v === 'send_message') delete form.value.config.businessKey;
-  else form.value.config.businessKey = { mode: 'empty' };
 }
 function keyMode(v: 'empty' | 'fixed' | 'period') {
   form.value.config.businessKey = v === 'fixed' ? { mode: v, value: '' } : v === 'period' ? { mode: v, period: 'day' } : { mode: v };
@@ -222,6 +224,7 @@ async function save() {
   try {
     const { initial_credential, ...result } = await triggersApi.save(w, a, { ...form.value, enabled: saveEnabled.value, name: form.value.name.trim() }, controller.signal, row);
     if (g !== generation) return false;
+    scheduleTab.value = form.value.kind;
     discard();
     notice.value = row ? '配置已保存。' : result.enabled ? '触发器已创建并启用。' : '触发器已创建，当前已停用。';
     void load();
@@ -342,8 +345,19 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller.abort(); detail
 
 <template>
   <section class="tab-panel-inner">
+    <NTabs v-if="allowed" v-model:value="scheduleTab" type="segment" size="small" style="margin-bottom: 12px">
+      <NTab name="schedule" :disabled="busy || editor || !!selected">定时触发</NTab>
+      <NTab name="webhook" :disabled="busy || editor || !!selected">事件触发</NTab>
+      <NTab name="chat" :disabled="busy || editor || !!selected">会话定时任务</NTab>
+    </NTabs>
+    <template v-if="allowed && scheduleTab === 'chat'">
+      <NButton v-if="!hideBackButton" size="small" quaternary @click="close">返回员工列表</NButton>
+      <PlatformChatSchedulesPanel :workspace="workspace" :employee-id="employeeId" />
+    </template>
+    <template v-else>
     <div class="panel-desc-bar">
-      <span><strong>自动触发器</strong> 允许通过定时 Cron、外部 Webhook 或 GitHub Issue 触发员工执行任务。</span>
+      <span v-if="scheduleTab === 'schedule'">适合固定执行的团队工作，例如每天汇总客诉、发到客服群。</span>
+      <span v-else>适合收到外部事件就处理，例如 GitHub 新建 Issue 后让员工分析。</span>
       <div class="btn-group">
         <NButton v-if="!hideBackButton" size="small" quaternary :disabled="busy" @click="close">返回员工列表</NButton>
         <template v-if="allowed">
@@ -358,12 +372,12 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller.abort(); detail
 
     <template v-if="allowed">
       <NSkeleton v-if="loading" text :repeat="3" />
-      <div v-else-if="!items.length && !error" class="empty-channel-box">
-        <p>员工暂未配置自动触发器。</p>
+      <div v-else-if="!visibleItems.length && !error" class="empty-channel-box">
+        <p>该分类下还没有触发器。</p>
         <NButton size="small" type="primary" :disabled="busy || editor" @click="open()">创建第一个自动化任务</NButton>
       </div>
       <div v-else class="trigger-list">
-        <article v-for="t in items" :key="t.id" class="ch-section trigger-card">
+        <article v-for="t in visibleItems" :key="t.id" class="ch-section trigger-card">
           <div class="cs-header-flex">
             <div class="trigger-title-group">
               <h3 class="cs-title">{{ t.name || '触发器' }}</h3>
@@ -412,18 +426,10 @@ onUnmounted(() => { ++generation; ++detailGeneration; controller.abort(); detail
             <div class="editor-check-block">
               <NCheckbox :checked="saveEnabled" :disabled="needsGitLabSetup" @update:checked="v => form.enabled = v">启用此触发器</NCheckbox>
               <p v-if="needsGitLabSetup" class="field-note">先创建并复制接收地址，再填入 GitLab 生成的 Signing token 即可启用。</p>
-              <p v-else class="field-note">启用后将按配置执行，模型任务可能产生费用。</p>
+              <p v-else class="field-note">{{ form.config.action === 'send_message' ? '启用后继续发送已配置的固定提醒。' : '启用后将按配置执行，模型任务可能产生费用。' }}</p>
             </div>
 
             <template v-if="form.kind === 'schedule'">
-              <NFormItem label="定时动作">
-                <NSelect
-                  :virtual-scroll="false"
-                  :value="form.config.action || 'create_task'"
-                  :options="[{ label: '创建模型任务', value: 'create_task' }, { label: '发送固定文案提醒（不调用模型）', value: 'send_message' }]"
-                  @update:value="scheduleAction"
-                />
-              </NFormItem>
               <NFormItem label="Cron（分 时 日 月 周）"><NInput :value="form.config.cron || ''" @update:value="v => form.config.cron = v" placeholder="0 9 * * *" /></NFormItem>
               <NFormItem label="IANA 时区"><NInput :value="form.config.timezone || ''" @update:value="v => form.config.timezone = v" placeholder="Asia/Shanghai" /></NFormItem>
               <NFormItem :label="form.config.action === 'send_message' ? '固定提醒正文' : '每次任务说明'">
@@ -623,6 +629,7 @@ body 的 SHA-256 摘要</pre>
           </template>
         </section>
       </NModal>
+    </template>
     </template>
   </section>
 </template>

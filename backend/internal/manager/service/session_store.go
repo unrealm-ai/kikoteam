@@ -9,6 +9,7 @@ type Target struct {
 	Source                                             *DelegationIdentity
 	SourceInputID                                      string // Pins an immediate delegation to its authorized source Input.
 	DelegatedFiles                                     *DelegatedFiles
+	ChatSchedule                                       *ChatScheduleRun
 }
 
 // Only immediate task creation and delegated appends carry this selection.

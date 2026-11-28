@@ -96,11 +96,11 @@ list_targets 已移除，主对话只能操作当前员工。list_sessions 只�
 | `task_delegation_send_message` | task_id、text?、attachment_ids?、attachment_paths?、source_files_unused?，文字和附件至少提供一项 | 原 Session 新 Input 的身份及当前状态 |
 | `send_task_detail_link` | task_id、可选 text | 平台生成授权链接并发往当前外部渠道；只返回投递状态。用户轮限本对话任务、不做业务去重，回告轮限本次任务、检查有效链接与待确认投递 |
 | `artifact_select` | 有序 artifact_ids | 将获准版本绑定到本轮回复和各自原渠道目标 |
-| `task_delegation_supplement_todo` | task_id、instruction、request_key、expected_version、attachment_paths? | 补充未启动待办 |
+| `task_delegation_supplement_todo` | task_id、instruction、expected_version、attachment_paths? | 补充未启动待办 |
 | `task_delegation_stop_session` | task_id | 目标 Session 当前执行概况，沿现有 stop 语义受理与收尾 |
-| `task_delegation_create_todo` | instruction、request_key、title? | 保存未启动待办，无执行Input |
-| `task_delegation_start_todo` | task_id、expected_version、request_key | 显式启动，重验模型及权限，唯一首Input |
-| `task_delegation_cancel_todo` | task_id、expected_version、request_key | 只取消未启动待办，不停止运行任务 |
+| `task_delegation_create_todo` | instruction、title? | 保存未启动待办，无执行Input |
+| `task_delegation_start_todo` | task_id、expected_version | 显式启动，重验模型及权限，唯一首Input |
+| `task_delegation_cancel_todo` | task_id、expected_version | 只取消未启动待办，不停止运行任务 |
 
 状态筛选、输入版本CAS和事实回执以[最新待办与回执规范](chat-planned-tasks.md)为准。执行中任务的版本核对与去重均由 Manager 完成；待办补充使用 task_delegation_supplement_todo。
 
@@ -202,7 +202,7 @@ MCP 的创建响应与异步执行结果是两次不同事实。create_session �
 
 本模块只依赖三类明确接口：可信来源会话及运行授权上下文、既有 Manager Task/Session 创建与输入 / 查询 / 停止用例、结果回报及主会话对话触发入口。它不重新定义 Conversation、Task 生命周期、跨员工环境、文件资源或自动记忆。
 
-后续契约阶段需要固定：工具 JSON Schema 与输出预算、运行凭据签发 / 撤销及 Pi 原生挂载证据、request_key 的内部作用域映射、查询分页字段，以及可靠回报到上下文 / 唤醒的接口。跨员工目标仅在对应整体归属与授权设计就绪后启用；这些集成项尚未验证，不能以本次文档落盘表示已实现。
+后续契约阶段需要固定：工具 JSON Schema 与输出预算、运行凭据签发 / 撤销及 Pi 原生挂载证据 的内部作用域映射、查询分页字段，以及可靠回报到上下文 / 唤醒的接口。跨员工目标仅在对应整体归属与授权设计就绪后启用；这些集成项尚未验证，不能以本次文档落盘表示已实现。
 
 按实际启用工具验收：
 
@@ -221,3 +221,5 @@ MCP 的创建响应与异步执行结果是两次不同事实。create_session �
 本工具集是内部主 chat → Manager 的委派能力，源码归 `internal/manager/mcp/taskdelegation`，不是 `webgw/mcp` 对外业务 MCP。外部 Webhook 和个人 Agent MCP 均只在 `webgw` 下预留，不能复用内部委派凭据。
 
 本次仅调整 package 归属，仍使用同一 Backend 进程和 HTTP listener，`/mcp/task-delegation`、六工具契约及授权行为不变。目录分离不提供网络隔离；公网代理应排除此路径与 `/api/internal/v1/`，内部 Engine 保持可达。独立内部 listener 尚未实施，详见[系统模块边界](../../docs/architecture/system-modules.md#远程-mcp-接入边界)。
+
+对话中明确要求按时间自动执行的工作另见[主对话定时任务](chat-schedules.md)，不应保存为手动待办。

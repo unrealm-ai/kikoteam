@@ -6,7 +6,7 @@
 
 - `create_session`：立即创建并受理执行任务，保持现有行为。
 - `create_todo` 保存未来实际执行的目标、范围、限制和独立审批前提，延迟调度由 `planning_state=planned` 表达。返回稳定 Task/Session ID 和 `planning_version`。
-- `start_todo`：明确启动未开始的待办；必传查询所得 `expected_version` 和稳定 `request_key`。
+- `start_todo`：明确启动未开始的待办；必传查询所得 `expected_version` 。
 - `cancel_todo`：仅取消尚未启动待办。已启动返回 `already_started`，绝不调用 stop；取消后不能再启动。
 - `list_sessions/get_session`：包含待办状态与版本；待办详情返回保存的全部正文、`application=on_start`、可用动作，不伪造 Turn 或结果。
 - `send_message`：已启动任务支持文字、有序附件或二者，按默认 steer 追加，不重写已执行历史。
@@ -20,7 +20,7 @@
 
 新待办动作限同源主对话和原创建主体；渠道主体仍须当前绑定代次及权限有效。每次调用和幂等重放都先重新核验来源的活动输入、授权、会话及员工状态。既有已运行任务的群协作语义不改变。
 
-事务复用 Manager 的员工、Conversation、source Session、目标 Session 锁序；待办修改再锁一对一 Task。启动/取消/补充竞争相同 `planning_version` 只能一个成功；不同内容不能复用请求键。正文合并、规划状态转换、配置快照、首 Input、可靠事件及去重引用在同一事务提交；模型配置不可用则全部回滚，待办仍未启动。
+事务复用 Manager 的员工、Conversation、source Session、目标 Session 锁序；待办修改再锁一对一 Task。启动/取消/补充竞争相同 `planning_version` 只能一个成功；服务端以原对话、可信用户 Input、操作、目标及规范化参数生成去重键。不同用户输入不自动重放旧操作。正文合并、规划状态转换、配置快照、首 Input、可靠事件及去重引用在同一事务提交；模型配置不可用则全部回滚，待办仍未启动。
 
 通用 SubmitInput 在服务层拒绝 planned/canceled，数据库 INSERT guard 再次阻止旁路。Dispatch 只分配真实待执行 Input；无输入的待办不占执行容量。通用 stop 对待办返回明确错误，archive 仍表示关闭会话而不是取消待办，归档后不能启动。
 

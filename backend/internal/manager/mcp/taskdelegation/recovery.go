@@ -67,7 +67,7 @@ func recoveryForTask(op, code string, args manager.DelegationArgs, err error) *r
 		return &recoveryHint{Action: "stop", Instructions: "不要重试、换会话或改用其他工具绕过。说明当前操作无法继续。"}
 	case "dependency_unavailable":
 		if op != "get_session" {
-			return queryTask(args, "unknown", "写入结果未确认。先查当前任务状态或输入回执，不能确认未写入时不要重发、换请求键或新建任务；看不到回执不代表未写入。")
+			return queryTask(args, "unknown", "写入结果未确认。先查当前任务状态或输入回执，不能确认未写入时不要重发或新建任务；看不到回执不代表未写入。")
 		}
 	}
 	return nil

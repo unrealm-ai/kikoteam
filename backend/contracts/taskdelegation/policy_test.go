@@ -21,13 +21,16 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := map[string][]string{
+		"create_scheduled_task":        {"current conversation sandbox", "does not start a task now", "in instruction", "checks permission each time"},
+		"list_scheduled_tasks":         {"current actor in this conversation", "recent run receipts"},
+		"update_scheduled_task":        {"exact schedule_id", "cancel future runs only"},
 		"send_task_detail_link":        {"authorized channel conversation", "exact task_id", "explicitly asks", "once per task", "only the reported task", "No URL is returned", "never construct or guess", "Do not repeat", "does not mean the message was read or delivered"},
 		"artifact_select":              {"candidate IDs", "pending delivery"},
 		"supplement_todo":              {"unstarted todo", "planning_version"},
 		"work_item_get_current":        {"Read-only", "current employee"},
 		"trigger_task_get_result":      {"Read-only", "this exact destination group", "ask which one if ambiguous", "exact notified execution"},
 		"work_item_amend_requirements": {"only the user's new requirements", "Queued does not mean received or applied", "same basis and content", "no change was applied", "retry once with the returned amendment_basis and unchanged content"},
-		"create_todo":                  {"unstarted todo", "No model", "same request_key"},
+		"create_todo":                  {"unstarted todo", "No model", "identical arguments within the same authorized user input"},
 		"start_todo":                   {"Rechecks current permissions", "planning_version", "Acceptance is not completion"},
 		"cancel_todo":                  {"only an unstarted todo", "not stop", "already_started"},
 		"create_session":               {"for the current employee only", "read-only", "every explicit constraint and prohibition", "Not for supplementing, querying or stopping", "without polling", "automatic round-result callback", "identical arguments within the same authorized source input", "does not authorize running scripts", "not new user authorization", "Never bypass a permission denial"},
@@ -94,6 +97,11 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 			var flag struct{ Type string }
 			if err := json.Unmarshal(tool.Schema.Properties["source_files_unused"], &flag); err != nil || flag.Type != "boolean" || slices.Contains(tool.Schema.Required, "source_files_unused") {
 				t.Errorf("%s must support an optional boolean source_files_unused", name)
+			}
+		}
+		if strings.HasSuffix(name, "_todo") || strings.Contains(name, "_scheduled_task") {
+			if _, ok := tool.Schema.Properties["request_key"]; ok {
+				t.Errorf("%s exposes a server-generated key", name)
 			}
 		}
 		if name == "create_todo" {

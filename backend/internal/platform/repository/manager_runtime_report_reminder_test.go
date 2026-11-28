@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 const reportLabel = "[系统消息][平台内部任务回报；非用户发言]"
@@ -35,6 +36,26 @@ func reminderText(content any) string {
 	return out.String()
 }
 
+// Unwrap only a valid ordinary-chat clock, not an actual task-report reminder.
+func splitRuntimeChatClock(text string) (string, bool) {
+	const head = "<system-reminder>本轮平台时间："
+	prefix, body, ok := strings.Cut(text, "\n\n")
+	if !ok || !strings.HasPrefix(prefix, head) || !strings.HasSuffix(prefix, "</system-reminder>") {
+		return text, false
+	}
+	stamp, _, ok := strings.Cut(strings.TrimPrefix(prefix, head), "（")
+	_, err := time.Parse(time.RFC3339, stamp)
+	if !ok || err != nil || !strings.HasSuffix(stamp, "+08:00") {
+		return text, false
+	}
+	return body, true
+}
+
+func runtimeChatBody(text string) string {
+	body, _ := splitRuntimeChatClock(text)
+	return body
+}
+
 func (c *reportReminderCalls) capture(req runtimeRequest) {
 	if len(req.Messages) == 0 {
 		return
@@ -45,12 +66,12 @@ func (c *reportReminderCalls) capture(req runtimeRequest) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	switch content := reminderText(last.Content); {
+	switch content := runtimeChatBody(reminderText(last.Content)); {
 	case content == "remember amber":
 		c.ordinary = append(c.ordinary, req)
 	case strings.HasPrefix(content, quoteReportPrefix):
 		c.quoted = append(c.quoted, req)
-	case strings.Contains(content, reportLabel):
+	case strings.HasPrefix(content, "<system-reminder>\n这是平台的主动任务回报") && strings.Contains(content, reportLabel):
 		c.report = append(c.report, req)
 	}
 }
@@ -97,13 +118,19 @@ func (c *reportReminderCalls) assertProviderRequests(t *testing.T, persisted, qu
 		t.Fatal("provider top-level system instruction differs between ordinary and report mode")
 	}
 	definitions := reportToolCatalog(c.ordinary[0])
-	if len(definitions) != 14 || !maps.Equal(definitions, reportToolCatalog(quoted)) || !maps.Equal(definitions, reportToolCatalog(report)) {
+	if len(definitions) != 17 || !maps.Equal(definitions, reportToolCatalog(quoted)) || !maps.Equal(definitions, reportToolCatalog(report)) {
 		t.Fatalf("private Web chat catalog disagreed: ordinary=%v report=%v quoted=%v",
 			slices.Sorted(maps.Keys(definitions)), slices.Sorted(maps.Keys(reportToolCatalog(report))), slices.Sorted(maps.Keys(reportToolCatalog(quoted))))
 	}
-	for _, name := range []string{"mcp__task_delegation__task_delegation_list_sessions", "mcp__human_confirmation__list_pending_human_confirmations"} {
+	for _, name := range []string{
+		"mcp__task_delegation__task_delegation_list_sessions",
+		"mcp__human_confirmation__list_pending_human_confirmations",
+		"mcp__task_delegation__task_delegation_create_scheduled_task",
+		"mcp__task_delegation__task_delegation_list_scheduled_tasks",
+		"mcp__task_delegation__task_delegation_update_scheduled_task",
+	} {
 		if definitions[name] == "" {
-			t.Fatalf("missing existing chat tool %s", name)
+			t.Fatalf("missing expected chat tool %s", name)
 		}
 	}
 	if definitions["mcp__task_delegation__artifact_select"] != "" {
@@ -114,8 +141,14 @@ func (c *reportReminderCalls) assertProviderRequests(t *testing.T, persisted, qu
 	if !ok || !strings.HasPrefix(prefix, "<system-reminder>\n") || !strings.HasSuffix(prefix, "\n</system-reminder>") || body != persisted {
 		t.Fatalf("provider received changed report body or incorrect reminder position: %q", reportUser)
 	}
-	if got := reminderText(quoted.Messages[len(quoted.Messages)-1].Content); got != quote {
-		t.Fatalf("ordinary quotation got engine reminder: %q", got)
+	ordinary := c.ordinary[0]
+	ordinaryUser := reminderText(ordinary.Messages[len(ordinary.Messages)-1].Content)
+	if body, hasClock := splitRuntimeChatClock(ordinaryUser); !hasClock || body != "remember amber" {
+		t.Fatalf("ordinary chat must preserve the body after the clock: %q", ordinaryUser)
+	}
+	wire := reminderText(quoted.Messages[len(quoted.Messages)-1].Content)
+	if body, hasClock := splitRuntimeChatClock(wire); !hasClock || body != quote {
+		t.Fatalf("user quotation must retain its body and receive only the ordinary clock: %q", wire)
 	}
 	// Changing tool mode reopened native Pi history. Keep the complete previous
 	// prompt exactly once, not regenerated or stripped, and preserve prior chats.
@@ -127,7 +160,7 @@ func (c *reportReminderCalls) assertProviderRequests(t *testing.T, persisted, qu
 		switch reminderText(m.Content) {
 		case reportUser:
 			historicalReport++
-		case "remember amber":
+		case ordinaryUser:
 			earlierUser++
 		}
 	}

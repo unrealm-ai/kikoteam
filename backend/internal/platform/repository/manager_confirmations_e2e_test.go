@@ -36,7 +36,10 @@ func confirmationRuntimeRoot(t *testing.T, repo, temp string) string {
 	}
 	const extension = `export default function(pi) {
   pi.on("before_agent_start", async (event,ctx)=>{
-    if (event.prompt !== "confirmation-fixture") return;
+    // The ordinary chat root prompt can carry a platform time prefix. Task
+    // prompts still deliver the original body without the prefix.
+    const body = event.prompt.replace(/^<system-reminder>本轮平台时间：[^\n]+<\/system-reminder>\n\n/, "");
+    if (body !== "confirmation-fixture") return;
     const confirmed=await ctx.ui.confirm("报告范围","包含海外订单吗？");
     return {message:{customType:"test-choice",content:"fixture decision="+confirmed,display:false}};
   });

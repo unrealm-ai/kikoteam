@@ -1,0 +1,39 @@
+name: Main-chat eval fixtures
+
+on:
+  pull_request:
+    paths:
+      - 'evals/**'
+      - 'backend/contracts/taskdelegation/tools.json'
+      - 'backend/internal/manager/service/prompts.go'
+      - 'agent-engine/internal/runtime/configuration.go'
+      - '.github/workflows/evals.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'evals/**'
+      - 'backend/contracts/taskdelegation/tools.json'
+      - 'backend/internal/manager/service/prompts.go'
+      - 'agent-engine/internal/runtime/configuration.go'
+      - '.github/workflows/evals.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.18.1'
+      - name: Validate scripts and synthetic fixtures without model credentials
+        run: node --test evals/tests/*.test.mjs
+      - name: Dry-run designs
+        run: |
+          node evals/run.mjs --dry-run > "$RUNNER_TEMP/kiko-main-chat-design.json"

@@ -91,18 +91,20 @@ func TestDisableWorkspaceStartersMigration(t *testing.T) {
 	const previous = "000107_builtin_employee_management.sql"
 	db, models, workspace, owner := modelFixtureThrough(t, previous)
 	model := saveTestModel(t, models, workspace, owner)
-	employee, err := (&service.AgentService{Store: NewAgentStore(db)}).Create(ctx, workspace, owner, service.AgentCreate{Name: "Legacy employee", ModelProfileID: model.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// This fixture must be writable by schema 107, even as the current agent store evolves.
+	employeeID := service.NewID()
+	reviewExec(t, db, `INSERT INTO platform_agents(id,workspace_id,name,creator_account_id,model_profile_id,version,config_version,admission_epoch)
+ VALUES($1,$2,'Legacy employee',$3,$4,1,1,1)`, employeeID, workspace, owner, model.ID)
+	reviewExec(t, db, `INSERT INTO platform_capability_packages(id,workspace_id,agent_id,name,version,scope)
+ VALUES($1,$2,$3,'Legacy package',1,'{"mode":"all"}')`, service.NewID(), workspace, employeeID)
 	before := employeeBindings(t, db, workspace)
 	var queued bool
-	if err = db.QueryRow("SELECT starter_pending FROM platform_workspaces WHERE id=$1", workspace).Scan(&queued); err != nil || !queued {
+	if err := db.QueryRow("SELECT starter_pending FROM platform_workspaces WHERE id=$1", workspace).Scan(&queued); err != nil || !queued {
 		t.Fatal("expected pending workspace on schema 107", err)
 	}
 	applyTestMigrations(t, ctx, db, previous, "000108_disable_workspace_starters.sql")
 	var kept bool
-	if err = db.QueryRow("SELECT starter_pending,EXISTS(SELECT FROM platform_agents WHERE workspace_id=$1 AND id=$2) FROM platform_workspaces WHERE id=$1", workspace, employee.ID).Scan(&queued, &kept); err != nil || queued || !kept || employeeBindings(t, db, workspace) != before {
+	if err := db.QueryRow("SELECT starter_pending,EXISTS(SELECT FROM platform_agents WHERE workspace_id=$1 AND id=$2) FROM platform_workspaces WHERE id=$1", workspace, employeeID).Scan(&queued, &kept); err != nil || queued || !kept || employeeBindings(t, db, workspace) != before {
 		t.Fatal("migration lost the legacy employee, changed bindings or kept pending creation", err)
 	}
 }

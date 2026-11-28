@@ -77,7 +77,7 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 			}
 		}
 		if name == "send_message" {
-			wantFields := []string{"task_id", "text", "attachment_paths", "attachment_ids"}
+			wantFields := []string{"task_id", "text", "attachment_paths", "attachment_ids", "source_files_unused"}
 			if len(tool.Schema.Properties) != len(wantFields) {
 				t.Errorf("unexpected append tool fields: %v", tool.Schema.Properties)
 			}
@@ -88,6 +88,12 @@ func TestPublishedToolPolicyAndSchemas(t *testing.T) {
 			}
 			if len(tool.Schema.Required) != 1 || tool.Schema.Required[0] != "task_id" {
 				t.Errorf("unexpected append tool required fields: %v", tool.Schema.Required)
+			}
+		}
+		if name == "create_session" || name == "send_message" {
+			var flag struct{ Type string }
+			if err := json.Unmarshal(tool.Schema.Properties["source_files_unused"], &flag); err != nil || flag.Type != "boolean" || slices.Contains(tool.Schema.Required, "source_files_unused") {
+				t.Errorf("%s must support an optional boolean source_files_unused", name)
 			}
 		}
 		if name == "create_todo" {

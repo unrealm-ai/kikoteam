@@ -66,6 +66,10 @@
           "maxLength": 65536,
           "description": "Self-contained goal, necessary authorized context, explicit constraints, prohibitions, independent approval requirements and expected deliverable. Do not rely on the source chat transcript."
         },
+        "source_files_unused": {
+          "type": "boolean",
+          "description": "Set true only for an independent task that needs none of the source message's files and has no other file inputs. Otherwise forward the files needed for this task. On retry keep all required references; never use this flag to drop them."
+        },
         "title": {
           "type": "string",
           "maxLength": 200,
@@ -215,6 +219,10 @@
           "type": "string",
           "maxLength": 65536,
           "description": "Only new or revised requirements and necessary context. Preserve earlier boundaries unless the user explicitly changes them."
+        },
+        "source_files_unused": {
+          "type": "boolean",
+          "description": "Set true only when the supplement needs none of the source message's files and has no other file inputs. On retry keep the required references."
         },
         "attachment_ids": {
           "type": "array",

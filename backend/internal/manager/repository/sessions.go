@@ -86,11 +86,12 @@ func (s *Store) Session(ctx context.Context, w, actor, id string) (service.Sessi
 }
 
 type sessionTx struct {
-	ctx    context.Context
-	tx     *sql.Tx
-	target service.Target
-	state  service.SessionState
-	store  *Store
+	delegationInput *delegatedInputAdmission
+	ctx             context.Context
+	tx              *sql.Tx
+	target          service.Target
+	state           service.SessionState
+	store           *Store
 }
 
 func (s *Store) WithSession(ctx context.Context, target service.Target, fn func(service.SessionTx) error) error {
@@ -204,17 +205,20 @@ func (s *Store) withSessionAttempt(ctx context.Context, target service.Target, f
 			return err
 		}
 	}
-	if err = t.invokeSessionOperation(fn, dispatch); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return t.commitSessionOperation(fn, dispatch)
 }
 
-func (t *sessionTx) invokeSessionOperation(fn func(service.SessionTx) error, dispatch bool) error {
+func (t *sessionTx) commitSessionOperation(fn func(service.SessionTx) error, dispatch bool) error {
 	if err := t.checkPlannedCreator(dispatch); err != nil {
 		return err
 	}
-	return fn(t)
+	if t.target.DelegatedFiles != nil {
+		return t.commitDelegatedInput(fn)
+	}
+	if err := fn(t); err != nil {
+		return err
+	}
+	return t.tx.Commit()
 }
 
 // checkPlannedCreator applies the read boundary to all public mutations while
@@ -470,7 +474,11 @@ func (t *sessionTx) InsertInput(v service.Input) (service.Input, error) {
 	if err = t.checkAttachmentSource(v.Attachments); err != nil {
 		return v, err
 	}
-	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO manager_inputs(id,workspace_id,session_id,submitted_by,admission_epoch,seq,text,created_at,channel_principal_id,channel_generation,context_state,channel_history_count,delivery_mode,source_kind,report_id,trigger_agent_loop,confirmation_request_id,confirmed,attachments) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`, v.ID, t.target.Workspace, v.SessionID, webActor, t.state.AdmissionEpoch, v.Seq, v.Text, v.CreatedAt, channelActor, generation, receipt, historyCount, v.DeliveryMode, v.SourceKind, v.ReportID, *v.TriggerAgentLoop, v.ConfirmationRequestID, v.Confirmed, attachments)
+	var delegatedFrom any
+	if t.delegationInput != nil {
+		delegatedFrom = t.target.SourceInputID
+	}
+	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO manager_inputs(id,workspace_id,session_id,submitted_by,admission_epoch,seq,text,created_at,channel_principal_id,channel_generation,context_state,channel_history_count,delivery_mode,source_kind,report_id,trigger_agent_loop,confirmation_request_id,confirmed,attachments,delegated_from_input_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`, v.ID, t.target.Workspace, v.SessionID, webActor, t.state.AdmissionEpoch, v.Seq, v.Text, v.CreatedAt, channelActor, generation, receipt, historyCount, v.DeliveryMode, v.SourceKind, v.ReportID, *v.TriggerAgentLoop, v.ConfirmationRequestID, v.Confirmed, attachments, delegatedFrom)
 	if err == nil {
 		err = t.stampWebGroupInput(v.ID)
 	}

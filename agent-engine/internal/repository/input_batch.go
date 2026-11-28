@@ -10,7 +10,10 @@ import (
 // prepareBatch is called while holding the session lock. The trigger owns the
 // execution authority; preceding context rows retain their own durable identity.
 func prepareBatch(ctx context.Context, tx *sql.Tx, w Work, input *Input, turn string) error {
-	rows, err := tx.QueryContext(ctx, `SELECT id,text,source_kind,attachments FROM manager_inputs WHERE session_id=$1 AND status='queued' AND seq<=$2
+	rows, err := tx.QueryContext(ctx, `SELECT id,text,source_kind,attachments,
+ (SELECT jsonb_build_object('message_id',src.id,'text',src.text,'attachments',src.attachments)
+ FROM manager_inputs src WHERE src.id=manager_inputs.delegated_from_input_id AND src.workspace_id=manager_inputs.workspace_id)
+ FROM manager_inputs WHERE session_id=$1 AND status='queued' AND seq<=$2
  AND (NOT EXISTS(SELECT 1 FROM manager_human_dm_context h WHERE h.input_id=manager_inputs.id)
  OR (channel_principal_id=(SELECT channel_principal_id FROM manager_inputs root WHERE root.id=$6)
  AND admission_epoch=(SELECT admission_epoch FROM manager_inputs root WHERE root.id=$6)
@@ -23,8 +26,8 @@ func prepareBatch(ctx context.Context, tx *sql.Tx, w Work, input *Input, turn st
 	var ids, texts []string
 	for rows.Next() {
 		var id, text, kind string
-		var attachments []byte
-		if err = rows.Scan(&id, &text, &kind, &attachments); err != nil {
+		var attachments, source []byte
+		if err = rows.Scan(&id, &text, &kind, &attachments, &source); err != nil {
 			return err
 		}
 		ids = append(ids, id)
@@ -34,6 +37,12 @@ func prepareBatch(ctx context.Context, tx *sql.Tx, w Work, input *Input, turn st
 		text, err = renderInputAttachments(text, attachments)
 		if err != nil {
 			return err
+		}
+		if source != nil {
+			text, err = renderDelegatedInput(text, source, attachments)
+			if err != nil {
+				return err
+			}
 		}
 		texts = append(texts, text)
 	}

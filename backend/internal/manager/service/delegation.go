@@ -16,6 +16,7 @@ type DelegationIdentity struct {
 	Generation   int64  `json:"generation,string"`
 }
 type DelegationScope struct {
+	SourceFilesUnused                                         bool
 	WebGroup                                                  *WebGroupExecution
 	Group                                                     bool
 	ReportOnly                                                bool
@@ -73,6 +74,8 @@ type Delegation struct {
 	Secret  string
 }
 type DelegationArgs struct {
+	SourceFilesUnused bool `json:"source_files_unused,omitempty"`
+
 	AmendmentBasis   string   `json:"amendment_basis,omitempty"`
 	ArtifactIDs      []string `json:"artifact_ids,omitempty"`
 	TaskID           string   `json:"task_id,omitempty"`
@@ -115,6 +118,7 @@ func (d *Delegation) Call(ctx context.Context, scope DelegationScope, name strin
 		return nil, Fail("delegation_input_changed", 409, "本次委派的来源输入已改变")
 	}
 	scope = current
+	scope.SourceFilesUnused = args.SourceFilesUnused
 	if scope.ReportOnly && name != "artifact_select" && name != "send_task_detail_link" {
 		return nil, Fail("user_authorization_required", 403, "任务回报只能说明结果或询问用户，业务操作需要用户输入")
 	}

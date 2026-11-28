@@ -41,6 +41,24 @@ func TestRenderInputAttachmentsAcceptsAttachmentOnly(t *testing.T) {
 	}
 }
 
+func TestDelegationRendersOriginalSeparatelyFromAssignedWork(t *testing.T) {
+	const source = `{"message_id":"source","text":"compare these, then summarize separately","attachments":[{"id":"not-granted","name":"one.pdf","path":"private-a"},{"id":"yes","name":"two.csv","path":"private-b","status":"downloading"},{"path":"uploads/three.txt","name":"three.txt"}]}`
+	got, err := renderDelegatedInput("summarize two.csv", []byte(source), []byte(`[{"id":"yes"},{"path":"uploads/three.txt"}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"compare these, then summarize separately", `{"name":"one.pdf","forwarded":false}`, `{"id":"yes","name":"two.csv","forwarded":true}`, `{"path":"uploads/three.txt","name":"three.txt","forwarded":true}`, "summarize two.csv"} {
+		if !strings.Contains(got, value) {
+			t.Fatalf("missing %q in %s", value, got)
+		}
+	}
+	for _, excluded := range []string{"not-granted", "private-a", "private-b", "downloading"} {
+		if strings.Contains(got, excluded) {
+			t.Fatalf("leaked %q in %s", excluded, got)
+		}
+	}
+}
+
 func TestClaimAttachmentReferencesInBothNormalAndSteeringInputs(t *testing.T) {
 	for _, steer := range []bool{false, true} {
 		name := "normal"

@@ -71,6 +71,7 @@ func (s *Service) createSession(ctx context.Context, w, actor, key string, r Cre
 	if source != nil {
 		target.Source = &source.Identity
 		target.SourceInputID = source.InputID
+		target.DelegatedFiles = &DelegatedFiles{IDs: r.AttachmentIDs, Paths: r.AttachmentPaths, SourceFilesUnused: source.SourceFilesUnused}
 	}
 	if !validSessionOwner(r, target.Source) || (r.Mode != "chat" && r.Mode != "task") || !validAttachmentSelection(r.AttachmentPaths, r.AttachmentIDs, source != nil) || !validTitle(r.Title) || r.Input != nil && !validMessageText(r.Input.Text, r.AttachmentPaths, r.AttachmentIDs) {
 		return Session{}, false, Fail("invalid_argument", 400, "会话参数无效")
@@ -110,6 +111,9 @@ func (s *Service) createSession(ctx context.Context, w, actor, key string, r Cre
 				replayed = true
 				return nil
 			}
+		}
+		if err := tx.CheckDelegatedInput(); err != nil {
+			return err
 		}
 		st := tx.State()
 		if err := admitted(st); err != nil {
@@ -290,6 +294,7 @@ func (s *Service) submitInputVersion(ctx context.Context, w, actor, id, key, tex
 	if source != nil {
 		target.Source = &source.Identity
 		target.SourceInputID = source.InputID
+		target.DelegatedFiles = &DelegatedFiles{IDs: ids, Paths: paths, SourceFilesUnused: source.SourceFilesUnused}
 	}
 	err = s.Store.WithSession(ctx, target, func(tx SessionTx) error {
 		out, d, replayed = Input{}, initialDedup, false
@@ -307,6 +312,9 @@ func (s *Service) submitInputVersion(ctx context.Context, w, actor, id, key, tex
 			}
 			out, err = tx.Input(found.InputID)
 			replayed = true
+			return err
+		}
+		if err := tx.CheckDelegatedInput(); err != nil {
 			return err
 		}
 		if expected != nil && tx.State().LastInputSeq != *expected {

@@ -1748,6 +1748,18 @@ CREATE TABLE public.manager_conversations (
 
 
 --
+-- Name: manager_delegation_attachment_retries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manager_delegation_attachment_retries (
+    source_input_id uuid NOT NULL,
+    destination text NOT NULL,
+    required_refs jsonb NOT NULL,
+    CONSTRAINT manager_delegation_attachment_retries_required_refs_check CHECK ((jsonb_typeof(required_refs) = 'array'::text))
+);
+
+
+--
 -- Name: manager_dingtalk_proactive_send_observations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2128,6 +2140,7 @@ CREATE TABLE public.manager_inputs (
     work_assignment_id uuid,
     work_submission_id uuid,
     attachments jsonb DEFAULT '[]'::jsonb NOT NULL,
+    delegated_from_input_id uuid,
     CONSTRAINT manager_human_resume_input CHECK (((human_request_id IS NULL) OR ((source_kind = 'human_confirmation'::text) AND trigger_agent_loop AND (delivery_mode = 'queue'::text) AND (confirmation_request_id IS NULL)))),
     CONSTRAINT manager_input_actor CHECK (((((((((submitted_by IS NOT NULL))::integer + ((channel_principal_id IS NOT NULL))::integer) + ((trigger_event_id IS NOT NULL))::integer) + ((notification_id IS NOT NULL))::integer) + ((work_assignment_id IS NOT NULL))::integer) = 1) AND ((channel_principal_id IS NULL) = (channel_generation IS NULL)))),
     CONSTRAINT manager_inputs_attachments_check CHECK ((jsonb_typeof(attachments) = 'array'::text)),
@@ -4649,6 +4662,14 @@ ALTER TABLE ONLY public.manager_conversations
 
 
 --
+-- Name: manager_delegation_attachment_retries manager_delegation_attachment_retries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_delegation_attachment_retries
+    ADD CONSTRAINT manager_delegation_attachment_retries_pkey PRIMARY KEY (source_input_id, destination);
+
+
+--
 -- Name: manager_dingtalk_proactive_send_observations manager_dingtalk_proactive_send_observations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6593,6 +6614,13 @@ CREATE INDEX manager_inputs_batch_idx ON public.manager_inputs USING btree (batc
 
 
 --
+-- Name: manager_inputs_delegated_source_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX manager_inputs_delegated_source_idx ON public.manager_inputs USING btree (delegated_from_input_id) WHERE (delegated_from_input_id IS NOT NULL);
+
+
+--
 -- Name: manager_inputs_queued; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7607,6 +7635,14 @@ ALTER TABLE ONLY public.manager_conversations
 
 
 --
+-- Name: manager_delegation_attachment_retries manager_delegation_attachment_retries_source_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_delegation_attachment_retries
+    ADD CONSTRAINT manager_delegation_attachment_retries_source_input_id_fkey FOREIGN KEY (source_input_id) REFERENCES public.manager_inputs(id) ON DELETE CASCADE;
+
+
+--
 -- Name: manager_dingtalk_proactive_send_observations manager_dingtalk_proactive_send_observations_binding_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7988,6 +8024,14 @@ ALTER TABLE ONLY public.manager_inputs
 
 ALTER TABLE ONLY public.manager_inputs
     ADD CONSTRAINT manager_inputs_channel_principal_id_fkey FOREIGN KEY (channel_principal_id) REFERENCES public.manager_channel_principals(id);
+
+
+--
+-- Name: manager_inputs manager_inputs_delegated_from_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_inputs
+    ADD CONSTRAINT manager_inputs_delegated_from_input_id_fkey FOREIGN KEY (delegated_from_input_id) REFERENCES public.manager_inputs(id);
 
 
 --

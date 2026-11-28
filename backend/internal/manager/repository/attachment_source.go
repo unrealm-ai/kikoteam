@@ -34,7 +34,7 @@ func (t *sessionTx) ResolveTaskAttachmentIDs(ids []string) ([]service.Attachment
       AND ref.value->>'id'=$6
     ORDER BY i.seq DESC LIMIT 1`, t.target.Workspace, t.target.Source.SessionID, t.target.Actor, channel.Generation, isChannel, id, nullID(t.target.SourceInputID)).Scan(&raw)
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, service.Fail("permission_denied", 403, "当前会话中该发送人未引用此附件")
+			return nil, service.Fail("permission_denied", 403, "attachment_ids 中的引用未获授权："+id)
 		}
 		if err != nil {
 			return nil, err
@@ -73,7 +73,7 @@ func (t *sessionTx) checkAttachmentSource(files []service.Attachment) error {
 			return err
 		}
 		if !allowed {
-			return service.Fail("permission_denied", 403, "当前会话中该发送人未引用此附件")
+			return service.Fail("permission_denied", 403, "attachment_paths 中的路径未获授权："+f.Path)
 		}
 	}
 	return nil

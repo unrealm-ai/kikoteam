@@ -82,14 +82,15 @@ func (f *workAmendmentRuntime) reply(t *testing.T, w http.ResponseWriter, r *htt
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	switch {
+	case strings.Contains(user, "MAKE-REPORT "):
+		// The task input now also quotes the originating START-AMENDMENT request.
+		tool("work_item_handoff", map[string]string{"target_employee_id": f.employee, "title": "退款报表 " + c.name, "goal": "交付报表", "criteria": baseReportCriteria, "summary": c.name})
 	case strings.Contains(user, "START-AMENDMENT "):
 		if last == "" {
 			tool("mcp__task_delegation__task_delegation_create_session", map[string]string{"instruction": "MAKE-REPORT " + c.name})
 		} else {
 			humanTextStream(t, w, "已安排生成报表")
 		}
-	case strings.Contains(user, "MAKE-REPORT "):
-		tool("work_item_handoff", map[string]string{"target_employee_id": f.employee, "title": "退款报表 " + c.name, "goal": "交付报表", "criteria": baseReportCriteria, "summary": c.name})
 	case strings.Contains(user, "CHANGE-AMENDMENT "):
 		f.replyChatAmendment(t, w, r, c, tool, user, last)
 	case strings.Contains(user, "你收到一个事项处理任务") || strings.Contains(user, "当前事项的要求已更新"):

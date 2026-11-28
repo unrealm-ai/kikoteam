@@ -89,11 +89,11 @@ list_targets 已移除，主对话只能操作当前员工。list_sessions 只�
 
 | 工具 | 模型可见参数 | 业务结果 |
 | --- | --- | --- |
-| `task_delegation_create_session` | instruction、title?、attachment_ids?、attachment_paths? | `accepted: true` 与原 Task / 首条 Input 的已受理身份 |
+| `task_delegation_create_session` | instruction、title?、attachment_ids?、attachment_paths?、source_files_unused? | `accepted: true` 与原 Task / 首条 Input 的已受理身份 |
 | `task_delegation_list_sessions` | cursor?、limit?、planning_state?、execution_state?、latest_turn_status? | 当前主会话委派的 Task 摘要，{items, next_cursor} |
 | `task_delegation_get_session` | task_id、turn_id?、cursor?、limit?、input_id? | 简明状态及结果摘要、当前执行事实、所选轮次的正式回复分页与输入回执 |
 | `trigger_task_get_result` | notification_id? 或 cursor? | [同一目的群已送达的定时任务和 Hook 执行记录](trigger-notifications.md#在群里追问一次执行) |
-| `task_delegation_send_message` | task_id、可选 text、有序 attachment_paths，文字和附件至少提供一项 | 原 Session 新 Input 的身份及当前状态 |
+| `task_delegation_send_message` | task_id、text?、attachment_ids?、attachment_paths?、source_files_unused?，文字和附件至少提供一项 | 原 Session 新 Input 的身份及当前状态 |
 | `send_task_detail_link` | task_id、可选 text | 平台生成授权链接并发往当前外部渠道；只返回投递状态。用户轮限本对话任务、不做业务去重，回告轮限本次任务、检查有效链接与待确认投递 |
 | `artifact_select` | 有序 artifact_ids | 将获准版本绑定到本轮回复和各自原渠道目标 |
 | `task_delegation_supplement_todo` | task_id、instruction、request_key、expected_version、attachment_paths? | 补充未启动待办 |
@@ -109,6 +109,8 @@ list_targets 已移除，主对话只能操作当前员工。list_sessions 只�
 工具名称与输入格式见机器契约，后文说明行为时省略统一前缀。调用遵循标准 MCP tools/list、tools/call 和工具结果结构；业务结果按实际兼容版本以结构化内容交付，并提供必要文本摘要供 Harness 理解。下面 JSON 只表示业务参数和结果，不是自行定义 JSON-RPC 外层。[MCP 工具规范](https://modelcontextprotocol.io/specification/latest/server/tools)
 
 ### 创建与追加
+
+创建和追加均从服务端核验本次来源用户输入。委派说明与原文在执行上下文中分别呈现。附件选择、无关附件的 `source_files_unused` 声明及确定失败后的纠错约束见[任务委派的来源与重试](../../docs/spec/async-inbound-attachments.md#任务委派的来源与重试)。
 
 instruction / text 沿用[Input 文本校验](session-api.md#1-路径身份与共同约定)，title 沿用 Session 标题约束；task_id / turn_id 为 UUID，未知参数拒绝。mode 固定 task，不接收临时模型、岗位指令、指定 Skill、插件账号、Sandbox 或回报地址覆盖。
 
@@ -153,7 +155,7 @@ stop_session 不带 request_key，每次覆盖当时目标 Session 已受理的�
 
 ## 5. 原子受理、去重与并发
 
-立即建任务只接收 instruction、可选 title 和有序的 attachment_ids、attachment_paths。Manager 以服务端核验的来源 chat 和当次 Input、创建参数的规范序列生成稳定去重键。同一来源 Input 和相同参数复用原 Task、Session 和首条 Input；不同参数或后续用户输入可创建新任务。已进入 Backend 的请求绑定其当时授权的 Input，写入事务持锁复核来源，避免请求处理跨轮授权。
+Manager 以服务端核验的来源 chat 和当次 Input、创建参数的规范序列生成稳定去重键。同一来源 Input 和相同参数复用原 Task、Session 和首条 Input；不同参数或后续用户输入可创建新任务。已进入 Backend 的请求绑定其当时授权的 Input，写入事务持锁复核来源，避免请求处理跨轮授权。
 
 立即建任务沿用[Input 必要去重](session-api.md#input-提交的必要去重)及其持久化边界。已启动任务的追加同样由 Manager 生成去重键。待办和事项补充保留各自工具约定的 request_key。JSON-RPC id、MCP 连接身份和公开 tool_use_id 不作为去重依据。
 

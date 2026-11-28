@@ -8,6 +8,13 @@ type Target struct {
 	TaskSpaceID, AgentID                               string
 	Source                                             *DelegationIdentity
 	SourceInputID                                      string // Pins an immediate delegation to its authorized source Input.
+	DelegatedFiles                                     *DelegatedFiles
+}
+
+// Only immediate task creation and delegated appends carry this selection.
+type DelegatedFiles struct {
+	IDs, Paths        []string
+	SourceFilesUnused bool
 }
 type SessionState struct {
 	OwnerLifecycle                                                string
@@ -27,6 +34,7 @@ type Dedup struct{ Kind, Target, Key, Fingerprint, SessionID, InputID string }
 // network, process, file or other non-transactional side effects.
 type SessionTx interface {
 	State() SessionState
+	CheckDelegatedInput() error
 	Configuration(string) (Configuration, error)
 	InsertTask(string, *string) error
 	InsertSession(Session) error

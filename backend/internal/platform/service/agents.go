@@ -205,7 +205,7 @@ func validateAgent(v *Agent) error {
 	if v.Name == "" || utf8.RuneCountInString(v.Name) > 100 || utf8.RuneCountInString(v.Role) > 2000 || utf8.RuneCountInString(v.Avatar) > 100 || utf8.RuneCountInString(v.Instruction) > 8000 || strings.ContainsRune(v.Name+v.Role+v.Avatar+v.Instruction, '\x00') {
 		return Fail("invalid_agent", 400, "员工名称、简介、头像或岗位行为规范无效")
 	}
-	if !ValidModelSelection(v.ModelProfileID, v.PlatformModelID) {
+	if !(v.IsAssistant && v.ModelProfileID == "" && v.PlatformModelID == "") && !ValidModelSelection(v.ModelProfileID, v.PlatformModelID) {
 		return Fail("invalid_model_profile", 400, "请选择有效模型")
 	}
 	return nil
@@ -233,6 +233,9 @@ func agentUUID(v string) bool {
 	return true
 }
 func ValidateAgentModel(ctx context.Context, t AgentTx, v *Agent) error {
+	if v.IsAssistant && v.ModelProfileID == "" && v.PlatformModelID == "" {
+		return nil
+	}
 	var m ModelProfile
 	var e error
 	if v.PlatformModelID != "" {

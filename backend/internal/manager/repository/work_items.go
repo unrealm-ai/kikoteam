@@ -160,7 +160,8 @@ func bindWorkArguments(src workSource, op string, arg *service.WorkArguments) er
 
 const workReceiverReady = `a.enabled AND (
  EXISTS(SELECT 1 FROM platform_model_profiles p WHERE p.id=a.model_profile_id AND p.workspace_id=a.workspace_id AND p.enabled AND p.validated)
- OR EXISTS(SELECT FROM platform_proxy_models p JOIN platform_agent_model_keys k ON k.agent_id=a.id WHERE p.id=a.platform_model_id AND p.enabled AND p.validated))`
+ OR EXISTS(SELECT FROM platform_proxy_models p JOIN platform_agent_model_keys k ON k.agent_id=a.id WHERE p.id=a.platform_model_id AND p.enabled AND p.validated)
+ OR (a.follows_default_model AND EXISTS(SELECT FROM platform_workspaces w JOIN LATERAL platform_assistant_default_model(w.id) d ON true WHERE w.id=a.workspace_id AND w.assistant_agent_id=a.id)))`
 
 func discoverWorkEmployees(ctx context.Context, tx *sql.Tx, src workSource, q string) (any, error) {
 	if utf8.RuneCountInString(q) > 100 {

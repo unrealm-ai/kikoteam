@@ -1028,7 +1028,7 @@ function openApproval(id: string) {
                 @navigate="navigate"
                 @open-approval="openApproval"
               />
-              <PlatformConversationsView v-else-if="realPlatform && currentView === 'chat'" :key="'manager-chat-' + currentUser?.id + '-' + activeWorkspaceId" :account-id="currentUser?.id" :selected-employee-id="targetEmployeeId" :selected-conversation-id="subParam" :assistant-entry="assistantEntry" :assistant-open-request="assistantOpenRequest" :assistant-demo="assistantDemo" @select-employee="syncChatEmployee" @demo-consumed="key => { if (assistantDemo?.key === key) assistantDemo = undefined }" />
+              <PlatformConversationsView v-else-if="realPlatform && currentView === 'chat'" :key="'manager-chat-' + currentUser?.id + '-' + activeWorkspaceId" :account-id="currentUser?.id" :selected-employee-id="targetEmployeeId" :selected-conversation-id="subParam" :assistant-entry="assistantEntry" :can-configure-models="['owner', 'admin'].includes(currentWorkspace.role)" @configure-models="navigate('resources', 'models')" :assistant-open-request="assistantOpenRequest" :assistant-demo="assistantDemo" @select-employee="syncChatEmployee" @demo-consumed="key => { if (assistantDemo?.key === key) assistantDemo = undefined }" />
               <ConversationsView
                 v-else-if="currentView === 'chat'"
                 :key="'chat-' + activeWorkspaceId"

@@ -351,7 +351,7 @@ func (s *Store) finishChannelFailure(ctx context.Context, w inboxWork, code stri
 		return nil
 	}
 	text := "暂时无法处理这条消息，请稍后再试。"
-	if code == "configuration_unusable" || code == "platform_billing_unconfigured" {
+	if code == "configuration_unusable" || code == "assistant_model_required" || code == "platform_billing_unconfigured" {
 		text = "此 AI 员工的模型配置当前不可用，请联系管理员检查员工模型设置。"
 	}
 	if code == "agent_disabled" {

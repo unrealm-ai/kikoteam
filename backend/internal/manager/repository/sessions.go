@@ -245,10 +245,15 @@ func (t *sessionTx) refresh() error {
 	return nil
 }
 
-func (t *sessionTx) Configuration(mode string) (service.Configuration, error) {
+func (t *sessionTx) modelConfiguration(mode string) (service.Configuration, error) {
 	v := service.Configuration{Harness: "pi", Skills: []string{}, Plugins: []string{}}
 	var model, official string
-	if err := t.tx.QueryRowContext(t.ctx, `SELECT config_version,instruction,coalesce(model_profile_id::text,''),coalesce(platform_model_id::text,'') FROM platform_agents WHERE id=$1`, t.state.AgentID).Scan(&v.AgentVersion, &v.Instruction, &model, &official); err != nil {
+	var assistant, follow bool
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT a.config_version,a.instruction,coalesce(COALESCE(a.model_profile_id,d.model_profile_id)::text,''),
+ coalesce(COALESCE(a.platform_model_id,d.platform_model_id)::text,''),w.assistant_agent_id IS NOT DISTINCT FROM a.id,a.follows_default_model
+ FROM platform_agents a JOIN platform_workspaces w ON w.id=a.workspace_id
+ LEFT JOIN LATERAL platform_assistant_default_model(a.workspace_id) d ON a.follows_default_model AND w.assistant_agent_id=a.id
+ WHERE a.id=$1`, t.state.AgentID).Scan(&v.AgentVersion, &v.Instruction, &model, &official, &assistant, &follow); err != nil {
 		return v, err
 	}
 	query := `SELECT id,version,protocol,base_url,model_id FROM platform_model_profiles WHERE workspace_id=$1 AND enabled AND validated AND id=NULLIF($2,'')::uuid`
@@ -259,11 +264,22 @@ func (t *sessionTx) Configuration(mode string) (service.Configuration, error) {
 	if official == "" {
 		err = t.tx.QueryRowContext(t.ctx, query, t.target.Workspace, model).Scan(&v.ModelProfileID, &v.ModelVersion, &v.Protocol, &v.BaseURL, &v.ModelID)
 	} else {
-		v, err = t.officialConfiguration(v, official)
+		v, err = t.officialConfiguration(v, official, assistant && follow)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
+		if assistant && follow && mode == "chat" {
+			return v, assistantModelRequired()
+		}
 		return v, service.Fail("configuration_unusable", 422, "模型未配置、未验证或已停用")
 	}
+	if err != nil {
+		return v, err
+	}
+	return v, nil
+}
+
+func (t *sessionTx) Configuration(mode string) (service.Configuration, error) {
+	v, err := t.modelConfiguration(mode)
 	if err != nil {
 		return v, err
 	}
@@ -298,7 +314,7 @@ func (t *sessionTx) Configuration(mode string) (service.Configuration, error) {
 	}
 	return v, nil
 }
-func (t *sessionTx) officialConfiguration(v service.Configuration, id string) (service.Configuration, error) {
+func (t *sessionTx) officialConfiguration(v service.Configuration, id string, autoBind bool) (service.Configuration, error) {
 	q := `SELECT id,version,protocol FROM platform_proxy_models WHERE enabled AND validated AND id=NULLIF($1,'')::uuid FOR SHARE`
 	if e := t.tx.QueryRowContext(t.ctx, q, id).Scan(&v.PlatformModelID, &v.ModelVersion, &v.Protocol); e != nil {
 		return v, e
@@ -307,12 +323,50 @@ func (t *sessionTx) officialConfiguration(v service.Configuration, id string) (s
 	if e := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM platform_agent_model_keys WHERE agent_id=$1)`, t.state.AgentID).Scan(&bound); e != nil {
 		return v, e
 	}
+	if !bound && autoBind && t.store.EnsureAssistantModelKey != nil {
+		if e := t.store.EnsureAssistantModelKey(t.ctx, t.tx, t.target.Workspace, t.state.AgentID); e != nil {
+			return v, e
+		}
+		bound = true
+	}
 	if !bound {
 		return v, service.Fail("platform_billing_unconfigured", 422, "请在员工模型设置中确认官方模型扣费账户")
 	}
 	v.ModelID = v.PlatformModelID
 	return v, nil
 }
+func assistantModelRequired() error {
+	return service.Fail("assistant_model_required", 422, "KIKO 助手尚未配置可用模型，请先配置模型")
+}
+
+// An idle assistant chat can adopt a new model without a new conversation.
+// A running or queued turn retains its prior configuration.
+func (t *sessionTx) CheckAssistantChatModel() error {
+	var assistant bool
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(assistant_agent_id=$2,false) FROM platform_workspaces WHERE id=$1`, t.target.Workspace, t.state.AgentID).Scan(&assistant); err != nil || !assistant {
+		return err
+	}
+	cfg, err := t.modelConfiguration("chat")
+	if err != nil {
+		return err
+	}
+	old := t.state.Session.Configuration
+	if old.ModelProfileID == cfg.ModelProfileID && old.PlatformModelID == cfg.PlatformModelID && old.ModelVersion == cfg.ModelVersion {
+		return nil
+	}
+	if t.state.Session.Execution.State != "idle" {
+		return service.Fail("assistant_model_change_pending", 409, "请等当前轮处理结束后重试")
+	}
+	old.ModelProfileID, old.PlatformModelID, old.ModelVersion = cfg.ModelProfileID, cfg.PlatformModelID, cfg.ModelVersion
+	old.Protocol, old.BaseURL, old.ModelID = cfg.Protocol, cfg.BaseURL, cfg.ModelID
+	raw, err := json.Marshal(old)
+	if err != nil {
+		return err
+	}
+	_, err = t.tx.ExecContext(t.ctx, `UPDATE manager_sessions SET configuration=$2 WHERE id=$1`, t.target.Session, raw)
+	return err
+}
+
 func (t *sessionTx) InsertTask(id string, source *string) error {
 	if t.target.TaskSpaceID != "" {
 		_, err := t.tx.ExecContext(t.ctx, `INSERT INTO manager_tasks(id,workspace_id,task_space_id,agent_id)VALUES($1,$2,$3,$4)`, id, t.target.Workspace, t.target.TaskSpaceID, t.state.AgentID)

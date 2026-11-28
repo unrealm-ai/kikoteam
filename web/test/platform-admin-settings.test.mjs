@@ -561,31 +561,7 @@ test('Referral rewards are off by default, save an explicit switch, and notify t
   }
 });
 
-test('The assistant provisioning switch is shown and saved from database settings alone', async () => {
-  const assistant = root+'/assistant-settings';
-  const m = await mount(r => {
-    if (r.url.startsWith('/api/v1/platform-models?')) return Response.json({items:[],total:0});
-    if (r.url === assistant && r.method === 'GET') return Response.json({version:1,enabled:false});
-    if (r.url === assistant && r.method === 'PATCH') return Response.json({version:2,enabled:true});
-    throw new Error('Unexpected endpoint');
-  });
-  try {
-    m.button('官方模型与助手').click(); await wait();
-    const control = () => m.host.querySelector('.assistant-settings [role="checkbox"]');
-    assert.equal(control()?.getAttribute('aria-checked'), 'false');
-    assert.doesNotMatch(m.host.textContent, /当前部署未启用/);
-    assert.match(m.host.textContent, /还没有默认模型/);
-    control().click(); await wait();
-    assert.equal(await m.saveSection(), true);
-    assert.deepEqual(m.requests.filter(r=>r.url===assistant && r.method==='PATCH').map(r=>r.body),[
-      {expected_version:1,enabled:true},
-    ]);
-    assert.deepEqual(m.errors, []);
-  } finally { await m.close(); }
-});
-
-test('Grouped settings still use independent APIs and find a default model outside the visible page', async () => {
-  const assistant = root+'/assistant-settings';
+test('Grouped settings use independent APIs and no longer show the assistant provisioning switch', async () => {
   const olderModel = {
     id:'fixture-older', name:'旧默认模型', protocol:'chat_completions', base_url:'https://model.example.test',
     upstream_model_id:'fixture', has_key:false, prices:{input:'0',output:'0'}, enabled:true, validated:true, is_default:true, version:1,
@@ -594,23 +570,19 @@ test('Grouped settings still use independent APIs and find a default model outsi
     if (r.url === mail) return Response.json(baseMail);
     if (r.url === github) return Response.json(baseGithub);
     if (r.url === channelDownloads) return Response.json({version:0,validate_public_ip:true});
-    if (r.url === assistant) return Response.json({version:1,enabled:false});
     if (r.url === '/api/v1/platform-models?page=1') {
       return Response.json({items:[{...olderModel,id:'newer',name:'新模型',is_default:false}],total:101});
-    }
-    if (r.url === '/api/v1/platform-models?page=1&page_size=100') {
-      return Response.json({items:[{...olderModel,id:'newer',name:'新模型',is_default:false}],total:101});
-    }
-    if (r.url === '/api/v1/platform-models?page=2&page_size=100') {
-      return Response.json({items:[olderModel],total:101});
     }
     throw new Error('Unexpected endpoint: '+r.url);
   });
   try {
     const labels = [...m.host.querySelectorAll('.admin-subnav button')].map(n=>n.textContent.trim());
-    assert.deepEqual(labels,['账户与注册','官方模型与助手','任务分享与附件','插件集成','默认插件']);
-    m.button('官方模型与助手').click(); await wait();
-    assert.match(m.host.querySelector('.assistant-settings').textContent, /旧默认模型（已验证、已启用）/);
+    assert.deepEqual(labels,['账户与注册','官方模型','任务分享与附件','插件集成','默认插件']);
+    m.button('官方模型').click(); await wait();
+    assert.match(m.host.textContent,/新模型/);
+    assert.equal(m.host.querySelector('.assistant-settings'),null);
+    assert.deepEqual(m.requests.filter(r=>r.url.startsWith('/api/v1/platform-models')).map(r=>r.url),['/api/v1/platform-models?page=1']);
+    assert.ok(!m.requests.some(r=>r.url.endsWith('/assistant-settings')));
     m.button('任务分享与附件').click(); await wait();
     assert.ok(m.host.querySelector('[aria-label="附件下载设置"]'));
     assert.ok(m.requests.some(r=>r.url.endsWith('/task-link-settings')));

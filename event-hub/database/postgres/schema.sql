@@ -1028,6 +1028,26 @@ $_$;
 
 
 --
+-- Name: platform_assistant_default_model(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.platform_assistant_default_model(w uuid) RETURNS TABLE(model_profile_id uuid, platform_model_id uuid)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT candidate.local_id, candidate.official_id
+    FROM (
+        SELECT id AS local_id, NULL::uuid AS official_id, 0 AS priority
+        FROM platform_model_profiles
+        WHERE workspace_id=w AND is_default AND enabled AND validated
+        UNION ALL
+        SELECT NULL::uuid, id, 1
+        FROM platform_proxy_models WHERE is_default AND enabled AND validated
+    ) candidate
+    ORDER BY candidate.priority, COALESCE(candidate.local_id,candidate.official_id) LIMIT 1
+$$;
+
+
+--
 -- Name: platform_can_manage_agent(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1200,9 +1220,7 @@ CREATE FUNCTION public.platform_queue_new_assistant() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    IF (SELECT enabled FROM platform_assistant_settings WHERE singleton) THEN
-        INSERT INTO platform_assistant_provisioning(workspace_id) VALUES(NEW.id);
-    END IF;
+    INSERT INTO platform_assistant_provisioning(workspace_id) VALUES(NEW.id);
     RETURN NEW;
 END;
 $$;
@@ -3058,7 +3076,12 @@ CREATE TABLE public.platform_agent_versions (
     model_profile_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     platform_model_id uuid,
-    CONSTRAINT platform_agent_versions_check CHECK ((num_nonnulls(model_profile_id, platform_model_id) = 1)),
+    follows_default_model boolean DEFAULT false NOT NULL,
+    CONSTRAINT platform_agent_versions_model_selection_check CHECK ((num_nonnulls(model_profile_id, platform_model_id) =
+CASE
+    WHEN follows_default_model THEN 0
+    ELSE 1
+END)),
     CONSTRAINT platform_agent_versions_version_check CHECK ((version > 0))
 );
 
@@ -3089,13 +3112,18 @@ CREATE TABLE public.platform_agents (
     usage_version bigint DEFAULT 1 NOT NULL,
     creator_account_id uuid NOT NULL,
     maintainers_version bigint DEFAULT 1 NOT NULL,
+    follows_default_model boolean DEFAULT false NOT NULL,
     CONSTRAINT platform_agents_admission_epoch_check CHECK ((admission_epoch > 0)),
     CONSTRAINT platform_agents_avatar_check CHECK ((length(avatar) <= 100)),
     CONSTRAINT platform_agents_check CHECK (((source_agent_template_version_id IS NOT NULL) OR (template_parameters = '{}'::jsonb))),
-    CONSTRAINT platform_agents_check1 CHECK ((num_nonnulls(model_profile_id, platform_model_id) = 1)),
     CONSTRAINT platform_agents_config_version_check CHECK ((config_version > 0)),
     CONSTRAINT platform_agents_instruction_check CHECK ((length(instruction) <= 8000)),
     CONSTRAINT platform_agents_maintainers_version_check CHECK ((maintainers_version > 0)),
+    CONSTRAINT platform_agents_model_selection_check CHECK ((num_nonnulls(model_profile_id, platform_model_id) =
+CASE
+    WHEN follows_default_model THEN 0
+    ELSE 1
+END)),
     CONSTRAINT platform_agents_name_check CHECK (((length(name) >= 1) AND (length(name) <= 100))),
     CONSTRAINT platform_agents_role_check CHECK ((length(role) <= 2000)),
     CONSTRAINT platform_agents_template_parameters_check CHECK ((jsonb_typeof(template_parameters) = 'object'::text)),

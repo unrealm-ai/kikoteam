@@ -1,15 +1,5 @@
 package service
 
-type AssistantSettings struct {
-	Version int64 `json:"version"`
-	Enabled bool  `json:"enabled"`
-}
-
-type AssistantSettingsPatch struct {
-	ExpectedVersion int64 `json:"expected_version"`
-	Enabled         *bool `json:"enabled"`
-}
-
 func NewAssistantDemoPackage(agent string) CapabilityPackage {
 	rule := PackageConversationRule{Enabled: true, Mode: "inherit_with_blacklist", Allow: []UsageSelector{}, Deny: []UsageSelector{}}
 	trigger := DefaultPackageTriggerScope()

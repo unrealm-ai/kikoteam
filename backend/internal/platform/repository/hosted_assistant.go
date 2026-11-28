@@ -9,43 +9,7 @@ import (
 )
 
 type HostedAssistantStore struct {
-	DB        *sql.DB
-	EnsureKey AgentKeyWriter
-}
-
-func (s *HostedAssistantStore) ReadAdmin(ctx context.Context, actor string) (service.AssistantSettings, error) {
-	out := service.AssistantSettings{}
-	err := s.DB.QueryRowContext(ctx, `SELECT s.version,s.enabled FROM platform_assistant_settings s
- JOIN platform_accounts a ON a.id=$1 AND a.is_platform_admin WHERE s.singleton`, actor).Scan(&out.Version, &out.Enabled)
-	if errors.Is(err, sql.ErrNoRows) {
-		return out, service.Fail("platform_admin_required", 403, "需要平台管理员权限")
-	}
-	return out, err
-}
-
-func (s *HostedAssistantStore) SaveAdmin(ctx context.Context, actor string, p service.AssistantSettingsPatch) (service.AssistantSettings, error) {
-	out := service.AssistantSettings{}
-	if p.ExpectedVersion < 1 || p.Enabled == nil {
-		return out, service.Fail("invalid_assistant_settings", 400, "请提供助手开关和当前设置版本")
-	}
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return out, err
-	}
-	defer tx.Rollback() //nolint:errcheck // Commit owns success.
-	if err = requireSettingsAdmin(ctx, tx, actor, true); err != nil {
-		return out, err
-	}
-	err = tx.QueryRowContext(ctx, `UPDATE platform_assistant_settings SET enabled=$1,version=version+1,
- updated_by=$2,updated_at=now() WHERE singleton AND version=$3 RETURNING version,enabled`,
-		*p.Enabled, actor, p.ExpectedVersion).Scan(&out.Version, &out.Enabled)
-	if errors.Is(err, sql.ErrNoRows) {
-		return out, service.Fail("assistant_settings_version_conflict", 409, "助手设置已更新，请刷新后重试")
-	}
-	if err != nil {
-		return out, err
-	}
-	return out, tx.Commit()
+	DB *sql.DB
 }
 
 // ProvisionNext retries technical failures without leaving partially created employees or packages.
@@ -86,35 +50,22 @@ func (s *HostedAssistantStore) ProvisionNext(ctx context.Context) (bool, error) 
 }
 
 func (s *HostedAssistantStore) provision(ctx context.Context, tx *sql.Tx, w string) (string, error) {
-	var existing, owner, model string
-	var enabled bool
+	var existing, owner string
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(assistant_agent_id::text,'') FROM platform_workspaces
  WHERE id=$1 FOR UPDATE`, w).Scan(&existing); err != nil || existing != "" {
 		return "provisioned", err
 	}
-	if err := tx.QueryRowContext(ctx, "SELECT enabled FROM platform_assistant_settings WHERE singleton FOR SHARE").Scan(&enabled); err != nil || !enabled {
-		return "skipped", err
-	}
-	err := tx.QueryRowContext(ctx, `SELECT m.user_id,p.id FROM platform_members m CROSS JOIN platform_proxy_models p
- WHERE m.workspace_id=$1 AND m.role='owner' AND m.status='active' AND p.is_default AND p.enabled AND p.validated FOR SHARE OF m,p`, w).Scan(&owner, &model)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "skipped", nil
-	}
+	err := tx.QueryRowContext(ctx, `SELECT user_id FROM platform_members
+ WHERE workspace_id=$1 AND role='owner' AND status='active' FOR SHARE`, w).Scan(&owner)
 	if err != nil {
 		return "", err
 	}
-	if s.EnsureKey == nil {
-		return "", errors.New("assistant model key writer unavailable")
-	}
 	m := &modelTx{tx: tx, workspace: w}
-	at := &agentTx{model: m, ensureKey: s.EnsureKey}
+	at := &agentTx{model: m}
 	a := service.Agent{ID: service.NewID(), Name: "KIKO 助手", Role: "体验 AI 员工工作方式，帮你配置自己的 AI 员工。",
-		Instruction: "你是 KIKO 助手。根据用户需要推进任务；样例工具不代表真实业务操作。", PlatformModelID: model,
+		Instruction: "你是 KIKO 助手。根据用户需要推进任务；样例工具不代表真实业务操作。", IsAssistant: true,
 		Enabled: true, Version: 1, ConfigVersion: 1, AdmissionEpoch: 1}
 	if err = at.Create(ctx, a, owner); err != nil {
-		return "", err
-	}
-	if err = at.EnsureModelKey(ctx, a.ID); err != nil {
 		return "", err
 	}
 	if err = (&packageTx{model: m}).Save(ctx, service.NewAssistantDemoPackage(a.ID), true); err != nil {

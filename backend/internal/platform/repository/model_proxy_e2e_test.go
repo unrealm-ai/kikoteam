@@ -59,7 +59,7 @@ func modelProxyFixtureOnDB(t *testing.T, db *sql.DB) *proxyFixture {
 	f := &proxyFixture{db: db, secrets: ps.Secrets{Root: []byte(strings.Repeat("m", 40))},
 		engineToken: strings.Repeat("e", 40), entered: make(chan struct{}, 2), release: make(chan struct{})}
 	f.store = pr.Store{DB: f.db}
-	f.assistant = &HostedAssistantStore{DB: db, EnsureKey: f.secrets.EnsureKey}
+	f.assistant = &HostedAssistantStore{DB: db}
 	f.provider = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		serveProxyFixture(t, f, w, r)
 	}))
@@ -68,7 +68,7 @@ func modelProxyFixtureOnDB(t *testing.T, db *sql.DB) *proxyFixture {
 	auth := &service.AuthService{Store: &AuthStore{DB: f.db, InitCredits: pr.Signup}, Secret: f.secrets.Root, EmailCodeDisabled: true}
 	models := &service.ModelService{Store: NewModelStore(f.db)}
 	mux := http.NewServeMux()
-	managerStore := &mr.Store{DB: f.db, SnapshotCapabilities: SnapshotCapabilities}
+	managerStore := &mr.Store{DB: f.db, SnapshotCapabilities: SnapshotCapabilities, EnsureAssistantModelKey: f.secrets.EnsureKey}
 	managerService := &manager.Service{Store: managerStore, CursorSecret: f.secrets.Root}
 	f.server = httptest.NewUnstartedServer(mux)
 	origin := "http://" + f.server.Listener.Addr().String()

@@ -159,6 +159,13 @@ func (s *Service) createSession(ctx context.Context, w, actor, key string, r Cre
 
 func (s *Service) appendInputMode(ctx context.Context, tx SessionTx, actor, text, mode string, paths, ids []string, trusted []Attachment) (Input, error) {
 	st := tx.State()
+	if st.Session.Mode == "chat" {
+		if check, ok := tx.(interface{ CheckAssistantChatModel() error }); ok {
+			if err := check.CheckAssistantChatModel(); err != nil {
+				return Input{}, err
+			}
+		}
+	}
 	if st.Session.Execution.QueuedInputCount >= 100 {
 		return Input{}, Fail("session_queue_full", 429, "待执行输入已达到上限")
 	}

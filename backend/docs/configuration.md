@@ -43,7 +43,7 @@ Engine 调用官方模型代理时默认使用 `KIKO_PUBLIC_ORIGIN`。本地 Com
 
 钉钉扫码登记的来源标识由 [Backend 源码默认配置](../internal/config/channel_defaults.go) 定义为 `kikoteam`。创建登记时提交给钉钉；修改后仅影响新登记，扫码组织的可用范围由钉钉校验。
 
-SMTP、注册策略、GitHub 插件 OAuth 和 KIKO 助手发放开关仅在平台管理配置，读写数据库。升级迁移见[部署指南](../../docs/deployment.md#32-平台业务配置)。
+SMTP、注册策略和 GitHub 插件 OAuth仅在平台管理配置，读写数据库。升级迁移见[部署指南](../../docs/deployment.md#32-平台业务配置)。
 
 ## 文件存储配置
 

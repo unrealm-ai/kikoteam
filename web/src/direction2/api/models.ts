@@ -1,10 +1,6 @@
 import { platformRequest, post } from './platform';
 import type { ModelProtocol } from '../types';
 
-export type DefaultOfficialModelStatus =
-  | { state: 'loading' | 'unavailable' | 'missing' }
-  | { state: 'ready' | 'not-ready'; name: string };
-
 export interface ModelPrices {
   input: string; output: string; cache_read: string | null; cache_write: string | null;
 }

@@ -211,5 +211,5 @@ responses:
     description: Current Input resource; queued is an accepted state, not execution success.
     content: {application/json: {schema: {$ref: './session-schemas.yaml#/Input'}}}
   Error:
-    description: 400 invalid_argument/invalid_cursor/idempotency_key_required; 401 unauthenticated; 403 permission_denied/csrf_rejected; 404 resource_not_found; 409 conversation_archived/session_archived/agent_disabled/chat_session_exists/idempotency_conflict/session_revision_conflict/input_not_queued; 422 configuration_unusable; 429 session_queue_full; 503 dependency_unavailable. Failed or interrupted execution is represented in a readable resource, not by failing its GET.
+    description: 400 invalid_argument/invalid_cursor/idempotency_key_required; 401 unauthenticated; 403 permission_denied/csrf_rejected; 404 resource_not_found; 409 conversation_archived/session_archived/agent_disabled/chat_session_exists/idempotency_conflict/session_revision_conflict/input_not_queued/assistant_model_change_pending; 422 configuration_unusable/assistant_model_required; 429 session_queue_full; 503 dependency_unavailable. Failed or interrupted execution is represented in a readable resource, not by failing its GET.
     content: {application/json: {schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}}}

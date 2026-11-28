@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { NButton, NInput, NModal, NSkeleton } from 'naive-ui';
+import { NAlert, NButton, NInput, NModal, NSkeleton } from 'naive-ui';
 import ProjectFileTree from '../components/ProjectFileTree.vue';
 import ProjectDraftFiles from '../components/ProjectDraftFiles.vue';
 import {useProjectDraft} from '../composables/useProjectDraft';
@@ -15,10 +15,16 @@ import { agentsApi, type Agent } from '../api/agents';
 import { managerApi, type Conversation, type ManagerSession } from '../api/manager';
 import { taskApi, type TaskRecord } from '../api/tasks';
 import { sessionStatus, workItemProgress, type TaskNavigationTarget } from '../utils/session-presentation';
-const props = defineProps<{ accountId?: string | undefined; selectedEmployeeId?: string | undefined; selectedConversationId?: string | undefined; assistantEntry?: AssistantEntry | undefined; assistantOpenRequest?: number | undefined;
+const props = defineProps<{ accountId?: string | undefined; canConfigureModels?: boolean; selectedEmployeeId?: string | undefined; selectedConversationId?: string | undefined; assistantEntry?: AssistantEntry | undefined; assistantOpenRequest?: number | undefined;
  assistantDemo?: {card: AssistantCard; workspace: string; agent: string; key: string} | undefined }>();
-const emit = defineEmits<{demoConsumed: [key: string]; selectEmployee: [id: string, direct?: boolean]}>();
+const emit = defineEmits<{configureModels: []; demoConsumed: [key: string]; selectEmployee: [id: string, direct?: boolean]}>();
 const demoOpen = ref(false);
+const modelRequired = ref(false);
+function requireModel() { modelRequired.value = true; demoOpen.value = false; error.value = ''; }
+function showSendError(e: unknown, fallback: string) {
+  if (e instanceof D2ApiError && e.code === 'assistant_model_required') requireModel();
+  else error.value = e instanceof Error ? e.message : fallback;
+}
 const demoCards = computed(() => props.assistantEntry?.agent_id === selected.value && !props.selectedConversationId ? props.assistantEntry?.cards || [] : []);
 const agents = ref<Agent[]>([]), startedIds = ref<string[]>([]), selected = ref(''), search = ref(''), listError = ref(''), loading = ref(false);
 const newChatOpen = ref(false), modalSearch = ref('');
@@ -219,7 +225,7 @@ async function refreshTasks(more = false) {
   }
 }
 async function open() {
-  demoOpen.value=false;draft.reset();showFiles.value=false;treeMounted.value=false;rightTab.value=showTasks.value?'tasks':'files';dragDepth.value=0;chatSending.value=false;
+  demoOpen.value=false;modelRequired.value=false;draft.reset();showFiles.value=false;treeMounted.value=false;rightTab.value=showTasks.value?'tasks':'files';dragDepth.value=0;chatSending.value=false;
   const g = ++generation; controller.abort(); controller = new AbortController();
   conversation.value = null; chatID.value = ''; taskID.value = ''; taskFullscreen.value = false; tasks.value = []; taskCursor.value = null; taskBusy = false; lastTaskRefresh = 0; loadedTaskPages = 1; cardTargets=[]; olderCards.value=[];
   opening.value = false; firstText.value = ''; firstRequest = null; error.value = ''; tasksError.value = ''; sending.value = false;
@@ -248,8 +254,8 @@ async function firstSend() {
       if (g !== generation) return;
       session = await managerApi.session(w, c.chat_session_id, signal);
     }
-    if (g !== generation) return; chatID.value = session.id; markStarted(selected.value); firstText.value = ''; draft.clearSent(); firstRequest = null;
-  } catch (e) { if (g === generation) error.value = e instanceof Error ? e.message : '发送结果未知，请原样重试'; }
+    if (g !== generation) return; modelRequired.value = false; chatID.value = session.id; markStarted(selected.value); firstText.value = ''; draft.clearSent(); firstRequest = null;
+  } catch (e) { if (g === generation) showSendError(e, '发送结果未知，请原样重试'); }
   finally { if (g === generation) sending.value = false; }
 }
 async function sendDemo(card: AssistantCard, key: string = crypto.randomUUID()) {
@@ -266,6 +272,7 @@ async function sendDemo(card: AssistantCard, key: string = crypto.randomUUID()) 
     }
     if (chatID.value) {
       await managerApi.input(w, chatID.value, card.input, key, signal, 'queue');
+      if (g === generation) modelRequired.value = false;
       return;
     }
     let session: ManagerSession;
@@ -278,9 +285,9 @@ async function sendDemo(card: AssistantCard, key: string = crypto.randomUUID()) 
       await managerApi.input(w, c.chat_session_id, card.input, key, signal, 'queue');
       session = await managerApi.session(w, c.chat_session_id, signal);
     }
-    if (g === generation) { chatID.value = session.id; markStarted(selected.value); }
+    if (g === generation) { modelRequired.value = false; chatID.value = session.id; markStarted(selected.value); }
   } catch (e) {
-    if (g === generation) error.value = e instanceof Error ? e.message : '体验消息未确认发送，请检查对话后重试';
+    if (g === generation) showSendError(e, '体验消息未确认发送，请检查对话后重试');
   } finally {
     if (g === generation) sending.value = false;
   }
@@ -364,7 +371,7 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
           <span class="muted">{{ employee?.role || '对话协作 · 任务持续跟进' }}</span>
         </div>
         <div class="fallback-actions">
-          <NButton v-if="demoCards.length && conversation?.lifecycle === 'active'" size="small" secondary @click="demoOpen = !demoOpen">体验场景</NButton>
+          <NButton v-if="!modelRequired && demoCards.length && conversation?.lifecycle === 'active'" size="small" secondary @click="demoOpen = !demoOpen">体验场景</NButton>
           <button
             v-if="conversation"
             type="button"
@@ -380,8 +387,13 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
           </button>
         </div>
       </header>
-      <AssistantDemoCards v-if="demoOpen && demoCards.length" :cards="demoCards" :disabled="locked" @choose="card => sendDemo(card)" />
+      <AssistantDemoCards v-if="!modelRequired && demoOpen && demoCards.length" :cards="demoCards" :disabled="locked" @choose="card => sendDemo(card)" />
       <p v-if="conversation && conversation.lifecycle !== 'active'" class="muted archived-banner" role="status">此主对话已归档，不能继续发送；历史消息仍保留，不会自动新建替代对话。</p>
+      <NAlert v-if="modelRequired" class="assistant-model-required" type="warning" title="请先配置模型">
+        <p>当前没有可用模型，消息未发送。添加模型并设为工作区默认后，回来重新发送或点击体验卡。</p>
+        <NButton v-if="canConfigureModels" text type="primary" @click="emit('configureModels')">前往模型配置</NButton>
+        <span v-else>请联系工作区管理员配置模型。</span>
+      </NAlert>
       <p v-if="error" class="error" role="alert">{{ error }} <NButton v-if="!conversation" @click="open">重新加载</NButton></p>
       <NSkeleton v-if="opening" text :repeat="4" />
       <div v-else-if="conversation" class="panels">
@@ -406,7 +418,8 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
             :attachment-lookup="filesAvailable"
             :uploaded-attachments="draft.uploadedAttachments.value"
             @sending="chatSending=$event"
-            @sent="draft.clearSent"
+            @sent="modelRequired = false; draft.clearSent()"
+            @assistant-model-required="requireModel"
             @report="tree?.refresh()"
             @changed="refreshTasks()"
             @open-task="openTask"
@@ -435,12 +448,12 @@ onUnmounted(() => { generation++; controller.abort(); listController.abort(); if
           </ManagerSessionPanel>
           <section v-else-if="conversation.lifecycle === 'active'" class="new-chat">
             <div class="new-chat-body">
-              <div class="welcome-card" :class="{ 'has-demo-cards': demoCards.length && !assistantEntry?.experienced && !demoOpen }">
+              <div class="welcome-card" :class="{ 'has-demo-cards': !modelRequired && demoCards.length && !assistantEntry?.experienced && !demoOpen }">
                 <D2EmployeeAvatar v-if="employee" :name="employee.name" :preset="employee.avatar" :identity-key="employee.id" :assistant="employee.is_assistant || assistantChat" :assistant-busy="assistantChat ? assistantBusy : undefined" size="lg" />
                 <h3>与「{{ employee?.name }}」开始协作</h3>
                 <p class="muted">{{ employee?.role ? `${employee.role}。` : '' }}暂无历史消息，请向「{{ employee?.name }}」发送工作需求。</p>
-                <AssistantDemoCards v-if="demoCards.length && !assistantEntry?.experienced && !demoOpen" :cards="demoCards" :disabled="locked" @choose="card => sendDemo(card)" />
-                <div v-else class="quick-prompts">
+                <AssistantDemoCards v-if="!modelRequired && demoCards.length && !assistantEntry?.experienced && !demoOpen" :cards="demoCards" :disabled="locked" @choose="card => sendDemo(card)" />
+                <div v-else-if="!modelRequired" class="quick-prompts">
                   <button type="button" class="prompt-chip" @click="firstText = '帮我梳理当前工作的核心进度与待办事项'">梳理核心进度与待办 ↗</button>
                   <button type="button" class="prompt-chip" @click="firstText = '请先查看项目目录文件并汇报关键发现'">查看项目目录并汇报 ↗</button>
                 </div>
@@ -645,6 +658,7 @@ h3{font-size:14px;margin:0}
 .modal-agent-info small{font-size:12px;color:var(--id-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .modal-agent-cue{font-size:12px;color:var(--id-accent-primary);font-weight:500;flex-shrink:0}
 .muted{font-size:12px;color:var(--id-text-muted)}
+.assistant-model-required{margin:12px 16px}.assistant-model-required p{margin:0 0 6px}
 .error{font-size:13px;color:var(--id-status-danger)}
 .back{display:none}
 button:focus-visible{outline:2px solid var(--id-accent-primary);outline-offset:2px}

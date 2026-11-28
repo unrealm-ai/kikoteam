@@ -53,10 +53,11 @@ func (t *agentTx) EnsureModelKey(ctx context.Context, id string) error {
 	return t.ensureKey(ctx, t.model.tx, t.model.workspace, id)
 }
 
-const agentModelJoins = ` LEFT JOIN platform_model_profiles m ON m.id=a.model_profile_id AND m.workspace_id=a.workspace_id
- LEFT JOIN platform_proxy_models o ON o.id=a.platform_model_id LEFT JOIN platform_agent_model_keys k ON k.agent_id=a.id
+const agentModelJoins = ` LEFT JOIN LATERAL platform_assistant_default_model(a.workspace_id) d ON a.follows_default_model
+ LEFT JOIN platform_model_profiles m ON m.id=COALESCE(a.model_profile_id,d.model_profile_id) AND m.workspace_id=a.workspace_id
+ LEFT JOIN platform_proxy_models o ON o.id=COALESCE(a.platform_model_id,d.platform_model_id) LEFT JOIN platform_agent_model_keys k ON k.agent_id=a.id
  LEFT JOIN platform_accounts p ON p.id=k.payer_account_id`
-const agentColumns = `a.id,a.name,a.role,a.avatar,a.instruction,coalesce(a.model_profile_id::text,''),coalesce(a.platform_model_id::text,''),coalesce(m.name,o.name),coalesce(m.enabled AND m.validated,o.enabled AND o.validated),a.enabled,a.version,a.config_version,a.admission_epoch,a.created_at,a.updated_at,a.web_access,COALESCE(a.source_agent_template_version_id::text,''),a.template_parameters,COALESCE((SELECT template_id::text FROM platform_agent_template_versions WHERE id=a.source_agent_template_version_id),''),coalesce(p.id::text,''),coalesce(p.name,''),EXISTS(SELECT 1 FROM platform_workspaces w WHERE w.id=a.workspace_id AND w.assistant_agent_id=a.id)`
+const agentColumns = `a.id,a.name,a.role,a.avatar,a.instruction,coalesce(a.model_profile_id::text,''),coalesce(a.platform_model_id::text,''),coalesce(m.name,o.name,''),coalesce(m.enabled AND m.validated,o.enabled AND o.validated,false),a.enabled,a.version,a.config_version,a.admission_epoch,a.created_at,a.updated_at,a.web_access,COALESCE(a.source_agent_template_version_id::text,''),a.template_parameters,COALESCE((SELECT template_id::text FROM platform_agent_template_versions WHERE id=a.source_agent_template_version_id),''),coalesce(p.id::text,''),coalesce(p.name,''),EXISTS(SELECT 1 FROM platform_workspaces w WHERE w.id=a.workspace_id AND w.assistant_agent_id=a.id)`
 
 func scanAgent(row scanner, extra ...any) (service.Agent, error) {
 	var a service.Agent
@@ -142,9 +143,9 @@ func (t *agentTx) Create(ctx context.Context, a service.Agent, creator string) e
 		return err
 	}
 	w := t.model.workspace
-	if _, err := t.model.tx.ExecContext(ctx, `INSERT INTO platform_agents(id,workspace_id,name,role,avatar,instruction,model_profile_id,enabled,version,config_version,admission_epoch,platform_model_id,usage_config,creator_account_id)
- VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid,$8,$9,$10,$11,NULLIF($12,'')::uuid,$13,$14)`,
-		a.ID, w, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.Enabled, a.Version, a.ConfigVersion, a.AdmissionEpoch, a.PlatformModelID, usage, creator); err != nil {
+	if _, err := t.model.tx.ExecContext(ctx, `INSERT INTO platform_agents(id,workspace_id,name,role,avatar,instruction,model_profile_id,enabled,version,config_version,admission_epoch,platform_model_id,usage_config,creator_account_id,follows_default_model)
+ VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid,$8,$9,$10,$11,NULLIF($12,'')::uuid,$13,$14,$15)`,
+		a.ID, w, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.Enabled, a.Version, a.ConfigVersion, a.AdmissionEpoch, a.PlatformModelID, usage, creator, followsDefaultModel(a)); err != nil {
 		return err
 	}
 	if err := t.saveVersion(ctx, a); err != nil {
@@ -177,8 +178,8 @@ func (t *agentTx) createDefaultHumanRecipient(ctx context.Context, agent, creato
 }
 
 func (t *agentTx) Update(ctx context.Context, a service.Agent, config bool) error {
-	result, err := t.model.tx.ExecContext(ctx, `UPDATE platform_agents SET name=$3,role=$4,avatar=$5,instruction=$6,model_profile_id=NULLIF($7,'')::uuid,platform_model_id=NULLIF($12,'')::uuid,enabled=$8,version=$9,config_version=$10,admission_epoch=$11,updated_at=now() WHERE id=$1 AND workspace_id=$2 AND version=$9-1`,
-		a.ID, t.model.workspace, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.Enabled, a.Version, a.ConfigVersion, a.AdmissionEpoch, a.PlatformModelID)
+	result, err := t.model.tx.ExecContext(ctx, `UPDATE platform_agents SET name=$3,role=$4,avatar=$5,instruction=$6,model_profile_id=NULLIF($7,'')::uuid,platform_model_id=NULLIF($12,'')::uuid,enabled=$8,version=$9,config_version=$10,admission_epoch=$11,follows_default_model=$13,updated_at=now() WHERE id=$1 AND workspace_id=$2 AND version=$9-1`,
+		a.ID, t.model.workspace, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.Enabled, a.Version, a.ConfigVersion, a.AdmissionEpoch, a.PlatformModelID, followsDefaultModel(a))
 	if err != nil {
 		return err
 	}
@@ -203,8 +204,12 @@ func (t *agentTx) Update(ctx context.Context, a service.Agent, config bool) erro
 	return nil
 }
 
+func followsDefaultModel(a service.Agent) bool {
+	return a.IsAssistant && a.ModelProfileID == "" && a.PlatformModelID == ""
+}
+
 func (t *agentTx) saveVersion(ctx context.Context, a service.Agent) error {
-	_, err := t.model.tx.ExecContext(ctx, `INSERT INTO platform_agent_versions(workspace_id,agent_id,version,name,role,avatar,instruction,model_profile_id,platform_model_id) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::uuid,NULLIF($9,'')::uuid)`, t.model.workspace, a.ID, a.ConfigVersion, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.PlatformModelID)
+	_, err := t.model.tx.ExecContext(ctx, `INSERT INTO platform_agent_versions(workspace_id,agent_id,version,name,role,avatar,instruction,model_profile_id,platform_model_id,follows_default_model) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::uuid,NULLIF($9,'')::uuid,$10)`, t.model.workspace, a.ID, a.ConfigVersion, a.Name, a.Role, a.Avatar, a.Instruction, a.ModelProfileID, a.PlatformModelID, followsDefaultModel(a))
 	return err
 }
 

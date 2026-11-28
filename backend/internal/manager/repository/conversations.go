@@ -13,14 +13,15 @@ import (
 )
 
 type Store struct {
-	WorkAssets           service.WorkAssets
-	ChannelLog           *slog.Logger
-	RuntimeRoot          string
-	dispatchCursor       atomic.Pointer[dispatchPosition]
-	TriggerSecret        []byte
-	ConsumeWecomControl  func(context.Context, *sql.Tx, service.ChannelInbound, int64) (service.WecomControlResult, error)
-	DB                   *sql.DB
-	SnapshotCapabilities func(context.Context, *sql.Tx, string, string, string) (platform.ExecutionCapabilities, error)
+	WorkAssets              service.WorkAssets
+	ChannelLog              *slog.Logger
+	RuntimeRoot             string
+	dispatchCursor          atomic.Pointer[dispatchPosition]
+	TriggerSecret           []byte
+	ConsumeWecomControl     func(context.Context, *sql.Tx, service.ChannelInbound, int64) (service.WecomControlResult, error)
+	DB                      *sql.DB
+	EnsureAssistantModelKey func(context.Context, *sql.Tx, string, string) error
+	SnapshotCapabilities    func(context.Context, *sql.Tx, string, string, string) (platform.ExecutionCapabilities, error)
 }
 type scanner interface{ Scan(...any) error }
 

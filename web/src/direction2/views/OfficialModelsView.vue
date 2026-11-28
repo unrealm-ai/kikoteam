@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { NAlert, NButton, NCheckbox, NDrawer, NDrawerContent, NEmpty, NForm, NFormItem, NInput, NPagination, NSelect, NTable } from 'naive-ui';
 import { platformRequest, post } from '../api/platform';
-import type { DefaultOfficialModelStatus, ModelPrices } from '../api/models';
+import type { ModelPrices } from '../api/models';
 import type { ModelProtocol } from '../types';
 
 interface OfficialModel {
@@ -10,7 +10,6 @@ interface OfficialModel {
   has_key: boolean; prices: ModelPrices; enabled: boolean; validated: boolean; is_default: boolean; version: number;
 }
 interface OfficialModelPage {items: OfficialModel[]; total: number}
-const emit = defineEmits<{defaultModelStatus: [status: DefaultOfficialModelStatus]}>();
 const protocols = [
   {label: 'Chat Completions', value:'chat_completions'}, {label:'Responses', value:'openai_responses'},
   {label:'Anthropic Messages', value:'anthropic_messages'}
@@ -31,51 +30,19 @@ const fields = computed(() => ({
 }));
 const stamp = computed(() => JSON.stringify(fields.value));
 
-function reportDefaultModel(model?: OfficialModel) {
-  emit('defaultModelStatus', model
-    ? {state:model.enabled && model.validated ? 'ready' : 'not-ready', name:model.name}
-    : {state:'missing'});
-}
-
-async function refreshDefaultModel(result: OfficialModelPage, signal: AbortSignal) {
-  const onPage = result.items.find(model => model.is_default);
-  if (onPage || result.total <= result.items.length) {
-    reportDefaultModel(onPage);
-    return;
-  }
-  // The existing admin list is sorted newest first, not by default status.
-  // Search other pages so we don't report "missing" for an older default.
-  try {
-    for (let p = 1; ; p++) {
-      const batch = await platformRequest<OfficialModelPage>(`/platform-models?page=${p}&page_size=100`, {signal});
-      if (signal.aborted) return;
-      const found = batch.items.find(model => model.is_default);
-      if (found || batch.items.length === 0 || p * 100 >= batch.total) {
-        reportDefaultModel(found);
-        return;
-      }
-    }
-  } catch {
-    if (!signal.aborted) emit('defaultModelStatus', {state:'unavailable'});
-  }
-}
-
 async function load() {
   listRequest?.abort();
   const request = listRequest = new AbortController();
   loading.value = true;
   error.value = '';
-  emit('defaultModelStatus', {state:'loading'});
   try {
     const result = await platformRequest<OfficialModelPage>(`/platform-models?page=${page.value}`, {signal:request.signal});
     if (request.signal.aborted) return;
     items.value = result.items;
     total.value = result.total;
-    void refreshDefaultModel(result, request.signal);
   } catch (e) {
     if (!request.signal.aborted) {
       error.value = e instanceof Error ? e.message : '读取模型失败';
-      emit('defaultModelStatus', {state:'unavailable'});
     }
   } finally { if (!request.signal.aborted) loading.value = false; }
 }

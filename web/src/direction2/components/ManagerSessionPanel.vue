@@ -2,6 +2,7 @@
 import ConversationControlIcon from './ConversationControlIcon.vue';
 import { computed, nextTick, onUnmounted, ref, toRef, watch } from 'vue';
 import { NButton, NInput, NSkeleton } from 'naive-ui';
+import { D2ApiError } from '../api/client';
 import { managerApi, type SessionEvent } from '../api/manager';
 import type { PublicTaskDetailFlow } from '../composables/usePublicTaskDetail';
 import type { TaskArtifact } from '../api/public-task';
@@ -16,7 +17,7 @@ import D2EmployeeAvatar from './D2EmployeeAvatar.vue';
 import { clockTime, eventText, presentationRows, sessionStatus as status, taskReport, toolTaskTarget, type TaskNavigationTarget } from '../utils/session-presentation';
 import { classifyArtifact, formatArtifactSize } from '../utils/artifact-preview';
 const props = withDefaults(defineProps<{ workspace: string; sessionId: string; attachmentPaths?:string[]; attachmentIds?:string[]; attachmentPending?:boolean; attachmentLookup?:boolean; uploadedAttachments?:Record<string, ProjectAttachment>; title: string; subtitle?: string | undefined; agentAvatar?: string | undefined; assistantAvatar?: boolean | undefined; assistantAvatarBusy?: boolean | undefined; agentId?: string | undefined; task?: boolean; taskCenter?: boolean; stopDisabled?: boolean; readOnly?: boolean; tasks?: TaskRecord[]; initialProgress?: ReportedProgress | null | undefined; turnId?: string | undefined; embedded?: boolean; publicDetail?: PublicTaskDetailFlow | undefined; artifacts?: TaskArtifact[] | undefined; initialInputText?: string | undefined; initialInputTime?: string | undefined; selectedArtifactId?: string | undefined }>(), { assistantAvatarBusy: undefined });
-const emit = defineEmits<{ taskTargets: [targets: TaskNavigationTarget[]]; changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [target: TaskNavigationTarget, turn?: string]; selectArtifact: [file: TaskArtifact]; downloadArtifact: [file: TaskArtifact] }>();
+const emit = defineEmits<{ assistantModelRequired: []; taskTargets: [targets: TaskNavigationTarget[]]; changed: []; sent: []; stopped: []; sending:[busy:boolean]; report:[]; close: []; openTask: [target: TaskNavigationTarget, turn?: string]; selectArtifact: [file: TaskArtifact]; downloadArtifact: [file: TaskArtifact] }>();
 const flow = useSessionEvents(toRef(props, 'workspace'), toRef(props, 'sessionId'), () => emit('changed'), toRef(props, 'turnId'));
 const { session } = flow;
 const loading = computed(() => props.publicDetail?.loading.value ?? flow.loading.value);
@@ -168,7 +169,12 @@ async function send() {
   if (!pending || pending.text !== text.value || JSON.stringify(pending.paths)!==JSON.stringify(props.attachmentPaths||[]) || JSON.stringify(pending.ids)!==JSON.stringify(props.attachmentIds||[])) pending = { paths:[...(props.attachmentPaths||[])],ids:[...(props.attachmentIds||[])],text: text.value, key: crypto.randomUUID() };
   const request = pending; submitting.value = true; emit('sending',true); actionError.value = ''; notice.value = '';
   try { await managerApi.input(w, id, request.text, request.key, undefined, 'steer',request.paths,request.ids); if (id !== props.sessionId || w !== props.workspace) return; text.value = ''; pending = null; emit('sent');notice.value = '输入已受理'; await flow.refresh(); }
-  catch (e) { if (id === props.sessionId && w === props.workspace) actionError.value = e instanceof Error ? e.message : '发送失败，可原样重试'; }
+  catch (e) {
+    if (id === props.sessionId && w === props.workspace) {
+      if (e instanceof D2ApiError && e.code === 'assistant_model_required') emit('assistantModelRequired');
+      else actionError.value = e instanceof Error ? e.message : '发送失败，可原样重试';
+    }
+  }
   finally { submitting.value = false;emit('sending',false); }
 }
 async function sendShared() {

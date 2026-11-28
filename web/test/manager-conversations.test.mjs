@@ -759,3 +759,46 @@ test('unified drawer switches between project files with Markdown preview and se
   await m.cleanup();
  }
 });
+
+test('assistant with no model keeps demos visible until clicked, then offers model setup without inserting a chat',async()=>{
+ const card={key:'sample',title:'体验并行客诉',description:'核对两个订单',input:'请并行核对两笔订单'};
+ const missing=()=>Response.json({error:{code:'assistant_model_required',message:'后端提示不应直接显示'}},{status:422});
+ let configured=false, opened=0;
+ const props={selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[card]},canConfigureModels:true,onConfigureModels:()=>opened++};
+ const matchWrite=(url,init)=>url.endsWith('/sessions')&&init.method==='POST';
+ const override=(url,init)=>matchWrite(url,init)&&!configured?missing():null;
+ const demo=()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes(card.title));
+ let m=await mount({chat:null,props,override});
+ try {
+  assert.ok(demo());assert.equal(m.host.querySelector('.assistant-model-required'),null);
+  demo().click();await pause();
+  assert.equal(m.calls.filter(c=>matchWrite(c.url,c.init)).length,1);
+  assert.equal(demo(),undefined);
+  assert.match(m.host.querySelector('.assistant-model-required').textContent,/当前没有可用模型，消息未发送/);
+  assert.equal(FakeSource.all.length,0);
+  button('前往模型配置').click();assert.equal(opened,1);
+ }finally{await m.cleanup()}
+ configured=true;
+ m=await mount({chat:null,props,override});
+ try {
+  assert.ok(demo());assert.equal(m.calls.filter(c=>matchWrite(c.url,c.init)).length,0);
+  demo().click();await pause();
+  assert.equal(m.calls.filter(c=>matchWrite(c.url,c.init)).length,1);
+  assert.equal(FakeSource.all.length,1);
+ }finally{await m.cleanup()}
+});
+
+test('assistant missing a model in an existing conversation preserves text and gives members a contact prompt',async()=>{
+ let configured=false;
+ const m=await mount({props:{selectedEmployeeId:'a',assistantEntry:{agent_id:'a',cards:[]}},override:(url,init)=>
+  url.endsWith('/inputs')&&init.method==='POST'&&!configured?Response.json({error:{code:'assistant_model_required',message:'未配置'}},{status:422}):null});
+ try {
+  const input=m.host.querySelector('textarea');input.value='保留这段文字';input.dispatchEvent(new window.Event('input',{bubbles:true}));await pause();
+  button('发送').click();await pause();
+  assert.match(m.host.querySelector('.assistant-model-required').textContent,/请联系工作区管理员/);
+  assert.equal(button('前往模型配置'),undefined);assert.equal(input.value,'保留这段文字');
+  configured=true;button('发送').click();await pause();
+  assert.equal(m.host.querySelector('.assistant-model-required'),null);
+  assert.equal(input.value,'');
+ }finally{await m.cleanup()}
+});

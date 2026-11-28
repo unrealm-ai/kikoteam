@@ -29,13 +29,11 @@ func TestHostedAssistantLive(t *testing.T) {
 	client.Timeout = 12 * time.Second
 	owner, _ := f.register(t, client, "live-assistant@example.test")
 	installAssistantTestModel(t, f, owner, dir)
-	on := true
-	if _, err := f.assistant.SaveAdmin(t.Context(), owner, service.AssistantSettingsPatch{ExpectedVersion: 1, Enabled: &on}); err != nil {
-		t.Fatal(err)
-	}
 	ws := f.api(t, client, "POST", "/workspaces", map[string]string{"name": "Assistant QA"}, "", 201)["id"].(string)
-	if worked, err := f.assistant.ProvisionNext(t.Context()); err != nil || !worked {
-		t.Fatal(worked, err)
+	for range 2 { // Registration also enqueues a personal-workspace assistant.
+		if worked, err := f.assistant.ProvisionNext(t.Context()); err != nil || !worked {
+			t.Fatal(worked, err)
+		}
 	}
 	entry, err := f.assistant.Entry(t.Context(), ws, owner)
 	if err != nil || len(entry.Cards) != 3 {

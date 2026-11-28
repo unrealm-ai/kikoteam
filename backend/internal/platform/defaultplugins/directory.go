@@ -12,22 +12,24 @@ type reader interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 type Summary struct {
-	Key     string `json:"key"`
-	Name    string `json:"name"`
-	Release int64  `json:"release_version"`
-	Enabled bool   `json:"enabled"`
-	Source  string `json:"source"`
-	Status  string `json:"status"`
-	Price   string `json:"credits_per_image,omitempty"`
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Release     int64  `json:"release_version"`
+	Enabled     bool   `json:"enabled"`
+	Source      string `json:"source"`
+	Status      string `json:"status"`
+	SecondPrice string `json:"credits_per_second,omitempty"`
+	Price       string `json:"credits_per_image,omitempty"`
 }
 
 // An employee view includes the validity of its payer, without identifying the payer.
 func List(ctx context.Context, db reader, w, employee string) ([]Summary, error) {
-	rows, err := db.QueryContext(ctx, `SELECT p.builtin_key,p.name,v.version,s.enabled,c.unit_price_units,
+	rows, err := db.QueryContext(ctx, `SELECT p.builtin_key,p.name,v.version,s.enabled,coalesce(c.unit_price_units,vc.unit_price_units),
  EXISTS(SELECT FROM platform_agent_model_keys k JOIN platform_members m ON m.user_id=k.payer_account_id AND m.workspace_id=k.workspace_id AND m.role='owner' AND m.status='active'
  WHERE k.workspace_id=nullif($1,'')::uuid AND k.agent_id=nullif($2,'')::uuid)
  FROM platform_plugins p JOIN platform_plugin_versions v ON v.id=p.current_version_id JOIN platform_default_plugin_settings s ON s.plugin_id=p.id
  LEFT JOIN platform_image_generation_config_versions c ON c.plugin_id=p.id AND c.version=s.active_config_version
+ LEFT JOIN platform_video_generation_configs vc ON vc.plugin_id=p.id AND vc.version=s.active_config_version
  WHERE p.workspace_id IS NULL AND p.listed AND p.enabled AND p.archived_at IS NULL AND v.distribution='all_agents' ORDER BY p.name,p.id`, w, employee)
 	if err != nil {
 		return nil, err
@@ -44,7 +46,7 @@ func List(ctx context.Context, db reader, w, employee string) ([]Summary, error)
 		v.Status = "available"
 		v.Source = "platform"
 		switch {
-		case v.Key == "image-generation" && !price.Valid:
+		case !price.Valid:
 			v.Status = "unconfigured"
 		case !v.Enabled:
 			v.Status = "disabled"
@@ -52,7 +54,11 @@ func List(ctx context.Context, db reader, w, employee string) ([]Summary, error)
 			v.Status = "payer_binding_required"
 		}
 		if price.Valid {
-			v.Price = proxy.Amount(price.Int64)
+			if v.Key == "video-generation" {
+				v.SecondPrice = proxy.Amount(price.Int64)
+			} else {
+				v.Price = proxy.Amount(price.Int64)
+			}
 		}
 		out = append(out, v)
 	}

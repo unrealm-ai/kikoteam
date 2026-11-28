@@ -330,6 +330,7 @@ schemas:
             name: {type: string}
             source: {const: platform}
             status: {enum: [available, unconfigured, disabled, payer_binding_required]}
+            credits_per_second: {type: string}
             credits_per_image: {type: string}
       conversation_model:
         type: object

@@ -175,6 +175,14 @@ paths:
     $ref: ./modules/platform/model-proxy.yaml#/grant
   /api/v1/platform/default-plugins:
     $ref: ./modules/platform/default-images.yaml#/directory
+  /api/v1/platform/default-plugins/video-generation:
+    $ref: './modules/platform/default-videos.yaml#/configuration'
+  /api/v1/platform/default-plugins/video-generation/test:
+    $ref: './modules/platform/default-videos.yaml#/test'
+  /api/v1/platform/default-plugins/video-generation/reviews:
+    $ref: './modules/platform/default-videos.yaml#/reviews'
+  /api/v1/platform/default-plugins/video-generation/reviews/{generation_id}:
+    $ref: './modules/platform/default-videos.yaml#/resolve'
   /api/v1/platform/default-plugins/image-generation:
     $ref: ./modules/platform/default-images.yaml#/configuration
   /api/v1/platform/default-plugins/image-generation/test:

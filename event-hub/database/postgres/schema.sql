@@ -369,20 +369,19 @@ $_$;
 
 CREATE FUNCTION public.manager_input_actor_allowed(input_id uuid) RETURNS boolean
     LANGUAGE sql STABLE
-    AS $_$
- SELECT CASE WHEN i.work_assignment_id IS NOT NULL THEN manager_work_input_allowed(i.id)
- WHEN i.work_submission_id IS NOT NULL THEN manager_work_result_allowed(i.id)
- WHEN i.human_request_id IS NOT NULL AND EXISTS(SELECT 1 FROM manager_human_requests h JOIN manager_inputs root ON root.id=h.authority_input_id WHERE h.id=i.human_request_id AND root.work_submission_id IS NOT NULL)
- THEN EXISTS(SELECT 1 FROM manager_human_requests h JOIN manager_inputs root ON root.id=h.authority_input_id WHERE h.id=i.human_request_id
-  AND h.resume_input_id=i.id AND (h.state='approved' OR (h.state='revised' AND h.answer->>'decision'='revise')) AND h.session_id=i.session_id
-  AND i.admission_epoch=root.admission_epoch AND i.submitted_by IS NOT DISTINCT FROM root.submitted_by
-  AND i.channel_principal_id IS NOT DISTINCT FROM root.channel_principal_id AND i.channel_generation IS NOT DISTINCT FROM root.channel_generation
-  AND i.trigger_event_id IS NOT DISTINCT FROM root.trigger_event_id
-  AND (manager_human_recipient_name(i.workspace_id,h.agent_id,h.recipient,false) IS NOT NULL)
-  AND manager_work_result_allowed(root.id))
- ELSE manager_input_actor_before_work_items(i.id) END
- FROM manager_inputs i WHERE i.id=$1;
-$_$;
+    AS $$
+ SELECT CASE WHEN i.video_generation_id IS NULL THEN manager_input_actor_before_video(i.id) ELSE EXISTS(
+   SELECT FROM platform_video_generations g JOIN manager_inputs src ON src.id=g.input_id
+   JOIN manager_sessions s ON s.id=g.session_id JOIN platform_agents a ON a.id=s.agent_id
+   WHERE g.id=i.video_generation_id AND g.status IN ('ready','failed') AND g.session_id=i.session_id AND g.workspace_id=i.workspace_id
+   AND src.session_id=i.session_id AND src.seq<i.seq AND src.admission_epoch=i.admission_epoch AND a.admission_epoch=i.admission_epoch AND a.enabled
+   AND s.lifecycle='active' AND s.stop_revision=g.stop_revision AND s.applied_stop_revision=g.stop_revision
+   AND src.submitted_by IS NOT DISTINCT FROM i.submitted_by AND src.channel_principal_id IS NOT DISTINCT FROM i.channel_principal_id
+   AND src.channel_generation IS NOT DISTINCT FROM i.channel_generation AND src.trigger_event_id IS NOT DISTINCT FROM i.trigger_event_id
+   AND src.web_group_member_epoch IS NOT DISTINCT FROM i.web_group_member_epoch
+   AND NOT EXISTS(SELECT FROM manager_human_requests h WHERE h.id=src.human_request_id AND h.state='revised')
+   AND manager_input_actor_allowed(src.id)) END FROM manager_inputs i WHERE i.id=input_id;
+$$;
 
 
 --
@@ -458,6 +457,28 @@ $$;
 
 
 --
+-- Name: manager_input_actor_before_video(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.manager_input_actor_before_video(input_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $_$
+ SELECT CASE WHEN i.work_assignment_id IS NOT NULL THEN manager_work_input_allowed(i.id)
+ WHEN i.work_submission_id IS NOT NULL THEN manager_work_result_allowed(i.id)
+ WHEN i.human_request_id IS NOT NULL AND EXISTS(SELECT 1 FROM manager_human_requests h JOIN manager_inputs root ON root.id=h.authority_input_id WHERE h.id=i.human_request_id AND root.work_submission_id IS NOT NULL)
+ THEN EXISTS(SELECT 1 FROM manager_human_requests h JOIN manager_inputs root ON root.id=h.authority_input_id WHERE h.id=i.human_request_id
+  AND h.resume_input_id=i.id AND (h.state='approved' OR (h.state='revised' AND h.answer->>'decision'='revise')) AND h.session_id=i.session_id
+  AND i.admission_epoch=root.admission_epoch AND i.submitted_by IS NOT DISTINCT FROM root.submitted_by
+  AND i.channel_principal_id IS NOT DISTINCT FROM root.channel_principal_id AND i.channel_generation IS NOT DISTINCT FROM root.channel_generation
+  AND i.trigger_event_id IS NOT DISTINCT FROM root.trigger_event_id
+  AND (manager_human_recipient_name(i.workspace_id,h.agent_id,h.recipient,false) IS NOT NULL)
+  AND manager_work_result_allowed(root.id))
+ ELSE manager_input_actor_before_work_items(i.id) END
+ FROM manager_inputs i WHERE i.id=$1;
+$_$;
+
+
+--
 -- Name: manager_input_actor_before_web_groups(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -506,11 +527,10 @@ $$;
 
 CREATE FUNCTION public.manager_input_admission_allowed(input_id uuid) RETURNS boolean
     LANGUAGE sql STABLE
-    AS $_$
- SELECT CASE WHEN i.work_assignment_id IS NOT NULL OR i.work_submission_id IS NOT NULL OR i.human_request_id IS NOT NULL
- THEN manager_input_actor_allowed(i.id) ELSE manager_input_admission_before_work_items(i.id) END
- FROM manager_inputs i WHERE i.id=$1;
-$_$;
+    AS $$
+ SELECT CASE WHEN i.video_generation_id IS NULL THEN manager_input_admission_before_video(i.id)
+ ELSE manager_input_actor_allowed(i.id) END FROM manager_inputs i WHERE i.id=input_id;
+$$;
 
 
 --
@@ -556,6 +576,19 @@ CREATE FUNCTION public.manager_input_admission_before_triggers(input_id uuid) RE
  SELECT CASE WHEN s.task_space_id IS NULL THEN manager_input_admission_before_task_spaces(i.id)
  ELSE manager_input_actor_allowed(i.id) END FROM manager_inputs i JOIN manager_sessions s ON s.id=i.session_id WHERE i.id=input_id;
 $$;
+
+
+--
+-- Name: manager_input_admission_before_video(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.manager_input_admission_before_video(input_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $_$
+ SELECT CASE WHEN i.work_assignment_id IS NOT NULL OR i.work_submission_id IS NOT NULL OR i.human_request_id IS NOT NULL
+ THEN manager_input_actor_allowed(i.id) ELSE manager_input_admission_before_work_items(i.id) END
+ FROM manager_inputs i WHERE i.id=$1;
+$_$;
 
 
 --
@@ -2177,12 +2210,14 @@ CREATE TABLE public.manager_inputs (
     work_submission_id uuid,
     attachments jsonb DEFAULT '[]'::jsonb NOT NULL,
     delegated_from_input_id uuid,
+    video_generation_id uuid,
     CONSTRAINT manager_human_resume_input CHECK (((human_request_id IS NULL) OR ((source_kind = 'human_confirmation'::text) AND trigger_agent_loop AND (delivery_mode = 'queue'::text) AND (confirmation_request_id IS NULL)))),
     CONSTRAINT manager_input_actor CHECK (((((((((submitted_by IS NOT NULL))::integer + ((channel_principal_id IS NOT NULL))::integer) + ((trigger_event_id IS NOT NULL))::integer) + ((notification_id IS NOT NULL))::integer) + ((work_assignment_id IS NOT NULL))::integer) = 1) AND ((channel_principal_id IS NULL) = (channel_generation IS NULL)))),
     CONSTRAINT manager_inputs_attachments_check CHECK ((jsonb_typeof(attachments) = 'array'::text)),
     CONSTRAINT manager_inputs_channel_history_count_check CHECK (((channel_history_count >= 0) AND (channel_history_count <= 100))),
     CONSTRAINT manager_inputs_check CHECK (((confirmation_request_id IS NULL) = (confirmed IS NULL))),
     CONSTRAINT manager_inputs_check1 CHECK (((confirmation_request_id IS NULL) OR ((source_kind = 'user'::text) AND trigger_agent_loop))),
+    CONSTRAINT manager_inputs_check2 CHECK (((video_generation_id IS NULL) OR ((source_kind = 'system'::text) AND (delivery_mode = 'queue'::text) AND trigger_agent_loop))),
     CONSTRAINT manager_inputs_context_state_check CHECK ((context_state = ANY (ARRAY['pending'::text, 'committed'::text, 'absent'::text, 'unknown'::text]))),
     CONSTRAINT manager_inputs_delivery_mode_check CHECK ((delivery_mode = ANY (ARRAY['steer'::text, 'queue'::text]))),
     CONSTRAINT manager_inputs_seq_check CHECK ((seq > 0)),
@@ -3432,7 +3467,8 @@ CREATE TABLE public.platform_credit_ledger (
     reason text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     image_generation_id uuid,
-    CONSTRAINT platform_credit_ledger_check CHECK ((((kind = 'signup_bonus'::text) AND (amount_units >= 0) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (image_generation_id IS NULL)) OR ((kind = 'admin_grant'::text) AND (amount_units > 0) AND (operator_id IS NOT NULL) AND (reason IS NOT NULL) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (image_generation_id IS NULL)) OR ((kind = 'model_charge'::text) AND (amount_units <= 0) AND (usage_id IS NOT NULL) AND (agent_id IS NOT NULL) AND (image_generation_id IS NULL)) OR ((kind = 'referral_bonus'::text) AND (amount_units = 100000000) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (operator_id IS NULL) AND (image_generation_id IS NULL)) OR ((kind = 'image_charge'::text) AND (amount_units < 0) AND (usage_id IS NULL) AND (agent_id IS NOT NULL) AND (image_generation_id IS NOT NULL)))),
+    video_generation_id uuid,
+    CONSTRAINT platform_credit_ledger_check CHECK ((((kind = 'signup_bonus'::text) AND (amount_units >= 0) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (image_generation_id IS NULL) AND (video_generation_id IS NULL)) OR ((kind = 'admin_grant'::text) AND (amount_units > 0) AND (operator_id IS NOT NULL) AND (reason IS NOT NULL) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (image_generation_id IS NULL) AND (video_generation_id IS NULL)) OR ((kind = 'model_charge'::text) AND (amount_units <= 0) AND (usage_id IS NOT NULL) AND (agent_id IS NOT NULL) AND (image_generation_id IS NULL) AND (video_generation_id IS NULL)) OR ((kind = 'referral_bonus'::text) AND (amount_units = 100000000) AND (usage_id IS NULL) AND (agent_id IS NULL) AND (operator_id IS NULL) AND (image_generation_id IS NULL) AND (video_generation_id IS NULL)) OR ((kind = 'image_charge'::text) AND (amount_units < 0) AND (usage_id IS NULL) AND (agent_id IS NOT NULL) AND (image_generation_id IS NOT NULL) AND (video_generation_id IS NULL)) OR ((kind = 'video_charge'::text) AND (amount_units < 0) AND (usage_id IS NULL) AND (agent_id IS NOT NULL) AND (image_generation_id IS NULL) AND (video_generation_id IS NOT NULL)))),
     CONSTRAINT platform_credit_ledger_wallet_version_check CHECK ((wallet_version > 0))
 );
 
@@ -4284,6 +4320,71 @@ CREATE TABLE public.platform_timezone_settings (
     CONSTRAINT platform_timezone_settings_singleton_check CHECK (singleton),
     CONSTRAINT platform_timezone_settings_timezone_check CHECK (((length(timezone) >= 1) AND (length(timezone) <= 128))),
     CONSTRAINT platform_timezone_settings_version_check CHECK ((version >= 0))
+);
+
+
+--
+-- Name: platform_video_generation_configs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_video_generation_configs (
+    plugin_id uuid NOT NULL,
+    version bigint NOT NULL,
+    base_url text NOT NULL,
+    upstream_model_id text NOT NULL,
+    credential_ciphertext bytea NOT NULL,
+    unit_price_units bigint NOT NULL,
+    max_concurrent_generations integer NOT NULL,
+    workspace_daily_seconds integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid NOT NULL,
+    CONSTRAINT platform_video_generation_conf_max_concurrent_generations_check CHECK ((max_concurrent_generations > 0)),
+    CONSTRAINT platform_video_generation_configs_unit_price_units_check CHECK (((unit_price_units >= 1) AND (unit_price_units <= '614891469123651720'::bigint))),
+    CONSTRAINT platform_video_generation_configs_version_check CHECK ((version > 0)),
+    CONSTRAINT platform_video_generation_configs_workspace_daily_seconds_check CHECK ((workspace_daily_seconds > 0))
+);
+
+
+--
+-- Name: platform_video_generations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.platform_video_generations (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    payer_account_id uuid NOT NULL,
+    task_id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    input_id uuid NOT NULL,
+    stop_revision bigint NOT NULL,
+    request_key text NOT NULL,
+    request_fingerprint bytea NOT NULL,
+    plugin_id uuid NOT NULL,
+    config_version bigint NOT NULL,
+    unit_price_units bigint NOT NULL,
+    seconds integer NOT NULL,
+    aspect_ratio text NOT NULL,
+    quota_date date DEFAULT ((now() AT TIME ZONE 'UTC'::text))::date NOT NULL,
+    status text NOT NULL,
+    upstream_id text,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    next_check_at timestamp with time zone DEFAULT now() NOT NULL,
+    check_token uuid,
+    billing_status text DEFAULT 'pending'::text NOT NULL,
+    reviewed_by uuid,
+    review_reason text,
+    reviewed_at timestamp with time zone,
+    asset_version text,
+    error_code text,
+    notified boolean DEFAULT false NOT NULL,
+    CONSTRAINT platform_video_generations_billing_status_check CHECK ((billing_status = ANY (ARRAY['pending'::text, 'settled'::text, 'no_charge'::text]))),
+    CONSTRAINT platform_video_generations_check CHECK (((status = 'ready'::text) = (asset_version IS NOT NULL))),
+    CONSTRAINT platform_video_generations_check1 CHECK (((status = 'failed'::text) = (billing_status = 'no_charge'::text))),
+    CONSTRAINT platform_video_generations_check2 CHECK (((billing_status <> 'settled'::text) OR (status = 'ready'::text))),
+    CONSTRAINT platform_video_generations_seconds_check CHECK (((seconds >= 1) AND (seconds <= 15))),
+    CONSTRAINT platform_video_generations_status_check CHECK ((status = ANY (ARRAY['submitting'::text, 'queued'::text, 'in_progress'::text, 'saving'::text, 'pending_review'::text, 'ready'::text, 'failed'::text]))),
+    CONSTRAINT platform_video_generations_unit_price_units_check CHECK (((unit_price_units >= 1) AND (unit_price_units <= '614891469123651720'::bigint)))
 );
 
 
@@ -6410,6 +6511,30 @@ ALTER TABLE ONLY public.platform_timezone_settings
 
 
 --
+-- Name: platform_video_generation_configs platform_video_generation_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generation_configs
+    ADD CONSTRAINT platform_video_generation_configs_pkey PRIMARY KEY (plugin_id, version);
+
+
+--
+-- Name: platform_video_generations platform_video_generations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generations
+    ADD CONSTRAINT platform_video_generations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: platform_video_generations platform_video_generations_workspace_id_task_id_request_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generations
+    ADD CONSTRAINT platform_video_generations_workspace_id_task_id_request_key_key UNIQUE (workspace_id, task_id, request_key);
+
+
+--
 -- Name: platform_web_group_agents platform_web_group_agents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6853,6 +6978,13 @@ CREATE INDEX manager_trigger_schedule_due ON public.manager_triggers USING btree
 
 
 --
+-- Name: manager_video_completion_input; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX manager_video_completion_input ON public.manager_inputs USING btree (video_generation_id) WHERE (video_generation_id IS NOT NULL);
+
+
+--
 -- Name: manager_web_attachment_pending_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7147,6 +7279,13 @@ CREATE UNIQUE INDEX platform_ledger_image_charge ON public.platform_credit_ledge
 
 
 --
+-- Name: platform_ledger_video_charge; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX platform_ledger_video_charge ON public.platform_credit_ledger USING btree (video_generation_id) WHERE (video_generation_id IS NOT NULL);
+
+
+--
 -- Name: platform_members_one_owner_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7263,6 +7402,34 @@ CREATE INDEX platform_skill_imports_owner_idx ON public.platform_skill_imports U
 --
 
 CREATE INDEX platform_skills_list_idx ON public.platform_skills USING btree (workspace_id, created_at DESC, id DESC);
+
+
+--
+-- Name: platform_videos_inflight; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_videos_inflight ON public.platform_video_generations USING btree (id) WHERE (status = ANY (ARRAY['submitting'::text, 'queued'::text, 'in_progress'::text, 'saving'::text]));
+
+
+--
+-- Name: platform_videos_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_videos_pending ON public.platform_video_generations USING btree (next_check_at, id) WHERE (NOT notified);
+
+
+--
+-- Name: platform_videos_quota; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_videos_quota ON public.platform_video_generations USING btree (workspace_id, quota_date, status);
+
+
+--
+-- Name: platform_videos_task_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX platform_videos_task_started ON public.platform_video_generations USING btree (task_id, started_at DESC, id DESC);
 
 
 --
@@ -8218,6 +8385,14 @@ ALTER TABLE ONLY public.manager_inputs
 
 ALTER TABLE ONLY public.manager_inputs
     ADD CONSTRAINT manager_inputs_submitted_by_fkey FOREIGN KEY (submitted_by) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: manager_inputs manager_inputs_video_generation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manager_inputs
+    ADD CONSTRAINT manager_inputs_video_generation_id_fkey FOREIGN KEY (video_generation_id) REFERENCES public.platform_video_generations(id);
 
 
 --
@@ -9677,6 +9852,14 @@ ALTER TABLE ONLY public.platform_credit_ledger
 
 
 --
+-- Name: platform_credit_ledger platform_credit_ledger_video_generation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_credit_ledger
+    ADD CONSTRAINT platform_credit_ledger_video_generation_id_fkey FOREIGN KEY (video_generation_id) REFERENCES public.platform_video_generations(id);
+
+
+--
 -- Name: platform_credit_settings platform_credit_settings_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10306,6 +10489,78 @@ ALTER TABLE ONLY public.platform_task_link_settings
 
 ALTER TABLE ONLY public.platform_timezone_settings
     ADD CONSTRAINT platform_timezone_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.platform_accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: platform_video_generation_configs platform_video_generation_configs_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generation_configs
+    ADD CONSTRAINT platform_video_generation_configs_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: platform_video_generation_configs platform_video_generation_configs_plugin_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generation_configs
+    ADD CONSTRAINT platform_video_generation_configs_plugin_id_fkey FOREIGN KEY (plugin_id) REFERENCES public.platform_default_plugin_settings(plugin_id);
+
+
+--
+-- Name: platform_video_generations platform_video_generations_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generations
+    ADD CONSTRAINT platform_video_generations_input_id_fkey FOREIGN KEY (input_id) REFERENCES public.manager_inputs(id);
+
+
+--
+-- Name: platform_video_generations platform_video_generations_payer_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generations
+    ADD CONSTRAINT platform_video_generations_payer_account_id_fkey FOREIGN KEY (payer_account_id) REFERENCES public.platform_credit_wallets(account_id);
+
+
+--
+-- Name: platform_video_generations platform_video_generations_plugin_id_config_version_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generations
+    ADD CONSTRAINT platform_video_generations_plugin_id_config_version_fkey FOREIGN KEY (plugin_id, config_version) REFERENCES public.platform_video_generation_configs(plugin_id, version);
+
+
+--
+-- Name: platform_video_generations platform_video_generations_reviewed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generations
+    ADD CONSTRAINT platform_video_generations_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES public.platform_accounts(id);
+
+
+--
+-- Name: platform_video_generations platform_video_generations_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generations
+    ADD CONSTRAINT platform_video_generations_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.manager_sessions(id);
+
+
+--
+-- Name: platform_video_generations platform_video_generations_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generations
+    ADD CONSTRAINT platform_video_generations_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.manager_tasks(id);
+
+
+--
+-- Name: platform_video_generations platform_video_generations_workspace_id_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_video_generations
+    ADD CONSTRAINT platform_video_generations_workspace_id_agent_id_fkey FOREIGN KEY (workspace_id, agent_id) REFERENCES public.platform_agents(workspace_id, id);
 
 
 --

@@ -49,6 +49,8 @@ item:
                   properties:
                     work_item_id: {type: string, format: uuid, description: Latest related handoff item}
                     progress: {$ref: '#/schemas/TaskProgress'}
+                    videos: {type: array, maxItems: 20, items: {type: object, required: [id,name], properties: {id: {type: string, format: uuid}, name: {type: string}}}}
+                    video_generations: {type: array, maxItems: 20, items: {type: object, properties: {generation_id: {type: string, format: uuid}, seconds: {type: integer}, status: {enum: [submitting, queued, in_progress, saving, pending_review, ready, failed]}}}}
                     images: {type: array, maxItems: 20, description: Published PNGs from completed turns, items: {type: object, required: [id,name], properties: {id: {type: string, format: uuid}, name: {type: string}}}}
                     artifacts:
                       type: array
@@ -183,6 +185,10 @@ schemas:
       - required: [task_space_id]
         not: {required: [conversation_id]}
     properties:
+      video_generation_status:
+        type: string
+        enum: [submitting, queued, in_progress, saving, pending_review]
+        description: Most recent unfinished video generation in the current stop revision.
       reported_progress:
         oneOf: [{$ref: '#/schemas/ReportedProgress'}, {type: 'null'}]
       planning_state: {type: string, enum: [planned, started, canceled]}

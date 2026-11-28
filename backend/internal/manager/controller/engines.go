@@ -16,6 +16,7 @@ import (
 )
 
 func (s *Server) internalRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /mcp/platform-plugins/video-generation", s.videoMCP)
 	mux.HandleFunc("POST /mcp/platform-plugins/image-generation", s.imageMCP)
 	mux.HandleFunc("/mcp/plugin-connections/{connection_id}", s.pluginRelay)
 	mux.HandleFunc("POST /api/internal/v1/task-results/callback", s.internal(s.taskResult))
@@ -227,7 +228,10 @@ func (s *Server) signTaskContextCredentials(v *service.HarnessConfig, id service
 	if err == nil && !v.ReportOnly && !v.ConfirmationOnly {
 		v.TaskProgressToken, err = service.SignWorkTool(s.EngineToken, service.ProgressAudience, v.InputID, id)
 	}
-	if _, _, ok := imageTool(*v); err == nil && ok {
+	if _, _, ok := videoPlugin.tool(*v); err == nil && ok {
+		v.VideoGenerationToken, err = signRelay(s.EngineToken, platform.CatalogID("plugin", "video-generation"), v.InputID, id)
+	}
+	if _, _, ok := imagePlugin.tool(*v); err == nil && ok {
 		v.ImageGenerationToken, err = signRelay(s.EngineToken, platform.CatalogID("plugin", "image-generation"), v.InputID, id)
 	}
 	if err == nil && v.TaskSpaceID != "" {

@@ -13,6 +13,7 @@
 | 员工模板与市场 | [AI 员工市场与员工模板设计](product/digital-employee-market.md)、[API、数据库与关键流程](../backend/docs/agent-template-market.md) |
 | 官方模型与积分 | [产品设计](product/official-models-and-credits.md)、[Platform modelproxy 技术设计](../backend/docs/model-proxy.md) |
 | 平台默认插件与官方文生图 | [全员预置与升级、按张扣积分、MCP 与 HTTP 接口及数据库设计](proposal/platform-default-plugins-and-image-generation.md) |
+| 官方文生视频 | [异步短片生成、按秒扣积分、播放与下载](proposal/platform-video-generation.md) |
 | 会话与执行底座 | [Agent 会话与执行底座产品需求](product/agent-sessions.md) |
 | 能力包、Skill 与 MCP | [资源与能力包设计](../backend/docs/platform-capabilities.md)、[插件授权与执行](../backend/docs/platform-plugins.md) |
 | 选人与群共享 | [统一选人与跨渠道群共享](product/identity-selection-and-group-sharing.md) |

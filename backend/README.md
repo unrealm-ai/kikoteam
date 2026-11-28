@@ -2,6 +2,8 @@
 
 # backend · 业务与调度后端
 
+平台官方文生视频通过 Nbility 的异步任务生成 MP4，按受理秒数结算。原生运行 Backend 需要 PATH 中的 ffprobe，发行镜像自带。部署需先应用 Event Hub 视频生成迁移并同步官方目录，再由平台管理员测试和启用。[视频方案与验收](../docs/proposal/platform-video-generation.md)
+
 平台官方文生图通过任务 MCP 接受请求，在保存固定原图后按受理单价扣员工付款账户的积分。目录继承、管理配置和恢复流程见[平台默认插件与官方文生图](../docs/proposal/platform-default-plugins-and-image-generation.md)。
 
 员工「接收外部事件」通过 `POST /api/triggers/events/{trigger_id}` 接收 GitHub、GitLab 和自建系统的通知。Manager 将配置的处理说明、事件原文及所选结果群绑定到本次任务。部署需要 Event Hub 迁移 87。见[触发规则设计](docs/trigger-rules.md)。

@@ -108,7 +108,7 @@ content:
     security: *session
     parameters: [*workspace, {name: task_id, in: path, required: true, schema: *uuid}, {name: artifact_id, in: path, required: true, schema: *uuid}, {name: download, in: query, schema: {const: '1'}}]
     responses:
-      '200': {description: Authorized immutable published version, content: {image/png: {}, application/octet-stream: {}}}
+      '200': {description: Authorized immutable published version, content: {video/mp4: {}, image/png: {}, application/octet-stream: {}}}
       default: *error
 schemas:
   Summary:
@@ -122,6 +122,7 @@ schemas:
       source: {const: platform}
       status: {enum: [available, unconfigured, disabled, payer_binding_required]}
       credits_per_image: {type: string}
+      credits_per_second: {type: string}
   Settings:
     type: object
     required: [key,name,release_version,version,enabled,provider,base_url,upstream_model_id,credits_per_image,credential_configured,active_config_version,workspace_daily_image_limit,max_concurrent_generations,timeout_seconds]

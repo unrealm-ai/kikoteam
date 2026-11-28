@@ -172,7 +172,16 @@ func validManagedDefinition(p CatalogPlugin) bool {
 			return false
 		}
 	}
-	return p.Key == "image-generation" && p.HandlerKey == "image_generation" && p.Auth == "none" && p.RequiresConfiguration && slices.Equal(p.Tools, []string{"generate_image"})
+	if p.Auth != "none" || !p.RequiresConfiguration {
+		return false
+	}
+	switch p.Key {
+	case "image-generation":
+		return p.HandlerKey == "image_generation" && slices.Equal(p.Tools, []string{"generate_image"})
+	case "video-generation":
+		return p.HandlerKey == "video_generation" && slices.Equal(p.Tools, []string{"generate_video"})
+	}
+	return false
 }
 func resolveCatalogTemplate(c *TemplateContent, refs map[string]TemplateResource) error {
 	if len(c.Resources) != 0 {

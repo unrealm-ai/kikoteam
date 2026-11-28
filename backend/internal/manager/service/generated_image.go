@@ -29,7 +29,7 @@ func SaveImageOriginal(root, workspace, id string, data []byte) error {
 	if !ValidID(workspace) || !ValidID(id) {
 		return Fail("invalid_argument", 400, "图片归属无效")
 	}
-	return putImageFile(root, path.Join("state/image-generations", workspace), id+".png", data)
+	return putGeneratedFile(root, path.Join("state/image-generations", workspace), id+".png", data)
 }
 func MaterializeImage(root, workspace, agent, conversation, space, task, id string, data []byte) error {
 	if !ValidID(id) {
@@ -39,9 +39,39 @@ func MaterializeImage(root, workspace, agent, conversation, space, task, id stri
 	if err != nil {
 		return err
 	}
-	return putImageFile(root, path.Join(base, "outputs/images"), id+".png", data)
+	return putGeneratedFile(root, path.Join(base, "outputs/images"), id+".png", data)
 }
-func putImageFile(root, base, name string, data []byte) error {
+func VideoOriginal(root, workspace, id string) ([]byte, error) {
+	if !ValidID(workspace) || !ValidID(id) {
+		return nil, Fail("invalid_argument", 400, "视频归属无效")
+	}
+	f, info, err := openProjectFile(root, path.Join("state/video-generations", workspace), id+".mp4")
+	if err != nil {
+		return nil, err
+	}
+	defer closeProjectHandle(f)
+	if info.Size() > ProjectUploadLimit {
+		return nil, Fail("file_too_large", 413, "原片过大")
+	}
+	return io.ReadAll(io.LimitReader(f, ProjectUploadLimit+1))
+}
+func SaveVideoOriginal(root, workspace, id string, b []byte) error {
+	if !ValidID(workspace) || !ValidID(id) {
+		return Fail("invalid_argument", 400, "视频归属无效")
+	}
+	return putGeneratedFile(root, path.Join("state/video-generations", workspace), id+".mp4", b)
+}
+func MaterializeVideo(root, workspace, agent, conversation, space, task, id string, b []byte) error {
+	if !ValidID(id) {
+		return Fail("invalid_argument", 400, "视频标识无效")
+	}
+	base, e := workProjectBase(workspace, agent, conversation, space, task)
+	if e != nil {
+		return e
+	}
+	return putGeneratedFile(root, path.Join(base, "outputs/videos"), id+".mp4", b)
+}
+func putGeneratedFile(root, base, name string, data []byte) error {
 	dir, err := projectDir(root, base, true)
 	if err != nil {
 		return err

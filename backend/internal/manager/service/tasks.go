@@ -12,26 +12,27 @@ import (
 // Tasks are read projections of existing Task/Session facts. All commands still
 // enter the Session use cases; this projection owns no execution state.
 type Task struct {
-	ReportedProgress *ReportedProgress     `json:"reported_progress"`
-	WorkItemID       *string               `json:"work_item_id,omitempty"`
-	PlanningState    string                `json:"planning_state"`
-	PlanningVersion  int64                 `json:"planning_version,string"`
-	TaskSpaceID      *string               `json:"task_space_id,omitempty"`
-	TaskID           string                `json:"task_id"`
-	SessionID        string                `json:"session_id"`
-	ConversationID   string                `json:"conversation_id,omitempty"`
-	Title            *string               `json:"title"`
-	Agent            TaskAgent             `json:"agent"`
-	Source           TaskSource            `json:"source"`
-	Lifecycle        string                `json:"lifecycle"`
-	Execution        Execution             `json:"execution"`
-	LatestInput      *TaskInputSummary     `json:"latest_input"`
-	LatestTurn       *TaskTurnSummary      `json:"latest_turn"`
-	CreatedAt        time.Time             `json:"created_at"`
-	Revision         int64                 `json:"revision,string"`
-	AcceptsInput     bool                  `json:"accepts_input"`
-	InputBlockReason *string               `json:"input_block_reason"`
-	Actions          map[string]TaskAction `json:"actions"`
+	VideoGenerationStatus *string               `json:"video_generation_status,omitempty"`
+	ReportedProgress      *ReportedProgress     `json:"reported_progress"`
+	WorkItemID            *string               `json:"work_item_id,omitempty"`
+	PlanningState         string                `json:"planning_state"`
+	PlanningVersion       int64                 `json:"planning_version,string"`
+	TaskSpaceID           *string               `json:"task_space_id,omitempty"`
+	TaskID                string                `json:"task_id"`
+	SessionID             string                `json:"session_id"`
+	ConversationID        string                `json:"conversation_id,omitempty"`
+	Title                 *string               `json:"title"`
+	Agent                 TaskAgent             `json:"agent"`
+	Source                TaskSource            `json:"source"`
+	Lifecycle             string                `json:"lifecycle"`
+	Execution             Execution             `json:"execution"`
+	LatestInput           *TaskInputSummary     `json:"latest_input"`
+	LatestTurn            *TaskTurnSummary      `json:"latest_turn"`
+	CreatedAt             time.Time             `json:"created_at"`
+	Revision              int64                 `json:"revision,string"`
+	AcceptsInput          bool                  `json:"accepts_input"`
+	InputBlockReason      *string               `json:"input_block_reason"`
+	Actions               map[string]TaskAction `json:"actions"`
 }
 type TaskInputSummary struct {
 	ID           string  `json:"id"`
@@ -67,11 +68,18 @@ type TaskImage struct {
 }
 type TaskDetail struct {
 	Task
-	Images       []TaskImage          `json:"images,omitempty"`
-	Progress     *TaskProgress        `json:"progress,omitempty"`
-	Artifacts    []TaskDetailArtifact `json:"artifacts,omitempty"`
-	InitialInput *Input               `json:"initial_input"`
-	LatestResult *TaskResultPreview   `json:"latest_result"`
+	Videos           []TaskImage          `json:"videos,omitempty"`
+	VideoGenerations []TaskVideoStatus    `json:"video_generations,omitempty"`
+	Images           []TaskImage          `json:"images,omitempty"`
+	Progress         *TaskProgress        `json:"progress,omitempty"`
+	Artifacts        []TaskDetailArtifact `json:"artifacts,omitempty"`
+	InitialInput     *Input               `json:"initial_input"`
+	LatestResult     *TaskResultPreview   `json:"latest_result"`
+}
+type TaskVideoStatus struct {
+	ID      string `json:"generation_id"`
+	Status  string `json:"status"`
+	Seconds int    `json:"seconds"`
 }
 type TaskResultPreview struct {
 	TurnID    string `json:"turn_id"`

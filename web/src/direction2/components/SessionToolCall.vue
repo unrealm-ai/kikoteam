@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import type { SessionEvent } from '../api/manager';
 import type { TaskRecord } from '../api/tasks';
 import TaskStepProgress from './TaskStepProgress.vue';
+import PublishedTaskVideos from './PublishedTaskVideos.vue';
 import PublishedTaskImages from './PublishedTaskImages.vue';
 import { taskCardState, clockTime, type SessionTaskReport } from '../utils/session-presentation';
 import { isTaskDetailLinkTool, availability, duration, jsonText, outputText, record, taskAction, toolTaskTarget, text, toolFailed, toolName, toolOutput, toolStatus, toolTarget, type TaskNavigationTarget } from '../utils/session-presentation';
@@ -26,6 +27,7 @@ const report = computed(() => {
   return result;
 });
 const showImages = computed(() => !!props.workspace && !!report.value?.images.length);
+const showVideos = computed(() => !!props.workspace && !!report.value?.videos.length);
 const updatedAt = computed(() => live.value?.state === 'completed'
   ? props.task?.latest_turn?.finished_at || progress.value?.occurred_at
   : progress.value?.occurred_at);
@@ -53,8 +55,9 @@ function moveTab(event: KeyboardEvent) {
       <template v-else-if="live">
         <p v-if="live.message">{{ live.message }}</p>
         <PublishedTaskImages v-if="showImages && report && workspace && task" compact :workspace="workspace" :task="task.task_id" :images="report.images" />
-        <TaskStepProgress v-if="progress" :progress="progress" :previous="!task?.execution.active_turn_id" in-card :has-result-preview="showImages" />
-        <p v-else-if="live.state === 'completed' && !showImages">本轮已结束，可在任务中查看完整结果。</p>
+        <PublishedTaskVideos v-if="showVideos && report && workspace && task" :workspace="workspace" :task="task.task_id" :videos="report.videos" />
+        <TaskStepProgress v-if="progress" :progress="progress" :previous="!task?.execution.active_turn_id" in-card :has-result-preview="showImages || showVideos" />
+        <p v-else-if="live.state === 'completed' && !showImages && !showVideos">本轮已结束，可在任务中查看完整结果。</p>
       </template>
       <p v-else-if="event.name === 'task_delegation_create_session'">{{ status === '已触发' ? '任务已受理，执行进展与结果可在任务中查看。' : event.status === 'completed' ? '调用已结束，尚无法确认任务受理结果。' : '正在向员工发起任务，以实际受理结果为准。' }}</p>
       <p v-else-if="event.name === 'task_delegation_stop_session'">停止请求与实际停止状态分别确认。</p>

@@ -17,7 +17,9 @@ const taskFrom = sessionFrom + ` JOIN manager_tasks k ON k.id=s.task_id
  LEFT JOIN LATERAL (SELECT (to_jsonb(t)-'result_summary'-'error'-'usage')||jsonb_build_object('turn_no',t.turn_no::text) AS value FROM manager_turns t WHERE t.session_id=s.id ORDER BY turn_no DESC LIMIT 1) lt ON true `
 const taskColumns = publicSessionColumns + `,k.id,k.created_at,a.name,a.avatar,k.source_chat_session_id,k.source_chat_input_id,li.value,lt.value,
  (SELECT e.event FROM manager_session_events e WHERE e.session_id=s.id AND e.event->>'type'='task.progress_updated'
- AND e.event->>'turn_id'=COALESCE(s.active_turn_id::text,lt.value->>'id') ORDER BY e.seq DESC LIMIT 1)`
+ AND e.event->>'turn_id'=COALESCE(s.active_turn_id::text,lt.value->>'id') ORDER BY e.seq DESC LIMIT 1),
+ (SELECT g.status FROM platform_video_generations g WHERE g.task_id=k.id AND g.stop_revision=s.stop_revision
+ AND g.status IN ('submitting','queued','in_progress','saving','pending_review') ORDER BY g.started_at DESC,g.id DESC LIMIT 1)`
 
 // scanSession remains the single implementation of execution/admission reads.
 type appendedScanner struct {
@@ -29,7 +31,7 @@ func (r appendedScanner) Scan(dest ...any) error { return r.scanner.Scan(append(
 func scanTask(row scanner) (service.Task, error) {
 	var out service.Task
 	var input, turn, progress []byte
-	r := appendedScanner{scanner: row, extra: []any{&out.TaskID, &out.CreatedAt, &out.Agent.Name, &out.Agent.Avatar, &out.Source.ChatSessionID, &out.Source.ChatInputID, &input, &turn, &progress, &out.WorkItemID}}
+	r := appendedScanner{scanner: row, extra: []any{&out.TaskID, &out.CreatedAt, &out.Agent.Name, &out.Agent.Avatar, &out.Source.ChatSessionID, &out.Source.ChatInputID, &input, &turn, &progress, &out.VideoGenerationStatus, &out.WorkItemID}}
 	st, err := scanSession(r)
 	if err != nil {
 		return out, err
@@ -184,7 +186,13 @@ func (s *Store) Task(ctx context.Context, w, actor, id string) (service.TaskDeta
 		if a.MediaType == "image/png" && len(out.Images) < 20 {
 			out.Images = append(out.Images, service.TaskImage{ID: a.ID, Name: a.Name})
 		}
+		if a.MediaType == "video/mp4" && len(out.Videos) < 20 {
+			out.Videos = append(out.Videos, service.TaskImage{ID: a.ID, Name: a.Name})
+		}
 		out.Artifacts = append(out.Artifacts, service.TaskDetailArtifact{ID: a.ID, Name: a.Name, Size: a.Size})
+	}
+	if out.VideoGenerations, err = taskVideoStatuses(ctx, tx, id); err != nil {
+		return out, err
 	}
 	if err = tx.Commit(); err != nil {
 		return out, err

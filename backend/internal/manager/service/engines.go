@@ -20,6 +20,7 @@ type Assignment struct {
 }
 type HarnessConfig struct {
 	ScheduleTimezone           string                    `json:"schedule_timezone,omitempty"`
+	VideoGenerationToken       string                    `json:"video_generation_token,omitempty"`
 	ImageGenerationToken       string                    `json:"image_generation_token,omitempty"`
 	EmployeeManagementToken    string                    `json:"employee_management_token,omitempty"`
 	EmployeeManagementEligible bool                      `json:"-"`
@@ -110,4 +111,10 @@ type SandboxSession struct {
 	Generation     int64   `json:"generation,string"`
 	Lifecycle      string  `json:"lifecycle"`
 	EngineID       *string `json:"engine_id"`
+}
+
+// GenerationScope binds a platform tool to its authorized turn and plugin version.
+type GenerationScope struct {
+	DelegationIdentity
+	Input, Version string
 }

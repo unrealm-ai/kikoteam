@@ -26,6 +26,7 @@ type Calls interface {
 }
 
 type Proxy struct {
+	WakeVideos      func()
 	ReconcileImages func(context.Context) error
 	Calls           Calls
 	Secrets         mp.Secrets
@@ -47,6 +48,9 @@ func (p Proxy) Routes(mux *http.ServeMux, hubToken string) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 9*time.Second)
 		defer cancel()
+		if p.WakeVideos != nil {
+			p.WakeVideos()
+		}
 		err := p.Calls.Reconcile(ctx)
 		if p.ReconcileImages != nil {
 			err = errors.Join(err, p.ReconcileImages(ctx))

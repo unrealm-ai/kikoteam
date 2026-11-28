@@ -33,6 +33,7 @@ import (
 	mpservice "github.com/unrealm-ai/kikoteam/backend/internal/platform/modelproxy/service"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/repository"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/videogen"
 	"io"
 	"log/slog"
 	"net"
@@ -149,15 +150,22 @@ func Run(stderr io.Writer, version string) int {
 	templates := &service.TemplateService{Store: &repository.TemplateStore{DB: db, EnsureKey: proxySecrets.EnsureKey}, Assets: assets}
 	admins := &service.AdminService{Store: &repository.AdminStore{DB: db}}
 	wecomGroupStore := &repository.WecomGroupRefreshStore{DB: db}
+	videoWake := make(chan struct{}, 1)
+	videos := &videogen.Service{Store: proxyStore, Secrets: proxySecrets, HTTP: integration.PublicHTTPClient(nil, 30*time.Second, 45*time.Second), Root: assetConfig.LocalRoot, Notify: managerrepo.NotifyVideo}
 	images := &imagegen.Service{Logger: log, Store: proxyStore, Secrets: proxySecrets, HTTP: integration.PublicHTTPClient(nil, 5*time.Minute, 5*time.Minute), Root: assetConfig.LocalRoot}
 	taskLinks := &service.TaskLinkSettingsService{Store: &repository.TaskLinkSettingsStore{DB: db}}
 	assistantStore := &repository.HostedAssistantStore{DB: db}
 	agents := &service.AgentService{Store: &repository.AgentStore{DB: db, EnsureKey: proxySecrets.EnsureKey}}
-	api := (&controller.Server{Images: images, Timezone: &service.TimezoneSettingsService{Store: &repository.TimezoneSettingsStore{DB: db}}, Assistants: assistantStore, AssistantToolDescriptions: assistantToolDescriptions, TaskLinks: taskLinks, Referrals: &repository.ReferralStore{DB: db}, Catalog: &repository.ResourceCatalog{DB: db, Assets: assets, Plugins: plugins}, SharingPolicies: &service.GroupSharingService{Store: &repository.GroupSharingStore{DB: db}}, PeopleSelectors: &service.PeopleSelectorService{Secret: []byte(secret), Channels: channels, Wecom: wecomContacts, Store: repository.NewPeopleSelectorStore(db, []byte(secret))}, GroupSelectors: &service.GroupSelectorService{Store: repository.NewGroupSelectorStore(db), Secret: []byte(secret)}, WecomGroups: &service.WecomGroupRefresh{Channels: channels, Store: wecomGroupStore}, ChannelGroups: &service.ChannelGroupDiscovery{Channels: channels, Store: &repository.ChannelGroupCache{DB: db}, Provider: &feishugroups.Client{}, Secret: []byte(secret)}, AgentUsage: &service.AgentUsageService{Store: &repository.AgentUsageStore{DB: db}}, WebGroups: &service.WebGroupService{Store: &repository.WebGroupStore{DB: db}}, WecomContacts: wecomContacts, Official: official, Templates: templates, Admin: admins, Channels: channels, FeishuSetup: feishuSetup, DingTalkSetup: dingtalkSetup, Skills: skills, Plugins: plugins, Packages: packages, Agents: agents, Models: models, Auth: auth, Workspaces: ws, Origin: origin, SecureCookies: u.Scheme == "https", Logger: log, TrustedProxies: proxies, MailSettings: mailSettings, OAuthApps: oauthApps, ChannelDownloads: &service.ChannelDownloadSettingsService{Store: &repository.ChannelDownloadSettingsStore{DB: db}}}).Handler()
+	api := (&controller.Server{Videos: videos, Images: images, Timezone: &service.TimezoneSettingsService{Store: &repository.TimezoneSettingsStore{DB: db}}, Assistants: assistantStore, AssistantToolDescriptions: assistantToolDescriptions, TaskLinks: taskLinks, Referrals: &repository.ReferralStore{DB: db}, Catalog: &repository.ResourceCatalog{DB: db, Assets: assets, Plugins: plugins}, SharingPolicies: &service.GroupSharingService{Store: &repository.GroupSharingStore{DB: db}}, PeopleSelectors: &service.PeopleSelectorService{Secret: []byte(secret), Channels: channels, Wecom: wecomContacts, Store: repository.NewPeopleSelectorStore(db, []byte(secret))}, GroupSelectors: &service.GroupSelectorService{Store: repository.NewGroupSelectorStore(db), Secret: []byte(secret)}, WecomGroups: &service.WecomGroupRefresh{Channels: channels, Store: wecomGroupStore}, ChannelGroups: &service.ChannelGroupDiscovery{Channels: channels, Store: &repository.ChannelGroupCache{DB: db}, Provider: &feishugroups.Client{}, Secret: []byte(secret)}, AgentUsage: &service.AgentUsageService{Store: &repository.AgentUsageStore{DB: db}}, WebGroups: &service.WebGroupService{Store: &repository.WebGroupStore{DB: db}}, WecomContacts: wecomContacts, Official: official, Templates: templates, Admin: admins, Channels: channels, FeishuSetup: feishuSetup, DingTalkSetup: dingtalkSetup, Skills: skills, Plugins: plugins, Packages: packages, Agents: agents, Models: models, Auth: auth, Workspaces: ws, Origin: origin, SecureCookies: u.Scheme == "https", Logger: log, TrustedProxies: proxies, MailSettings: mailSettings, OAuthApps: oauthApps, ChannelDownloads: &service.ChannelDownloadSettingsService{Store: &repository.ChannelDownloadSettingsStore{DB: db}}}).Handler()
 	mux := http.NewServeMux()
 	controller.ChannelInternalRoutes(mux, channels, hubToken)
 	controller.WecomGroupRefreshInternalRoutes(mux, wecomGroupStore, hubToken)
-	(mpcontroller.Proxy{ReconcileImages: images.Reconcile, Calls: proxyStore, Secrets: proxySecrets, Upstream: proxyUpstream, Log: log}).Routes(mux, hubToken)
+	(mpcontroller.Proxy{WakeVideos: func() {
+		select {
+		case videoWake <- struct{}{}:
+		default:
+		}
+	}, ReconcileImages: images.Reconcile, Calls: proxyStore, Secrets: proxySecrets, Upstream: proxyUpstream, Log: log}).Routes(mux, hubToken)
 	managerStore := &managerrepo.Store{DB: db, WorkAssets: assets, ChannelLog: log, RuntimeRoot: assetConfig.LocalRoot, TriggerSecret: []byte(secret), ConsumeWecomControl: repository.ConsumeWecomControl([]byte(secret)), SnapshotCapabilities: repository.SnapshotCapabilities, EnsureAssistantModelKey: proxySecrets.EnsureKey}
 	managerService := &manager.Service{ProjectRoot: assetConfig.LocalRoot, Store: managerStore, CursorSecret: []byte(secret)}
 	channelServer := &managercontroller.ChannelServer{Store: managerStore, Manager: managerService, Token: hubToken, Logger: log}
@@ -173,7 +181,7 @@ func Run(stderr io.Writer, version string) int {
 
 	assistantAllow := assistantStore.ToolAllowed
 	assistantmcp.Mount(mux, managerStore, assistantAllow, engineToken, "demo", "task", demomcp.Server(engineToken))
-	(&managercontroller.Server{SearchAgents: agents, Images: images, AssistantToolAllowed: assistantAllow, TrustedProxies: proxies, Runtime: &service.RuntimeService{Packages: packages, Skills: skills, Plugins: plugins}, Service: managerService, Engines: managerStore, EngineToken: engineToken, ResolveModelKey: func(ctx context.Context, w, actor string, c manager.Configuration) (string, error) {
+	(&managercontroller.Server{SearchAgents: agents, Videos: videos, Images: images, AssistantToolAllowed: assistantAllow, TrustedProxies: proxies, Runtime: &service.RuntimeService{Packages: packages, Skills: skills, Plugins: plugins}, Service: managerService, Engines: managerStore, EngineToken: engineToken, ResolveModelKey: func(ctx context.Context, w, actor string, c manager.Configuration) (string, error) {
 		return models.RuntimeModelKey(ctx, w, actor, c.ModelProfileID, c.Protocol, c.BaseURL, c.ModelID)
 	}, ResolveOfficialModel: func(ctx context.Context, w, actor, agent string, c *manager.Configuration) (string, error) {
 		if err := models.AuthorizeOfficialRuntime(ctx, w, actor, agent); err != nil {
@@ -213,6 +221,7 @@ func Run(stderr io.Writer, version string) int {
 		log.Error("Invalid official template catalog", "reason", err.Error())
 		return 1
 	}
+	defer startVideoWorker(ctx, videoWake, videos, log)()
 	stopCatalog := startTemplateCatalog(ctx, db, catalog, assets, log)
 	defer stopCatalog()
 	defer startHostedAssistant(ctx, assistantStore, log)()

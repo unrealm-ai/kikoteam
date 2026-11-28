@@ -387,7 +387,14 @@ func checkInheritedManagementPlugin(t *testing.T, db *sql.DB, f managementMCPFix
 	}
 	read := f.expect(t, "get_employee", map[string]any{"config_key": "capability_packages"}, "")
 	defaults := read["default_plugins"].([]any)
-	if len(defaults) != 1 || defaults[0].(map[string]any)["status"] != "unconfigured" {
+	inherited := map[string]bool{}
+	for _, item := range defaults {
+		plugin := item.(map[string]any)
+		if plugin["status"] == "unconfigured" {
+			inherited[plugin["key"].(string)] = true
+		}
+	}
+	if !inherited["image-generation"] || !inherited["video-generation"] {
 		t.Fatal(defaults)
 	}
 	b := map[string]any{"package_id": p.ID, "resource_type": "mcp", "action": "add", "resource_id": id, "resource_version_id": resource["version_id"]}

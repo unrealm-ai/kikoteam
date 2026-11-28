@@ -10,6 +10,7 @@ import (
 	mpcontroller "github.com/unrealm-ai/kikoteam/backend/internal/platform/modelproxy/controller"
 	mp "github.com/unrealm-ai/kikoteam/backend/internal/platform/modelproxy/service"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/videogen"
 	"io"
 	"log/slog"
 	"net"
@@ -21,6 +22,7 @@ import (
 )
 
 type Server struct {
+	Videos                    *videogen.Service
 	Images                    *imagegen.Service
 	Referrals                 ReferralRepository
 	Catalog                   service.ResourceCatalog
@@ -67,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	s.groupSharingRoutes(m)
 	s.agentUsageRoutes(m)
 	s.imageRoutes(m)
+	s.videoRoutes(m)
 	s.templateRoutes(m)
 	s.adminRoutes(m)
 	s.mailSettingsRoutes(m)
@@ -123,7 +126,7 @@ func (s *Server) wrap(route string, op operation) http.HandlerFunc {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Type", "application/json")
 		timeout, limit := requestPolicy(route)
-		if route == "testPlatformImageGeneration" {
+		if route == "testPlatformImageGeneration" || route == "testPlatformVideoGeneration" {
 			timeout = 315 * time.Second
 			if e := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(timeout)); e != nil && !errors.Is(e, http.ErrNotSupported) {
 				http.Error(w, "unavailable", http.StatusServiceUnavailable)

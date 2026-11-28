@@ -17,6 +17,17 @@ paths:
         '202': {description: Notification accepted}
         '401': {description: Invalid runtime credential}
         '403': {description: Turn or access is no longer valid}
+  /mcp/platform-plugins/video-generation:
+    post:
+      operationId: videoGenerationMCP
+      security: [{videoToolBearer: []}]
+      description: Streamable HTTP MCP for the tools pinned to a task turn. generate_video accepts prompt, optional seconds and aspect_ratio, and a stable request_key. Returns a durable asynchronous generation receipt.
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses:
+        '200': {description: JSON-RPC discovery or tool result}
+        '202': {description: Notification accepted}
+        '401': {description: Invalid runtime credential}
+        '403': {description: Turn or access is no longer valid}
   /mcp/plugin-connections/{connection_id}:
     post:
       operationId: pluginConnectionMCP
@@ -409,6 +420,7 @@ paths:
                   delegation_token: {type: string, description: Sensitive chat-only assignment-bound MCP credential. Source actor is resolved from the current started Input for every call; no task recursion.}
                   group_history_token: {type: string, description: Sensitive task-only purpose-bound group-history MCP credential; current input and direct sharing grants are revalidated per call. No TaskSpace or system result authority.}
                   task_progress_token: {type: string, description: Input-scoped credential for task progress.}
+                  video_generation_token: {type: string, description: Input and assignment scoped video tool credential.}
                   image_generation_token: {type: string, description: Sensitive assignment and input scoped credential for the official image generation MCP. Issued for authorized task turns.}
                   task_space_history_token: {type: string, description: Sensitive TaskSpace summary MCP credential bound to the current execution assignment and Input. Issued only for TaskSpace task sessions.}
                   webhook_file:
@@ -506,6 +518,7 @@ components:
               lifecycle: {enum: [active, archived]}
               engine_id: {type: [string, 'null'], format: uuid}
   securitySchemes:
+    videoToolBearer: {type: http, scheme: bearer, description: Task scoped video tool credential.}
     imageToolBearer: {type: http, scheme: bearer, description: Input and assignment scoped platform image tool credential.}
     workToolBearer: {type: http, scheme: bearer, description: Local work-item credential scoped to the active Input and Engine assignment.}
     humanToolBearer: {type: http, scheme: bearer, description: Scoped to one trusted Engine assignment and active Input.}

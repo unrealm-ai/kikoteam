@@ -1,6 +1,11 @@
 import type { SessionEvent } from '../api/manager';
 import type { TaskRecord } from '../api/tasks';
 
+export const videoStates: Record<string, string> = {
+  submitting: '正在提交', queued: '已排队', in_progress: '生成中', saving: '正在保存',
+  ready: '已保存', failed: '生成失败', pending_review: '待核对',
+};
+
 export function taskCardState(task: TaskRecord) {
   const { execution, latest_turn: turn, reported_progress: progress } = task;
   const pending = execution.required_actions?.[0];
@@ -25,6 +30,9 @@ export function taskCardState(task: TaskRecord) {
   const showProgress = !!progress && progress.turn_id === (execution.active_turn_id || turn?.id)
     && ['running', 'completed', 'background_active'].includes(state);
   if (state === 'running' && !showProgress) message = '任务已开始，等待步骤更新。';
+  if (task.video_generation_status && videoStates[task.video_generation_status] && ['running', 'queued', 'completed', 'background_active', 'idle'].includes(state)) {
+    return { label: '视频' + videoStates[task.video_generation_status], state: 'video_generation', showProgress, message: '' };
+  }
   return { label, state, showProgress, message };
 }
 
@@ -175,15 +183,15 @@ export function taskReport(event: SessionEvent) {
     const task = taskNavigationTarget(value);
     if (typeof value.result !== 'string' || typeof value.outcome !== 'string' || !task) return null;
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const images = task.kind === 'task' && uuid.test(task.id) && Array.isArray(value.artifact_candidates)
+    const media = (type: string) => task.kind === 'task' && uuid.test(task.id) && Array.isArray(value.artifact_candidates)
       ? value.artifact_candidates.map(record)
-          .filter(a => a.media_type === 'image/png' && uuid.test(text(a.artifact_id)))
+          .filter(a => a.media_type === type && uuid.test(text(a.artifact_id)))
           .map(a => ({
-            id: text(a.artifact_id), name: text(a.name) || '生成图片',
+            id: text(a.artifact_id), name: text(a.name) || (type === 'image/png' ? '生成图片' : '生成视频'),
             size: typeof a.size_bytes === 'number' && Number.isSafeInteger(a.size_bytes) && a.size_bytes >= 0 ? a.size_bytes : undefined,
           }))
       : [];
-    return { task, images, turnID: text(value.turn_id), outcome: value.outcome, result: value.result, unknown: value.has_unknown_tool_results === true, background: typeof value.background_process_count === 'number' ? value.background_process_count : null, queued: typeof value.queued_input_count === 'number' ? value.queued_input_count : 0 };
+    return { task, images: media('image/png'), videos: media('video/mp4'), turnID: text(value.turn_id), outcome: value.outcome, result: value.result, unknown: value.has_unknown_tool_results === true, background: typeof value.background_process_count === 'number' ? value.background_process_count : null, queued: typeof value.queued_input_count === 'number' ? value.queued_input_count : 0 };
   } catch { return null; }
 }
 export type SessionTaskReport = NonNullable<ReturnType<typeof taskReport>>;

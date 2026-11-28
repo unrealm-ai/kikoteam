@@ -16,6 +16,8 @@ import PlatformTimezoneSettings from './PlatformTimezoneSettings.vue';
 
 interface Account { id:string; name:string; email:string; is_platform_admin:boolean; platform_admin_version:number; credit_balance:string }
 import PlatformImageSettings from './PlatformImageSettings.vue';
+import PlatformVideoSettings from './PlatformVideoSettings.vue';
+const videoEditor=ref<InstanceType<typeof PlatformVideoSettings>>();
 const imagesOpened = ref(false), imageEditor = ref<InstanceType<typeof PlatformImageSettings>>();
 type AdminSection = 'images' | 'accounts' | 'models' | 'sharing' | 'integrations' | 'scheduling';
 const tab = ref<AdminSection>('accounts');
@@ -37,9 +39,9 @@ function selectSection(section: AdminSection) {
   if (section === 'images') imagesOpened.value = true;
   tab.value = section;
 }
-const hasUnsaved = () => mailEditor.value?.dirty === true || githubEditor.value?.dirty === true || downloadsEditor.value?.dirty === true || taskLinksEditor.value?.dirty === true || imageEditor.value?.dirty === true || timezoneEditor.value?.dirty === true;
+const hasUnsaved = () => mailEditor.value?.dirty === true || githubEditor.value?.dirty === true || downloadsEditor.value?.dirty === true || taskLinksEditor.value?.dirty === true || videoEditor.value?.dirty === true || imageEditor.value?.dirty === true || timezoneEditor.value?.dirty === true;
 async function save() {
-  for (const editor of [mailEditor.value, githubEditor.value, downloadsEditor.value, taskLinksEditor.value, imageEditor.value, timezoneEditor.value]) {
+  for (const editor of [mailEditor.value, githubEditor.value, downloadsEditor.value, taskLinksEditor.value, imageEditor.value,videoEditor.value, timezoneEditor.value]) {
     if (editor?.dirty && !await editor.save()) return false;
   }
   return true;
@@ -50,6 +52,7 @@ function discard() {
   downloadsEditor.value?.discard();
   taskLinksEditor.value?.discard();
   imageEditor.value?.discard();
+ videoEditor.value?.discard();
   timezoneEditor.value?.discard();
 }
 defineExpose({ hasUnsaved, save, discard });
@@ -132,7 +135,7 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
         <NButton size="small" :quaternary="tab !== 'models'" :type="tab==='models'?'primary':'default'" @click="selectSection('models')">官方模型</NButton>
         <NButton size="small" :quaternary="tab !== 'sharing'" :type="tab==='sharing'?'primary':'default'" :class="{ 'has-unsaved-dot': downloadsEditor?.dirty || taskLinksEditor?.dirty }" @click="selectSection('sharing')">任务分享与附件</NButton>
         <NButton size="small" :quaternary="tab !== 'integrations'" :type="tab==='integrations'?'primary':'default'" :class="{ 'has-unsaved-dot': githubEditor?.dirty }" @click="selectSection('integrations')">插件集成</NButton>
-        <NButton size="small" :quaternary="tab !== 'images'" :type="tab==='images'?'primary':'default'" :class="{ 'has-unsaved-dot': imageEditor?.dirty }" @click="selectSection('images')">默认插件</NButton>
+        <NButton size="small" :quaternary="tab !== 'images'" :type="tab==='images'?'primary':'default'" :class="{ 'has-unsaved-dot': imageEditor?.dirty || videoEditor?.dirty }" @click="selectSection('images')">默认插件</NButton>
         <NButton size="small" :quaternary="tab !== 'scheduling'" :type="tab==='scheduling'?'primary':'default'" :class="{ 'has-unsaved-dot': timezoneEditor?.dirty }" @click="selectSection('scheduling')">定时设置</NButton>
       </nav>
     </header>
@@ -140,6 +143,7 @@ onUnmounted(()=>{mounted=false;controller?.abort();});
     <PlatformTimezoneSettings v-if="schedulingOpened" v-show="tab==='scheduling'" ref="timezoneEditor" />
     <OfficialModelsView v-if="tab==='models'"/>
     <PlatformImageSettings v-if="imagesOpened" v-show="tab==='images'" ref="imageEditor" />
+    <PlatformVideoSettings v-if="imagesOpened" v-show="tab==='images'" ref="videoEditor" />
     <div v-if="sharingOpened" v-show="tab==='sharing'" class="accounts-panel-stack">
       <PlatformTaskLinkSettings ref="taskLinksEditor" />
       <PlatformChannelDownloadSettings ref="downloadsEditor" />

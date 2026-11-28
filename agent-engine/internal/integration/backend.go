@@ -34,6 +34,7 @@ type HarnessConfig struct {
 	GroupHistoryToken       string       `json:"group_history_token"`
 	TaskSpaceHistoryToken   string       `json:"task_space_history_token"`
 	TaskProgressToken       string       `json:"task_progress_token,omitempty"`
+	VideoGenerationToken    string       `json:"video_generation_token,omitempty"`
 	ImageGenerationToken    string       `json:"image_generation_token,omitempty"`
 	AttachmentToken         string       `json:"attachment_token"`
 	CapabilityToken         string       `json:"capability_token"`

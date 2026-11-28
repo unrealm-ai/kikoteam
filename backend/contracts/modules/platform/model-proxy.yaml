@@ -113,7 +113,7 @@ ledger:
       - &modelFilter {name: model_id, in: query, schema: *uuid}
       - &from {name: from, in: query, description: Inclusive beginning, schema: {type: string, format: date-time}}
       - &to {name: to, in: query, description: Exclusive end, schema: {type: string, format: date-time}}
-      - {name: kind, in: query, schema: &kind {type: string, enum: [signup_bonus, admin_grant, model_charge, referral_bonus, image_charge]}}
+      - {name: kind, in: query, schema: &kind {type: string, enum: [signup_bonus, admin_grant, model_charge, referral_bonus, image_charge, video_charge]}}
       - &cursor {name: cursor, in: query, schema: {type: string, maxLength: 512}}
       - &limit {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
     responses:
@@ -297,6 +297,14 @@ schemas:
       balance_after: *signed
       created_at: {type: string, format: date-time}
       reason: {type: [string, 'null']}
+      video:
+        type: [object, 'null']
+        properties:
+          generation_id: *uuid
+          agent_id: *uuid
+          agent_name: {type: string}
+          seconds: {type: integer, minimum: 1, maximum: 15}
+          credits_per_second: *amount
       image:
         type: [object, 'null']
         properties:

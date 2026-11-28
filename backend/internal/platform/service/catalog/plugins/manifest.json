@@ -1,5 +1,64 @@
 [
   {
+    "key": "video-generation",
+    "name": "官方文生视频",
+    "description": "生成 768P 短片，按请求秒数计费。",
+    "endpoint": "/mcp/platform-plugins/video-generation",
+    "auth": "none",
+    "tools": [
+      "generate_video"
+    ],
+    "execution_kind": "platform_managed",
+    "distribution": "all_agents",
+    "requires_configuration": true,
+    "handler_key": "video_generation",
+    "default_scenes": [
+      "direct",
+      "group",
+      "trigger"
+    ],
+    "public_tools": [
+      {
+        "name": "generate_video",
+        "description": "提交一条短片，返回生成记录。任务将在成片保存后收到项目路径。重复查询沿用原 request_key。",
+        "input_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 7000
+            },
+            "aspect_ratio": {
+              "type": "string",
+              "enum": [
+                "square",
+                "landscape",
+                "portrait"
+              ]
+            },
+            "request_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 15
+            }
+          },
+          "required": [
+            "prompt",
+            "request_key"
+          ]
+        },
+        "schema_digest": "d306c3f431b026623bcf4a8c164419ef3feb6071cc50796bffe38f15e11c6999"
+      }
+    ]
+  },
+  {
     "key": "image-generation",
     "name": "官方文生图",
     "description": "生成一张可交付的图片，按平台单价计费。",

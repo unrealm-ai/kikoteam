@@ -25,10 +25,7 @@ type Arguments struct {
 
 var requestKey = regexp.MustCompile(`^[a-zA-Z0-9_.:-]{1,128}$`)
 
-type Scope struct {
-	manager.DelegationIdentity
-	Input, Version string
-}
+type Scope = manager.GenerationScope
 type owner struct{ workspace, agent, conversation, space, task, turn string }
 type Result struct {
 	ID      string  `json:"generation_id"`

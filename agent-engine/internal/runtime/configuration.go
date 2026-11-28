@@ -171,6 +171,7 @@ func (w *Worker) configureTaskResources(ctx context.Context, out *pi.Config, cur
 		out.Instruction += "\n在开工、步骤变化或取得阶段成果时，用 update_task_progress 给用户更新一句当前进展。多步骤任务提供计划，简单任务只写摘要。首次 base_plan_version 为 0，后续沿用回执。仅上报面向用户的业务事实，隐藏私有材料、日志与凭据。进展上报失败时继续业务执行。"
 	}
 	w.configureImageTool(out, cfg.ImageGenerationToken)
+	w.configureVideoTool(out, cfg.VideoGenerationToken)
 	problems := append(cfg.Resources.Problems, missing...)
 	if len(problems) != 0 {
 		data, err := json.Marshal(problems)
@@ -202,6 +203,16 @@ func (w *Worker) configureImageTool(out *pi.Config, token string) {
 	out.RelayServers["image_generation"] = pi.RelayServer{URL: w.Backend.URL + "/mcp/platform-plugins/image-generation", Timeout: 340, ToolExposure: map[string]string{"generate_image": "direct"}}
 	out.RelayHeaders["image_generation"] = map[string]string{"Authorization": "Bearer " + token}
 	out.Instruction += "\n用户要求文生图时调用 generate_image，每张图单独计费。同一次意图重试使用相同 request_key。拿到图片路径后调用 artifact_publish 发布，等待核对时勿再次生成。"
+}
+
+func (w *Worker) configureVideoTool(out *pi.Config, token string) {
+	if token == "" {
+		return
+	}
+	out.HumanToolsExtension = w.humanToolsExtension()
+	out.RelayServers["video_generation"] = pi.RelayServer{URL: w.Backend.URL + "/mcp/platform-plugins/video-generation", Timeout: 75, ToolExposure: map[string]string{"generate_video": "direct"}}
+	out.RelayHeaders["video_generation"] = map[string]string{"Authorization": "Bearer " + token}
+	out.Instruction += "\n用户明确要求生成短片时调用 generate_video。受理后更新任务进展并结束本轮，平台会发送结果。收到完成通知后按原要求剪辑或调用 artifact_publish 发布 MP4。待核对时勿重试创建。"
 }
 
 func (w *Worker) configureHumanTools(out *pi.Config, turn repository.Turn, cfg integration.HarnessConfig, recipientsMCP bool) {

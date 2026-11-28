@@ -193,6 +193,39 @@ test('completed trigger card shows its own published image above the visible ste
   } finally { await m.cleanup(); }
 });
 
+test('video-only task updates its trigger card and displays the published MP4 in both cards', async () => {
+  const taskID = '00000000-0000-4000-8000-000000000002';
+  const artifact = '00000000-0000-4000-8000-000000000003';
+  const report = {task_id:taskID, turn_id:'turn-a', outcome:'completed', result:'短片已发布',
+    artifact_candidates:[{artifact_id:artifact, name:'短片.mp4', media_type:'video/mp4'}]};
+  let phase = 'in_progress';
+  const m = await mount({override:url => {
+    if (url.includes('/tasks?')) return Response.json({items:[{
+      ...taskDetail('business-task1'), task_id:taskID, session_id:'task1', latest_turn:{id:'turn-a',status:'completed'},
+      execution:{...resource('task1').execution, state:'idle', active_turn_id:null, background_process_count:0},
+      video_generation_status:phase,
+    }], next_cursor:null});
+    if (url.includes('/sessions/chat/events?')) return Response.json({items:[
+      toolEvent(), reportEvent({content:[{type:'text', text:JSON.stringify(report)}]}),
+    ], resume_cursor:'H', next_cursor:null});
+    return null;
+  }});
+  try {
+    const card = m.host.querySelector('.task-action');
+    assert.match(card.querySelector('.tool-status').textContent, /视频生成中/);
+    phase = undefined;
+    await new Promise(resolve => setTimeout(resolve, 1050));
+    document.dispatchEvent(new window.Event('visibilitychange'));
+    await pause();
+    for (const selector of ['.task-action', '.report-card']) {
+      const container = m.host.querySelector(selector);
+      const expected = '/api/v1/workspaces/w/tasks/'+taskID+'/artifacts/'+artifact+'/content';
+      assert.equal(container.querySelector('video[controls]').getAttribute('src'), expected);
+      assert.equal(container.querySelector('a[download]').getAttribute('href'), expected+'?download=1');
+    }
+  } finally { await m.cleanup(); }
+});
+
 test('task report previews only its authorized published PNG versions', async()=>{
  const a='00000000-0000-4000-8000-000000000001',task='00000000-0000-4000-8000-000000000002';
  const body={session_id:'task1',task_id:task,outcome:'completed',result:'已发布图片',artifact_candidates:[

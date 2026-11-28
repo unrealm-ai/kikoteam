@@ -33,10 +33,13 @@ func entry(ctx context.Context, tx *sql.Tx, account string, delta int64, kind, k
 	}
 	v = Entry{ID: platform.NewID(), Kind: kind, Amount: proxy.Amount(delta), Balance: proxy.Amount(balance), Reason: reason}
 	// Existing ledger writes also run while older schemas are being upgraded.
-	// Only an image charge depends on migration 111.
+	// Keep media-specific foreign keys out of unrelated wallet writes.
 	reference := "usage_id"
-	if kind == "image_charge" {
+	switch kind {
+	case "image_charge":
 		reference = "image_generation_id"
+	case "video_charge":
+		reference = "video_generation_id"
 	}
 	e = tx.QueryRowContext(ctx, `INSERT INTO platform_credit_ledger(id,account_id,wallet_version,kind,amount_units,balance_after_units,biz_key,
  request_fingerprint,operator_id,reason,agent_id,`+reference+`) VALUES($1,$2,$3,$4,$5,$6,$7,nullif($8,''),nullif($9,'')::uuid,nullif($10,''),nullif($11,'')::uuid,nullif($12,'')::uuid)
@@ -46,6 +49,14 @@ func entry(ctx context.Context, tx *sql.Tx, account string, delta int64, kind, k
 
 // ChargeImage appends to the same ordered wallet ledger as chat model charges.
 func ChargeImage(ctx context.Context, tx *sql.Tx, payer, agent, id string, price int64) error {
+	return chargeGeneration(ctx, tx, payer, agent, id, price, "image_charge", "image:")
+}
+
+func ChargeVideo(ctx context.Context, tx *sql.Tx, payer, agent, id string, amount int64) error {
+	return chargeGeneration(ctx, tx, payer, agent, id, amount, "video_charge", "video:")
+}
+
+func chargeGeneration(ctx context.Context, tx *sql.Tx, payer, agent, id string, price int64, kind, prefix string) error {
 	var balance int64
 	if err := tx.QueryRowContext(ctx, "SELECT balance_units FROM platform_credit_wallets WHERE account_id=$1 FOR UPDATE", payer).Scan(&balance); err != nil {
 		return err
@@ -53,7 +64,7 @@ func ChargeImage(ctx context.Context, tx *sql.Tx, payer, agent, id string, price
 	if price <= 0 || balance < math.MinInt64+price {
 		return proxy.ErrChargeRange
 	}
-	_, err := entry(ctx, tx, payer, -price, "image_charge", "image:"+id, "", "", "", agent, id)
+	_, err := entry(ctx, tx, payer, -price, kind, prefix+id, "", "", "", agent, id)
 	return err
 }
 
@@ -228,7 +239,7 @@ func (s Store) ListCredits(ctx context.Context, actor string, f Filter, cursor s
 	args := []any{f.Account, f.Agent, f.Model, f.From, f.To, f.Status, f.Kind}
 	if ledger {
 		var spent, granted string
-		e = s.DB.QueryRowContext(ctx, `SELECT (COALESCE(sum(-l.amount_units::numeric) FILTER(WHERE l.kind IN ('model_charge','image_charge')),0)/1000000)::numeric(25,6)::text,
+		e = s.DB.QueryRowContext(ctx, `SELECT (COALESCE(sum(-l.amount_units::numeric) FILTER(WHERE l.kind IN ('model_charge','image_charge','video_charge')),0)/1000000)::numeric(25,6)::text,
    (COALESCE(sum(l.amount_units::numeric) FILTER(WHERE l.kind IN ('signup_bonus','admin_grant','referral_bonus')),0)/1000000)::numeric(25,6)::text `+from+where, args...).Scan(&spent, &granted)
 		if e != nil {
 			return out, e
@@ -268,10 +279,11 @@ func (s Store) ListCredits(ctx context.Context, actor string, f Filter, cursor s
 
 func creditQuery(ledger bool) (from, at, id, value, where string) {
 	if ledger {
-		from = ` FROM platform_credit_ledger l LEFT JOIN platform_model_usage u ON u.id=l.usage_id LEFT JOIN platform_agents a ON a.id=l.agent_id LEFT JOIN platform_image_generations g ON g.id=l.image_generation_id`
+		from = ` FROM platform_credit_ledger l LEFT JOIN platform_model_usage u ON u.id=l.usage_id LEFT JOIN platform_agents a ON a.id=l.agent_id LEFT JOIN platform_image_generations g ON g.id=l.image_generation_id LEFT JOIN platform_video_generations v ON v.id=l.video_generation_id`
 		at, id = "l.created_at", "l.id"
 		value = `jsonb_build_object('id',l.id,'kind',l.kind,'amount',(l.amount_units::numeric/1000000)::numeric(25,6)::text,
    'balance_after',(l.balance_after_units::numeric/1000000)::numeric(25,6)::text,'created_at',l.created_at,'reason',l.reason,
+   'video',CASE WHEN v.id IS NOT NULL THEN jsonb_build_object('generation_id',v.id,'agent_id',v.agent_id,'agent_name',a.name,'seconds',v.seconds,'credits_per_second',(v.unit_price_units::numeric/1000000)::numeric(25,6)::text) END,
    'image',CASE WHEN g.id IS NOT NULL THEN jsonb_build_object('generation_id',g.id,'agent_name',a.name,'started_at',g.started_at,'agent_id',g.agent_id,'image_count',g.image_count,
    'credits_per_image',(g.unit_price_units::numeric/1000000)::numeric(25,6)::text) END,'usage',CASE WHEN u.id IS NOT NULL THEN ` + callJSON + ` END)`
 		where = ` WHERE l.account_id=NULLIF($1,'')::uuid AND ($2='' OR l.agent_id=NULLIF($2,'')::uuid)

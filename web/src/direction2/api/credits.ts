@@ -17,12 +17,13 @@ export interface Usage {
 }
 export interface Ledger {
   id: string;
-  kind: 'signup_bonus' | 'referral_bonus' | 'admin_grant' | 'model_charge' | 'image_charge';
+  kind: 'signup_bonus' | 'referral_bonus' | 'admin_grant' | 'model_charge' | 'image_charge' | 'video_charge';
   amount: string;
   balance_after: string;
   reason: string | null;
   created_at: string;
   usage?: Usage;
+  video?: {generation_id:string;agent_id:string;agent_name:string;seconds:number;credits_per_second:string};
   image?: {generation_id:string;agent_id:string;agent_name:string;image_count:number;credits_per_image:string;started_at:string};
 }
 interface CreditPage<T> {

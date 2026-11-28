@@ -17,10 +17,12 @@ import (
 	"github.com/unrealm-ai/kikoteam/backend/internal/manager/service"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/imagegen"
 	platform "github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/videogen"
 )
 
 type Server struct {
 	SearchAgents         *platform.AgentService
+	Videos               *videogen.Service
 	Images               *imagegen.Service
 	AssistantToolAllowed func(context.Context, string, string, string, string, *platform.ExecutionCapabilities) (bool, error)
 	TrustedProxies       []netip.Prefix

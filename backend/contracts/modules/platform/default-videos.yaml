@@ -1,0 +1,70 @@
+configuration:
+  get:
+    operationId: getPlatformVideoGeneration
+    security: &session [{sessionCookie: []}]
+    responses:
+      '200': &settings
+        description: Active video configuration for the platform administrator
+        content: {application/json: {schema: {$ref: '#/schemas/Settings'}}}
+      default: &error
+        description: Invalid request, access denied or dependency unavailable
+        content: {application/json: {schema: {$ref: '../../openapi.yaml#/components/schemas/Error'}}}
+  patch:
+    operationId: updatePlatformVideoGeneration
+    security: *session
+    parameters: [&csrf {name: X-CSRF-Protection, in: header, required: true, schema: {const: '1'}}]
+    requestBody: {required: true, content: {application/json: {schema: {allOf: [{$ref: '#/schemas/Patch'}, {required: [version]}]}}}}
+    responses: {'200': *settings, default: *error}
+test:
+  post:
+    operationId: testPlatformVideoGeneration
+    security: *session
+    parameters: [*csrf]
+    requestBody: {required: true, content: {application/json: {schema: {$ref: '#/schemas/Patch'}}}}
+    responses:
+      '200':
+        description: A platform-funded one-second test produced a validated clip
+        content: {application/json: {schema: {type: object, required: [receipt,expires_at,size_bytes], properties: {receipt: {type: string}, expires_at: {type: string, format: date-time}, size_bytes: {type: integer}}}}}
+      default: *error
+reviews:
+  get:
+    operationId: listVideoGenerationReviews
+    security: *session
+    responses:
+      '200':
+        description: Oldest 100 unresolved video requests for the platform administrator
+        content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {type: object, properties: {generation_id: {type: string, format: uuid}, error_code: {type: string}, has_upstream_id: {type: boolean}}}}}}}}
+      default: *error
+resolve:
+  post:
+    operationId: resolveVideoGeneration
+    security: *session
+    parameters: [*csrf,{name: generation_id, in: path, required: true, schema: {type: string, format: uuid}}]
+    requestBody: {required: true, content: {application/json: {schema: {type: object, required: [action,reason], properties: {action: {enum: [reconcile,close_no_charge]}, reason: {type: string, maxLength: 1024}}}}}}
+    responses: {'204': {description: Resolution recorded}, default: *error}
+schemas:
+  Settings:
+    type: object
+    required: [version,enabled,credential_configured,base_url,upstream_model_id,credits_per_second,workspace_daily_seconds,max_concurrent_generations]
+    properties:
+      version: &version {type: integer, minimum: 0}
+      enabled: &bool {type: boolean}
+      credential_configured: *bool
+      base_url: &url {type: string, format: uri}
+      upstream_model_id: &model {const: MiniMax-H3}
+      credits_per_second: &price {type: string}
+      workspace_daily_seconds: &daily {type: integer, minimum: 1, maximum: 1000000}
+      max_concurrent_generations: &running {type: integer, minimum: 1, maximum: 1000}
+  Patch:
+    type: object
+    additionalProperties: false
+    properties:
+      version: *version
+      enabled: *bool
+      base_url: *url
+      upstream_model_id: *model
+      credits_per_second: *price
+      workspace_daily_seconds: *daily
+      max_concurrent_generations: *running
+      api_key: {type: string, writeOnly: true}
+      receipt: {type: string}

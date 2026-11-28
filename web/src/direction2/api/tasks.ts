@@ -10,6 +10,7 @@ export interface ReportedProgress {
   metric: { step_id: string; done: number; total: number; unit: string } | null;
 }
 export interface TaskRecord {
+  video_generation_status?: string;
   reported_progress?: ReportedProgress | null;
   work_item_id?: string;
   planning_state?: 'planned' | 'started' | 'canceled'; planning_version?: string;
@@ -24,7 +25,7 @@ export interface TaskProgress {
   phase: string; assignee?: string; confirmation?: { recipient?: string; question?: string };
   handoffs?: { assignee: string; phase: string }[]; delivery?: { channel: string; phase: string }[];
 }
-export interface TaskDetail extends TaskRecord { images?: {id:string;name:string}[]; progress?: TaskProgress; artifacts?: TaskArtifact[]; initial_input: TaskInput | null; latest_result: { turn_id: string; text: string; truncated: boolean } | null }
+export interface TaskDetail extends TaskRecord { images?: {id:string;name:string}[]; videos?: {id:string;name:string}[]; video_generations?: {generation_id:string;status:string;seconds:number}[]; progress?: TaskProgress; artifacts?: TaskArtifact[]; initial_input: TaskInput | null; latest_result: { turn_id: string; text: string; truncated: boolean } | null }
 export interface TaskSupplementReceipt { input_id: string; input_seq: string; context_state: "pending" | "committed" | "unknown" | "absent" | null }
 export interface TaskReport { supplement_receipts?: TaskSupplementReceipt[]; supplement_receipts_truncated?: boolean; report_id: string | null; source_input_id: string; source_input_seq: string; source_turn_id: string | null; outcome: string; status: string; reason: string | null; created_at: string | null; target: { session_id: string; input_id: string; input_status: string; context_state: string | null; turn_id: string | null; turn_status: string | null } | null }
 export type TaskFilters = Partial<Record<'q' | 'work_item_id' | 'agent_id' | 'conversation_id' | 'task_space_id' | 'execution_state' | 'latest_turn_status' | 'lifecycle', string>>;

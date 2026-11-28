@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import type { SessionEvent } from '../api/manager';
 import { eventText, sessionStatus, taskReport, type TaskNavigationTarget } from '../utils/session-presentation';
+import PublishedTaskVideos from './PublishedTaskVideos.vue';
 import PublishedTaskImages from './PublishedTaskImages.vue';
 import SessionMarkdown from './SessionMarkdown.vue';
 const props = defineProps<{ event: SessionEvent; workspace?: string | undefined; title?: string | undefined; canOpenTask?: boolean | undefined; reply?: SessionEvent[] | undefined }>();
@@ -18,6 +19,7 @@ const successful = computed(() => report.value?.outcome === 'completed' && !repo
       <p v-if="report.unknown" class="report-warning">存在结果未知的工具调用，不能确认任务全部成功。</p>
       <p v-if="report.background === null || report.background > 0 || report.queued > 0" class="report-warning">{{ report.background === null ? '后台进程状态待确认。' : report.background > 0 ? `仍有 ${report.background} 个后台进程。` : '' }}{{ report.queued > 0 ? `仍有 ${report.queued} 条排队输入。` : '' }}</p>
       <PublishedTaskImages v-if="workspace && report.task.kind === 'task' && report.images.length" :workspace="workspace" :task="report.task.id" :images="report.images" />
+      <PublishedTaskVideos v-if="workspace && report.task.kind === 'task' && report.videos.length" :workspace="workspace" :task="report.task.id" :videos="report.videos" />
       <div v-if="reply?.length" class="report-answer"><SessionMarkdown v-for="message in reply" :key="message.message_id || message.seq" :text="eventText(message)" /></div>
       <details class="report-original" :open="!reply?.length"><summary>{{ reply?.length ? '查看原始任务回报' : '查看本轮结果' }}</summary><SessionMarkdown :text="report.result || '本轮没有返回文本结果。'" /></details>
       <footer><span>本轮结束不代表整个任务已完成</span><button v-if="canOpenTask" type="button" @click="emit('openTask', report.task)">查看任务与执行过程 ↗</button></footer>

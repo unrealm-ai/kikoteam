@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -94,8 +95,9 @@ func handoffImageReply(t *testing.T, w http.ResponseWriter, req runtimeRequest) 
 				Defaults []struct{ Name, Status string } `json:"default_plugins"`
 			}
 		}
-		if json.Unmarshal([]byte(results[0]), &read) != nil || len(read.Data.Defaults) != 1 ||
-			read.Data.Defaults[0].Name != "官方文生图" || read.Data.Defaults[0].Status != "available" {
+		if json.Unmarshal([]byte(results[0]), &read) != nil || !slices.ContainsFunc(read.Data.Defaults, func(p struct{ Name, Status string }) bool {
+			return p.Name == "官方文生图" && p.Status == "available"
+		}) {
 			t.Errorf("assistant could not see inherited image generation: %.600s", results[0])
 			humanTextStream(t, w, "查询失败")
 			return

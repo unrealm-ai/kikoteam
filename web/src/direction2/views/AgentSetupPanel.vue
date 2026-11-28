@@ -87,7 +87,7 @@ onUnmounted(() => { ++epoch; emit('dirty', false); emit('busy', false); });
     </NAlert>
     <template v-if="setup">
       <section v-if="setup.default_plugins?.length"><h4>平台默认能力</h4>
-        <p v-for="p in setup.default_plugins" :key="p.key">{{ p.name }} · 官方预置 · {{ labels[p.status] || p.status }} <span v-if="p.credits_per_image">· {{ Number(p.credits_per_image) }} 积分/张</span></p>
+        <p v-for="p in setup.default_plugins" :key="p.key">{{ p.name }} · 官方预置 · {{ labels[p.status] || p.status }} <span v-if="p.credits_per_image">· {{ Number(p.credits_per_image) }} 积分/张</span><span v-if="p.credits_per_second">· {{ Number(p.credits_per_second) }} 积分/秒</span></p>
         <template v-if="canManage"><p v-if="agent.payer">付款账户 · {{agent.payer.name}}</p>
           <NButton v-else-if="setup.can_bind_payer" size="small" :disabled="busy" @click="bindSelf">确认由我的积分支付</NButton></template>
       </section>

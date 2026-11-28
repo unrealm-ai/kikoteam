@@ -15,7 +15,7 @@ const from = ref(''), to = ref('');
 const employees = ref(new Map<string,string>()), models = ref(new Map<string,string>());
 let request: AbortController | undefined;
 const statuses = {running:'进行中',usage_recorded:'待结算',settled:'已结算',pending_review:'待核对',no_charge:'不收费'};
-const kinds = {signup_bonus:'注册赠送',referral_bonus:'邀请奖励',admin_grant:'管理员赠送',model_charge:'对话模型消耗',image_charge:'文生图消耗'};
+const kinds = {signup_bonus:'注册赠送',referral_bonus:'邀请奖励',admin_grant:'管理员赠送',model_charge:'对话模型消耗',image_charge:'文生图消耗',video_charge:'文生视频消耗'};
 const statusTone = (value: Usage['status']) => {
   if (value === 'settled') return 'success';
   if (value === 'pending_review') return 'warning';
@@ -228,6 +228,10 @@ onUnmounted(()=>{request?.abort();resolving.value=undefined;});
                 <summary>{{e.image.agent_name}} · {{e.image.image_count}} 张图</summary>
                 <p>受理时间 {{formatter.format(new Date(e.image.started_at))}} · 每张 {{e.image.credits_per_image}} 积分</p>
                 <code>{{e.image.generation_id}}</code>
+              </details>
+              <details v-else-if="e.video" class="usage-details">
+                <summary>{{e.video.agent_name}} · {{e.video.seconds}} 秒</summary>
+                <p>每秒 {{e.video.credits_per_second}} 积分</p><code>{{e.video.generation_id}}</code>
               </details>
               <span v-else class="sub-desc">{{e.reason || '—'}}</span>
             </td>

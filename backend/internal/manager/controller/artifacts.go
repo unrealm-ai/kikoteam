@@ -25,8 +25,8 @@ func (s *Server) taskArtifact(r *http.Request, actor string) (any, int, error) {
 func (d artifactContent) serve(w http.ResponseWriter, r *http.Request) {
 	disposition := "attachment"
 	typ := "application/octet-stream"
-	if d.file.MediaType == "image/png" && http.DetectContentType(d.data) == "image/png" {
-		typ = "image/png"
+	if (d.file.MediaType == "image/png" || d.file.MediaType == "video/mp4") && http.DetectContentType(d.data) == d.file.MediaType {
+		typ = d.file.MediaType
 		if r.URL.Query().Get("download") != "1" {
 			disposition = "inline"
 		}

@@ -10,9 +10,6 @@ import (
 
 func defaultPluginPins(ctx context.Context, tx *sql.Tx) ([]service.DefaultPluginPin, error) {
 	scene := "direct"
-	if _, ok := service.WorkExecutionFrom(ctx); ok {
-		return nil, nil
-	}
 	if _, ok := service.TriggerExecutionFrom(ctx); ok {
 		scene = "trigger"
 	}
@@ -23,6 +20,9 @@ func defaultPluginPins(ctx context.Context, tx *sql.Tx) ([]service.DefaultPlugin
 		if err := tx.QueryRowContext(ctx, "SELECT channel_chat_type FROM manager_conversations WHERE id=$1", ch.ConversationID).Scan(&scene); err != nil {
 			return nil, err
 		}
+	}
+	if _, ok := service.WorkExecutionFrom(ctx); ok {
+		scene = "work"
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT p.id,v.id,v.handler_key,v.default_tools FROM platform_default_plugin_settings s
  JOIN platform_plugins p ON p.id=s.plugin_id JOIN platform_plugin_versions v ON v.id=p.current_version_id

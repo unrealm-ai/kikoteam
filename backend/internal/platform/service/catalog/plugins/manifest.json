@@ -15,12 +15,13 @@
     "default_scenes": [
       "direct",
       "group",
-      "trigger"
+      "trigger",
+      "work"
     ],
     "public_tools": [
       {
         "name": "generate_image",
-        "description": "根据提示生成一张 PNG 图片。相同请求重试沿用 request_key，用户要求另一版时使用新键。通过 artifact_publish 发布返回的路径。",
+        "description": "根据提示生成一张 PNG 图片。相同请求重试沿用 request_key，用户要求另一版时使用新键。用 artifact_publish 发布返回的路径。接手其他员工转派的事项时，提交成果还要将该路径加入 work_item_submit_result 的 file_paths。",
         "input_schema": {
           "type": "object",
           "additionalProperties": false,

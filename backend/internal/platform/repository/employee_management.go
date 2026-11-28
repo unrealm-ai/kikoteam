@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/defaultplugins"
 	"github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
 
@@ -181,8 +182,31 @@ func (s *EmployeeManagementStore) Read(ctx context.Context, v service.EmployeeMa
 			return err
 		}
 		out.CanManage, err = managementPermission(ctx, t, v, target)
-		if err != nil || !out.CanManage {
+		if err != nil {
 			return err
+		}
+		// Only maintainers can inspect this employee's payer binding.
+		payerTarget := ""
+		if out.CanManage {
+			payerTarget = target
+		}
+		out.ManagementDefaults, err = defaultplugins.List(ctx, t.tx, t.workspace, payerTarget)
+		if err != nil {
+			return err
+		}
+		for i := range out.ManagementDefaults {
+			d := &out.ManagementDefaults[i]
+			if d.Status == "available" {
+				switch {
+				case !out.Enabled:
+					d.Status = "employee_disabled"
+				case !out.CanManage:
+					d.Status = "platform_enabled"
+				}
+			}
+		}
+		if !out.CanManage {
+			return nil
 		}
 		return t.tx.QueryRowContext(ctx, `SELECT COALESCE('m'||(
  SELECT management_number FROM platform_model_profiles WHERE workspace_id=$1 AND id=NULLIF($2,'')::uuid
@@ -210,7 +234,7 @@ var managementResources = map[string]string{
  v.id::text AS version_id,COALESCE(NULLIF(v.version_label,''),v.sequence::text) AS version,s.created_at FROM platform_skills s JOIN platform_skill_versions v ON v.id=s.current_version_id
  WHERE (s.workspace_id=$1 OR s.workspace_id IS NULL) AND s.enabled AND s.listed AND s.archived_at IS NULL`,
 	"mcp": `SELECT p.id,p.name,COALESCE(NULLIF(p.description,''),v.description) AS summary,CASE WHEN p.workspace_id IS NULL THEN 'platform' ELSE 'workspace' END AS source,
- v.id::text AS version_id,v.version::text AS version,p.created_at FROM platform_plugins p JOIN platform_plugin_versions v ON v.id=p.current_version_id
+ v.id::text AS version_id,v.version::text AS version,v.distribution,p.created_at FROM platform_plugins p JOIN platform_plugin_versions v ON v.id=p.current_version_id
  WHERE (p.workspace_id=$1 OR p.workspace_id IS NULL) AND p.enabled AND p.listed AND p.archived_at IS NULL`,
 }
 
@@ -225,16 +249,20 @@ func (s *EmployeeManagementStore) Resources(ctx context.Context, v service.Emplo
 		return service.ManagementPage[service.ManagementResource]{}, service.Fail("invalid_resource_type", 400, "资源类型应为 model、skill 或 mcp")
 	}
 	idColumn := "id"
+	distribution := "''"
 	if kind == "model" {
 		idColumn = "'m'||management_number::text"
+	}
+	if kind == "mcp" {
+		distribution = "distribution"
 	}
 	return managementList(ctx, s, v, q, kind == "model", func(t *modelTx) error { return authorizeResourceCatalog(ctx, t, v, target) }, base,
 		func(r *sql.Rows) (service.ManagementResource, error) {
 			var a service.ManagementResource
-			e := r.Scan(&a.ID, &a.Name, &a.Summary, &a.Source, &a.VersionID, &a.Version)
+			e := r.Scan(&a.ID, &a.Name, &a.Summary, &a.Source, &a.VersionID, &a.Version, &a.Distribution)
 			return a, e
 		},
-		idColumn+`,name,left(regexp_replace(summary,'[[:space:]]+',' ','g'),160),source,version_id,version`)
+		idColumn+`,name,left(regexp_replace(summary,'[[:space:]]+',' ','g'),160),source,version_id,version,`+distribution)
 }
 
 func managementList[T any](ctx context.Context, s *EmployeeManagementStore, v service.EmployeeManagementCaller, q service.ManagementQuery, model bool, authorize func(*modelTx) error, base string, scan func(*sql.Rows) (T, error), columns string) (service.ManagementPage[T], error) {

@@ -151,13 +151,13 @@ func TestMCPManagementContract(t *testing.T) {
 			return r
 		}
 		overview := check("get_employee", nil, true)["data"].(map[string]any)
-		if len(overview) != 1 {
+		if len(overview) != 2 || overview["available_configs"] != nil {
 			t.Fatal("unauthorized catalog", overview)
 		}
 		check("get_employee", map[string]any{"config_key": "instruction"}, false)
 		f.agent.CanManage = true
 		overview = check("get_employee", nil, true)["data"].(map[string]any)
-		if len(overview) != 2 || overview["available_configs"] == nil {
+		if len(overview) != 3 || overview["available_configs"] == nil {
 			t.Fatal(overview)
 		}
 		check("update_employee", map[string]any{"config_key": "instruction", "instruction": "新设定", "version": 3}, true)

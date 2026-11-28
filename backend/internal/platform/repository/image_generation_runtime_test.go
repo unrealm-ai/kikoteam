@@ -173,7 +173,7 @@ func imageRuntimeReply(t *testing.T, w http.ResponseWriter, body runtimeRequest)
 	}
 }
 
-func (f *imageRuntimeFixture) verify(t *testing.T, call func(string, string, any, string) map[string]any, server, token, workspace, actor string, agent service.Agent) {
+func (f *imageRuntimeFixture) verify(t *testing.T, call func(string, string, any, string) map[string]any, server, token, workspace, actor string, agent, source service.Agent) {
 	t.Helper()
 	const config = "/api/v1/platform/default-plugins/image-generation"
 	base := "/api/v1/workspaces/" + workspace
@@ -203,13 +203,24 @@ func (f *imageRuntimeFixture) verify(t *testing.T, call func(string, string, any
 	if balance() != 20000000 || f.calls.Load() != 1 {
 		t.Fatal("unexpected admin probe charge or supplier calls")
 	}
-	conversation := call("POST", base+"/conversations", map[string]any{"agent_id": agent.ID}, "")["id"].(string)
-	task := call("POST", base+"/sessions", map[string]any{"conversation_id": conversation, "mode": "task", "input": map[string]string{"text": "请生成并发布一张翠鸟水彩画。"}}, "image-task")
-	taskPath := base + "/tasks/" + task["task_id"].(string)
+	var taskID string
+	if source.ID == agent.ID {
+		conversation := call("POST", base+"/conversations", map[string]any{"agent_id": agent.ID}, "")["id"].(string)
+		task := call("POST", base+"/sessions", map[string]any{"conversation_id": conversation, "mode": "task", "input": map[string]string{"text": "请生成并发布一张翠鸟水彩画。"}}, "image-task")
+		taskID = task["task_id"].(string)
+	} else {
+		taskID = runImageHandoff(t, f.service.DB, call, base, source.ID, agent.ID)
+	}
+	taskPath := base + "/tasks/" + taskID
 	deadline := time.Now().Add(6 * time.Minute)
 	var detail map[string]any
 	for time.Now().Before(deadline) {
 		detail = call("GET", taskPath, nil, "")
+		// Handoff completion is confirmed by the original reviewer's acceptance.
+		// Submitting the file ends the designer's turn at the work boundary.
+		if source.ID != agent.ID {
+			goto completed
+		}
 		if turn, ok := detail["latest_turn"].(map[string]any); ok {
 			switch turn["status"] {
 			case "completed":
@@ -267,7 +278,7 @@ completed:
 			if err != nil || meta.Width != 1024 || meta.Height != 1024 {
 				t.Fatal("download is not the requested image", meta, err)
 			}
-			t.Logf("task=%v generation=%v PNG=%dx%d bytes=%d sha256=%s wallet=20->15 image_charges=1 supplier_posts=2", task["task_id"], record["generation_id"], meta.Width, meta.Height, len(raw), digest)
+			t.Logf("employee=%s task=%s generation=%v PNG=%dx%d bytes=%d sha256=%s wallet=20->15 image_charges=1 supplier_posts=2", agent.Name, taskID, record["generation_id"], meta.Width, meta.Height, len(raw), digest)
 			if dir := os.Getenv("KIKO_TEST_IMAGE_OUTPUT"); dir != "" {
 				if err = os.WriteFile(filepath.Join(dir, record["generation_id"].(string)+".png"), raw, 0600); err != nil {
 					t.Fatal(err)
@@ -276,7 +287,7 @@ completed:
 		}
 	}
 	if script := os.Getenv("KIKO_TEST_IMAGE_BROWSER"); script != "" {
-		cmd := exec.CommandContext(t.Context(), "node", script, server, token, workspace, task["task_id"].(string), digest)
+		cmd := exec.CommandContext(t.Context(), "node", script, server, token, workspace, taskID, digest)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("browser: %v %s", err, out)
 		} else {

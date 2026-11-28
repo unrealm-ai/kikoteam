@@ -67,7 +67,8 @@ func TestManagerRuntimeCrashTakeover(t *testing.T) { testManagerRuntime(t, "cras
 func testManagerRuntime(t *testing.T, mode string) {
 	t.Helper()
 	workMode := mode == "work" || mode == "work-amendment"
-	imageMode := mode == "images"
+	imageHandoff := mode == "handoff-images"
+	imageMode := mode == "images" || imageHandoff
 	liveEventModel := mode == "events" && os.Getenv("KIKO_EVENT_MODEL_BASE_URL") != ""
 	if os.Getenv("KIKO_RUNTIME_E2E") != "1" {
 		t.Skip("set KIKO_RUNTIME_E2E=1 for actual Engine/Pi process acceptance")
@@ -101,6 +102,10 @@ func testManagerRuntime(t *testing.T, mode string) {
 			return
 		}
 		if imageMode {
+			if imageHandoff {
+				handoffImageReply(t, w, body)
+				return
+			}
 			imageRuntimeReply(t, w, body)
 			return
 		}
@@ -270,6 +275,9 @@ func testManagerRuntime(t *testing.T, mode string) {
 	}
 	agents := &service.AgentService{Store: NewAgentStore(db)}
 	employeeInput := service.AgentCreate{Name: "Runtime", ModelProfileID: model.ID}
+	if imageHandoff {
+		employeeInput.Name = "KIKO 助手"
+	}
 	if workMode {
 		cfg := modelConfig
 		cfg.Name = "Original reviewer model"
@@ -290,6 +298,14 @@ func testManagerRuntime(t *testing.T, mode string) {
 	agent, err := agents.Create(ctx, workspace, actor, employeeInput)
 	if err != nil {
 		t.Fatal(err)
+	}
+	imageEmployee := agent
+	if imageHandoff {
+		reviewExec(t, db, "UPDATE platform_workspaces SET assistant_agent_id=$2 WHERE id=$1", workspace, agent.ID)
+		imageEmployee, err = agents.Create(ctx, workspace, actor, service.AgentCreate{Name: "电商设计师", ModelProfileID: model.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	if workMode {
 		b, e := (&service.AgentService{Store: NewAgentStore(db)}).Create(ctx, workspace, actor, service.AgentCreate{Name: "Handoff B", ModelProfileID: model.ID})
@@ -369,7 +385,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 	if err := workitems.Register(mux, store, engineToken); err != nil {
 		t.Fatal(err)
 	}
-	if workMode || mode == "events" {
+	if workMode || mode == "events" || imageHandoff {
 		if err := taskspacehistory.Register(mux, &manager.TaskSpaceHistory{Store: store, CursorSecret: svc.CursorSecret}, engineToken, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -562,7 +578,7 @@ func testManagerRuntime(t *testing.T, mode string) {
 		})
 	}
 	if imageMode {
-		imageFixture.verify(t, call, backend.URL, token, workspace, actor, agent)
+		imageFixture.verify(t, call, backend.URL, token, workspace, actor, imageEmployee, agent)
 		return
 	}
 	if mode == "video" {

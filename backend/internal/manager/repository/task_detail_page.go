@@ -59,7 +59,12 @@ const taskDetailSteps = `SELECT 'progress', CASE event->>'status'
 const taskDetailArtifacts = `SELECT f.id,f.version,f.name,f.media_type,f.size_bytes FROM manager_task_artifacts f
  JOIN manager_turns t ON t.id=f.turn_id
  WHERE t.session_id=$1 AND ($2::uuid IS NULL OR f.id=$2)
- AND t.status='completed' AND NOT t.has_unknown_tool_results
+ AND NOT t.has_unknown_tool_results AND (t.status='completed' OR
+ ($3 AND t.status='interrupted' AND t.error->>'code'='awaiting_work_commit' AND EXISTS (
+ SELECT FROM manager_work_boundaries b JOIN manager_work_file_selections sel ON sel.boundary_id=b.id
+ JOIN manager_work_files wf ON wf.id=sel.file_id
+ WHERE b.turn_id=t.id AND b.kind='submit' AND b.state='committed'
+ AND wf.name=f.name AND wf.digest=f.version AND wf.size_bytes=f.size_bytes)))
  ORDER BY f.created_at DESC,f.id DESC LIMIT 100`
 
 func ownTaskDetail(g service.TaskDetailGrant) bool {
@@ -103,7 +108,7 @@ func (s *Store) TaskDetailProjection(ctx context.Context, grant service.TaskDeta
 	if view.Activities, view.ActivityTruncated, err = taskDetailActivities(ctx, tx, g); err != nil {
 		return service.TaskDetailSnapshot{}, err
 	}
-	artifacts, err := taskDetailArtifactRows(ctx, tx, g, "")
+	artifacts, err := taskDetailArtifactRows(ctx, tx, g.SessionID, "", false)
 	if err != nil {
 		return service.TaskDetailSnapshot{}, err
 	}
@@ -154,9 +159,9 @@ func taskDetailActivities(ctx context.Context, tx *sql.Tx, g service.TaskDetailG
 	return out, truncated, rows.Err()
 }
 
-func taskDetailArtifactRows(ctx context.Context, tx *sql.Tx, g service.TaskDetailGrant, id string) ([]service.Artifact, error) {
+func taskDetailArtifactRows(ctx context.Context, tx *sql.Tx, session, id string, includeWorkSubmissions bool) ([]service.Artifact, error) {
 	artifacts := []service.Artifact{}
-	rows, err := tx.QueryContext(ctx, taskDetailArtifacts, g.SessionID, nullID(id))
+	rows, err := tx.QueryContext(ctx, taskDetailArtifacts, session, nullID(id), includeWorkSubmissions)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +186,7 @@ func (s *Store) TaskDetailDownload(ctx context.Context, grant service.TaskDetail
 	if err != nil {
 		return service.Artifact{}, nil, err
 	}
-	rows, err := taskDetailArtifactRows(ctx, tx, g, id)
+	rows, err := taskDetailArtifactRows(ctx, tx, g.SessionID, id, false)
 	if err != nil || len(rows) != 1 {
 		if err == nil {
 			err = service.Fail("resource_not_found", 404, "产物不存在")

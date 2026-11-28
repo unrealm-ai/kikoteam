@@ -363,6 +363,36 @@ func TestTaskDetailHandoffProgressUsesCurrentAssignment(t *testing.T) {
 	}
 }
 
+func TestWorkSubmissionShowsOnlyCommittedArtifactVersions(t *testing.T) {
+	f := newAmendmentConflictFixture(t)
+	var session, input, task string
+	f.check(f.db.QueryRow(`SELECT s.id,s.initial_input_id,s.task_id FROM manager_work_assignments a JOIN manager_sessions s ON s.id=a.session_id WHERE a.work_item_id=$1`, f.item).Scan(&session, &input, &task))
+	turn := reviewStartTurn(t, f.db, f.workspace, session, input, manager.NewID(), 1)
+	reviewFinishTurn(t, f.db, session, input, turn)
+	reviewExec(t, f.db, `UPDATE manager_turns SET status='interrupted',error='{"code":"awaiting_work_commit"}' WHERE id=$1`, turn)
+	boundary, file, published := manager.NewID(), manager.NewID(), manager.NewID()
+	reviewExec(t, f.db, `INSERT INTO manager_work_boundaries(id,session_id,turn_id,input_id,stop_revision,operation_id,kind,work_item_id,payload,state,fenced_at)
+ VALUES($1,$2,$3,$4,0,'submit-image','submit',$5,'{}','safe',now())`, boundary, session, turn, input, f.item)
+	reviewExec(t, f.db, `INSERT INTO manager_work_files(id,boundary_id,name,digest,size_bytes) VALUES($1,$2,'poster.png','submitted',42)`, file, boundary)
+	reviewExec(t, f.db, `INSERT INTO manager_work_file_selections(boundary_id,file_id) VALUES($1,$2)`, boundary, file)
+	reviewExec(t, f.db, `INSERT INTO manager_task_artifacts(id,turn_id,path,name,media_type,version,size_bytes) VALUES
+ ($2,$1,'poster.png','poster.png','image/png','submitted',42),
+ (gen_random_uuid(),$1,'poster.png','poster.png','image/png','draft',42),
+ (gen_random_uuid(),$1,'private.png','private.png','image/png','submitted',42)`, turn, published)
+	check := func(want int) {
+		t.Helper()
+		detail, err := f.manager.GetTask(t.Context(), f.workspace, f.actor, task)
+		if err != nil || len(detail.Images) != want || want == 1 && detail.Images[0].ID != published {
+			t.Fatal(detail.Images, err)
+		}
+	}
+	check(0)
+	reviewExec(t, f.db, "UPDATE manager_work_boundaries SET state='committed' WHERE id=$1", boundary)
+	check(1)
+	reviewExec(t, f.db, "UPDATE manager_turns SET has_unknown_tool_results=true WHERE id=$1", turn)
+	check(0)
+}
+
 func TestTaskDetailConfirmationProgressKeepsResumeSeparate(t *testing.T) {
 	db, m, mux, w, actor, employee, cookie := managerFixture(t)
 	ctx := t.Context()

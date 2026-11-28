@@ -175,7 +175,7 @@ func (s *Store) Task(ctx context.Context, w, actor, id string) (service.TaskDeta
 	if out.Progress, err = authenticatedTaskProgress(ctx, tx, w, actor, v, preparing, stopped); err != nil {
 		return out, err
 	}
-	artifacts, err := taskDetailArtifactRows(ctx, tx, service.TaskDetailGrant{SessionID: v.SessionID}, "")
+	artifacts, err := taskDetailArtifactRows(ctx, tx, v.SessionID, "", true)
 	if err != nil {
 		return out, err
 	}
@@ -291,7 +291,7 @@ func (s *Store) TaskArtifactDownload(ctx context.Context, w, actor, taskID, arti
 	if err != nil {
 		return service.Artifact{}, nil, visibleError(err)
 	}
-	rows, err := taskDetailArtifactRows(ctx, tx, service.TaskDetailGrant{SessionID: sessionID}, artifactID)
+	rows, err := taskDetailArtifactRows(ctx, tx, sessionID, artifactID, true)
 	if err != nil || len(rows) != 1 {
 		if err == nil {
 			err = service.Fail("resource_not_found", 404, "产物不存在")

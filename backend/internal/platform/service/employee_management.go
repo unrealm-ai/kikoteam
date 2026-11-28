@@ -87,10 +87,11 @@ func ManagementSummary(a Agent) EmployeeSummary {
 }
 
 type ManagementResource struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Summary   string `json:"summary"`
-	Source    string `json:"source"`
-	VersionID string `json:"version_id,omitempty"`
-	Version   string `json:"version"`
+	Distribution string `json:"distribution,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Summary      string `json:"summary"`
+	Source       string `json:"source"`
+	VersionID    string `json:"version_id,omitempty"`
+	Version      string `json:"version"`
 }

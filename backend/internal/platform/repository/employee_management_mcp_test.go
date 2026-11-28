@@ -123,7 +123,7 @@ func TestEmployeeManagementMCPRealWebAndSharedSkill(t *testing.T) {
 		t.Fatal(list)
 	}
 	overview := f.expect(t, "get_employee", nil, "")
-	if len(overview) != 1 {
+	if len(overview) != 2 || overview["available_configs"] != nil {
 		t.Fatal(overview)
 	}
 	f.expect(t, "get_employee", map[string]any{"config_key": "instruction"}, "employee_management_forbidden")
@@ -161,6 +161,7 @@ func TestEmployeeManagementMCPRealWebAndSharedSkill(t *testing.T) {
 	binding := map[string]any{"package_id": p.ID, "resource_type": "skill", "action": "add", "resource_id": skill, "resource_version_id": ver}
 	f.expect(t, "update_employee", map[string]any{"config_key": "capability_packages", "version": p.Version, "binding": binding}, "employee_management_forbidden")
 	reviewExec(t, db, `INSERT INTO platform_agent_maintainers(workspace_id,agent_id,user_id,granted_by) VALUES($1,$2,$3,$4)`, w, employee, member, owner)
+	checkInheritedManagementPlugin(t, db, f, p)
 	f.expect(t, "update_employee", map[string]any{"config_key": "capability_packages", "version": p.Version, "binding": binding}, "")
 	after := f.expect(t, "get_employee", map[string]any{"config_key": "capability_packages"}, "")["items"].([]any)[0].(map[string]any)
 	if after["skills"].([]any)[0].(map[string]any)["skill_id"] != skill {
@@ -367,6 +368,43 @@ func TestEmployeeManagementMCPRealWebAndSharedSkill(t *testing.T) {
 	f.expect(t, "list_employee_resources", map[string]any{"resource_type": "skill", "purpose": "create"}, "invalid_employee_management_request")
 	f.expect(t, "list_employee_resources", map[string]any{"resource_type": "model", "purpose": "create", "employee_id": employee}, "invalid_employee_management_request")
 	f.expect(t, "update_employee", map[string]any{"config_key": "profile", "name": "撤权后不修改", "version": 2}, "employee_management_forbidden")
+}
+
+func checkInheritedManagementPlugin(t *testing.T, db *sql.DB, f managementMCPFixture, p ps.CapabilityPackage) {
+	t.Helper()
+	c, err := ps.BuiltinCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncCatalog(t.Context(), db, c, runtimeCapabilityServices(t, db).Skills.Assets); err != nil {
+		t.Fatal(err)
+	}
+	id := ps.CatalogID("plugin", "image-generation")
+	page := f.expect(t, "list_employee_resources", map[string]any{"resource_type": "mcp", "id": id}, "")
+	resource := page["items"].([]any)[0].(map[string]any)
+	if resource["distribution"] != "all_agents" {
+		t.Fatal(resource)
+	}
+	read := f.expect(t, "get_employee", map[string]any{"config_key": "capability_packages"}, "")
+	defaults := read["default_plugins"].([]any)
+	if len(defaults) != 1 || defaults[0].(map[string]any)["status"] != "unconfigured" {
+		t.Fatal(defaults)
+	}
+	b := map[string]any{"package_id": p.ID, "resource_type": "mcp", "action": "add", "resource_id": id, "resource_version_id": resource["version_id"]}
+	args := map[string]any{"config_key": "capability_packages", "version": p.Version, "binding": b}
+	for range 2 {
+		reply := f.expect(t, "update_employee", args, "")
+		if reply["outcome"] != "already_inherited" || reply["default_plugin"].(map[string]any)["status"] != "unconfigured" {
+			t.Fatal(reply)
+		}
+	}
+	b["action"] = "remove"
+	delete(b, "resource_version_id")
+	f.expect(t, "update_employee", args, "platform_default_read_only")
+	after := f.expect(t, "get_employee", map[string]any{"config_key": "capability_packages"}, "")["items"].([]any)[0].(map[string]any)
+	if after["version"] != float64(p.Version) || len(after["mcps"].([]any)) != 0 {
+		t.Fatal(after)
+	}
 }
 
 func assertOfficialManagementCatalogVisible(t *testing.T, db *sql.DB, f managementMCPFixture) {

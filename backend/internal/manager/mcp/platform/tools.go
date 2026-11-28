@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/defaultplugins"
 	ps "github.com/unrealm-ai/kikoteam/backend/internal/platform/service"
 )
 
@@ -121,9 +122,9 @@ type updateInput struct {
 
 func (t Tools) Server(assistant bool) *sdk.Server {
 	sv := sdk.NewServer(&sdk.Implementation{Name: "employee-management", Version: "1.0.0"}, nil)
-	const getDesc = "读取员工。默认只有概览；可管理时返回 available_configs，其中有配置 key 和可编辑标记。传 config_key 一次读取一项及其版本。"
-	const resDesc = "分页查工作区共享模型、Skill 或 MCP，包括已上架可用的官方资源。可按名称搜索或 ID 精确过滤。目录可见不代表有安装权限；不返回凭证。"
-	const updateDesc = "按 config_key 保存一项员工配置。先读取对应配置的版本；一次只保存一个模块。只执行用户明确要求的修改。"
+	const getDesc = "查询员工能力时同时查看 default_plugins（平台默认继承）和 capability_packages（手动挂载）。用户要求安装默认插件时直接说明已继承，无需挂载，不调用 update_employee。available 表示可在后台任务使用，platform_enabled 表示平台已启用；其余状态如实说明。可管理时 available_configs 列出配置 key。"
+	const resDesc = "分页查共享模型、Skill 或 MCP，支持名称搜索或 ID 精确过滤。MCP 的 distribution=all_agents 表示全员默认继承，请用 get_employee 查看状态并直接答复；manual 才可按权限挂载。"
+	const updateDesc = "按 config_key 保存用户明确要求的一项配置，先读取对应版本。仅手动分发的 MCP 可增删。平台预置 MCP 已由全员继承，直接向用户说明当前状态。"
 	if !assistant {
 		addTool(sv, "get_employee", "仅当前员工。"+getDesc, func(ctx context.Context, c ps.EmployeeManagementCaller, i getFields) (any, error) {
 			return t.get(ctx, c, getInput{getFields: i})
@@ -178,7 +179,7 @@ func (t Tools) get(ctx context.Context, c ps.EmployeeManagementCaller, i getInpu
 		return nil, e
 	}
 	if i.Key == "" {
-		out := map[string]any{"overview": ps.ManagementSummary(a)}
+		out := map[string]any{"overview": ps.ManagementSummary(a), "default_plugins": a.ManagementDefaults}
 		if a.CanManage {
 			out["available_configs"] = configOptions
 		}
@@ -188,7 +189,7 @@ func (t Tools) get(ctx context.Context, c ps.EmployeeManagementCaller, i getInpu
 		return nil, ps.Fail("employee_management_forbidden", 403, "你没有管理这位 AI 员工的权限，请联系管理员")
 	}
 	if i.Key == "capability_packages" {
-		return t.packagePage(ctx, c, target, i.Page)
+		return t.packagePage(ctx, c, a, i.Page)
 	}
 	return configSection(a, i.Key)
 }
@@ -220,11 +221,11 @@ type packageSummary struct {
 func summarizePackage(p ps.CapabilityPackage) packageSummary {
 	return packageSummary{p.ID, p.Name, p.Version, p.AssistantToolSet == "", p.Skills, p.Plugins}
 }
-func (t Tools) packagePage(ctx context.Context, c ps.EmployeeManagementCaller, target string, page int) (any, error) {
+func (t Tools) packagePage(ctx context.Context, c ps.EmployeeManagementCaller, a ps.Agent, page int) (any, error) {
 	if page == 0 {
 		page = 1
 	}
-	p, e := t.Packages.List(ctx, c.Workspace, c.Actor, target, page, 20)
+	p, e := t.Packages.List(ctx, c.Workspace, c.Actor, a.ID, page, 20)
 	if e != nil {
 		return nil, e
 	}
@@ -232,7 +233,10 @@ func (t Tools) packagePage(ctx context.Context, c ps.EmployeeManagementCaller, t
 	for _, v := range p.Items {
 		out.Items = append(out.Items, summarizePackage(v))
 	}
-	return out, nil
+	return struct {
+		ps.ManagementPage[packageSummary]
+		Defaults []defaultplugins.Summary `json:"default_plugins"`
+	}{out, a.ManagementDefaults}, nil
 }
 func (t Tools) resources(ctx context.Context, c ps.EmployeeManagementCaller, i resourceInput) (any, error) {
 	if i.Purpose == "create" {
@@ -298,7 +302,7 @@ func (t Tools) update(ctx context.Context, c ps.EmployeeManagementCaller, i upda
 	}
 	patch := ps.AgentPatch{Version: i.Version, Name: i.Name, Role: i.Role, Instruction: i.Instruction}
 	if i.Key == "capability_packages" {
-		return t.updateBinding(ctx, c, target, i.Version, *i.Binding)
+		return t.updateBinding(ctx, c, current, i.Version, *i.Binding)
 	}
 	a, e := t.Agents.Update(ctx, c.Workspace, c.Actor, target, patch)
 	if e != nil {
@@ -343,15 +347,29 @@ func (i updateInput) validateSection() error {
 	return invalid("一次只提交与 config_key 对应的一项配置")
 }
 
-func (t Tools) updateBinding(ctx context.Context, c ps.EmployeeManagementCaller, target string, version int64, b bindingInput) (any, error) {
+func (t Tools) updateBinding(ctx context.Context, c ps.EmployeeManagementCaller, a ps.Agent, version int64, b bindingInput) (any, error) {
 	if !ps.ValidWorkspaceSubject(b.PackageID) || !ps.ValidWorkspaceSubject(b.ResourceID) || b.Action != "add" && b.Action != "remove" ||
 		b.Action == "add" && !ps.ValidWorkspaceSubject(b.VersionID) || b.Action == "remove" && b.VersionID != "" ||
 		b.Kind != "skill" && b.Kind != "mcp" {
 		return nil, invalid("请提供有效的包 ID、动作、资源类型、资源 ID 和对应版本")
 	}
-	p, e := t.Packages.Get(ctx, c.Workspace, c.Actor, target, b.PackageID)
+	p, e := t.Packages.Get(ctx, c.Workspace, c.Actor, a.ID, b.PackageID)
 	if e != nil {
 		return nil, e
+	}
+	if b.Kind == "mcp" {
+		for _, plugin := range a.ManagementDefaults {
+			if b.ResourceID == ps.CatalogID("plugin", plugin.Key) {
+				if b.Action == "remove" {
+					return nil, ps.Fail("platform_default_read_only", 409, plugin.Name+"由平台默认继承，无法为单个员工卸载")
+				}
+				message := plugin.Name + "已由平台默认继承，无需挂载。"
+				if plugin.Status == "available" {
+					message += "可以直接让员工在任务中使用。"
+				}
+				return map[string]any{"outcome": "already_inherited", "message": message, "default_plugin": plugin}, nil
+			}
+		}
 	}
 	if p.AssistantToolSet != "" {
 		return nil, ps.Fail("builtin_package_read_only", 409, "不能修改内置包的挂载")
@@ -371,7 +389,7 @@ func (t Tools) updateBinding(ctx context.Context, c ps.EmployeeManagementCaller,
 	if patch.Skills == nil && patch.Plugins == nil {
 		return summarizePackage(p), nil
 	}
-	p, e = t.Packages.Update(ctx, c.Workspace, c.Actor, target, b.PackageID, patch)
+	p, e = t.Packages.Update(ctx, c.Workspace, c.Actor, a.ID, b.PackageID, patch)
 	if e != nil {
 		return nil, e
 	}

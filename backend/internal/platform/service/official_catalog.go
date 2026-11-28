@@ -168,7 +168,7 @@ func loadResources(c *TemplateCatalog) (map[string]TemplateResource, error) {
 // Each shipped handler explicitly declares its supported contract before catalog activation.
 func validManagedDefinition(p CatalogPlugin) bool {
 	for _, scene := range p.DefaultScenes {
-		if !slices.Contains([]string{"direct", "group", "trigger"}, scene) {
+		if !slices.Contains([]string{"direct", "group", "trigger", "work"}, scene) {
 			return false
 		}
 	}

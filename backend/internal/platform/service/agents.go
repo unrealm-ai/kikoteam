@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/unrealm-ai/kikoteam/backend/internal/platform/defaultplugins"
 )
 
 // AgentCardResources is the directory summary shared by all active workspace members.
@@ -39,6 +41,8 @@ type Agent struct {
 	AdmissionEpoch     int64               `json:"admission_epoch"`
 	CreatedAt          time.Time           `json:"created_at"`
 	UpdatedAt          time.Time           `json:"updated_at"`
+
+	ManagementDefaults []defaultplugins.Summary `json:"-"`
 }
 type AgentPayer struct {
 	ID   string `json:"id"`

@@ -3,9 +3,10 @@ import { computed, ref } from 'vue';
 import type { SessionEvent } from '../api/manager';
 import type { TaskRecord } from '../api/tasks';
 import TaskStepProgress from './TaskStepProgress.vue';
-import { taskCardState } from '../utils/session-presentation';
+import PublishedTaskImages from './PublishedTaskImages.vue';
+import { taskCardState, clockTime, type SessionTaskReport } from '../utils/session-presentation';
 import { isTaskDetailLinkTool, availability, duration, jsonText, outputText, record, taskAction, toolTaskTarget, text, toolFailed, toolName, toolOutput, toolStatus, toolTarget, type TaskNavigationTarget } from '../utils/session-presentation';
-const props = defineProps<{ event: SessionEvent; results?: Map<string, string>; task?: TaskRecord | undefined; taskTitle?: string | undefined; canOpenTask?: boolean | undefined }>();
+const props = defineProps<{ event: SessionEvent; reports?: Map<string, SessionTaskReport>; workspace?: string | undefined; task?: TaskRecord | undefined; taskTitle?: string | undefined; canOpenTask?: boolean | undefined }>();
 const emit = defineEmits<{ openTask: [target: TaskNavigationTarget] }>();
 const tab = ref<'input' | 'output'>('output');
 const action = computed(() => taskAction(props.event));
@@ -16,6 +17,18 @@ const status = computed(() => toolStatus(props.event));
 const failed = computed(() => toolFailed(props.event));
 const live = computed(() => status.value === '已触发' && props.task ? taskCardState(props.task) : undefined);
 const isBash = computed(() => !action.value && ['bash_start', 'bash_poll', 'bash_write', 'bash_stop', 'bash_terminate'].includes(props.event.name || ''));
+const progress = computed(() => live.value?.showProgress ? props.task?.reported_progress : null);
+const report = computed(() => {
+  const task = props.task;
+  if (live.value?.state !== 'completed' || !task?.latest_turn) return null;
+  const result = props.reports?.get(task.latest_turn.id);
+  if (result?.task.kind !== 'task' || result.task.id !== task.task_id) return null;
+  return result;
+});
+const showImages = computed(() => !!props.workspace && !!report.value?.images.length);
+const updatedAt = computed(() => live.value?.state === 'completed'
+  ? props.task?.latest_turn?.finished_at || progress.value?.occurred_at
+  : progress.value?.occurred_at);
 const instruction = computed(() => text(input.value.instruction) || text(input.value.text));
 const error = computed(() => props.event.error?.message || text(record(output.value.error).message));
 const outputID = computed(() => `tool-output-${props.event.tool_use_id || props.event.seq}`);
@@ -39,8 +52,9 @@ function moveTab(event: KeyboardEvent) {
       <p v-else-if="failed" class="tool-error">操作未成功，请展开调用详情查看原因。</p>
       <template v-else-if="live">
         <p v-if="live.message">{{ live.message }}</p>
-        <p v-else-if="live.state === 'completed' && task?.latest_turn && results?.get(task.latest_turn.id)">{{ results.get(task.latest_turn.id) }}</p>
-        <TaskStepProgress v-if="task?.reported_progress && live.showProgress" :progress="task.reported_progress" :previous="!task.execution.active_turn_id" />
+        <PublishedTaskImages v-if="showImages && report && workspace && task" compact :workspace="workspace" :task="task.task_id" :images="report.images" />
+        <TaskStepProgress v-if="progress" :progress="progress" :previous="!task?.execution.active_turn_id" in-card :has-result-preview="showImages" />
+        <p v-else-if="live.state === 'completed' && !showImages">本轮已结束，可在任务中查看完整结果。</p>
       </template>
       <p v-else-if="event.name === 'task_delegation_create_session'">{{ status === '已触发' ? '任务已受理，执行进展与结果可在任务中查看。' : event.status === 'completed' ? '调用已结束，尚无法确认任务受理结果。' : '正在向员工发起任务，以实际受理结果为准。' }}</p>
       <p v-else-if="event.name === 'task_delegation_stop_session'">停止请求与实际停止状态分别确认。</p>
@@ -48,9 +62,9 @@ function moveTab(event: KeyboardEvent) {
       <p v-else-if="isTaskDetailLinkTool(event.name) && status === '送达待核对'">渠道尚未确认送达，请稍后核对。</p>
       <p v-else-if="isTaskDetailLinkTool(event.name) && status === '未发送'" class="tool-error">渠道未发送任务详情链接。</p>
       <p v-else>{{ event.summary || '任务操作与结果已记录。' }}</p>
-      <button v-if="canOpenTask && target" type="button" class="task-link" @click="emit('openTask', target)">查看任务 <span aria-hidden="true">↗</span></button>
-      <details v-if="instruction" class="task-instruction"><summary>任务要求</summary><p>{{ instruction }}</p></details>
     </div>
+    <div :class="{ 'task-disclosures': action }">
+    <details v-if="action && instruction" class="task-instruction"><summary>任务要求</summary><p>{{ instruction }}</p></details>
     <details class="tool-details">
       <summary>
         <template v-if="!action"><span class="tool-symbol" aria-hidden="true">{{ failed ? '!' : event.status === 'completed' ? '✓' : '⋯' }}</span><span class="tool-heading"><strong>{{ toolName(event) }}</strong><span v-if="toolTarget(event)" class="tool-target" :class="{ 'bash-cmd': isBash }">{{ toolTarget(event) }}</span></span><span class="tool-status">{{ status }}</span></template>
@@ -70,6 +84,11 @@ function moveTab(event: KeyboardEvent) {
         <div class="tool-technical-name">{{ event.name || '工具' }}</div>
       </div>
     </details>
+    </div>
+    <footer v-if="action && (updatedAt || (canOpenTask && target))" class="task-footer">
+      <time v-if="updatedAt" :datetime="updatedAt">{{ live?.state === 'background_active' && !task?.execution.active_turn_id ? '上一轮更新于' : '更新于' }} {{ clockTime(updatedAt) }}</time>
+      <button v-if="canOpenTask && target" type="button" class="task-link" @click="emit('openTask', target)">查看任务 <span aria-hidden="true">↗</span></button>
+    </footer>
   </section>
 </template>
 <style scoped>
@@ -112,20 +131,29 @@ pre.terminal-pre{background:var(--id-bg-terminal);color:var(--id-text-terminal);
 dl{display:flex;gap:12px;overflow-wrap:anywhere;font-size:11px}
 dt{color:var(--id-text-muted)}
 dd{margin:0;font-family:var(--id-font-mono)}
-.task-action{border-left:3px solid var(--id-accent-primary);border-radius:var(--id-radius-lg)}
-.task-action .tool-details>summary{padding:8px 14px;min-height:32px;color:var(--id-text-secondary)}
-.task-action-header{display:flex;align-items:center;gap:10px;padding:12px 14px 6px}
-.task-action-header .tool-symbol{background:var(--id-accent-primary-soft);color:var(--id-accent-primary);width:28px;height:28px;border-radius:var(--id-radius-md);font-size:15px}
-.action-title{flex:1;min-width:0}
-.action-title>span{font-size:11px;color:var(--id-text-muted)}
-.action-title strong{display:block;font-size:13px;font-weight:600;color:var(--id-text-primary);overflow-wrap:anywhere}
-.task-action-body{padding:0 14px 10px 52px}
-.task-action-body>p{color:var(--id-text-secondary);margin:4px 0 6px;font-size:12px;line-height:1.55}
-.task-action-body>.tool-error{color:var(--id-status-danger)}
-.task-link{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--id-accent-primary-border);border-radius:var(--id-radius-sm);padding:3px 9px;background:var(--id-accent-primary-soft);color:var(--id-accent-primary);font:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:background-color var(--id-transition-fast)}
-.task-link:hover{background:var(--id-accent-primary);color:var(--id-text-inverse)}
-.task-action .tool-details{border-top:1px solid var(--id-border-hairline);color:var(--id-text-secondary)}
-.task-instruction{margin-top:8px;color:var(--id-text-muted);font-size:11px}
-.task-instruction p{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--id-text-primary);max-height:300px;overflow:auto}
+.task-action { padding: 0 15px; border-radius: 10px; }
+.task-action-header { display: flex; align-items: center; gap: 10px; padding: 12px 0; }
+.task-action-header .tool-symbol { flex: none; width: 30px; height: 30px; border-radius: 8px; background: var(--id-accent-primary-soft); color: var(--id-accent-primary); font-size: 16px; }
+.action-title { flex: 1; min-width: 0; }
+.action-title>span { color: var(--id-text-muted); font-size: 11px; }
+.action-title strong { display: block; color: var(--id-text-primary); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.tool-status[data-task-state]::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
+.task-action-body { border-top: 1px solid var(--id-border-hairline); }
+.task-action-body>p { margin: 9px 0; color: var(--id-text-secondary); line-height: 1.55; }
+.task-action-body>.tool-error { color: var(--id-status-danger); }
+.task-action-body .step-progress { padding: 10px 0; }
+.task-disclosures { display: flex; align-items: start; flex-wrap: wrap; column-gap: 18px; padding: 3px 0; border-top: 1px solid var(--id-border-hairline); color: var(--id-text-secondary); }
+.task-disclosures details { min-width: 0; }
+.task-disclosures details[open] { flex-basis: 100%; }
+.task-disclosures .tool-details>summary, .task-instruction>summary { display: flex; align-items: center; gap: 6px; min-height: 31px; padding: 0; cursor: pointer; list-style: none; font-size: 12px; }
+.task-instruction>summary::-webkit-details-marker { display: none; }
+.task-disclosures details>summary::before { content: ''; width: 5px; height: 5px; border: solid currentColor; border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); margin: 0 3px; }
+.task-disclosures details[open]>summary::before { transform: rotate(135deg); }
+.task-disclosures .chevron { display: none; }
+.task-instruction p { max-height: 300px; overflow: auto; padding: 8px 10px; margin: 0 0 5px; border-radius: 6px; background: var(--id-bg-subtle); color: var(--id-text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 7px 0; border-top: 1px solid var(--id-border-hairline); color: var(--id-text-muted); font-size: 11px; }
+.task-link { margin-left: auto; padding: 3px 0; background: transparent; border: 0; color: var(--id-accent-primary); font: inherit; font-size: 12px; cursor: pointer; }
+.task-link:hover { text-decoration: underline; }
+@media (max-width: 480px) { .task-action { padding: 0 10px; } .task-action-header { gap: 7px; } }
 button:focus-visible,summary:focus-visible{outline:2px solid var(--id-accent-primary);outline-offset:-2px}
 </style>

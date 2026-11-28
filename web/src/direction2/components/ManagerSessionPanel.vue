@@ -146,12 +146,11 @@ watch(() => messages.value.flatMap(({event})=>{
 // A report refers to the turn that produced it. A later queued input must not
 // inherit its result, even when both inputs belong to the same task.
 const reportedResults = computed(() => {
-  const results = new Map<string, string>();
+  const results = new Map<string, NonNullable<ReturnType<typeof taskReport>>>();
   for (const row of rows.value) {
     const report = taskReport(row);
     if (report?.turnID && report.outcome === 'completed' && !report.unknown) {
-      const text = report.result.trim();
-      results.set(report.turnID, text.length > 160 ? text.slice(0, 160) + '…' : text);
+      results.set(report.turnID, report);
     }
   }
   return results;
@@ -316,7 +315,7 @@ watch(rows, async (nextRows, prevRows) => {
       <p v-if="!loading && !rows.length && !initialInputText" class="empty muted">{{ taskCenter || task ? '暂无执行记录。' : '暂无消息，发送工作需求开始协作。' }}</p>
       <article v-for="{ event: row, replies } in messages" :key="messageKey(row)" :data-history-key="messageKey(row)" :class="['event', { user: isUser(row), tool: !!row.tool_use_id, thinking: row.type === 'agent.thinking', report: row.source_kind === 'task_report', 'turn-event': row.type === 'turn.updated', 'error-event': row.type === 'session.error' }]">
         <template v-if="row.action"><strong>{{ row.action.title }}</strong><p class="body">{{ row.action.message }}</p></template>
-        <SessionToolCall v-else-if="row.tool_use_id" :event="row" :task="linkedTask(row) || undefined" :results="reportedResults" :task-title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!toolTaskTarget(row)" @open-task="emit('openTask', $event)" />
+        <SessionToolCall v-else-if="row.tool_use_id" :event="row" :task="linkedTask(row) || undefined" :reports="reportedResults" :workspace="publicDetail ? undefined : workspace" :task-title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!toolTaskTarget(row)" @open-task="emit('openTask', $event)" />
         <SessionTaskReport v-else-if="row.source_kind === 'task_report'" :workspace="publicDetail ? undefined : workspace" :event="row" :reply="replies" :title="linkedTask(row)?.title || undefined" :can-open-task="!publicDetail && !!taskReport(row)?.task" @open-task="emit('openTask', $event, taskReport(row)?.turnID)" />
         <template v-else-if="row.type === 'turn.updated'"><div class="turn-divider"><span class="muted">{{ status(row.status) }}</span></div><p v-if="row.error" class="error">{{ row.error.message }}</p></template>
         <template v-else>

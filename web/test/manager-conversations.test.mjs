@@ -143,13 +143,54 @@ test('closed task drawer shows only the linked active turn progress and measured
   assert.equal(card.querySelector('header .tool-status').textContent,'执行中');
   assert.match(card.textContent,/核对第四段素材/);
   assert.equal(card.querySelector('progress').value,3);
-  assert.equal(card.querySelector('.step-progress details').open,false);
+  assert.match(card.querySelector('.timeline .in_progress').textContent, /核对素材.*核对第四段素材/);
+  assert.equal(card.querySelector('.step-progress details'), null);
+  assert.equal(card.querySelector('.task-instruction').open, false);
+  assert.equal(card.querySelector('.tool-details').open, false);
+  card.querySelector('.task-instruction summary').click();
+  assert.equal(card.querySelector('.task-instruction').open, true);
+  assert.equal(card.querySelector('.tool-details').open, false);
+  card.querySelector('.tool-details summary').click();
+  assert.equal(card.querySelector('.task-instruction').open, true);
+  assert.equal(card.querySelector('.tool-details').open, true);
   assert.equal(FakeSource.all.length,1);
   state='blocked';
   await new Promise(r=>setTimeout(r,1050));document.dispatchEvent(new window.Event('visibilitychange'));await pause();
   assert.match(card.textContent,/请选择配音/);
   assert.equal(card.querySelector('progress'),null);
  }finally{await m.cleanup()}
+});
+
+test('completed trigger card shows its own published image above the visible steps', async () => {
+  const taskID = '00000000-0000-4000-8000-000000000002';
+  const imageID = '00000000-0000-4000-8000-000000000001';
+  const report = {
+    task_id: taskID, turn_id: 'turn-a', outcome: 'completed', result: '**工具** generation_id: internal',
+    artifact_candidates: [{ artifact_id: imageID, name: '成图.png', media_type: 'image/png', size_bytes: 2097152, url: 'https://example.com/untrusted' }],
+  };
+  const progress = {turn_id:'turn-a', seq:'32', occurred_at:'2026-11-20T08:00:00Z', summary:'已发布原图', steps:[{id:'publish', label:'发布原图', status:'done'}], metric:null};
+  const m = await mount({override: url => {
+    if (url.includes('/tasks?')) return Response.json({items:[{
+      ...taskDetail('business-task1'), task_id:taskID, session_id:'task1', latest_turn:{id:'turn-a', status:'completed'},
+      execution:{...resource('task1').execution, state:'idle', active_turn_id:null, background_process_count:0}, reported_progress:progress,
+    }], next_cursor:null});
+    if (url.includes('/sessions/chat/events?')) return Response.json({items:[
+      toolEvent(), reportEvent({content:[{type:'text', text:JSON.stringify(report)}]}),
+    ], resume_cursor:'H', next_cursor:null});
+    return null;
+  }});
+  try {
+    const card = m.host.querySelector('.task-action');
+    const img = card.querySelector('.artifact-tile img');
+    assert.equal(img.getAttribute('src'), '/api/v1/workspaces/w/tasks/'+taskID+'/artifacts/'+imageID+'/content');
+    assert.match(card.querySelector('.artifact-tile').textContent, /成图.png.*PNG · 2.00 MiB/);
+    assert.match(card.querySelector('.timeline .done').textContent, /发布原图/);
+    assert.doesNotMatch(card.textContent, /generation_id|example.com/);
+    const stream = FakeSource.all.find(s => !s.closed);
+    stream.emit(reportEvent({seq:'22',content:[{type:'text',text:JSON.stringify({...report,turn_id:'other-turn'})}]}),'cursor22');
+    await pause();
+    assert.equal(card.querySelector('.artifact-tile'), null);
+  } finally { await m.cleanup(); }
 });
 
 test('task report previews only its authorized published PNG versions', async()=>{

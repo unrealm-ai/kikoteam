@@ -147,6 +147,8 @@ make build VERSION=<版本或提交>   # 生成 bin/backend，不启动服务
 
 当前使用 pgx PostgreSQL 驱动及 bcrypt，依赖由 go.mod/go.sum 锁定。CI 见 [Backend workflow](../.github/workflows/backend.yml)，与本地复用 `make check`。身份与工作区测试包含真实 PostgreSQL，需设置 BACKEND_TEST_DATABASE_URL；未设置时数据库测试明确 skip，不能称为完整业务通过。
 
+运行文生视频的端到端测试 `TestManagerRuntimeVideoGeneration` 时，`PATH` 需包含支持 `libx264` 的 `ffmpeg` 和 `ffprobe`。Backend CI 从 Ubuntu 安装 `ffmpeg` 软件包，提供这两个命令。
+
 契约验证默认复用 `../event-hub/.venv/bin/openapi-spec-validator`，可通过 `OPENAPI_VALIDATOR` 指定。根目录 `make lint COMPONENT=backend` 与 CI 使用同一入口；`make check` 在缺少隔离 PostgreSQL DSN 时明确失败，不以跳过数据库测试冒充通过。
 
 开源本地默认允许无 SMTP 的密码注册，账号邮箱保持未验证，不能接受邮箱定向邀请。公开部署应先在受控网络完成首位管理员登录，再从「设置 → 平台管理 → 邮件与注册」配置 SMTP 并启用强制邮箱验证码注册。完整验证与抢注恢复边界见 [身份与邀请](docs/platform-auth.md#本地入门与邮箱验证策略)。

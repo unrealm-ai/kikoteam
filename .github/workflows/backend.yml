@@ -67,7 +67,7 @@ jobs:
         run: make -C backend build VERSION="$GITHUB_SHA"
       - name: Install upstream execution runtime
         run: |
-          bash .github/scripts/install-runtime-packages.sh
+          bash .github/scripts/install-runtime-packages.sh ffmpeg
           npm ci --no-audit --no-fund --prefix agent-engine
           npm ci --no-audit --no-fund --prefix sandbox-runner/builtin-mcp
           npm rebuild node-pty --prefix sandbox-runner/builtin-mcp

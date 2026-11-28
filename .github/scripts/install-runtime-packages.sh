@@ -10,5 +10,5 @@ fi
 [[ -s $source_file ]]
 apt_sources=(-o "Dir::Etc::sourcelist=$source_file" -o "Dir::Etc::sourceparts=-")
 sudo apt-get "${apt_sources[@]}" update
-sudo apt-get "${apt_sources[@]}" install -y build-essential python3 procps ripgrep fd-find
+sudo apt-get "${apt_sources[@]}" install -y build-essential python3 procps ripgrep fd-find "$@"
 sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd
